@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.141",
+  "recorded_at": "2026-05-15T00:00:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "adversarial: model echoes '✻ <Verb> for Ns' shape inside explanatory prose without ever ending the turn; adapter must not mis-fire"
+}

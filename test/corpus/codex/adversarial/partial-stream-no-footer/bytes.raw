@@ -1,0 +1,30 @@
+⏺ Sure, here's a long reply that demonstrates an in-progress stream:
+
+   Paragraph one starts the explanation with a couple of sentences
+   that take a few rows on screen.  Sentence three runs longer than a
+   single column so it wraps onto multiple lines, which exercises the
+   emulator's word-wrap behaviour and is useful for the bake-off
+   corpus separately from the marker-detection question this scenario
+   addresses.
+
+   Paragraph two introduces a fenced code block to show that streaming
+   replies frequently contain code:
+
+   ```
+   def hello():
+       print("hello")
+   ```
+
+   Paragraph three continues the analysis with a list:
+
+   - first list item
+   - second list item
+   - third list item
+
+   Paragraph four would normally end with the codex footer "Token usage:
+   total=N input=N (+ N cached) output=N", but this recording is
+   intentionally truncated before any footer is emitted to verify that
+   the adapter does not fire TurnComplete prematurely on a partial
+   stream.
+
+   And the cursor is still here, mid-sentence, with no footer in sight

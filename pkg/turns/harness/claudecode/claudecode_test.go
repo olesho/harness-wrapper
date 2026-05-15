@@ -87,3 +87,24 @@ func TestClaudeCodeAdapterName(t *testing.T) {
 		t.Errorf("expected Name()=claude-code, got %q", n)
 	}
 }
+
+// TestClaudeCodeAdapter_AdversarialNoFire feeds the adapter a recording
+// where the assistant echoes the "✻ <Verb> for Ns" marker shape inside
+// explanatory prose without actually completing the turn. Before the
+// thinkingRE was anchored to a line of its own, this scenario
+// mis-fired TurnComplete; the test locks the anchored behavior in.
+func TestClaudeCodeAdapter_AdversarialNoFire(t *testing.T) {
+	bytes := corpusBytes(t, "adversarial/thinking-line-mid-reply")
+
+	scr := screen.New(120, 40)
+	scr.Write(bytes)
+	snap := scr.Snapshot()
+
+	a := New()
+	evs := a.OnScreen(snap)
+	for _, ev := range evs {
+		if ev.Kind == turns.TurnComplete {
+			t.Errorf("adversarial thinking-line-mid-reply mis-fired TurnComplete: %+v", ev)
+		}
+	}
+}

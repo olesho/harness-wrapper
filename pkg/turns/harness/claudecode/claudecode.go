@@ -32,11 +32,24 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
 )
 
-// thinkingRE matches the end-of-turn thinking-summary line.
+// thinkingRE matches the end-of-turn thinking-summary line, anchored
+// at the start and end of a screen line so it does not mis-fire when
+// the model echoes the marker shape as part of its reply content
+// (e.g. "you'd see '✻ Baked for 5s' here" in explanatory prose).
 //
-// Format: U+273B (✻) + space + capitalized verb + " for " + N + "s"
-// e.g. "✻ Baked for 5s", "✻ Brewed for 4s", "✻ Crunched for 2s".
-var thinkingRE = regexp.MustCompile(`✻ [A-Z][a-zA-Z]+ for \d+s`)
+// Format: U+273B (✻) + space + capitalized verb + " for " + N + "s",
+// optionally surrounded by horizontal whitespace, on its own line.
+// The marker text is the first capture group, so the fingerprint
+// stored on the Adapter does not include the emulator's column
+// padding.
+//
+// Examples that match: "✻ Baked for 5s", "✻ Brewed for 4s",
+// "✻ Crunched for 2s" — each on a line by itself (trailing column
+// padding from the emulator is allowed).
+//
+// Examples that do NOT match (and used to mis-fire): the same
+// pattern surrounded by non-whitespace on the same line.
+var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ [A-Z][a-zA-Z]+ for \d+s)[^\S\r\n]*$`)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.
@@ -52,8 +65,8 @@ const interruptMarker = "⎿  Interrupted · What should Claude do instead?"
 type Adapter struct {
 	generic.Adapter
 
-	mu               sync.Mutex
-	lastFingerprint  string
+	mu                sync.Mutex
+	lastFingerprint   string
 	lastInterruptSeen bool
 }
 
@@ -79,9 +92,11 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	a.lastInterruptSeen = interruptNow
 
 	// Turn-complete detection — newest thinking marker differs from last fired.
-	matches := thinkingRE.FindAllString(snap.Text, -1)
+	// Capture group 1 holds the marker text without surrounding column
+	// padding so the fingerprint stays stable across redraws.
+	matches := thinkingRE.FindAllStringSubmatch(snap.Text, -1)
 	if len(matches) > 0 {
-		latest := matches[len(matches)-1]
+		latest := matches[len(matches)-1][1]
 		if latest != a.lastFingerprint {
 			a.lastFingerprint = latest
 			out = append(out, turns.Event{Kind: turns.TurnComplete, Reason: "claude-code: " + latest})

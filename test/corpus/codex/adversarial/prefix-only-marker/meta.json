@@ -1,0 +1,8 @@
+{
+  "harness": "codex",
+  "binary_version": "0.130.0",
+  "recorded_at": "2026-05-15T00:00:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "adversarial: assistant says 'Token usage:' without supplying numeric fields; full footer regex must not match"
+}

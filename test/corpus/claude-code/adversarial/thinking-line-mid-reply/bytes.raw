@@ -1,0 +1,13 @@
+⏺ Sure, here's a quick tour of Claude Code's end-of-turn marker:
+
+   When a turn finishes you'll see "✻ Baked for 5s" rendered on its
+   own line. The verb varies: sometimes it's "✻ Brewed for 4s" or
+   "✻ Crunched for 2s" or "✻ Pondered for 12s" — the wording is
+   randomized by the upstream CLI.
+
+   The pattern is U+273B followed by a capitalised verb and a duration
+   in seconds. Adapters should anchor the match to a line of its own
+   so that explanatory text like this paragraph cannot make the
+   adapter mis-fire TurnComplete before the actual marker is rendered.
+
+   I'm still thinking about your question, by the way

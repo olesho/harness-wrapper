@@ -1,6 +1,6 @@
 {
   "harness": "claude-code",
-  "binary_version": "",
+  "binary_version": "2.1.141",
   "recorded_at": "2026-05-14T20:36:11.991054Z",
   "cols": 120,
   "rows": 40,

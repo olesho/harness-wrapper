@@ -84,3 +84,32 @@ func TestCodexAdapterName(t *testing.T) {
 		t.Errorf("expected Name()=codex, got %q", n)
 	}
 }
+
+// TestCodexAdapter_AdversarialNoFire feeds the adapter recordings that
+// should NOT fire TurnComplete: an assistant reply that mentions
+// "Token usage:" without the full footer pattern, and a truncated
+// stream with no footer at all. Locks in that the footer regex stays
+// strict — loosening it (e.g. to plain `"Token usage:"`) would break
+// these cases.
+func TestCodexAdapter_AdversarialNoFire(t *testing.T) {
+	for _, scenario := range []string{
+		"adversarial/prefix-only-marker",
+		"adversarial/partial-stream-no-footer",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			bytes := corpusBytes(t, scenario)
+
+			scr := screen.New(120, 40)
+			scr.Write(bytes)
+			snap := scr.Snapshot()
+
+			a := New()
+			evs := a.OnScreen(snap)
+			for _, ev := range evs {
+				if ev.Kind == turns.TurnComplete {
+					t.Errorf("adversarial scenario %q mis-fired TurnComplete: %+v", scenario, ev)
+				}
+			}
+		})
+	}
+}

@@ -44,7 +44,7 @@ var resumeRE = regexp.MustCompile(`codex resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[
 type Adapter struct {
 	generic.Adapter // inherits OnWrapperStatus + (no-op) OnScreen-but-we-override
 
-	mu             sync.Mutex
+	mu              sync.Mutex
 	lastFingerprint string
 }
 

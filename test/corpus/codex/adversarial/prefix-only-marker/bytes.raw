@@ -1,0 +1,10 @@
+⏺ The codex CLI reports per-turn statistics in a footer called "Token usage:".
+   The full shape includes total, input, cached, and output fields, e.g.:
+   total=N input=N (+ N cached) output=N
+   where each N is a number.
+
+   This recording deliberately mentions "Token usage:" as a bare prefix,
+   without supplying any numeric fields, so the adapter regex must not
+   mis-fire on a partial match.
+
+>
