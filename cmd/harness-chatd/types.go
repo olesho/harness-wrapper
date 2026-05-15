@@ -1,0 +1,86 @@
+package main
+
+import (
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/chat"
+)
+
+type openRequest struct {
+	Harness    string   `json:"harness"`
+	BinaryPath string   `json:"binary_path"`
+	Args       []string `json:"args,omitempty"`
+	WorkingDir string   `json:"working_dir,omitempty"`
+	Env        []string `json:"env,omitempty"`
+	Cols       int      `json:"cols,omitempty"`
+	Rows       int      `json:"rows,omitempty"`
+}
+
+type openResponse struct {
+	ID string `json:"id"`
+}
+
+type conversationSummary struct {
+	ID        string `json:"id"`
+	Harness   string `json:"harness"`
+	SessionID string `json:"session_id,omitempty"`
+}
+
+type controlResponse struct {
+	Token string `json:"token"`
+}
+
+type sendRequest struct {
+	Token string `json:"token"`
+	Text  string `json:"text"`
+}
+
+type sendResponse struct {
+	TurnID string `json:"turn_id"`
+}
+
+type turnDTO struct {
+	ID          string    `json:"id"`
+	SessionID   string    `json:"session_id"`
+	Role        string    `json:"role"`
+	State       string    `json:"state"`
+	Text        string    `json:"text,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at,omitzero"`
+}
+
+type turnEventDTO struct {
+	Turn  turnDTO `json:"turn"`
+	Error string  `json:"error,omitempty"`
+}
+
+type historyResponse struct {
+	Turns []turnDTO `json:"turns"`
+}
+
+type errorResponse struct {
+	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
+}
+
+func toTurnDTO(t chat.Turn) turnDTO {
+	return turnDTO{
+		ID:          t.ID,
+		SessionID:   t.SessionID,
+		Role:        string(t.Role),
+		State:       string(t.State),
+		Text:        t.Text,
+		Reason:      t.Reason,
+		StartedAt:   t.StartedAt,
+		CompletedAt: t.CompletedAt,
+	}
+}
+
+func toTurnEventDTO(ev chat.TurnEvent) turnEventDTO {
+	out := turnEventDTO{Turn: toTurnDTO(ev.Turn)}
+	if ev.Err != nil {
+		out.Error = ev.Err.Error()
+	}
+	return out
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@harness-wrapper/chat-client",
+  "version": "0.1.0",
+  "description": "TypeScript client for harness-chatd (HTTP + SSE)",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "example": "tsx examples/basic.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0"
+  }
+}
