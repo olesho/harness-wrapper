@@ -1,0 +1,9 @@
+{
+  "steps": [
+    {"wait_for": "> "},
+    {"send": "tell me a long detailed story about a wizard navigating a haunted library. take at least 1500 words and include vivid descriptions of every room.\n"},
+    {"sleep": "1500ms"},
+    {"interrupt": true},
+    {"wait_for": "Interrupted"}
+  ]
+}

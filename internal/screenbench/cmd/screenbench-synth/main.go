@@ -86,11 +86,11 @@ func fail(format string, args ...any) {
 // shortReply: a minimal two-turn exchange with simple SGR styling.
 func shortReply() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")                 // clear screen, cursor home
-	b.WriteString("\x1b[1m> \x1b[22mhello\r\n")    // bold prompt, user text
-	b.WriteString("\x1b[32mHi there!\x1b[0m ")     // green assistant
+	b.WriteString("\x1b[2J\x1b[H")              // clear screen, cursor home
+	b.WriteString("\x1b[1m> \x1b[22mhello\r\n") // bold prompt, user text
+	b.WriteString("\x1b[32mHi there!\x1b[0m ")  // green assistant
 	b.WriteString("How can I help today?\r\n")
-	b.WriteString("\x1b[1m> \x1b[22m\x1b[?25h")    // new prompt, show cursor
+	b.WriteString("\x1b[1m> \x1b[22m\x1b[?25h") // new prompt, show cursor
 	return synth{
 		name:     "short-reply",
 		notes:    "single-turn short reply with SGR styling",
@@ -104,7 +104,7 @@ func longMarkdown() synth {
 	var b strings.Builder
 	b.WriteString("\x1b[2J\x1b[H")
 	b.WriteString("\x1b[1m> \x1b[22msummarize the plan\r\n")
-	b.WriteString("\x1b[1;4mOverview\x1b[0m\r\n")              // bold+underline heading
+	b.WriteString("\x1b[1;4mOverview\x1b[0m\r\n") // bold+underline heading
 	b.WriteString("The plan has \x1b[1mthree phases\x1b[22m. Each phase is\r\n")
 	b.WriteString("independently shippable.\r\n")
 	b.WriteString("\r\n")

@@ -46,8 +46,8 @@ type Screen struct {
 	term vt10x.Terminal
 	gen  uint64
 
-	subMu   sync.Mutex
-	subs    []chan struct{}
+	subMu sync.Mutex
+	subs  []chan struct{}
 }
 
 // New constructs a Screen of the given dimensions.

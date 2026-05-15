@@ -1,0 +1,158 @@
+// upstream-version-sentry compares the upstream-version pins in
+// versions.json against the npm registry's latest published version
+// for each declared package. Run via `make check-versions`.
+//
+// Exit codes:
+//
+//	0 — all pinned versions match latest (or are intentionally blank)
+//	1 — at least one pinned version is behind latest
+//	2 — could not read versions.json or reach the npm registry
+//
+// No authentication is required. The tool hits the public npm registry
+// endpoint `https://registry.npmjs.org/<package>/latest` and reads the
+// `version` field. A 5-second per-request timeout caps the total wall
+// clock at ~15s for the three currently-tracked harnesses.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/versions"
+)
+
+const npmRegistry = "https://registry.npmjs.org"
+
+func main() {
+	var (
+		registry = flag.String("registry", npmRegistry, "npm registry base URL (override for testing)")
+		timeout  = flag.Duration("timeout", 5*time.Second, "per-package HTTP timeout")
+		format   = flag.String("format", "table", "output format: table | json")
+	)
+	flag.Parse()
+
+	all, err := versions.All()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "upstream-version-sentry: %v\n", err)
+		os.Exit(2)
+	}
+
+	client := &http.Client{Timeout: *timeout}
+	report, anyErr, anyDrift := check(client, *registry, all)
+
+	switch *format {
+	case "json":
+		_ = json.NewEncoder(os.Stdout).Encode(report)
+	default:
+		writeTable(os.Stdout, report)
+	}
+
+	switch {
+	case anyErr:
+		os.Exit(2)
+	case anyDrift:
+		os.Exit(1)
+	default:
+		os.Exit(0)
+	}
+}
+
+// Row is one harness's drift status. Exported for the JSON output.
+type Row struct {
+	Harness string `json:"harness"`
+	Package string `json:"package"`
+	Pinned  string `json:"pinned"`
+	Latest  string `json:"latest"`
+	Status  string `json:"status"`
+	Error   string `json:"error,omitempty"`
+}
+
+func check(client *http.Client, registry string, all map[string]versions.Entry) ([]Row, bool, bool) {
+	names := make([]string, 0, len(all))
+	for name := range all {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	rows := make([]Row, 0, len(all))
+	var anyErr, anyDrift bool
+
+	for _, name := range names {
+		e := all[name]
+		row := Row{Harness: name, Package: e.Package, Pinned: e.Pinned}
+		latest, err := fetchLatest(client, registry, e.Package)
+		switch {
+		case err != nil:
+			row.Status = "error"
+			row.Error = err.Error()
+			anyErr = true
+		case e.Pinned == "":
+			row.Latest = latest
+			row.Status = "unpinned"
+		case latest == e.Pinned:
+			row.Latest = latest
+			row.Status = "match"
+		default:
+			row.Latest = latest
+			row.Status = "drift"
+			anyDrift = true
+		}
+		rows = append(rows, row)
+	}
+	return rows, anyErr, anyDrift
+}
+
+// fetchLatest hits <registry>/<package>/latest and returns the parsed
+// `version` field.
+func fetchLatest(client *http.Client, registry, pkg string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), client.Timeout+time.Second)
+	defer cancel()
+	url := registry + "/" + pkg + "/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("decode: %w", err)
+	}
+	if payload.Version == "" {
+		return "", fmt.Errorf("registry response had empty version field")
+	}
+	return payload.Version, nil
+}
+
+// writeTable emits a 4-column Markdown table.
+func writeTable(w io.Writer, rows []Row) {
+	fmt.Fprintln(w, "| harness | package | pinned | latest | status |")
+	fmt.Fprintln(w, "|---|---|---|---|---|")
+	for _, r := range rows {
+		latest := r.Latest
+		if latest == "" {
+			latest = "—"
+		}
+		pinned := r.Pinned
+		if pinned == "" {
+			pinned = "—"
+		}
+		fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status)
+	}
+}
