@@ -74,6 +74,7 @@ func runHarnessWrapper(args []string) int {
 		Stdin:      os.Stdin,
 		Stdout:     os.Stdout,
 		Trace:      traceEmitter,
+		Harness:    parsed.HarnessName,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
@@ -152,7 +153,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --tmux-session NAME     spawn the run inside a detached tmux session")
 	fmt.Fprintln(w, "                          named hw-<NAME> and exit immediately")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "supported harness names: codex, claude")
+	fmt.Fprintln(w, "supported harness names: codex, claude, gemini")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "By default trace events are dropped, since stderr would corrupt an")
 	fmt.Fprintln(w, "interactive harness TUI. Pass --trace-file or --trace-stderr to enable.")

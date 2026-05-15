@@ -11,6 +11,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/gemini"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -344,6 +345,8 @@ func resolveAdapter(name string) (turns.Adapter, error) {
 		return codex.New(), nil
 	case "claude-code":
 		return claudecode.New(), nil
+	case "gemini":
+		return gemini.New(), nil
 	case "generic", "":
 		return generic.New(), nil
 	default:

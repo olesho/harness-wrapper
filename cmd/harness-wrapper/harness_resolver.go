@@ -21,6 +21,7 @@ type harnessSpec struct {
 var supportedHarnesses = map[string]harnessSpec{
 	"codex":  {Bin: "codex"},
 	"claude": {Bin: "claude"},
+	"gemini": {Bin: "gemini"},
 }
 
 // resolveHarness looks up a harness by short name and returns the

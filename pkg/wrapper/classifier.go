@@ -6,6 +6,7 @@ import (
 
 	claudeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/claude"
 	codexharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex"
+	geminiharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini"
 )
 
 // ClassifierInput is the snapshot a Classifier inspects when deciding
@@ -74,10 +75,12 @@ func resolveClassifier(cfg Config) Classifier {
 		return cfg.Classifier
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Harness)) {
-	case "claude":
+	case "claude", "claude-code":
 		return harnessAdapter{patterns: claudeharness.Patterns}
 	case "codex":
 		return harnessAdapter{patterns: codexharness.Patterns}
+	case "gemini":
+		return harnessAdapter{patterns: geminiharness.Patterns}
 	}
 	return defaultClassifier{}
 }
