@@ -1,0 +1,12 @@
+> summarize the plan
+Overview
+The plan has three phases. Each phase is
+independently shippable.
+
+Phases
+  • Discovery — corpus + bench
+  • Adapters — codex, claude-code
+  • Library — pkg/chat
+
+End of summary.
+>

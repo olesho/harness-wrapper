@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "",
+  "recorded_at": "2026-05-14T20:37:07.171022Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "tool invocation (shell/file)"
+}

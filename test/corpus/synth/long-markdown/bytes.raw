@@ -1,0 +1,12 @@
+[2J[H[1m> [22msummarize the plan
+[1;4mOverview[0m
+The plan has [1mthree phases[22m. Each phase is
+independently shippable.
+
+[1;4mPhases[0m
+  [33m•[0m [1mDiscovery[22m — corpus + bench
+  [33m•[0m [1mAdapters[22m — codex, claude-code
+  [33m•[0m [1mLibrary[22m — pkg/chat
+
+[2mEnd of summary.[0m
+[1m> [22m

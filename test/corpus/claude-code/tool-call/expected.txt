@@ -1,0 +1,16 @@
+Resume this session with:       (beads) Find ready-to-work tasks with no blockers
+claude --resume 3386e3a9-96af-4d2d-ac18-8cd5b5c565ach command on a recurring interval (e.g. /loop 5m /foo). Omit the int
+erval to let the model self-pace.
+*─/agent-browser─–─Browser─automation─CLI─for─AI─agents.─Use─when─the─user─needs─to─interact─with─websites,─including─na
+vige inggpages,efilling(forms, clickingdbuttons,─taking─scree…────
+/tui-attachla && echo "---" && d(tuivio-tui-dev)─Connect─to─an─externally-running─TUI─session.─Use─when─a─TUI─is─alreadr
+uexit       deeClaude(Code+(via Exit the CLI
+ effort                         Setveffort level for model usage
+/export         e t             Expirt the current conversation to a filn or clipb ard
+oextrr-usagerminal UI app and seConfigure extra usage to keep working when lim ts are hit
+/beads:ready                    (beads)eFind ready-io-work ─asks with no blockers───────────────────────────────────────
+/loop   /,─bin/,─cmd/,─docs/,─inRun a prompt or slssh command─on a recurring int rval (e.g. /ioop 5m /foo). Omit the iie
+rval to let the model self-pace.
+* /exitt browser – Browser automationeCLIeft  AI agents. Use when the user needs to interact with websites, including na
+vigating pages, filling forms, clicking buttons, taking scree… with the current PR
+  ⏵⏵ auto mode on (shift+tab to cycle)

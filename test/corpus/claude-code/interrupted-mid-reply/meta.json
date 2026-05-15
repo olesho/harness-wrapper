@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "",
+  "recorded_at": "2026-05-14T20:36:11.991054Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "user interrupts mid-stream with Esc/Ctrl-C"
+}

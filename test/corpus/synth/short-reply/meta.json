@@ -1,0 +1,8 @@
+{
+  "harness": "synth",
+  "binary_version": "screenbench-synth",
+  "recorded_at": "2026-05-14T17:32:26.498871Z",
+  "cols": 80,
+  "rows": 24,
+  "notes": "single-turn short reply with SGR styling"
+}

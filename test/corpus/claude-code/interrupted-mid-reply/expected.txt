@@ -1,0 +1,17 @@
+  ⎿  Interrupted · What should Claude do instead?
+Resume this session with:       (beads) Find ready-to-work tasks with no blockers
+claude --resume 2ab2c0c9-d06c-4435-8059-ff0742d50557h─command─on─a─recurring─interval─(e.g.─/loop─5m─/foo).─Omit─the─int
+erval─to─let─the─model─self-pace.─────────────────────────────────
+* /agent-browser –NBrowsermautomation CLItforMAIeagents.dUse─when─the─user─needs─to─interact─with─websites,─including─na
+vige ing─pages,─filling─forms,─clicking─buttons,─taking─scree…──────────────────────────────────────────────────────────
+/tui-attach─────────────────────(tuivio-tui-dev)─Connect─to─an─externally-runninglTUItsession.qUsetwheneaoTUIiisaalreadr
+uexit       desClaudeiCodea(via Exit the CLI
+ effortatories─in─the─late─1960sSetveffort level for model usage
+/export         s i       e     Expirt the current conversation to a filn or clipb ard
+oextrr-usagerminal,UIhappaandoseConfigure extra usage tonkeep working when limltsnarethit
+/beads:ready                    (beads)eFind ready-io-work  asks with no blockers
+/loop   ular philosophy of softwRun a prompt or slssh command,on a recurring intnrval (e.g. /ioop 5m /foo). Omit the iie
+rval to let the model self-pace.
+* /exitt browsern–iBrowser automationeCLIeft  AI agents. Use when the user needs to interact with websites, including na
+vigating pages, filling forms, clicking buttons, taking scree… with the current PR
+  ⏵⏵ auto mode on (shift+tab to cycle)

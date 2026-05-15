@@ -1,0 +1,11 @@
+[2J[H[1m> [22mshow a hello world
+[36m```go[0m
+[2m  1 │[0m [35mpackage[0m main
+[2m  2 │[0m 
+[2m  3 │[0m [35mimport[0m "fmt"
+[2m  4 │[0m 
+[2m  5 │[0m [35mfunc[0m main() {
+[2m  6 │[0m     fmt.Println("hello, world")
+[2m  7 │[0m }
+[36m```[0m
+[1m> [22m
