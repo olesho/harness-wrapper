@@ -5,8 +5,8 @@
 //
 // Phase 1 started with only terminal states: idle, failed, interrupted,
 // unknown. It now also recognizes a small set of actionable harness
-// states from recent output. The wrapper does not persist state; callers (such as the
-// Strange Loop loop engine) own persistence.
+// states from recent output. The wrapper does not persist state; callers
+// own persistence.
 //
 // Concurrency: the package is safe for multiple concurrent Run calls
 // only in headless mode (non-TTY stdin/stdout). Concurrent foreground

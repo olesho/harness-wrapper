@@ -1,6 +1,6 @@
 # Mock CLI Harness
 
-The mock CLI harness is a deterministic test binary that behaves like an interactive agent CLI. It exists to test the Strange Loop wrapper without requiring Claude Code, Codex, Google CLI, credentials, network access, or paid usage.
+The mock CLI harness is a deterministic test binary that behaves like an interactive agent CLI. It exists to test the harness wrapper without requiring Claude Code, Codex, Google CLI, credentials, network access, or paid usage.
 
 The mock harness should run under the same PTY runner as real harnesses. It should emit realistic terminal output, wait for input when requested, simulate stalls, and exit with predictable codes.
 
@@ -217,4 +217,4 @@ The mock harness should be intentionally boring Go code:
 - Use `time.Sleep` and timers for delays.
 - Handle `os.Interrupt` and `SIGTERM` cleanly.
 
-Avoid coupling the mock harness to Strange Loop internals. It should behave like an external CLI process.
+Avoid coupling the mock harness to any specific caller's internals. It should behave like an external CLI process.

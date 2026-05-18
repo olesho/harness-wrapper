@@ -1,4 +1,4 @@
-// Mock CLI harness for Strange Loop wrapper tests. It behaves like an
+// Mock CLI harness for harness-wrapper tests. It behaves like an
 // interactive agent CLI: prints a banner, performs a configurable
 // behavior selected by --mode, and exits with a predictable code.
 //
@@ -10,8 +10,9 @@
 //	needs-input   prints a prompt, reads a line from stdin, exits 0 if it matches --expected-input
 //	cost-limited  prints a quota-exhausted message, exits with --exit-code
 //
-// This binary has no Strange Loop dependencies. It's a standalone fake
-// harness invoked as a subprocess by tests under pkg/wrapper.
+// This binary has no external dependencies on a particular consumer.
+// It's a standalone fake harness invoked as a subprocess by tests
+// under pkg/wrapper.
 package main
 
 import (

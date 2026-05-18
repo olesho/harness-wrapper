@@ -24,7 +24,7 @@ func TestResolveHarness_UnknownName(t *testing.T) {
 }
 
 func TestResolveHarness_KnownButNotInPath(t *testing.T) {
-	t.Setenv("PATH", "/nonexistent-strangeloop-test-path")
+	t.Setenv("PATH", "/nonexistent-harness-wrapper-test-path")
 
 	_, err := resolveHarness("codex")
 	if err == nil {

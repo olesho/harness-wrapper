@@ -1,15 +1,15 @@
 # Harness Wrapper
 
-Each CLI harness runs behind a wrapper. The wrapper starts the harness, monitors the process, reads its observable state, and translates harness-specific behavior into loop-level status.
+Each CLI harness runs behind a wrapper. The wrapper starts the harness, monitors the process, reads its observable state, and translates harness-specific behavior into a normalized run status.
 
-The wrapper exists because CLI agent harnesses are interactive processes, not simple batch commands. They can complete, stall, hit cost or quota limits, or stop to ask the user a question. Strange Loop needs those cases represented consistently so loop execution can be retried, paused, resumed, or completed without coupling the loop engine to a specific CLI.
+The wrapper exists because CLI agent harnesses are interactive processes, not simple batch commands. They can complete, stall, hit cost or quota limits, or stop to ask the user a question. Callers need those cases represented consistently so a run can be retried, paused, resumed, or completed without coupling the calling code to a specific CLI.
 
 ## Goals
 
 - Provide a stable supervision layer for Claude Code, Codex, and future CLI harnesses.
-- Normalize harness-specific process behavior into loop-level run states.
+- Normalize harness-specific process behavior into a small set of run states.
 - Preserve enough execution context to inspect, retry, resume, or continue a run.
-- Keep harness integration details out of the loop engine.
+- Keep harness integration details out of the calling code.
 - Allow a user to attach to a paused or active harness session when human control is needed.
 
 ## Implementation Stack
@@ -33,20 +33,20 @@ See the [wrapper POC](wrapper-poc.md) for the staged implementation plan.
 
 ## Wrapper Responsibilities
 
-- Launch the configured CLI harness with the loop input and execution context.
+- Launch the configured CLI harness with the caller's input and execution context.
 - Track process liveness, exit status, output activity, and session identity.
 - Detect idle output, stalled progress, cost limits, recoverable errors, and user-input prompts.
-- Return raw harness output, transcript references, or session references to the loop engine for persistence.
-- Return a normalized run state to the loop engine.
+- Return raw harness output, transcript references, or session references to the caller for persistence.
+- Return a normalized run state to the caller.
 - Preserve enough context to retry, resume, or continue the run later.
 - Support attaching a user terminal to a live PTY session when the harness needs user input or manual inspection.
 
 ## Observed Harness States
 
-- **Idle**: The harness output has stopped changing and the latest output does not match any actionable state. The wrapper should emit `harness_idle`; the loop engine can then inspect the latest output, collect artifacts, verify, or continue.
-- **Stuck**: The harness is still running but no useful progress is being made and the latest output indicates a recoverable problem, such as an API error. The loop should stop or suspend the attempt and retry later according to retry policy.
-- **Cost-limited**: The harness stopped because it ran out of available budget, credits, quota, or cost allowance. The loop should record the blocked state and resume only when continuation is possible.
-- **Needs input**: The harness is asking the user a question or waiting for user-provided input. The loop should pause, persist the question, and emit an event that external coordination is required.
+- **Idle**: The harness output has stopped changing and the latest output does not match any actionable state. The wrapper should emit `harness_idle`; the caller can then inspect the latest output, collect artifacts, verify, or continue.
+- **Stuck**: The harness is still running but no useful progress is being made and the latest output indicates a recoverable problem, such as an API error. The caller should stop or suspend the attempt and retry later according to its retry policy.
+- **Cost-limited**: The harness stopped because it ran out of available budget, credits, quota, or cost allowance. The caller should record the blocked state and resume only when continuation is possible.
+- **Needs input**: The harness is asking the user a question or waiting for user-provided input. The caller should pause, persist the question, and emit an event that external coordination is required.
 
 ## Normalized Run States
 
@@ -56,7 +56,7 @@ See the [wrapper POC](wrapper-poc.md) for the staged implementation plan.
 - `waiting_for_input`: The harness asked a question and needs user input before continuing.
 - `failed`: The harness exited with an unrecoverable error.
 
-`completed` is a loop-level outcome, not a wrapper-level state. The loop engine may mark a run completed after it receives `idle`, inspects the latest output, collects artifacts, and verifies the result.
+`completed` is a caller-level outcome, not a wrapper-level state. The caller may mark a run completed after it receives `idle`, inspects the latest output, collects artifacts, and verifies the result.
 
 ## Idle Detection
 
@@ -103,7 +103,7 @@ Polling should return the same state model used by event-based mode. The only di
 
 ## Interface
 
-The wrapper is a Go library at `pkg/wrapper`. It is importable by both the in-repo CLI binary (`cmd/strangeloop-wrapper`) and by the Loop project, which lives in a separate Go module.
+The wrapper is a Go library at `pkg/wrapper`. It is importable by the in-repo CLI binary (`cmd/harness-wrapper`) and by any external Go module that wants to embed supervised harness runs.
 
 > **Historical note.** An earlier draft of this document proposed a 5-method `HarnessWrapper` interface (`Start` / `Inspect` / `Continue` / `Attach` / `Stop`) keyed on a `runID string`. That shape is daemon-RPC-flavored — it only makes sense if the wrapper owns a registry of live runs that callers look up by opaque ID. For an in-process Go library, callers already hold a Go handle to the live run and don't need string IDs to find it. The interface below is the actual Go shape.
 
@@ -154,7 +154,7 @@ When `Stdin` and `Stdout` are both real TTYs the wrapper auto-enables raw mode a
 
 ### Phase 2 (planned): `Start` + `*Session`
 
-The loop engine needs a non-terminal handle while a wrapper session is running so it can observe state transitions, request a clean stop with a reason, and inspect the current snapshot. Phase 2 adds, additively:
+Callers need a non-terminal handle while a wrapper session is running so they can observe state transitions, request a clean stop with a reason, and inspect the current snapshot. Phase 2 adds, additively:
 
 ```go
 func Start(ctx context.Context, cfg Config) (*Session, error)
@@ -171,7 +171,7 @@ func (s *Session) Events() <-chan Event   // typed state-change events
 
 `Config.Trace` is a `trace.Emitter` — diagnostic observations the wrapper emits as it runs (`wrapper_started`, `pty_opened`, `output_quiet`, `harness_exited`). The trace event vocabulary is **not** part of the API stability surface; do not make control-flow decisions based on trace event ordering or presence.
 
-State-change events (Phase 2's `*Session.Events()`) are different: they're a typed contract for the loop engine to subscribe to harness state transitions. Phase 1 has no non-terminal state transitions to emit, so the events channel only appears in Phase 2.
+State-change events (Phase 2's `*Session.Events()`) are different: they're a typed contract for callers to subscribe to harness state transitions. Phase 1 has no non-terminal state transitions to emit, so the events channel only appears in Phase 2.
 
 ### `HarnessSessionID`, `LatestOutput`, etc.
 
@@ -193,22 +193,22 @@ if err != nil {
 defer terminal.Close()
 ```
 
-The implementation should read from the PTY continuously, emit output to a caller-provided sink, update the last-activity timestamp, and feed chunks into the state detector. The loop engine owns persistence of transcripts, run state, events, and artifacts.
+The implementation should read from the PTY continuously, emit output to a caller-provided sink, update the last-activity timestamp, and feed chunks into the state detector. The caller owns persistence of transcripts, run state, events, and artifacts.
 
 ## Future Work: User Attach
 
-A future Strange Loop release will let a user attach their terminal to a wrapper session that the loop engine started headlessly — so they can answer a `waiting_for_input` question, inspect a stuck run, or take manual control. This is **not** in Phase 1 or initial Phase 2.
+A future release will let a user attach their terminal to a wrapper session that a caller started headlessly — so they can answer a `waiting_for_input` question, inspect a stuck run, or take manual control. This is **not** in Phase 1 or initial Phase 2.
 
-Attach is harder than it looks. The Phase 1 wrapper is a one-shot, foreground process: when it runs in the user's terminal, the user is *already* attached and no separate attach flow is needed. The interesting case is when the loop engine started the wrapper headlessly and a separate `strangeloop attach <run-id>` invocation needs to drive the same PTY master. That requires one of:
+Attach is harder than it looks. The Phase 1 wrapper is a one-shot, foreground process: when it runs in the user's terminal, the user is *already* attached and no separate attach flow is needed. The interesting case is when a caller started the wrapper headlessly and a separate `attach <run-id>` invocation needs to drive the same PTY master. That requires one of:
 
 - A long-lived daemon that owns the PTY master fd and bridges new clients to it.
 - An IPC mechanism that passes the PTY fd between processes (Unix-domain sockets with `SCM_RIGHTS`).
-- The loop engine itself running as a daemon and exposing a control socket.
+- The calling application itself running as a daemon and exposing a control socket.
 
 None of those architectures are decided yet. This means:
 
 - Phase 1's foreground use case works without any attach concept (the user runs the CLI and is on the PTY directly).
-- Phase 2's headless use case ships without attach support; if the loop engine starts a wrapper session and it needs human input, the only Phase 2 escape hatches are context cancellation and inspecting the persisted transcript after the fact.
+- Phase 2's headless use case ships without attach support; if a caller starts a wrapper session and it needs human input, the only Phase 2 escape hatches are context cancellation and inspecting the persisted transcript after the fact.
 - The `pkg/wrapper` API does **not** include `Attach()` methods or attach-shaped fields (`Attached bool`, `AttachOptions`). They will be designed alongside the daemon/IPC architecture decision.
 
 The bridge mechanics, when attach lands, will look approximately like this — but in a separate `pkg/wrapper/attach` package with its own interface, not as a method on `Run` or `*Session`:
@@ -221,7 +221,7 @@ go io.Copy(masterFd, os.Stdin)  // user keystrokes -> live PTY master
 _, err = io.Copy(os.Stdout, masterFd)  // PTY output -> user terminal
 ```
 
-A clean detach sequence (e.g., `Ctrl-]`) would return control to Strange Loop without killing the harness process.
+A clean detach sequence (e.g., `Ctrl-]`) would return control to the caller without killing the harness process.
 
 Headful mode (TUI/web) is also deferred. Whatever UI eventually ships will reuse the same attach primitives.
 
@@ -235,7 +235,7 @@ The first implementation should prefer simple, observable signals before adding 
 - Known user-input prompt patterns in harness output.
 - Known recoverable/API error patterns in harness output.
 - Harness session metadata when available.
-- Explicit output artifacts produced by the loop task.
+- Explicit output artifacts produced by the harness run.
 
 The first detection tests should use the [mock CLI harness](mock-harness.md), not live agent CLIs.
 

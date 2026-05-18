@@ -153,7 +153,7 @@ func TestRun_BinaryNotFound(t *testing.T) {
 	defer drain()
 
 	_, err := wrapper.Run(context.Background(), wrapper.Config{
-		BinaryPath: "/no/such/binary/strangeloop-test-missing",
+		BinaryPath: "/no/such/binary/harness-wrapper-test-missing",
 		Stdout:     w,
 	})
 	if !errors.Is(err, wrapper.ErrBinaryNotFound) {

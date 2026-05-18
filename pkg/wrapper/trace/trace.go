@@ -1,5 +1,5 @@
 // Package trace defines the diagnostic event vocabulary for the
-// strangeloop harness wrapper. Implementations of Emitter receive events
+// harness wrapper. Implementations of Emitter receive events
 // describing the wrapper's internal lifecycle and can route them to
 // stderr, log files, structured logging frameworks, or test recorders.
 //

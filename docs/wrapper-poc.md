@@ -2,9 +2,9 @@
 
 The first wrapper implementation should be a transparent CLI that wraps existing harnesses without changing how users interact with them.
 
-The goal is to prove PTY execution, pass-through terminal behavior, trace logging, and basic process visibility before building the full loop engine integration.
+The goal is to prove PTY execution, pass-through terminal behavior, trace logging, and basic process visibility before building richer caller integrations.
 
-The transparent wrapper must not write to Strange Loop storage. In Phase 1, it should only run the actual harness CLI and emit trace logs that explain what the wrapper observed.
+The transparent wrapper must not write to any caller-owned persistent storage. In Phase 1, it should only run the actual harness CLI and emit trace logs that explain what the wrapper observed.
 
 ## POC Goals
 
@@ -17,13 +17,13 @@ The transparent wrapper must not write to Strange Loop storage. In Phase 1, it s
 
 ## Non-Goals
 
-- No loop engine integration.
+- No external orchestrator integration.
 - No retry policy.
 - No event chaining.
 - No headful UI.
 - No complex state detection.
 - No long-lived daemon.
-- No Strange Loop storage writes.
+- No writes to caller-owned persistent storage.
 
 The POC should only classify what can be observed reliably from the process lifecycle and output stream.
 
@@ -32,27 +32,27 @@ The POC should only classify what can be observed reliably from the process life
 The transparent wrapper should accept a harness name and pass the remaining arguments through to that harness.
 
 ```text
-strangeloop harness-wrapper codex -- <codex args>
-strangeloop harness-wrapper claude -- <claude args>
+harness-wrapper codex -- <codex args>
+harness-wrapper claude -- <claude args>
 ```
 
 Examples:
 
 ```text
-strangeloop harness-wrapper codex -- .
-strangeloop harness-wrapper claude -- --dangerously-skip-permissions
+harness-wrapper codex -- .
+harness-wrapper claude -- --dangerously-skip-permissions
 ```
 
-The separator `--` keeps Strange Loop flags separate from harness flags.
+The separator `--` keeps wrapper flags separate from harness flags.
 
 ## Trace Logs
 
-The POC should emit trace logs. Trace logs are for visibility, not durable loop storage.
+The POC should emit trace logs. Trace logs are for visibility, not durable caller-owned storage.
 
 By default, trace logs can go to stderr so stdout remains close to the actual harness output. A flag can optionally write traces to a file:
 
 ```text
-strangeloop harness-wrapper codex --trace-file ./trace.log -- .
+harness-wrapper codex --trace-file ./trace.log -- .
 ```
 
 Trace logs should include:
@@ -71,7 +71,7 @@ Trace logs should include:
 - PTY start and close events
 - coarse output activity timestamps
 
-Trace logs should not include full terminal transcripts by default. Full transcripts belong to later loop-engine-owned storage.
+Trace logs should not include full terminal transcripts by default. Full transcripts belong to later caller-owned storage.
 
 ## Transparent PTY Flow
 
@@ -85,7 +85,7 @@ harness lifecycle    -> trace logs
 
 The wrapper should restore the user's terminal state even if the wrapped process exits with an error or the user interrupts the process.
 
-The wrapper passes raw PTY bytes — including ANSI escapes, cursor moves, redraws — straight through to the caller's `Stdout`. **Phase 1 does not strip or normalize terminal escape sequences.** The cleaned, human-readable transcript described in [storage](storage.md) (`harness/transcript.log`) is a Phase 2 feature owned by the loop engine, not the wrapper.
+The wrapper passes raw PTY bytes — including ANSI escapes, cursor moves, redraws — straight through to the caller's `Stdout`. **Phase 1 does not strip or normalize terminal escape sequences.** Any cleaned, human-readable transcript representation is a later feature owned by the caller, not the wrapper.
 
 ## Minimal State Detection
 
@@ -96,7 +96,7 @@ The POC should start with minimal states:
 - `interrupted`: wrapper or child process receives an interrupt.
 - `unknown`: wrapper cannot determine a reliable final state.
 
-The POC may also record output hints for later analysis, but it should not block the transparent user flow to classify advanced states. `completed` remains a loop-level result and should not be inferred by the transparent wrapper.
+The POC may also record output hints for later analysis, but it should not block the transparent user flow to classify advanced states. `completed` remains a caller-level result and should not be inferred by the transparent wrapper.
 
 Advanced states can come after the POC:
 
@@ -107,8 +107,8 @@ Advanced states can come after the POC:
 ## Implementation Steps
 
 1. Create the Go module.
-2. Add `cmd/strangeloop`.
-3. Add `harness-wrapper` command parsing.
+2. Add `cmd/harness-wrapper`.
+3. Add command parsing.
 4. Add harness binary resolution for `codex` and `claude`.
 5. Add PTY start and terminal pass-through.
 6. Add trace logging.
@@ -139,7 +139,7 @@ Live harness tests should stay manual or opt-in until the POC behavior is stable
 The POC is successful when this works:
 
 ```text
-strangeloop harness-wrapper codex -- <normal codex invocation>
+harness-wrapper codex -- <normal codex invocation>
 ```
 
 The user should be able to use Codex normally, and the harness wrapper should produce enough trace logs to understand what happened around process startup, PTY lifecycle, interrupts, and process exit.

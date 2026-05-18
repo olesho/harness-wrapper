@@ -272,7 +272,7 @@ func TestSession_StartReturnsErrorOnMissingBinary(t *testing.T) {
 	defer drain()
 
 	_, err := wrapper.Start(context.Background(), wrapper.Config{
-		BinaryPath: "/no/such/bin/strangeloop-test-missing",
+		BinaryPath: "/no/such/bin/harness-wrapper-test-missing",
 		Stdout:     w,
 	})
 	if !errors.Is(err, wrapper.ErrBinaryNotFound) {
