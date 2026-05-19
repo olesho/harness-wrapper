@@ -33,7 +33,11 @@ func (*Adapter) OnScreen(_ screen.Snapshot) []turns.Event { return nil }
 //
 //   - waiting_for_input → TurnComplete (best generic signal that the
 //     assistant has finished and the user can speak)
-//   - blocked_by_cost / retry_later → Blocked
+//   - blocked_by_cost / retry_later / api_error → Blocked
+//     (api_error keeps the harness alive at the wrapper layer, but
+//     from a chat consumer's perspective the current turn cannot
+//     progress until the consumer takes action — same external shape
+//     as a transient block)
 //   - failed / interrupted → Errored
 //   - idle (terminal) → Errored, because in a chat-style context the
 //     harness exiting is unrecoverable
@@ -42,7 +46,7 @@ func (*Adapter) OnWrapperStatus(status wrapper.Status, reason string) []turns.Ev
 	switch status {
 	case wrapper.StatusWaitingForInput:
 		return []turns.Event{{Kind: turns.TurnComplete, Reason: reason}}
-	case wrapper.StatusBlockedByCost, wrapper.StatusRetryLater:
+	case wrapper.StatusBlockedByCost, wrapper.StatusRetryLater, wrapper.StatusAPIError:
 		return []turns.Event{{Kind: turns.Blocked, Reason: reason}}
 	case wrapper.StatusFailed, wrapper.StatusInterrupted:
 		return []turns.Event{{Kind: turns.Errored, Reason: reason}}

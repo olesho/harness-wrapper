@@ -9,6 +9,20 @@ export interface Turn {
   reason?: string;
   started_at?: string;
   completed_at?: string;
+  /**
+   * Populated when the wrapper recognized an upstream API error
+   * (Claude `API Error: 529`, Gemini `(Status: 429)`, Codex
+   * `exceeded retry limit, last status: 503`). Zero / omitted for
+   * transport errors (no HTTP code in the harness output) and for
+   * non-api turn errors.
+   */
+  http_code?: number;
+  /**
+   * Wait duration the harness suggested, as a Go-duration string
+   * ("30s", "2m"). Omitted when the message contained no parseable
+   * hint. Consumers should treat this as advisory.
+   */
+  retry_after?: string;
 }
 
 export interface TurnEvent {

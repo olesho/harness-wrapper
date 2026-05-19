@@ -45,6 +45,12 @@ class Turn:
     reason: str = ""
     started_at: str = ""
     completed_at: str = ""
+    # Populated when the wrapper recognized an upstream API error. Code
+    # 0 means transport error (no HTTP code surfaced by the harness).
+    # retry_after is a Go-duration string ("30s", "2m"); empty when the
+    # harness did not include a parseable hint.
+    http_code: int = 0
+    retry_after: str = ""
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> "Turn":
@@ -57,6 +63,8 @@ class Turn:
             reason=d.get("reason", ""),
             started_at=d.get("started_at", ""),
             completed_at=d.get("completed_at", ""),
+            http_code=int(d.get("http_code", 0)),
+            retry_after=d.get("retry_after", ""),
         )
 
 

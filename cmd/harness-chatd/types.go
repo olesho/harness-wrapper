@@ -48,6 +48,15 @@ type turnDTO struct {
 	Reason      string    `json:"reason,omitempty"`
 	StartedAt   time.Time `json:"started_at"`
 	CompletedAt time.Time `json:"completed_at,omitzero"`
+
+	// HTTPCode is the upstream API status code parsed from a Blocked
+	// turn caused by an api_error wrapper event. Omitted (zero) for
+	// non-api blocks and for transport errors without a numeric code.
+	HTTPCode int `json:"http_code,omitempty"`
+
+	// RetryAfter is a Go duration string ("30s", "2m") the harness
+	// suggested as a backoff. Omitted when no hint was parseable.
+	RetryAfter string `json:"retry_after,omitempty"`
 }
 
 type turnEventDTO struct {
@@ -65,7 +74,7 @@ type errorResponse struct {
 }
 
 func toTurnDTO(t chat.Turn) turnDTO {
-	return turnDTO{
+	out := turnDTO{
 		ID:          t.ID,
 		SessionID:   t.SessionID,
 		Role:        string(t.Role),
@@ -74,7 +83,12 @@ func toTurnDTO(t chat.Turn) turnDTO {
 		Reason:      t.Reason,
 		StartedAt:   t.StartedAt,
 		CompletedAt: t.CompletedAt,
+		HTTPCode:    t.HTTPCode,
 	}
+	if t.RetryAfter > 0 {
+		out.RetryAfter = t.RetryAfter.String()
+	}
+	return out
 }
 
 func toTurnEventDTO(ev chat.TurnEvent) turnEventDTO {

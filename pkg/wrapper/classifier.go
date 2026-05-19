@@ -47,6 +47,17 @@ type Classification struct {
 	// retry_later; leave false for waiting_for_input where the harness
 	// is alive and just paused at a prompt.
 	Terminal bool
+
+	// HTTPCode is the upstream API's HTTP status code when Status is
+	// StatusAPIError and the harness surfaced a numeric code. Zero for
+	// transport errors (e.g. socket closed) and for all non-api_error
+	// classifications.
+	HTTPCode int
+
+	// RetryAfter is the wait duration the harness suggested (e.g.
+	// "Retry after 30 seconds"). Zero when the message contained no
+	// parseable hint.
+	RetryAfter time.Duration
 }
 
 // Classifier inspects recent harness output and reports actionable

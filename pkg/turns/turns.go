@@ -67,6 +67,18 @@ type Event struct {
 	// the event originated from a screen change. nil for events that
 	// came from wrapper status transitions only.
 	Snap *screen.Snapshot
+
+	// HTTPCode is the upstream API status code when the originating
+	// wrapper event carried one (e.g. StatusAPIError with HTTPCode=529).
+	// Zero for non-API-error events and for adapter-synthesized events
+	// without an upstream code. The Watcher copies this from the
+	// SessionEvent automatically; adapters do not need to populate it.
+	HTTPCode int
+
+	// RetryAfter is the wait duration the wrapper parsed from the
+	// harness's error message. Zero when no hint was available.
+	// Watcher-populated like HTTPCode.
+	RetryAfter time.Duration
 }
 
 // Adapter is the per-harness contract that translates raw signals

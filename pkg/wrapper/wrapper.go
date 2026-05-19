@@ -138,6 +138,16 @@ const (
 	// blips, or "try again later" prompts.
 	StatusRetryLater Status = "retry_later"
 
+	// StatusAPIError indicates the harness's upstream model API returned
+	// a recognized error (HTTP 4xx/5xx, transport failure). Unlike
+	// StatusRetryLater this is non-terminal: the wrapper keeps the
+	// harness alive. The accompanying SessionEvent carries HTTPCode
+	// (0 when the harness's output did not include a numeric code,
+	// e.g. transport errors) and RetryAfter (0 when no retry hint was
+	// parseable). External clients subscribe to Session.Events and
+	// dispatch on HTTPCode to attach per-error behavior.
+	StatusAPIError Status = "api_error"
+
 	// StatusWaitingForInput indicates the harness is paused at an
 	// interactive prompt and needs a human (or attached client) to
 	// answer. Unlike the other actionable statuses, it is reported

@@ -1,4 +1,6 @@
 /harness-wrapper
+/mock
 *.test
 *.out
 .DS_Store
+clients/python/__pycache__/

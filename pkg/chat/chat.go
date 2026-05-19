@@ -83,6 +83,18 @@ type Turn struct {
 	Reason      string // non-empty for Errored turns; mirrors adapter event Reason
 	StartedAt   time.Time
 	CompletedAt time.Time
+
+	// HTTPCode is the upstream API status code carried with a Blocked
+	// transition when the wrapper recognized an api_error event
+	// (claudecode "API Error: 529", Gemini "(Status: 429)", Codex
+	// "exceeded retry limit, last status: 503"). Zero for non-api
+	// blocks and for transport-level errors with no numeric code.
+	HTTPCode int
+
+	// RetryAfter is the wait duration parsed from the harness's error
+	// message (e.g. "Retry after 30 seconds"). Zero when no hint was
+	// parseable. Consumers can read this to schedule their retry.
+	RetryAfter time.Duration
 }
 
 // TurnEvent is a state transition the caller can observe on

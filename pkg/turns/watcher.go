@@ -56,6 +56,16 @@ func Watch(sess *wrapper.Session, scr *screen.Screen, adapter Adapter) *Watcher 
 				if te.At.IsZero() {
 					te.At = ev.At
 				}
+				// Enrich adapter-returned events with the structured
+				// fields the adapter contract doesn't see. Adapters
+				// can still set these explicitly for screen-derived
+				// events (rare); we only overwrite zero values.
+				if te.HTTPCode == 0 {
+					te.HTTPCode = ev.HTTPCode
+				}
+				if te.RetryAfter == 0 {
+					te.RetryAfter = ev.RetryAfter
+				}
 				w.send(te)
 			}
 			if ev.Terminated {

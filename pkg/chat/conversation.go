@@ -235,6 +235,8 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
+		turn.HTTPCode = ev.HTTPCode
+		turn.RetryAfter = ev.RetryAfter
 	case turns.ToolCall:
 		// ToolCall is informational mid-turn; restore the current-turn
 		// pointer so the next event can complete the turn.

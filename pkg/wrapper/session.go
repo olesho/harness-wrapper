@@ -37,14 +37,22 @@ type Snapshot struct {
 
 // SessionEvent is a state transition observed by a Session. Events are
 // delivered on Session.Events() in order. Mid-run classifications
-// (waiting_for_input, blocked_by_cost, retry_later) flow as Status
-// events. The final event is always Terminated, after which the
+// (waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
+// Status events. The final event is always Terminated, after which the
 // channel is closed.
 type SessionEvent struct {
 	At         time.Time
 	Status     Status
 	Reason     string
 	Terminated bool
+
+	// HTTPCode is the upstream API status code when Status is
+	// StatusAPIError and the harness surfaced one. Zero otherwise.
+	HTTPCode int
+
+	// RetryAfter is the wait duration the harness suggested in its
+	// error message. Zero when no hint was parseable.
+	RetryAfter time.Duration
 }
 
 // Session is a live handle to a supervised harness process. Construct
@@ -87,9 +95,11 @@ type Session struct {
 // classification is the internal mid-run handoff between the classifier
 // goroutine and the supervisor.
 type classification struct {
-	status   Status
-	reason   string
-	terminal bool
+	status     Status
+	reason     string
+	terminal   bool
+	httpCode   int
+	retryAfter time.Duration
 }
 
 // Wait blocks until the Session terminates and returns the final
@@ -362,12 +372,17 @@ waitLoop:
 	s.snap.Reason = res.Reason
 	s.mu.Unlock()
 
-	s.emitEvent(SessionEvent{
+	final := SessionEvent{
 		At:         time.Now(),
 		Status:     res.Status,
 		Reason:     res.Reason,
 		Terminated: true,
-	})
+	}
+	if terminalClassDone != nil {
+		final.HTTPCode = terminalClassDone.httpCode
+		final.RetryAfter = terminalClassDone.retryAfter
+	}
+	s.emitEvent(final)
 }
 
 // recordStatusChange updates Snapshot and emits a non-terminal event.
@@ -387,6 +402,8 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 		Status:     c.status,
 		Reason:     c.reason,
 		Terminated: terminated,
+		HTTPCode:   c.httpCode,
+		RetryAfter: c.retryAfter,
 	})
 }
 
@@ -448,17 +465,22 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 			if last == 0 {
 				continue
 			}
-			if last != lastSeen {
+			outputChanged := last != lastSeen
+			if outputChanged {
 				lastSeen = last
 				quietEmitted = false
 				classifyEmitted = false
 				staleEmitted = false
-				continue
+				// Fall through so high-confidence classifiers
+				// (api_error) can fire even while output is still
+				// streaming. Cost/Retry/Prompt are gated on
+				// Quiet/Idle below, which won't be true here, so
+				// they stay silent until the output settles.
 			}
 			sinceLast := time.Since(time.Unix(0, last))
-			quiet := sinceLast >= cfg.IdleQuiet
-			idle := sinceLast >= cfg.IdleClassify
-			stale := staleEnabled && sinceLast >= cfg.StaleThreshold
+			quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
+			idle := !outputChanged && sinceLast >= cfg.IdleClassify
+			stale := !outputChanged && staleEnabled && sinceLast >= cfg.StaleThreshold
 
 			if quiet && !quietEmitted {
 				cfg.Trace.Emit(trace.Event{
@@ -527,9 +549,11 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 
 func toInternalClassification(c Classification) classification {
 	return classification{
-		status:   c.Status,
-		reason:   c.Reason,
-		terminal: c.Terminal,
+		status:     c.Status,
+		reason:     c.Reason,
+		terminal:   c.Terminal,
+		httpCode:   c.HTTPCode,
+		retryAfter: c.RetryAfter,
 	}
 }
 
@@ -542,14 +566,23 @@ func emitClassifierTrace(cfg Config, c Classification) {
 		kind = "harness_retry_later"
 	case StatusWaitingForInput:
 		kind = "harness_waiting_for_input"
+	case StatusAPIError:
+		kind = "harness_api_error"
+	}
+	fields := map[string]any{
+		"status":   string(c.Status),
+		"reason":   c.Reason,
+		"terminal": c.Terminal,
+	}
+	if c.HTTPCode != 0 {
+		fields["http_code"] = c.HTTPCode
+	}
+	if c.RetryAfter > 0 {
+		fields["retry_after_ms"] = c.RetryAfter.Milliseconds()
 	}
 	cfg.Trace.Emit(trace.Event{
-		At:   time.Now(),
-		Kind: kind,
-		Fields: map[string]any{
-			"status":   string(c.Status),
-			"reason":   c.Reason,
-			"terminal": c.Terminal,
-		},
+		At:     time.Now(),
+		Kind:   kind,
+		Fields: fields,
 	})
 }
