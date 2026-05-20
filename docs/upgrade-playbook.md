@@ -107,7 +107,7 @@ The `rebake-corpus-all` step has exited non-zero. Diagnostic flow:
    updated harness.
 8. **Commit locally.**
    ```sh
-   git add test/corpus/<harness>/** versions.json pkg/turns/harness/<harness>/<harness>.go
+   git add test/corpus/<harness>/** pkg/versions/versions.json pkg/turns/harness/<harness>/<harness>.go
    git commit -m "<harness>: bump pinned to X.Y.Z, refresh corpus"
    ```
 
@@ -185,7 +185,7 @@ sections. If found, re-record the affected scenario manually
 ## Reference: which files are load-bearing for the pipeline
 
 - `Makefile` — orchestrator; `make` targets are documented in `make help`.
-- `versions.json` — pinned upstream-version source of truth.
+- `pkg/versions/versions.json` — pinned upstream-version source of truth (embedded into `pkg/versions` at build time).
 - `pkg/versions/versions.go` — read API for the pin file.
 - `internal/cmd/upstream-version-sentry/main.go` — npm registry
   drift check.

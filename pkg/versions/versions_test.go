@@ -12,8 +12,13 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 		t.Fatalf("All: %v", err)
 	}
 	for _, want := range []string{"codex", "claude-code", "gemini"} {
-		if _, ok := all[want]; !ok {
+		entry, ok := all[want]
+		if !ok {
 			t.Errorf("expected entry for %q in versions.json", want)
+			continue
+		}
+		if entry.Binary == "" {
+			t.Errorf("entry %q must declare a non-empty binary", want)
 		}
 	}
 	if got, ok := Pinned("codex"); !ok || got == "" {
@@ -26,12 +31,17 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if got, ok := Pinned("gemini"); ok {
 		t.Errorf("expected gemini to be unpinned, got %q", got)
 	}
+	// claude-code's harness key differs from its on-PATH binary name;
+	// the Binary field is what discovery probes against.
+	if all["claude-code"].Binary != "claude" {
+		t.Errorf("claude-code binary should be %q, got %q", "claude", all["claude-code"].Binary)
+	}
 }
 
 func TestReadFromRejectsEmptyPackage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "versions.json")
-	if err := os.WriteFile(path, []byte(`{"foo":{"package":"","pinned":"1.0.0"}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"foo":{"package":"","binary":"foo","pinned":"1.0.0"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ReadFrom(path); err == nil {
@@ -39,10 +49,21 @@ func TestReadFromRejectsEmptyPackage(t *testing.T) {
 	}
 }
 
+func TestReadFromRejectsEmptyBinary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "versions.json")
+	if err := os.WriteFile(path, []byte(`{"foo":{"package":"pkg","binary":"","pinned":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadFrom(path); err == nil {
+		t.Error("expected error for empty binary")
+	}
+}
+
 func TestReadFromRejectsVerifiedAtWithoutPinned(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "versions.json")
-	if err := os.WriteFile(path, []byte(`{"foo":{"package":"pkg","pinned":"","verified_at":"2026-05-15"}}`), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"foo":{"package":"pkg","binary":"foo","pinned":"","verified_at":"2026-05-15"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ReadFrom(path); err == nil {

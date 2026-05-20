@@ -143,7 +143,8 @@ interfaces).
 - `pkg/transcript/` — read-only harness JSONL parsers (codex, claudecode, gemini)
 - `pkg/chat/` — Conversation API, Store interface
 - `pkg/chat/memstore/` — in-memory `Store` implementation
-- `pkg/versions/` — read API for `versions.json` (pinned upstream versions per harness)
+- `pkg/versions/` — read API for the embedded `versions.json` (pinned upstream versions per harness)
+- `pkg/discovery/` — "is harness X installed on PATH, at what version?" — wraps `pkg/versions` + `os/exec.LookPath` with a per-harness version probe and an mtime-keyed cache
 - `cmd/harness-wrapper/` — thin CLI front-end for the wrapper
 - `internal/cmd/upstream-version-sentry/` — offline drift check against the npm registry
 - `internal/screenbench/` — bake-off harness used to choose the vt100 emulator + scripted recorder
@@ -151,7 +152,7 @@ interfaces).
 - `test/corpus/<harness>/adversarial/` — negative recordings; `TestAdapter_AdversarialNoFire` enforces "must NOT fire" on these
 - `test/scripts/` — JSON scenario scripts fed to `screenbench-record --script` by `make rebake-corpus`
 - `test/fakeharness/mock/` — generic mock harness used by the wrapper test suite
-- `versions.json` — pinned upstream-version source of truth (read by `pkg/versions` and the sentry)
+- `pkg/versions/versions.json` — pinned upstream-version source of truth (embedded into `pkg/versions` at build time; read by the sentry via `versions.All`)
 - `docs/` — design notes, ADRs, library reference, drift-pipeline upgrade playbook
 
 ## Testing
@@ -183,7 +184,7 @@ make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario
 make rebake-corpus-all     # refresh all 18 scenarios (paid for codex/claude)
 ```
 
-`versions.json` at the repo root pins each harness to the upstream
+`pkg/versions/versions.json` pins each harness to the upstream
 version its adapter was last verified against. The sentry compares
 against `https://registry.npmjs.org/<package>/latest`.
 

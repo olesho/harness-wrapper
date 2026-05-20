@@ -11,30 +11,36 @@
 // Schema:
 //
 //	{
-//	  "codex":       {"package": "@openai/codex",             "pinned": "0.130.0", "verified_at": "2026-05-15"},
-//	  "claude-code": {"package": "@anthropic-ai/claude-code", "pinned": "2.1.141", "verified_at": "2026-05-15"},
-//	  "gemini":      {"package": "@google/gemini-cli",        "pinned": "",        "verified_at": ""}
+//	  "codex":       {"package": "@openai/codex",             "binary": "codex",  "pinned": "0.130.0", "verified_at": "2026-05-15"},
+//	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude", "pinned": "2.1.141", "verified_at": "2026-05-15"},
+//	  "gemini":      {"package": "@google/gemini-cli",        "binary": "gemini", "pinned": "",        "verified_at": ""}
 //	}
 //
 // An empty pinned/verified_at string is allowed and means "not yet
 // verified against any upstream version" (the initial state for newly
-// added harnesses).
+// added harnesses). Package and Binary are required for every entry.
 package versions
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
-	"sync"
 )
+
+//go:embed versions.json
+var embedded []byte
 
 // Entry describes one harness's pinned upstream binding.
 type Entry struct {
 	// Package is the npm package name (e.g. "@openai/codex"). Empty is
 	// not allowed; every entry must declare a package.
 	Package string `json:"package"`
+
+	// Binary is the on-PATH executable name installed by Package (e.g.
+	// "claude" for the "@anthropic-ai/claude-code" package). Empty is
+	// not allowed; consumers rely on this to probe availability.
+	Binary string `json:"binary"`
 
 	// Pinned is the upstream version string our adapter is verified
 	// against (e.g. "0.130.0"). Empty means "not yet verified".
@@ -45,16 +51,11 @@ type Entry struct {
 	VerifiedAt string `json:"verified_at"`
 }
 
-// All returns every harness entry in versions.json, keyed by harness
-// name. Reads from the repo root located relative to this package's
-// source — works whether the caller is a test, a CLI, or a library
-// consumer.
+// All returns every harness entry, keyed by harness name. The data is
+// embedded into the package at build time, so the call works in any
+// build mode (including -trimpath) and from any working directory.
 func All() (map[string]Entry, error) {
-	path, err := repoVersionsPath()
-	if err != nil {
-		return nil, err
-	}
-	return readFile(path)
+	return parse(embedded)
 }
 
 // Pinned returns the pinned upstream version for a harness, or
@@ -72,63 +73,31 @@ func Pinned(harness string) (string, bool) {
 }
 
 // ReadFrom reads a versions.json at an explicit path. Useful for tests
-// that don't want to depend on the repo layout.
+// and tooling that want to operate on a different versions.json (e.g.
+// the corpus rebake pipeline).
 func ReadFrom(path string) (map[string]Entry, error) {
-	return readFile(path)
-}
-
-func readFile(path string) (map[string]Entry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("versions: read %s: %w", path, err)
 	}
+	return parse(data)
+}
+
+func parse(data []byte) (map[string]Entry, error) {
 	var out map[string]Entry
 	if err := json.Unmarshal(data, &out); err != nil {
-		return nil, fmt.Errorf("versions: parse %s: %w", path, err)
+		return nil, fmt.Errorf("versions: parse: %w", err)
 	}
 	for name, e := range out {
 		if e.Package == "" {
 			return nil, fmt.Errorf("versions: entry %q has empty package", name)
+		}
+		if e.Binary == "" {
+			return nil, fmt.Errorf("versions: entry %q has empty binary", name)
 		}
 		if e.Pinned == "" && e.VerifiedAt != "" {
 			return nil, fmt.Errorf("versions: entry %q has verified_at without pinned", name)
 		}
 	}
 	return out, nil
-}
-
-var (
-	repoRootOnce sync.Once
-	repoRootVal  string
-	repoRootErr  error
-)
-
-// repoVersionsPath returns the absolute path to versions.json by
-// walking up from this source file's directory until a go.mod is
-// found.
-func repoVersionsPath() (string, error) {
-	repoRootOnce.Do(func() {
-		_, here, _, ok := runtime.Caller(0)
-		if !ok {
-			repoRootErr = fmt.Errorf("versions: runtime.Caller failed")
-			return
-		}
-		dir := filepath.Dir(here)
-		for range 8 {
-			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				repoRootVal = dir
-				return
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-		repoRootErr = fmt.Errorf("versions: go.mod not found walking up from %s", here)
-	})
-	if repoRootErr != nil {
-		return "", repoRootErr
-	}
-	return filepath.Join(repoRootVal, "versions.json"), nil
 }
