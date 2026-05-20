@@ -6,6 +6,7 @@ package claude
 import (
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/wrapper/internal/detector"
 )
@@ -54,16 +55,49 @@ func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
 	return hit, true
 }
 
+// sessionLimitRE matches Claude Code's session-limit banner, of the
+// shape "You've hit your session limit · resets 6:40pm (Europe/Warsaw)".
+// The banner is typically wrapped in a tool-result decoration glyph
+// (⎿) so the matcher tolerates a leading whitespace + decoration
+// prefix on the same anchored line. The trailing "resets …" group is
+// not captured here — ParseResetTime is run against the matched line
+// to extract the absolute reset time.
+var sessionLimitRE = regexp.MustCompile(`(?im)^[^\S\r\n]*(?:[⎿│├└╰─◯⏺]\s*)?(You(?:'ve|\s+have)\s+hit\s+your\s+(?:session|usage)\s+limit.*)$`)
+
+// MatchSessionLimit implements detector.SessionLimitMatcher for Claude
+// Code. On match, returns the matched banner line and the absolute
+// reset time parsed from it. ResumeAt is zero when the banner did not
+// embed a parseable clock-time (in that case the caller still treats
+// the run as blocked_by_cost, just without a scheduled wakeup).
+func MatchSessionLimit(stripped string, now time.Time) (detector.SessionLimitHit, bool) {
+	m := sessionLimitRE.FindStringSubmatch(stripped)
+	if m == nil {
+		return detector.SessionLimitHit{}, false
+	}
+	hit := detector.SessionLimitHit{Message: strings.TrimSpace(m[1])}
+	if resumeAt, ok := detector.ParseResetTime(hit.Message, now); ok {
+		hit.ResumeAt = resumeAt
+	}
+	return hit, true
+}
+
 // Patterns is the Claude harness fingerprint set consumed by the
 // wrapper's harness adapter. Matching happens on stripped, lower-cased
 // recent output (Cost/Retry) and on the trailing line of stripped
 // output (Prompt). APIError is a regex matcher for "API Error: ..."
-// lines; see MatchAPIError.
+// lines; see MatchAPIError. SessionLimit is a regex matcher for the
+// "You've hit your session limit · resets …" banner; see
+// MatchSessionLimit.
 var Patterns = detector.Patterns{
-	APIError: MatchAPIError,
+	APIError:     MatchAPIError,
+	SessionLimit: MatchSessionLimit,
 	Cost: []string{
 		"you've hit your limit",
 		"you have hit your limit",
+		"you've hit your session limit",
+		"you have hit your session limit",
+		"you've hit your usage limit",
+		"you have hit your usage limit",
 		"limit resets",
 		"resets at",
 		"usage limit",

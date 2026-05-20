@@ -8,12 +8,12 @@ import (
 
 func TestMatchAPIError(t *testing.T) {
 	cases := []struct {
-		name         string
-		in           string
-		wantOK       bool
-		wantCode     int
-		wantRetry    time.Duration
-		msgContains  string
+		name        string
+		in          string
+		wantOK      bool
+		wantCode    int
+		wantRetry   time.Duration
+		msgContains string
 	}{
 		{
 			name:        "Cl1: golden 529 from user's transcript",
@@ -142,6 +142,101 @@ func TestMatchAPIError(t *testing.T) {
 			}
 			if tc.msgContains != "" && !strings.Contains(hit.Message, tc.msgContains) {
 				t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
+			}
+		})
+	}
+}
+
+func TestMatchSessionLimit(t *testing.T) {
+	warsaw, err := time.LoadLocation("Europe/Warsaw")
+	if err != nil {
+		t.Fatalf("LoadLocation: %v", err)
+	}
+	now := time.Date(2026, 5, 20, 14, 0, 0, 0, warsaw)
+
+	cases := []struct {
+		name         string
+		in           string
+		wantOK       bool
+		wantResume   time.Time
+		msgContains  string
+		resumeIsZero bool
+	}{
+		{
+			// Golden case from the user's transcript: a tool-result
+			// frame ("⎿") wrapping the banner, followed by the
+			// /usage-credits hint on the next visual line.
+			name:        "SL1: verbatim golden — tool-result frame, Europe/Warsaw",
+			in:          "  ⎿  You've hit your session limit · resets 6:40pm (Europe/Warsaw)\n     /usage-credits to finish what you're working on.",
+			wantOK:      true,
+			wantResume:  time.Date(2026, 5, 20, 18, 40, 0, 0, warsaw),
+			msgContains: "session limit",
+		},
+		{
+			name:        "SL2: no decoration prefix, plain line",
+			in:          "You've hit your session limit · resets 8pm (UTC)",
+			wantOK:      true,
+			wantResume:  time.Date(2026, 5, 20, 20, 0, 0, 0, time.UTC),
+			msgContains: "session limit",
+		},
+		{
+			name:        "SL3: 'usage limit' phrasing also matches",
+			in:          "⎿ You've hit your usage limit · resets 9:15am (UTC)",
+			wantOK:      true,
+			wantResume:  time.Date(2026, 5, 21, 9, 15, 0, 0, time.UTC),
+			msgContains: "usage limit",
+		},
+		{
+			name:        "SL4: contracted form 'you have'",
+			in:          "⎿ You have hit your session limit · resets 6:40pm (Europe/Warsaw)",
+			wantOK:      true,
+			wantResume:  time.Date(2026, 5, 20, 18, 40, 0, 0, warsaw),
+			msgContains: "session limit",
+		},
+		{
+			name:         "SL5: banner without resets clause still matches (no ResumeAt)",
+			in:           "  ⎿  You've hit your session limit. Try again later.",
+			wantOK:       true,
+			resumeIsZero: true,
+			msgContains:  "session limit",
+		},
+		{
+			name:   "SL6: false positive — assistant prose mid-line is rejected",
+			in:     "the docs say you've hit your session limit when N tokens are reached",
+			wantOK: false,
+		},
+		{
+			name:   "SL7: empty input",
+			in:     "",
+			wantOK: false,
+		},
+		{
+			name:   "SL8: unrelated rate-limit phrasing does not match (Cost path catches it)",
+			in:     "rate limit exceeded",
+			wantOK: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			hit, ok := MatchSessionLimit(tc.in, now)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v (hit=%+v)", ok, tc.wantOK, hit)
+			}
+			if !ok {
+				return
+			}
+			if tc.msgContains != "" && !strings.Contains(strings.ToLower(hit.Message), tc.msgContains) {
+				t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
+			}
+			if tc.resumeIsZero {
+				if !hit.ResumeAt.IsZero() {
+					t.Errorf("ResumeAt = %s, want zero", hit.ResumeAt)
+				}
+				return
+			}
+			if !hit.ResumeAt.Equal(tc.wantResume) {
+				t.Errorf("ResumeAt = %s, want %s", hit.ResumeAt, tc.wantResume)
 			}
 		})
 	}

@@ -58,6 +58,17 @@ type Classification struct {
 	// "Retry after 30 seconds"). Zero when the message contained no
 	// parseable hint.
 	RetryAfter time.Duration
+
+	// ResumeAt is the absolute wall-clock time at which the harness
+	// expects to be usable again, parsed from session-limit banners
+	// like "resets 6:40pm (Europe/Warsaw)". Zero when no parseable
+	// hint was present.
+	//
+	// Unlike RetryAfter (relative; advisory), ResumeAt is intended for
+	// scheduling: callers that want to retry the run after the limit
+	// resets should sleep / cron-schedule against this time rather
+	// than against time.Now() + RetryAfter.
+	ResumeAt time.Time
 }
 
 // Classifier inspects recent harness output and reports actionable

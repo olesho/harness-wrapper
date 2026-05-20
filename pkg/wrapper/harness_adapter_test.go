@@ -20,13 +20,14 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 	codex := harnessAdapter{patterns: codexharness.Patterns}
 
 	cases := []struct {
-		name       string
-		adapter    harnessAdapter
-		input      ClassifierInput
-		wantStatus Status
-		wantCode   int
-		wantRetry  time.Duration
-		reasonHas  string
+		name           string
+		adapter        harnessAdapter
+		input          ClassifierInput
+		wantStatus     Status
+		wantCode       int
+		wantRetry      time.Duration
+		reasonHas      string
+		wantResumeAtOK bool // verify Classification.ResumeAt is non-zero
 	}{
 		{
 			name:       "A1: claude api_error 529 fires without idle gate",
@@ -102,6 +103,19 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 			input:      ClassifierInput{RecentOutput: "regular tool output without brackets", Idle: true},
 			wantStatus: "",
 		},
+		{
+			// Golden session-limit transcript from a real Claude Code
+			// session. The wrapper must classify this as blocked_by_cost
+			// regardless of idle/quiet state (the banner is anchored on
+			// the tree-character + exact phrase, so we don't need to
+			// wait for the run to settle) AND populate ResumeAt.
+			name:           "A11: claude session-limit banner fires without idle gate",
+			adapter:        claude,
+			input:          ClassifierInput{RecentOutput: "  ⎿  You've hit your session limit · resets 6:40pm (Europe/Warsaw)\n     /usage-credits to finish what you're working on."},
+			wantStatus:     StatusBlockedByCost,
+			reasonHas:      "session limit",
+			wantResumeAtOK: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -128,6 +142,13 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 			}
 			if tc.reasonHas != "" && !strings.Contains(got.Reason, tc.reasonHas) {
 				t.Errorf("Reason = %q, want substring %q", got.Reason, tc.reasonHas)
+			}
+			if tc.wantResumeAtOK {
+				if got.ResumeAt.IsZero() {
+					t.Errorf("ResumeAt is zero, want non-zero")
+				} else if !got.ResumeAt.After(time.Now()) {
+					t.Errorf("ResumeAt = %s, want in the future", got.ResumeAt)
+				}
 			}
 		})
 	}

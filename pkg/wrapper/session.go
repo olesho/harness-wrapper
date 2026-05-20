@@ -53,6 +53,13 @@ type SessionEvent struct {
 	// RetryAfter is the wait duration the harness suggested in its
 	// error message. Zero when no hint was parseable.
 	RetryAfter time.Duration
+
+	// ResumeAt is the absolute wall-clock time at which the harness
+	// expects to be usable again, parsed from session-limit banners
+	// (e.g. Claude Code's "resets 6:40pm (Europe/Warsaw)"). Zero when
+	// the banner did not include a parseable reset time, or when the
+	// event was not raised by a session-limit classification.
+	ResumeAt time.Time
 }
 
 // Session is a live handle to a supervised harness process. Construct
@@ -100,6 +107,7 @@ type classification struct {
 	terminal   bool
 	httpCode   int
 	retryAfter time.Duration
+	resumeAt   time.Time
 }
 
 // Wait blocks until the Session terminates and returns the final
@@ -381,6 +389,7 @@ waitLoop:
 	if terminalClassDone != nil {
 		final.HTTPCode = terminalClassDone.httpCode
 		final.RetryAfter = terminalClassDone.retryAfter
+		final.ResumeAt = terminalClassDone.resumeAt
 	}
 	s.emitEvent(final)
 }
@@ -404,6 +413,7 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 		Terminated: terminated,
 		HTTPCode:   c.httpCode,
 		RetryAfter: c.retryAfter,
+		ResumeAt:   c.resumeAt,
 	})
 }
 
@@ -554,6 +564,7 @@ func toInternalClassification(c Classification) classification {
 		terminal:   c.Terminal,
 		httpCode:   c.HTTPCode,
 		retryAfter: c.RetryAfter,
+		resumeAt:   c.ResumeAt,
 	}
 }
 
@@ -579,6 +590,9 @@ func emitClassifierTrace(cfg Config, c Classification) {
 	}
 	if c.RetryAfter > 0 {
 		fields["retry_after_ms"] = c.RetryAfter.Milliseconds()
+	}
+	if !c.ResumeAt.IsZero() {
+		fields["resume_at"] = c.ResumeAt.Format(time.RFC3339)
 	}
 	cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
