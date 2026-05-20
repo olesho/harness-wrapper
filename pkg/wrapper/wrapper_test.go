@@ -152,12 +152,23 @@ func TestRun_BinaryNotFound(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	_, err := wrapper.Run(context.Background(), wrapper.Config{
+	res, err := wrapper.Run(context.Background(), wrapper.Config{
 		BinaryPath: "/no/such/binary/harness-wrapper-test-missing",
 		Stdout:     w,
 	})
 	if !errors.Is(err, wrapper.ErrBinaryNotFound) {
 		t.Errorf("err = %v, want ErrBinaryNotFound", err)
+	}
+	// Result.Status carries the categorical signal so consumers that
+	// switch on Status (rather than errors.Is) can dispatch directly.
+	if res.Status != wrapper.StatusBinaryNotFound {
+		t.Errorf("res.Status = %q, want %q", res.Status, wrapper.StatusBinaryNotFound)
+	}
+	if res.ExitCode != -1 {
+		t.Errorf("res.ExitCode = %d, want -1 (process never started)", res.ExitCode)
+	}
+	if res.Reason == "" {
+		t.Error("res.Reason should carry the underlying exec.ErrNotFound message")
 	}
 }
 

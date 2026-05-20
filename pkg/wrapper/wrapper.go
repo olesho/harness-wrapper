@@ -171,6 +171,15 @@ const (
 	// StatusUnknown indicates the wrapper could not classify the run
 	// outcome. Result.Reason should explain why.
 	StatusUnknown Status = "unknown"
+
+	// StatusBinaryNotFound indicates the configured harness binary was
+	// not present on PATH (or at the configured BinaryPath). This is a
+	// terminal status reported by Run when Start returns
+	// ErrBinaryNotFound: ExitCode is -1, Reason carries the underlying
+	// "executable file not found" message. Consumers should treat this
+	// as non-retryable until the binary becomes available — burning
+	// restart budget against a missing CLI is wasted work.
+	StatusBinaryNotFound Status = "binary_not_found"
 )
 
 // Result describes the outcome of a Run.
@@ -234,7 +243,12 @@ var (
 func Run(ctx context.Context, cfg Config) (Result, error) {
 	s, err := Start(ctx, cfg)
 	if err != nil {
-		return Result{ExitCode: -1}, err
+		res := Result{ExitCode: -1}
+		if errors.Is(err, ErrBinaryNotFound) {
+			res.Status = StatusBinaryNotFound
+			res.Reason = err.Error()
+		}
+		return res, err
 	}
 	return s.Wait()
 }
