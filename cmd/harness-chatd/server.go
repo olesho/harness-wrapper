@@ -325,4 +325,3 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 	}
 }
-
