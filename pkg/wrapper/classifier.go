@@ -110,7 +110,7 @@ func resolveClassifier(cfg Config) Classifier {
 // defaultClassifier is the built-in fallback. It only escalates to
 // blocked_by_cost when recent output matches a known cost/quota
 // fingerprint, and only after the wrapper has decided the run looks
-// idle. This preserves the Phase 1 behavior of isCostOrQuotaLimited.
+// idle, which keeps the fallback conservative.
 type defaultClassifier struct{}
 
 // Classify returns blocked_by_cost when the harness has been quiet for

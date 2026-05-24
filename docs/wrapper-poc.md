@@ -1,5 +1,10 @@
 # Phase 1: Transparent Wrapper POC
 
+> **Status: implemented.** This is the original staged POC plan, kept for historical
+> context. The transparent wrapper shipped and has since grown the full supervisor API
+> (status classifier, `*Session` handle, attach primitives). For the current shape see
+> [`wrapper.md`](wrapper.md) and the [README](../README.md).
+
 The first wrapper implementation should be a transparent CLI that wraps existing harnesses without changing how users interact with them.
 
 The goal is to prove PTY execution, pass-through terminal behavior, trace logging, and basic process visibility before building richer caller integrations.

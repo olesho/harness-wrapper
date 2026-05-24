@@ -107,37 +107,81 @@ The wrapper is a Go library at `pkg/wrapper`. It is importable by the in-repo CL
 
 > **Historical note.** An earlier draft of this document proposed a 5-method `HarnessWrapper` interface (`Start` / `Inspect` / `Continue` / `Attach` / `Stop`) keyed on a `runID string`. That shape is daemon-RPC-flavored — it only makes sense if the wrapper owns a registry of live runs that callers look up by opaque ID. For an in-process Go library, callers already hold a Go handle to the live run and don't need string IDs to find it. The interface below is the actual Go shape.
 
-### Phase 1 (current): single `Run` function
+### Entry points
+
+The package exposes two entry points. `Run` is synchronous and best for one-shot,
+foreground use; `Start` returns a live `*Session` handle for callers that need to
+observe state transitions, stream output, or stop the run cleanly. `Run` is a thin
+convenience over `Start` + `Wait`.
 
 ```go
 package wrapper
 
 func Run(ctx context.Context, cfg Config) (Result, error)
+func Start(ctx context.Context, cfg Config) (*Session, error)
+```
 
+`Run` is synchronous: it starts the harness, supervises it, and returns when the process exits or `ctx` is cancelled. A non-nil `err` always indicates the wrapper itself failed; harness outcomes (clean exit, non-zero exit, signal kill, classified stop) come back through `Result` with `err == nil`. Context cancellation produces `Result.Status == StatusInterrupted` and does **not** propagate `ctx.Err()` as the returned error.
+
+### Config
+
+```go
 type Config struct {
-	BinaryPath, WorkingDir string
-	Args                   []string
-	Env                    []string
-	Stdin, Stdout          *os.File       // Stdout required; nil Stdin = no input forwarding
-	IdleQuiet, IdleClassify, WaitDelay time.Duration
-	Trace                  trace.Emitter
-}
+	BinaryPath string        // required; absolute or PATH-resolvable
+	Args       []string
+	WorkingDir string
+	Env        []string
 
+	Stdin  io.Reader         // nil = no input forwarding; an *os.File TTY enables raw-mode passthrough
+	Stdout io.Writer         // required
+
+	IdleQuiet      time.Duration // quiet threshold (default 15s)
+	IdleClassify   time.Duration // idle-classification threshold, must be >= IdleQuiet (default 60s)
+	StaleThreshold time.Duration // mid-run stale advisory (default 5m; set negative to disable)
+	WaitDelay      time.Duration // SIGTERM→SIGKILL grace on cancellation (default 5s)
+
+	Trace      trace.Emitter // diagnostic events; observability only
+	Harness    string        // selects a built-in classifier ("claude", "codex", "gemini")
+	Classifier Classifier    // explicit classifier; wins over Harness when both are set
+}
+```
+
+When `Stdin` and `Stdout` are both real `*os.File` TTYs the wrapper auto-enables raw mode and SIGWINCH forwarding for the duration of the run, restoring terminal state on return. Headless callers (file/pipe/`bytes.Buffer` `Stdout`, nil or non-file `Stdin`) skip both — no caller flag.
+
+### Status
+
+`Result.Status` and `SessionEvent.Status` share one normalized vocabulary. *Terminal*
+statuses end the run (the wrapper SIGTERMs the harness); *non-terminal* ones are mid-run
+advisories emitted while the harness keeps running.
+
+```go
 type Status string
 const (
-	StatusIdle        Status = "idle"
-	StatusFailed      Status = "failed"
-	StatusInterrupted Status = "interrupted"
-	StatusUnknown     Status = "unknown"
+	StatusIdle            Status = "idle"               // exited cleanly, no actionable state
+	StatusFailed          Status = "failed"             // non-zero exit code
+	StatusBlockedByCost   Status = "blocked_by_cost"    // budget/quota/rate-limit hit (terminal)
+	StatusRetryLater      Status = "retry_later"        // transient/recoverable error (terminal)
+	StatusAPIError        Status = "api_error"          // upstream API error, harness still running (non-terminal)
+	StatusWaitingForInput Status = "waiting_for_input"  // paused at an interactive prompt (non-terminal)
+	StatusStale           Status = "stale"              // no output for StaleThreshold (non-terminal advisory)
+	StatusInterrupted     Status = "interrupted"        // terminated by signal or caller
+	StatusUnknown         Status = "unknown"            // could not classify
+	StatusBinaryNotFound  Status = "binary_not_found"   // configured binary not on PATH
 )
+```
 
+### Result and sentinel errors
+
+```go
 type Result struct {
-	Status                       Status
-	ExitCode                     int     // 128+signum if signal-killed; -1 if never started
-	Signal, Reason               string
-	PID                          int
-	StartedAt, EndedAt           time.Time
-	LastOutputAt                 time.Time
+	Status       Status
+	ExitCode     int       // 128+signum if signal-killed; -1 if never started
+	Signal       string    // signal name if signal-killed, else empty
+	Reason       string    // human-readable detail for Failed/Interrupted/Unknown (not for parsing)
+	PID          int
+	StartedAt    time.Time
+	EndedAt      time.Time
+	LastOutputAt time.Time
 }
 
 var (
@@ -148,80 +192,107 @@ var (
 )
 ```
 
-`Run` is synchronous: it starts the harness, supervises it, and returns when the process exits or `ctx` is cancelled. A non-nil `err` always indicates the wrapper itself failed; harness outcomes (clean exit, non-zero exit, signal kill, idle classification) come back through `Result` with `err == nil`. Context cancellation produces `Result.Status == StatusInterrupted` and does **not** propagate `ctx.Err()` as the returned error.
+A non-nil error from `Run`/`Start` means the wrapper itself failed to start the harness — invalid `Config` (`ErrInvalidConfig`), a missing binary (`ErrBinaryNotFound`), or PTY allocation failure (`ErrPTYAllocation`). Once `Start` returns a non-nil `*Session`, every harness outcome instead flows through `Result`/`SessionEvent` with a nil error. `Run` additionally mirrors a missing-binary failure into its returned `Result` (`Status == StatusBinaryNotFound`, `ExitCode == -1`) so callers that inspect only the `Result` still see the classified status — the `ErrBinaryNotFound` error is returned alongside it.
 
-When `Stdin` and `Stdout` are both real TTYs the wrapper auto-enables raw mode and SIGWINCH forwarding for the duration of `Run`, restoring terminal state on return. Headless callers (file-backed `Stdout`, nil or pipe `Stdin`) skip both — no caller flag.
+### Session handle
 
-### Phase 2 (planned): `Start` + `*Session`
-
-Callers need a non-terminal handle while a wrapper session is running so they can observe state transitions, request a clean stop with a reason, and inspect the current snapshot. Phase 2 adds, additively:
+`Start` returns a `*Session` that supervises the run in the background. Concurrent calls to its methods are safe.
 
 ```go
-func Start(ctx context.Context, cfg Config) (*Session, error)
+func (s *Session) Wait() (Result, error)          // block for the terminal Result (repeatable)
+func (s *Session) Stop(ctx context.Context) error // request graceful SIGTERM→SIGKILL shutdown
+func (s *Session) Snapshot() Snapshot             // point-in-time view (status, reason, timestamps)
+func (s *Session) Events() <-chan SessionEvent    // status-change stream; closed after the terminal event
+func (s *Session) PID() int
+func (s *Session) RecentOutput() string           // last ~64KB of raw PTY output
 
-func (s *Session) Wait(ctx context.Context) (Result, error)
-func (s *Session) Stop(ctx context.Context, reason StopReason) error
-func (s *Session) Snapshot() Snapshot
-func (s *Session) Events() <-chan Event   // typed state-change events
+// In-process live I/O (used by pkg/chat and in-process watchers):
+func (s *Session) AttachOutput(w io.Writer) func()          // tee PTY output to w; returns a detach func
+func (s *Session) WriteStdin(p []byte) (int, error)         // forward keystrokes to the harness
+func (s *Session) Resize(cols, rows uint16) error           // resize the PTY
+func (s *Session) AcquireWriter() (release func(), ok bool) // claim the exclusive stdin writer
 ```
 
-`Run` becomes a one-line convenience over `Start`/`Wait`. The four Phase 1 status constants stay; three more land alongside (`StatusRetryLater`, `StatusBlockedByCost`, `StatusWaitingForInput`). `Config` grows optional fields (`RunID`, `Classifier`, `Tee`, `OutputBufferSize`); `Result` grows fields (`HarnessSessionID`, `LatestOutput`). All zero-value defaults preserve Phase 1 behavior.
+`SessionEvent` carries the normalized status plus optional detail parsed from harness output:
+
+```go
+type SessionEvent struct {
+	At         time.Time
+	Status     Status
+	Reason     string
+	Terminated bool          // true on the final event, after which Events() is closed
+
+	HTTPCode   int           // upstream status code when Status == StatusAPIError
+	RetryAfter time.Duration // wait hint parsed from the harness's error message
+	ResumeAt   time.Time     // absolute reset time from a session-limit banner
+	                         //   (e.g. Claude Code's "resets 6:40pm (Europe/Warsaw)")
+}
+```
 
 ### Trace vs. events
 
-`Config.Trace` is a `trace.Emitter` — diagnostic observations the wrapper emits as it runs (`wrapper_started`, `pty_opened`, `output_quiet`, `harness_exited`). The trace event vocabulary is **not** part of the API stability surface; do not make control-flow decisions based on trace event ordering or presence.
+`Config.Trace` is a `trace.Emitter` — diagnostic observations the wrapper emits as it runs (`wrapper_started`, `pty_opened`, `harness_stale`, `harness_exited`). The trace vocabulary is **not** part of the API stability surface; do not make control-flow decisions based on trace event ordering or presence.
 
-State-change events (Phase 2's `*Session.Events()`) are different: they're a typed contract for callers to subscribe to harness state transitions. Phase 1 has no non-terminal state transitions to emit, so the events channel only appears in Phase 2.
-
-### `HarnessSessionID`, `LatestOutput`, etc.
-
-Fields like `HarnessSessionID`, `TranscriptRef`, `OutputRef`, `LatestOutput`, `Question`, `Attached`, `RetryAfter` from earlier drafts are **Phase 2 only** — they require harness-specific banner parsing (session IDs), a rolling output buffer (latest output), or attach support (Attached). None ship in Phase 1's `Result`. Adding them later is fully additive.
+`*Session.Events()` is different: it's the typed contract for subscribing to harness state transitions (the `Status` vocabulary above). Use events, not trace, for control flow.
 
 ### PTY Execution
 
-The wrapper should start each harness command with `pty.Start` or `pty.StartWithSize`. The PTY stream becomes the canonical source for transcript capture and state detection.
+The wrapper starts each harness command under a pseudoterminal with `pty.Start`. The PTY stream is the canonical source for output capture and state detection.
 
 ```go
-cmd := exec.CommandContext(ctx, binary, args...)
-cmd.Dir = request.WorkingDirectory
-cmd.Env = buildEnvironment(request.Environment)
+cmd := exec.CommandContext(ctx, cfg.BinaryPath, cfg.Args...)
+cmd.Dir = cfg.WorkingDir
+cmd.Env = cfg.Env
 
-terminal, err := pty.Start(cmd)
+ptmx, err := pty.Start(cmd)
 if err != nil {
-	return HarnessState{}, err
+	return nil, fmt.Errorf("%w: %v", ErrPTYAllocation, err)
 }
-defer terminal.Close()
+defer ptmx.Close()
 ```
 
-The implementation should read from the PTY continuously, emit output to a caller-provided sink, update the last-activity timestamp, and feed chunks into the state detector. The caller owns persistence of transcripts, run state, events, and artifacts.
+The supervisor reads from the PTY continuously, copies output to `Stdout` (and any
+`AttachOutput` sinks), updates the last-activity timestamp, and feeds the rolling
+recent-output buffer into the classifier. The caller owns persistence of transcripts,
+run state, events, and artifacts.
 
-## Future Work: User Attach
+## Cross-process attach (future work)
 
-A future release will let a user attach their terminal to a wrapper session that a caller started headlessly — so they can answer a `waiting_for_input` question, inspect a stuck run, or take manual control. This is **not** in Phase 1 or initial Phase 2.
+The `*Session` attach primitives above (`AttachOutput`, `WriteStdin`, `Resize`,
+`AcquireWriter`) are **in-process**: they let multiple watchers in the *same* process
+share one live session, which is how `pkg/chat` tees output and serializes keystrokes.
+What still does **not** exist is **cross-process** attach — letting a separately-spawned
+process drive a run that a *different* process started headlessly, so a user can answer a
+`waiting_for_input` question, inspect a stuck run, or take manual control after the fact.
 
-Attach is harder than it looks. The Phase 1 wrapper is a one-shot, foreground process: when it runs in the user's terminal, the user is *already* attached and no separate attach flow is needed. The interesting case is when a caller started the wrapper headlessly and a separate `attach <run-id>` invocation needs to drive the same PTY master. That requires one of:
+A foreground run needs no attach concept: when the wrapper runs in the user's terminal,
+the user is *already* on the PTY. The hard case is reaching a PTY master another process
+owns, which requires one of:
 
-- A long-lived daemon that owns the PTY master fd and bridges new clients to it.
+- A long-lived daemon that owns the PTY master and bridges new clients to it.
 - An IPC mechanism that passes the PTY fd between processes (Unix-domain sockets with `SCM_RIGHTS`).
 - The calling application itself running as a daemon and exposing a control socket.
 
-None of those architectures are decided yet. This means:
+This is the daemon/attach path tracked as item 3 in [`plans/roadmap-v1.md`](../plans/roadmap-v1.md),
+where the chosen design is a byte-proxy daemon (`harness-wrapperd`) rather than fd-passing.
+For shell users today, the `harness-wrapper` CLI already covers the detached case with a
+tmux-backed path (`harness-wrapper --tmux-session NAME …` plus the `attach` / `list` /
+`status` / `kill` subcommands). Until the programmatic daemon lands, a headless library
+caller whose run needs human input has only two escape hatches: context cancellation and
+inspecting the harness's own persisted transcript afterward.
 
-- Phase 1's foreground use case works without any attach concept (the user runs the CLI and is on the PTY directly).
-- Phase 2's headless use case ships without attach support; if a caller starts a wrapper session and it needs human input, the only Phase 2 escape hatches are context cancellation and inspecting the persisted transcript after the fact.
-- The `pkg/wrapper` API does **not** include `Attach()` methods or attach-shaped fields (`Attached bool`, `AttachOptions`). They will be designed alongside the daemon/IPC architecture decision.
-
-The bridge mechanics, when attach lands, will look approximately like this — but in a separate `pkg/wrapper/attach` package with its own interface, not as a method on `Run` or `*Session`:
+The client-side bridge will look approximately like this — living in the future daemon
+client, not on `Run` or `*Session`:
 
 ```go
-// Sketch only; not a Phase 1 or Phase 2 API.
+// Sketch only; not part of the current pkg/wrapper API.
 oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 defer term.Restore(int(os.Stdin.Fd()), oldState)
-go io.Copy(masterFd, os.Stdin)  // user keystrokes -> live PTY master
-_, err = io.Copy(os.Stdout, masterFd)  // PTY output -> user terminal
+go io.Copy(masterConn, os.Stdin)  // user keystrokes -> daemon -> live PTY master
+_, err = io.Copy(os.Stdout, masterConn)  // PTY output -> user terminal
 ```
 
-A clean detach sequence (e.g., `Ctrl-]`) would return control to the caller without killing the harness process.
+A clean detach sequence (e.g., `Ctrl-]`) returns control to the caller without killing the harness process.
 
 Headful mode (TUI/web) is also deferred. Whatever UI eventually ships will reuse the same attach primitives.
 

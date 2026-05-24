@@ -19,8 +19,9 @@ The repository layers in four steps:
    via the `Store` interface; `pkg/chat/memstore` ships the in-memory
    default.
 
-Transport layers (HTTP, gRPC, …) are intentionally out of scope and
-live in separate binaries that import `pkg/chat`.
+Transport layers stay out of the core packages and live in separate
+binaries that import `pkg/chat`; this repo ships one such gateway,
+`cmd/harness-chatd` (HTTP + SSE) — see [Use over HTTP](#use-over-http).
 
 ```
                 ┌──────────────────────────────┐
@@ -33,6 +34,7 @@ live in separate binaries that import `pkg/chat`.
    │ pkg/turns        │                │ pkg/transcript      │
    │  +harness/codex  │                │  +codex             │
    │  +harness/cc     │                │  +claudecode        │
+   │  +harness/gemini │                │  +gemini            │
    │  +generic        │                │ (read-only JSONL)   │
    └────────┬─────────┘                └─────────────────────┘
             │
@@ -121,6 +123,18 @@ go install github.com/olesho/harness-wrapper/cmd/harness-wrapper@latest
 harness-wrapper claude -- --print hello
 ```
 
+## Use over HTTP
+
+`cmd/harness-chatd` exposes `pkg/chat` over HTTP + Server-Sent Events so non-Go
+clients can drive multi-turn conversations across a process boundary:
+
+```sh
+go run ./cmd/harness-chatd --bind 127.0.0.1:8080
+```
+
+v1 has no auth — bind to localhost only. See [`clients/README.md`](clients/README.md)
+for the endpoint reference and ready-to-run Python and TypeScript example clients.
+
 ## Supported harnesses
 
 | Harness     | Status detection | Turn detection           | Session ID extraction    | Transcript reader        |
@@ -146,6 +160,8 @@ interfaces).
 - `pkg/versions/` — read API for the embedded `versions.json` (pinned upstream versions per harness)
 - `pkg/discovery/` — "is harness X installed on PATH, at what version?" — wraps `pkg/versions` + `os/exec.LookPath` with a per-harness version probe and an mtime-keyed cache
 - `cmd/harness-wrapper/` — thin CLI front-end for the wrapper
+- `cmd/harness-chatd/` — HTTP + SSE gateway exposing `pkg/chat` to non-Go clients
+- `clients/` — Python + TypeScript example clients for `harness-chatd` (see [`clients/README.md`](clients/README.md))
 - `internal/cmd/upstream-version-sentry/` — offline drift check against the npm registry
 - `internal/screenbench/` — bake-off harness used to choose the vt100 emulator + scripted recorder
 - `test/corpus/` — recorded byte streams used by the bake-off and the adapter compatibility tests

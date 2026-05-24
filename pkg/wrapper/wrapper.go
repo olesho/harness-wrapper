@@ -3,10 +3,10 @@
 // lifecycle, and returns a normalized status when the harness exits or
 // is terminated.
 //
-// Phase 1 started with only terminal states: idle, failed, interrupted,
-// unknown. It now also recognizes a small set of actionable harness
-// states from recent output. The wrapper does not persist state; callers
-// own persistence.
+// It began with only terminal states (idle, failed, interrupted,
+// unknown) and now also recognizes a small set of actionable,
+// non-terminal harness states from recent output. The wrapper does not
+// persist state; callers own persistence.
 //
 // Concurrency: the package is safe for multiple concurrent Run calls
 // only in headless mode (non-TTY stdin/stdout). Concurrent foreground
@@ -69,10 +69,9 @@ type Config struct {
 	Stdout io.Writer
 
 	// IdleQuiet is the duration of no output after which the wrapper
-	// considers the harness "quiet." Defaults to 15s.
-	//
-	// Phase 1: parsed but not yet enforced; idle classifier is added in
-	// a later commit.
+	// considers the harness "quiet." Quiet gates prompt detection
+	// (waiting_for_input) and sets the classifier poll cadence.
+	// Defaults to 15s.
 	IdleQuiet time.Duration
 
 	// IdleClassify is the duration of no output after which the wrapper

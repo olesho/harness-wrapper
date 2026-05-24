@@ -18,7 +18,7 @@ import (
 // Options configures a single Conversation.
 type Options struct {
 	// Harness names the per-harness adapter ("codex", "claude-code",
-	// "generic"). Required.
+	// "gemini", "generic"). Required.
 	Harness string
 
 	// BinaryPath is the harness executable. Required.

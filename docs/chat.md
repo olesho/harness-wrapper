@@ -15,7 +15,7 @@ not part of this package and live in separate `cmd/` binaries.
 ```go
 ctx := context.Background()
 conv, err := chat.Open(ctx, chat.Options{
-    Harness:    "codex",                  // or "claude-code", "generic"
+    Harness:    "codex",                  // or "claude-code", "gemini", "generic"
     BinaryPath: "/usr/local/bin/codex",
     WorkingDir: "/path/to/project",
     Store:      memstore.New(),
@@ -43,7 +43,7 @@ history, _ := conv.History(ctx)
 
 ```go
 type Options struct {
-    Harness     string   // "codex" | "claude-code" | "generic"     required
+    Harness     string   // "codex" | "claude-code" | "gemini" | "generic"  required
     BinaryPath  string   // harness executable                       required
     Args        []string // passed verbatim to the harness
     WorkingDir  string
@@ -143,7 +143,8 @@ func (c *Conversation) History(ctx context.Context) ([]Turn, error)
 When the adapter implements `turns.TranscriptReader` **and** the
 harness's own session ID is known, `History` reads the harness's
 persisted JSONL log (Codex: `~/.codex/sessions/`, Claude Code:
-`~/.claude/projects/<encoded-cwd>/`) and returns its parsed contents.
+`~/.claude/projects/<encoded-cwd>/`, Gemini:
+`~/.gemini/tmp/<project>/chats/`) and returns its parsed contents.
 This is the higher-fidelity source — the harness records exactly what
 the model said, not what the TUI rendered.
 

@@ -40,6 +40,7 @@ mock-harness --mode stuck
 mock-harness --mode cost-limited
 mock-harness --mode needs-input
 mock-harness --mode failed
+mock-harness --mode api-error
 ```
 
 Optional flags:
@@ -47,11 +48,14 @@ Optional flags:
 ```text
 --delay 250ms
 --exit-code 1
---prompt "Continue? [y/N]"
---expected-input "y"
---transcript codex
 --steps 3
---heartbeat 1s
+--prompt "Continue? [y/N] "
+--expected-input "y"
+--api-error-msg "API Error: 529 Overloaded."
+--api-error-repeat 1
+--api-error-repeat-gap 100ms
+--api-error-recover
+--api-error-heartbeat 200ms
 ```
 
 ## Modes
@@ -160,25 +164,32 @@ Fatal: workspace is not writable.
 
 Expected wrapper state: `failed`.
 
-## Transcript Profiles
+### `api-error`
 
-The mock harness should support transcript profiles so adapter detectors can be tested against harness-like text.
+Simulates the harness's upstream model API returning an error mid-run (e.g. an HTTP 429/529), which the wrapper surfaces **without** killing the harness.
 
-Suggested profiles:
+Behavior:
 
-- `generic`: neutral output.
-- `codex`: Codex-like wording for prompts, completion, and cost limits.
-- `claude`: Claude Code-like wording for prompts, completion, and cost limits.
-- `google`: Google CLI-like wording for prompts, completion, and cost limits.
+1. Prints a startup banner.
+2. Prints an API-error line (default `API Error: 529 Overloaded.`), repeated `--api-error-repeat` times with `--api-error-repeat-gap` between prints.
+3. If `--api-error-recover` is set, resumes completed-style progress and exits `0`; otherwise heartbeats every `--api-error-heartbeat` until it receives a signal.
 
-Example:
+Example output:
 
 ```text
-mock-harness --transcript codex --mode needs-input
-mock-harness --transcript claude --mode cost-limited
+Mock Agent CLI
+API Error: 529 Overloaded.
 ```
 
-The profiles should not attempt to perfectly imitate real products. They should produce stable strings that adapter detectors can match in tests.
+Expected wrapper state: `api_error` (non-terminal — the wrapper keeps the harness alive and reports the upstream HTTP status code).
+
+## Transcript Profiles (not implemented)
+
+The original design proposed a `--transcript generic|codex|claude|google` flag so the
+mock could emit harness-flavored wording. It was never built, and the flag does not
+exist. In practice, adapter detectors are tested against **real recorded output** under
+`test/corpus/` (see [`../test/corpus/README.md`](../test/corpus/README.md)) rather than
+mock-generated text, so the mock stays harness-neutral.
 
 ## PTY Behavior
 

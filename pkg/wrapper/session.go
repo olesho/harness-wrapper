@@ -448,7 +448,7 @@ func terminateAndWait(cmd *exec.Cmd, waitCh <-chan waitResult, waitDelay time.Du
 // cadence, building a ClassifierInput from the live activity counters
 // and forwarding non-empty Classifications to the supervisor. It also
 // emits the original output_quiet / output_classify_threshold trace
-// events for parity with the Phase 1 idle classifier.
+// events for parity with the original idle classifier.
 func runSessionClassifier(ctx context.Context, s *Session) {
 	cfg := s.cfg
 	tick := max(cfg.IdleQuiet/3, 100*time.Millisecond)
