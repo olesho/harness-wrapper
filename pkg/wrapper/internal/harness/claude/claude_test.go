@@ -123,6 +123,13 @@ func TestMatchAPIError(t *testing.T) {
 			wantCode:  0,
 			wantRetry: 30 * time.Second,
 		},
+		{
+			name:        "Cl18: 500 server error with tree-character NBSP prefix",
+			in:          "  ⎿  API Error: 500 Internal server error. This is a server-side issue, usually temporary — try again in a moment. If it persists, check status.claude.com.",
+			wantOK:      true,
+			wantCode:    500,
+			msgContains: "Internal server error",
+		},
 	}
 
 	for _, tc := range cases {

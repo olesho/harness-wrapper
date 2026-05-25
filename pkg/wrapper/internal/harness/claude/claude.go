@@ -18,11 +18,15 @@ import (
 //     connection was closed unexpectedly..."
 //
 // Both may appear with an optional leading tree-character decoration
-// like "⎿  " (claudecode's tool-result drawing). The line-start anchor
-// (with allowed leading whitespace + one optional decoration glyph)
-// keeps the matcher from firing on in-prose mentions like "what does
-// API Error: 500 mean?".
-var apiErrorRE = regexp.MustCompile(`(?im)^[^\S\r\n]*(?:[⎿│├└╰─◯⏺]\s*)?API Error:\s*(?:(\d{3})\b\s+)?(.*)$`)
+// like "⎿  " (claudecode's tool-result drawing). Claude Code commonly
+// uses U+00A0 after that decoration, so horizontalSpace intentionally
+// accepts both ASCII space/tab and NBSP. The line-start anchor (with
+// allowed leading whitespace + one optional decoration glyph) keeps
+// the matcher from firing on in-prose mentions like "what does API
+// Error: 500 mean?".
+const horizontalSpace = `[\t \x{00A0}]`
+
+var apiErrorRE = regexp.MustCompile(`(?im)^` + horizontalSpace + `*(?:[⎿│├└╰─◯⏺]` + horizontalSpace + `*)?API Error:` + horizontalSpace + `*(?:(\d{3})\b` + horizontalSpace + `+)?(.*)$`)
 
 // MatchAPIError implements detector.APIErrorMatcher for Claude Code.
 // On match, returns the parsed HTTP code (zero for the transport-error
@@ -62,7 +66,7 @@ func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
 // prefix on the same anchored line. The trailing "resets …" group is
 // not captured here — ParseResetTime is run against the matched line
 // to extract the absolute reset time.
-var sessionLimitRE = regexp.MustCompile(`(?im)^[^\S\r\n]*(?:[⎿│├└╰─◯⏺]\s*)?(You(?:'ve|\s+have)\s+hit\s+your\s+(?:session|usage)\s+limit.*)$`)
+var sessionLimitRE = regexp.MustCompile(`(?im)^` + horizontalSpace + `*(?:[⎿│├└╰─◯⏺]` + horizontalSpace + `*)?(You(?:'ve|\s+have)\s+hit\s+your\s+(?:session|usage)\s+limit.*)$`)
 
 // MatchSessionLimit implements detector.SessionLimitMatcher for Claude
 // Code. On match, returns the matched banner line and the absolute
