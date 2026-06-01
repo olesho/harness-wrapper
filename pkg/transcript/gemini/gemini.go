@@ -60,6 +60,14 @@ func (r *Reader) Read(harnessSessionID, workingDir string) ([]transcript.Event, 
 	return parseJSONL(path)
 }
 
+// ParseFile parses a Gemini JSONL session transcript at an explicit path into
+// the canonical event stream. Unlike Read it does NOT locate the file — the
+// caller supplies the path (e.g. the transcript_path a Gemini hook hands over),
+// so there is no project-slug reconstruction.
+func ParseFile(path string) ([]transcript.Event, error) {
+	return parseJSONL(path)
+}
+
 func (r *Reader) geminiRoot() (string, error) {
 	if r.GeminiRoot != "" {
 		return r.GeminiRoot, nil

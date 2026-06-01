@@ -293,6 +293,12 @@ func (o *streamTap) drainHooks(spoolDir string) string {
 	drained, _ := DrainSpool(spoolDir) // best-effort; malformed files are skipped+reported
 	parents := 0
 	for _, pe := range drained {
+		// Recover the session id from hooks when the live stream didn't supply
+		// it (e.g. a harness with no StreamParser/SessionIDExtractor, like
+		// gemini) — so resume/lock persistence still gets it.
+		if o.sessionID == "" && pe.HarnessSessionID != "" && pe.ParentSessionID == "" {
+			o.sessionID = pe.HarnessSessionID
+		}
 		if isParentConversationKind(pe.Event.Type) {
 			parents++
 		}

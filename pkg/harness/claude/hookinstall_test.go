@@ -11,7 +11,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/harness"
 )
 
-func readSettings(t *testing.T, worktree string) map[string][]claudeHookMatcher {
+func readSettings(t *testing.T, worktree string) map[string][]harness.SettingsHookMatcher {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(worktree, ".claude", "settings.json"))
 	if err != nil {
@@ -21,11 +21,22 @@ func readSettings(t *testing.T, worktree string) map[string][]claudeHookMatcher 
 	if err := json.Unmarshal(data, &top); err != nil {
 		t.Fatalf("settings.json is not valid JSON: %v", err)
 	}
-	var hooks map[string][]claudeHookMatcher
+	var hooks map[string][]harness.SettingsHookMatcher
 	if err := json.Unmarshal(top["hooks"], &hooks); err != nil {
 		t.Fatalf("hooks block invalid: %v", err)
 	}
 	return hooks
+}
+
+// loomOwned reports whether a matcher group carries a loom-managed command
+// (the test's local replacement for the now-internal harness helper).
+func loomOwned(m harness.SettingsHookMatcher) bool {
+	for _, e := range m.Hooks {
+		if harness.IsManagedHookCommand(e.Command) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestEnsureConfigFreshInstall(t *testing.T) {
@@ -143,7 +154,7 @@ func TestEnsureConfigRefreshesLoomPath(t *testing.T) {
 	hooks := readSettings(t, wt)
 	loomCount := 0
 	for _, m := range hooks["Stop"] {
-		if matcherIsLoomOwned(m) {
+		if loomOwned(m) {
 			loomCount++
 		}
 	}
@@ -171,7 +182,7 @@ func TestEnsureConfigConcurrent(t *testing.T) {
 	hooks := readSettings(t, wt)
 	loomCount := 0
 	for _, m := range hooks["Stop"] {
-		if matcherIsLoomOwned(m) {
+		if loomOwned(m) {
 			loomCount++
 		}
 	}
