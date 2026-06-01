@@ -87,11 +87,81 @@ func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdi
 		return readParentTranscript(ctx, p)
 	case argSessionStart, argUserPrompt:
 		return []transcript.ParsedEvent{sessionMarker(p.SessionID)}, nil
-	case argPreTask, argPostTask, argYieldGuard:
+	case argPostTask:
+		return readSubagentTranscript(ctx, p, stdin)
+	case argPreTask, argYieldGuard:
+		// PreToolUse[Task] fires BEFORE the subagent runs (no transcript yet);
+		// yield-guard is a control hook handled by HandleHookEvent, not a
+		// transcript-bearing event.
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("claude hook: unknown event %q", event)
 	}
+}
+
+// readSubagentTranscript handles PostToolUse[Task]: when the Task spawned a
+// subagent (tool_response.agentId present), Claude has written its transcript at
+// <parent_dir>/subagents/agent-<agentId>.jsonl. It reads that file and tags each
+// event with the subagent's own session id + the ParentSessionID, so the Runs
+// tab can nest the subagent under its parent. Subagent capture is best-effort:
+// an absent file (timing) yields nil, not an error.
+func readSubagentTranscript(ctx harness.HookContext, p claudeHookPayload, stdin []byte) ([]transcript.ParsedEvent, error) {
+	var pt struct {
+		ToolResponse struct {
+			AgentID string `json:"agentId"`
+		} `json:"tool_response"`
+	}
+	if err := json.Unmarshal(stdin, &pt); err != nil {
+		return nil, fmt.Errorf("claude hook post-task: parse tool_response: %w", err)
+	}
+	agentID := pt.ToolResponse.AgentID
+	if agentID == "" {
+		return nil, nil // a Task result that did not spawn a tracked subagent
+	}
+	if !validSubagentID(agentID) {
+		return nil, fmt.Errorf("claude hook post-task: invalid subagent id %q", agentID)
+	}
+	// The payload's transcript_path is the PARENT session's file (basename ==
+	// parent session id), so the standard validation applies; the subagent path
+	// is then derived from that validated directory.
+	if err := validateTranscriptPath(ctx, p.SessionID, p.TranscriptPath); err != nil {
+		return nil, err
+	}
+	subPath := filepath.Join(filepath.Dir(p.TranscriptPath), "subagents", "agent-"+agentID+".jsonl")
+	data, err := os.ReadFile(subPath) //nolint:gosec // derived under the validated parent transcript dir
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // subagent transcript not present yet — best-effort
+		}
+		return nil, fmt.Errorf("claude hook post-task: read subagent %s: %w", subPath, err)
+	}
+	events, err := claudecode.Events(data)
+	if err != nil {
+		return nil, fmt.Errorf("claude hook post-task: parse subagent: %w", err)
+	}
+	out := make([]transcript.ParsedEvent, len(events))
+	for i, e := range events {
+		out[i] = transcript.ParsedEvent{
+			HarnessSessionID: agentID,     // the subagent's own native session
+			ParentSessionID:  p.SessionID, // nested under the parent
+			Event:            e,
+		}
+	}
+	return out, nil
+}
+
+// validSubagentID guards the agentId interpolated into the subagent file path
+// against traversal — it must be a simple identifier (no '/', '.', '..').
+func validSubagentID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // readParentTranscript validates and reads the handed-over transcript file into
