@@ -26,7 +26,7 @@ func TestHandleHookEventInertWithoutSpool(t *testing.T) {
 	stdin, _ := json.Marshal(map[string]string{"session_id": sid, "transcript_path": tpath})
 
 	env := []string{harness.EnvHome + "=" + home, harness.EnvHookCwd + "=/wt"} // NO spool
-	if err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
 		t.Fatalf("inert handler should return nil, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestHandleHookEventWritesSpoolAndDrains(t *testing.T) {
 		harness.EnvHookCwd + "=/wt",
 	}
 
-	if err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
 		t.Fatalf("HandleHookEvent: %v", err)
 	}
 	// Exactly one completed .json spool file (no leftover .tmp).
@@ -85,7 +85,7 @@ func TestHandleHookEventSessionStartSpoolsMarker(t *testing.T) {
 	spool := t.TempDir()
 	stdin, _ := json.Marshal(map[string]string{"session_id": "s-77", "transcript_path": "/whatever"})
 	env := []string{harness.EnvSpool + "=" + spool, harness.EnvHome + "=" + t.TempDir()}
-	if err := harness.HandleHookEvent("claude", "session-start", env, stdin); err != nil {
+	if _, err := harness.HandleHookEvent("claude", "session-start", env, stdin); err != nil {
 		t.Fatalf("HandleHookEvent(session-start): %v", err)
 	}
 	evs, err := harness.DrainSpool(spool)
@@ -99,7 +99,7 @@ func TestHandleHookEventSessionStartSpoolsMarker(t *testing.T) {
 
 func TestHandleHookEventUnknownHarness(t *testing.T) {
 	env := []string{harness.EnvSpool + "=" + t.TempDir()}
-	if err := harness.HandleHookEvent("nonesuch", "stop", env, []byte("{}")); err == nil {
+	if _, err := harness.HandleHookEvent("nonesuch", "stop", env, []byte("{}")); err == nil {
 		t.Fatal("expected error for unregistered harness")
 	}
 }
@@ -119,7 +119,7 @@ func TestDrainSpoolConcurrentWritersNoTornReads(t *testing.T) {
 			// needs only a session id, no file).
 			stdin, _ := json.Marshal(map[string]string{"session_id": strconv.Itoa(i), "transcript_path": "/x"})
 			env := []string{harness.EnvSpool + "=" + spool, harness.EnvHome + "=/h"}
-			_ = harness.HandleHookEvent("claude", "session-start", env, stdin)
+			_, _ = harness.HandleHookEvent("claude", "session-start", env, stdin)
 		}(i)
 	}
 	wg.Wait()

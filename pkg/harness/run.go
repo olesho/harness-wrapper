@@ -36,6 +36,12 @@ type Config struct {
 	// strategy; ignored otherwise.
 	HookCommand []string
 
+	// Yield, if set, enables cooperative preemption: the orchestrator wires its
+	// file into the harness env (HW_YIELD_FILE) so the yield-guard hook can block
+	// the next tool when the caller calls Yield.Request. Only effective with the
+	// Hooks strategy (the guard is a hook). The caller owns its lifecycle.
+	Yield *YieldControl
+
 	// OnEvent is the durable, idempotent sink for normalized transcript events.
 	// It is invoked SYNCHRONOUSLY from the PTY read loop, so it back-pressures
 	// the harness (a slow sink slows the harness) rather than dropping an event,
@@ -99,7 +105,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := rp.Hooks.EnsureConfig(cfg.Wrapper.WorkingDir, cfg.HookCommand); err != nil {
 			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: ensure hooks: %w", err)
 		}
-		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir)
+		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield)
 	}
 
 	// Install the tap when there is something to observe: live events to parse
@@ -185,15 +191,19 @@ func planAcquisition(mode Mode, rp ResolvedProfile, haveSink bool) acqPlan {
 
 // hookEnv augments the harness launch env with the HW_* hook variables. It must
 // APPEND to the inherited env (defaulting to os.Environ when base is nil), not
-// replace it, so the harness keeps its normal environment.
-func hookEnv(base []string, spoolDir, cwd string) []string {
+// replace it, so the harness keeps its normal environment. The yield var is
+// added only when a YieldControl was supplied.
+func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl) []string {
 	if base == nil {
 		base = os.Environ()
 	}
 	home, _ := os.UserHomeDir()
-	out := make([]string, 0, len(base)+3)
+	out := make([]string, 0, len(base)+4)
 	out = append(out, base...)
 	out = append(out, EnvSpool+"="+spoolDir, EnvHookCwd+"="+cwd, EnvHome+"="+home)
+	if yield != nil {
+		out = append(out, EnvYieldFile+"="+yield.path)
+	}
 	return out
 }
 

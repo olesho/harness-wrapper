@@ -27,41 +27,50 @@ const (
 )
 
 // HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
-// command delegates to. It parses the fired hook's stdin payload into events and
-// writes them to the spool for the orchestrator to pick up.
+// command delegates to. For capture events it parses the fired hook's stdin
+// payload into events and writes them to the spool; for the yield-guard control
+// event it returns a HookOutcome telling the caller whether to BLOCK the tool.
 //
-// It is INERT (returns nil, writes nothing) when HW_EVENT_SPOOL is absent — so a
-// leftover hook entry can never perturb a non-wrapper run (review #5; this is
+// It is INERT (zero outcome, writes nothing) when HW_EVENT_SPOOL is absent — so
+// a leftover hook entry can never perturb a non-wrapper run (review #5; this is
 // the runtime counterpart to the rendered shell guard). The subprocess does NOT
 // call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
 // main run's resolution already decided to install hooks.
-func HandleHookEvent(harnessName, event string, env []string, stdin []byte) error {
+func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (HookOutcome, error) {
 	spool := envLookup(env, EnvSpool)
 	if spool == "" {
-		return nil // inert outside a wrapper run
+		return HookOutcome{}, nil // inert outside a wrapper run
 	}
 	p, ok := For(harnessName)
 	if !ok {
-		return fmt.Errorf("harness: no profile registered for %q", harnessName)
+		return HookOutcome{}, fmt.Errorf("harness: no profile registered for %q", harnessName)
 	}
 	shp, ok := p.(StaticHookProfile)
 	if !ok {
-		return fmt.Errorf("harness: %q has no hook provider", harnessName)
+		return HookOutcome{}, fmt.Errorf("harness: %q has no hook provider", harnessName)
 	}
+	hp := shp.StaticHookProvider()
+
+	// The yield-guard is a control hook, not a capture hook: it decides whether
+	// to block the tool, and never touches the spool.
+	if spec := hp.HookSpec(); spec.Yield != nil && event == spec.Yield.Arg {
+		return checkYield(envLookup(env, EnvYieldFile)), nil
+	}
+
 	ctx := HookContext{
 		Cwd:       envLookup(env, EnvHookCwd),
 		Home:      envLookup(env, EnvHome),
 		ConfigDir: envLookup(env, EnvConfigDir),
 		SpoolDir:  spool,
 	}
-	events, err := shp.StaticHookProvider().ParseHookPayload(ctx, event, stdin)
+	events, err := hp.ParseHookPayload(ctx, event, stdin)
 	if err != nil {
-		return fmt.Errorf("harness: parse hook %s/%s: %w", harnessName, event, err)
+		return HookOutcome{}, fmt.Errorf("harness: parse hook %s/%s: %w", harnessName, event, err)
 	}
 	if len(events) == 0 {
-		return nil
+		return HookOutcome{}, nil
 	}
-	return writeSpool(spool, event, events)
+	return HookOutcome{}, writeSpool(spool, event, events)
 }
 
 // writeSpool writes one batch of parsed events to the spool as a single file,
