@@ -33,6 +33,10 @@ func (Profile) Resolve(_ harness.ResolveContext) harness.ResolvedProfile {
 	}
 }
 
+// StaticHookProvider returns Claude's HookProvider without running detection, for
+// the fired hook subprocess (harness.HandleHookEvent) which must not re-probe.
+func (Profile) StaticHookProvider() harness.HookProvider { return hookProvider{} }
+
 // sessionIDExtractor parses Claude's stream-json "system:init" event.
 type sessionIDExtractor struct{}
 

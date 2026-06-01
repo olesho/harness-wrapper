@@ -30,6 +30,16 @@ type HookProvider interface {
 	ParseHookPayload(ctx HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error)
 }
 
+// StaticHookProfile is an OPTIONAL interface a Profile implements when the
+// harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
+// the payload parser WITHOUT running Resolve: static hook availability is a
+// harness fact, distinct from per-run capability resolution — which the
+// subprocess must not re-run (it would re-probe; review #1). The main run still
+// gates the DECISION to install/use hooks on the resolved ResolvedProfile.Hooks.
+type StaticHookProfile interface {
+	StaticHookProvider() HookProvider
+}
+
 // HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
 // HW_* env (never the subprocess cwd) — the authority for environment. It is
 // distinct from ResolveContext (run-detection inputs) and ReadContext (the
