@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
@@ -28,6 +29,12 @@ type Config struct {
 
 	// TranscriptMode selects the acquisition strategy (default Off — no events).
 	TranscriptMode Mode
+
+	// HookCommand is the loom binary path + subcommand templated into the
+	// harness's hook config (e.g. {"/abs/loom","hooks"}); each rendered entry
+	// becomes `<HookCommand...> <harness> <arg>`. Required for the Hooks
+	// strategy; ignored otherwise.
+	HookCommand []string
 
 	// OnEvent is the durable, idempotent sink for normalized transcript events.
 	// It is invoked SYNCHRONOUSLY from the PTY read loop, so it back-pressures
@@ -63,24 +70,42 @@ type Result struct {
 // established happens-before — no locking needed.
 func Run(ctx context.Context, cfg Config) (Result, error) {
 	rp := resolveProfile(cfg)
-	effective, strategy := resolveStrategy(cfg.TranscriptMode, rp)
+	plan := planAcquisition(cfg.TranscriptMode, rp, cfg.OnEvent != nil)
 
 	tap := &streamTap{
-		harness:  cfg.Wrapper.Harness,
-		runID:    cfg.RunID,
-		mode:     effective,
-		stream:   rp.Stream,
-		sessions: rp.SessionID,
-		onEvent:  cfg.OnEvent,
-		active:   strategy == "stream" && cfg.OnEvent != nil,
+		harness:    cfg.Wrapper.Harness,
+		runID:      cfg.RunID,
+		stream:     rp.Stream,
+		sessions:   rp.SessionID,
+		onEvent:    cfg.OnEvent,
+		emitLive:   plan.useStream,
+		bufferLive: plan.shadow,
 	}
 
 	wc := cfg.Wrapper
 	runCtx := ctx
-	// Install the tap when there is something to observe: live events to parse,
-	// or a session id to capture for resume. With neither (e.g. Off mode and no
-	// SessionID extractor), the wrapper path is byte-for-byte unchanged.
-	if tap.active || tap.sessions != nil {
+
+	// Hooks: ensure the per-worktree config + a spool dir before launch; the
+	// harness propagates HW_EVENT_SPOOL to its hook subprocesses, which write
+	// parsed events there for the post-exit drain.
+	var spoolDir string
+	if plan.useHooks {
+		dir, err := os.MkdirTemp("", "hw-spool-")
+		if err != nil {
+			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: create spool dir: %w", err)
+		}
+		spoolDir = dir
+		defer func() { _ = os.RemoveAll(spoolDir) }()
+		if err := rp.Hooks.EnsureConfig(cfg.Wrapper.WorkingDir, cfg.HookCommand); err != nil {
+			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: ensure hooks: %w", err)
+		}
+		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir)
+	}
+
+	// Install the tap when there is something to observe: live events to parse
+	// or buffer, or a session id to capture for resume. With none (e.g. Off mode
+	// and no SessionID extractor), the wrapper path is byte-for-byte unchanged.
+	if tap.installs() {
 		var cancel context.CancelFunc
 		runCtx, cancel = context.WithCancel(ctx)
 		defer cancel()
@@ -89,6 +114,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 
 	wres, werr := wrapper.Run(runCtx, wc)
+
+	// Post-exit (grace window): in hooks mode the SessionEnd/Stop hooks fire
+	// around exit, so the spool is drained AFTER the process is gone.
+	strategy := plan.label
+	if plan.useHooks {
+		strategy = tap.drainHooks(spoolDir)
+	}
 
 	res := Result{Result: wres, TranscriptStrategy: strategy, HarnessSessionID: tap.sessionID}
 	if tap.deliverErr != nil {
@@ -116,44 +148,87 @@ func resolveProfile(cfg Config) ResolvedProfile {
 	})
 }
 
-// resolveStrategy maps the requested mode + resolved capabilities to the
-// effective (latched) parent strategy and its label. Hooks is not yet
-// implemented (P3c), so Hooks/Auto degrade to the StreamParse floor when a
-// stream parser is available.
-func resolveStrategy(mode Mode, rp ResolvedProfile) (effective Mode, label string) {
-	switch mode {
-	case TranscriptStreamParse, TranscriptHooks, TranscriptAuto:
-		if rp.Stream != nil {
-			return TranscriptStreamParse, "stream"
-		}
+// acqPlan is the resolved acquisition plan for a run.
+type acqPlan struct {
+	label     string // initial strategy label ("hooks"|"stream"|"none"); drainHooks may downgrade hooks→stream
+	useHooks  bool   // ensure config + spool + post-exit drain
+	useStream bool   // emit live stream events during the run
+	shadow    bool   // buffer live stream events as a hooks fallback
+}
+
+// planAcquisition maps the requested mode + resolved capabilities (+ whether a
+// sink exists) to the acquisition plan. Hooks/Auto latch to hooks when a
+// HookProvider resolved, with the live stream BUFFERED as a fallback so the
+// transcript isn't lost if no hook fires (a post-exit latch; the mid-run
+// two-stage confirmation is a later refinement). Either degrades to the
+// StreamParse floor when only a stream parser is available.
+func planAcquisition(mode Mode, rp ResolvedProfile, haveSink bool) acqPlan {
+	if !haveSink {
+		return acqPlan{label: "none"} // session id may still be captured (see installs)
 	}
-	return TranscriptOff, "none"
+	switch mode {
+	case TranscriptHooks, TranscriptAuto:
+		if rp.Hooks != nil {
+			return acqPlan{label: "hooks", useHooks: true, shadow: rp.Stream != nil}
+		}
+		if rp.Stream != nil {
+			return acqPlan{label: "stream", useStream: true}
+		}
+	case TranscriptStreamParse:
+		if rp.Stream != nil {
+			return acqPlan{label: "stream", useStream: true}
+		}
+	case TranscriptOff:
+	}
+	return acqPlan{label: "none"}
+}
+
+// hookEnv augments the harness launch env with the HW_* hook variables. It must
+// APPEND to the inherited env (defaulting to os.Environ when base is nil), not
+// replace it, so the harness keeps its normal environment.
+func hookEnv(base []string, spoolDir, cwd string) []string {
+	if base == nil {
+		base = os.Environ()
+	}
+	home, _ := os.UserHomeDir()
+	out := make([]string, 0, len(base)+3)
+	out = append(out, base...)
+	out = append(out, EnvSpool+"="+spoolDir, EnvHookCwd+"="+cwd, EnvHome+"="+home)
+	return out
 }
 
 // streamTap is the per-run, goroutine-confined consumer of wrapper's durable
 // line tap. wrapper invokes onLine serially from one copy goroutine and joins
 // it before Run returns, so the mutable fields below need no synchronization:
-// the tap goroutine is the sole writer, and Run reads them only after the join.
+// the tap goroutine is the sole writer DURING the run, and Run (the same
+// goroutine that called wrapper.Run) is the sole reader/writer AFTER the join
+// (the post-exit drainHooks).
 type streamTap struct {
-	harness  string
-	runID    string
-	mode     Mode
-	stream   StreamParser
-	sessions SessionIDExtractor
-	onEvent  func(transcript.EventEnvelope) error
-	active   bool               // stream parsing on (mode==stream and a sink exists)
-	cancel   context.CancelFunc // terminate the harness on a delivery failure
+	harness    string
+	runID      string
+	stream     StreamParser
+	sessions   SessionIDExtractor
+	onEvent    func(transcript.EventEnvelope) error
+	emitLive   bool               // emit live stream events (StreamParse)
+	bufferLive bool               // buffer live stream events (hooks fallback)
+	cancel     context.CancelFunc // terminate the harness on a delivery failure
 
-	// --- mutated only in the PTY copy goroutine ---
+	// --- mutated in the PTY copy goroutine during the run, then by Run after ---
 	sessionID  string
 	seq        int
 	deliverErr error
+	shadow     []transcript.ParsedEvent // buffered live events (flushed iff no hook fires)
+}
+
+// installs reports whether the durable line tap must be attached.
+func (o *streamTap) installs() bool {
+	return o.sessions != nil || o.emitLive || o.bufferLive
 }
 
 // onLine is wrapper.Config.OnLine: the durable per-line callback. It captures
-// the session id (first occurrence wins) and, in stream mode, parses the line
-// into events. Once a delivery has failed it becomes inert (the run is already
-// being torn down).
+// the session id (first occurrence wins) and, depending on mode, emits live
+// stream events or buffers them for the hooks fallback. Once a delivery has
+// failed it becomes inert (the run is already being torn down).
 func (o *streamTap) onLine(line string) {
 	if o.deliverErr != nil {
 		return
@@ -163,22 +238,57 @@ func (o *streamTap) onLine(line string) {
 			o.sessionID = id
 		}
 	}
-	if !o.active || o.stream == nil {
+	if o.stream == nil || (!o.emitLive && !o.bufferLive) {
 		return
 	}
 	for _, pe := range o.stream.ParseStreamLine(line) {
-		if !o.emit(pe) {
-			return
+		switch {
+		case o.bufferLive:
+			o.shadow = append(o.shadow, pe)
+		case o.emitLive:
+			if !o.emit(pe, TranscriptStreamParse) {
+				return
+			}
 		}
 	}
 }
 
+// drainHooks consumes the post-exit spool, emits the hook (file) events under
+// Hooks authority, and — if no PARENT-conversation event was captured (no hook
+// fired) — flushes the buffered live stream under StreamParse authority so the
+// transcript is never lost. Returns the resulting strategy label.
+func (o *streamTap) drainHooks(spoolDir string) string {
+	drained, _ := DrainSpool(spoolDir) // best-effort; malformed files are skipped+reported
+	parents := 0
+	for _, pe := range drained {
+		if isParentConversationKind(pe.Event.Type) {
+			parents++
+		}
+		if !o.emit(pe, TranscriptHooks) {
+			return "hooks"
+		}
+	}
+	if parents > 0 {
+		return "hooks" // hooks captured the conversation
+	}
+	// Fallback: no parent captured via hooks → flush the shadow buffer.
+	for _, pe := range o.shadow {
+		if !o.emit(pe, TranscriptStreamParse) {
+			return "stream"
+		}
+	}
+	if len(o.shadow) > 0 {
+		return "stream"
+	}
+	return "hooks" // hooks attempted; nothing captured (empty transcript)
+}
+
 // emit shapes one ParsedEvent into an envelope, applies the central authority
-// filter, and delivers it via onEvent. It returns false only when delivery
-// failed (the caller stops and the run aborts); a filtered-out event returns
-// true (not an error).
-func (o *streamTap) emit(pe transcript.ParsedEvent) bool {
-	if !admitParent(o.mode, pe.Event.Source, pe.Event.Type, pe.ParentSessionID != "") {
+// filter for the given (latched) mode, and delivers it via onEvent. It returns
+// false only when delivery failed (the caller stops and the run aborts); a
+// filtered-out event returns true (not an error).
+func (o *streamTap) emit(pe transcript.ParsedEvent, mode Mode) bool {
+	if !admitParent(mode, pe.Event.Source, pe.Event.Type, pe.ParentSessionID != "") {
 		return true
 	}
 	ev := pe.Event

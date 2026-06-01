@@ -1,15 +1,20 @@
 package harness
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
+
+// spoolSeq disambiguates spool filenames for concurrent writers within ONE
+// process (the wall clock can repeat a nanosecond under contention); pid
+// disambiguates across the separate hook subprocesses.
+var spoolSeq atomic.Uint64
 
 // HW_* env var names. The orchestrator SETS them in the harness launch env, the
 // harness propagates them to hook subprocesses, and HandleHookEvent READS them.
@@ -66,14 +71,17 @@ func HandleHookEvent(harnessName, event string, env []string, stdin []byte) erro
 // and the orchestrator's drain (which reads only completed `.json` files) never
 // sees half a record (review #6).
 func writeSpool(spoolDir, event string, events []transcript.ParsedEvent) error {
-	data, err := json.Marshal(events)
+	// DURABLE form: persists Source/NativeID/SchemaVersion (Event's public JSON
+	// omits them), which the authority filter + dedup need after the round-trip.
+	data, err := transcript.MarshalParsedEvents(events)
 	if err != nil {
 		return fmt.Errorf("harness: marshal spool events: %w", err)
 	}
-	// Unique per (event, time, pid): one HandleHookEvent call writes one file,
-	// pids differ across subprocesses, and the nanosecond clock disambiguates
-	// the rest. Ordering is reconstructed from event content, not the filename.
-	base := fmt.Sprintf("%s-%d-%d.json", event, time.Now().UnixNano(), os.Getpid())
+	// Unique per (event, time, pid, in-process seq): pids differ across the
+	// separate hook subprocesses, and the atomic seq guarantees uniqueness for
+	// concurrent writers within one process even at the same nanosecond.
+	// Ordering is reconstructed from event content, not the filename.
+	base := fmt.Sprintf("%s-%d-%d-%d.json", event, time.Now().UnixNano(), os.Getpid(), spoolSeq.Add(1))
 	final := filepath.Join(spoolDir, base)
 	tmp := final + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
@@ -119,8 +127,8 @@ func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 			errs = append(errs, rerr.Error())
 			continue
 		}
-		var evs []transcript.ParsedEvent
-		if uerr := json.Unmarshal(data, &evs); uerr != nil {
+		evs, uerr := transcript.UnmarshalParsedEvents(data)
+		if uerr != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, uerr))
 			continue // leave malformed file in place for inspection
 		}

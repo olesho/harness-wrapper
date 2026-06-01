@@ -34,10 +34,20 @@ func liveText(sid, text string) transcript.ParsedEvent {
 
 func newTap(stream StreamParser, onEvent func(transcript.EventEnvelope) error) *streamTap {
 	return &streamTap{
-		harness: "claude", runID: "run-1", mode: TranscriptStreamParse,
-		stream: stream, sessions: fakeSessions{}, onEvent: onEvent, active: onEvent != nil,
+		harness: "claude", runID: "run-1",
+		stream: stream, sessions: fakeSessions{}, onEvent: onEvent, emitLive: onEvent != nil,
 	}
 }
+
+// fakeHooks is a no-op HookProvider for plan tests (planAcquisition only checks
+// rp.Hooks != nil, never calling its methods).
+type fakeHooks struct{}
+
+func (fakeHooks) HookSpec() *HookSpec { return &HookSpec{} }
+func (fakeHooks) ParseHookPayload(HookContext, string, []byte) ([]transcript.ParsedEvent, error) {
+	return nil, nil
+}
+func (fakeHooks) EnsureConfig(string, []string) error { return nil }
 
 func TestStreamTapStampsAndDelivers(t *testing.T) {
 	stream := fakeStream{byLine: map[string][]transcript.ParsedEvent{
@@ -144,26 +154,76 @@ func TestStreamTapPanicInSinkBecomesError(t *testing.T) {
 	}
 }
 
-func TestResolveStrategy(t *testing.T) {
-	withStream := ResolvedProfile{Stream: fakeStream{}}
-	noStream := ResolvedProfile{}
+func TestPlanAcquisition(t *testing.T) {
+	stream := ResolvedProfile{Stream: fakeStream{}}
+	hooksAndStream := ResolvedProfile{Stream: fakeStream{}, Hooks: fakeHooks{}}
+	none := ResolvedProfile{}
 	cases := []struct {
-		mode          Mode
-		rp            ResolvedProfile
-		wantEffective Mode
-		wantLabel     string
+		name string
+		mode Mode
+		rp   ResolvedProfile
+		sink bool
+		want acqPlan
 	}{
-		{TranscriptStreamParse, withStream, TranscriptStreamParse, "stream"},
-		{TranscriptHooks, withStream, TranscriptStreamParse, "stream"}, // hooks→stream floor (P3c pending)
-		{TranscriptAuto, withStream, TranscriptStreamParse, "stream"},
-		{TranscriptStreamParse, noStream, TranscriptOff, "none"}, // no parser → none
-		{TranscriptOff, withStream, TranscriptOff, "none"},
+		{"hooks latches with shadow", TranscriptHooks, hooksAndStream, true, acqPlan{"hooks", true, false, true}},
+		{"auto latches hooks with shadow", TranscriptAuto, hooksAndStream, true, acqPlan{"hooks", true, false, true}},
+		{"hooks degrades to stream", TranscriptHooks, stream, true, acqPlan{"stream", false, true, false}},
+		{"streamparse", TranscriptStreamParse, stream, true, acqPlan{"stream", false, true, false}},
+		{"streamparse no parser", TranscriptStreamParse, none, true, acqPlan{label: "none"}},
+		{"off", TranscriptOff, hooksAndStream, true, acqPlan{label: "none"}},
+		{"no sink", TranscriptStreamParse, stream, false, acqPlan{label: "none"}},
 	}
 	for _, c := range cases {
-		eff, label := resolveStrategy(c.mode, c.rp)
-		if eff != c.wantEffective || label != c.wantLabel {
-			t.Errorf("resolveStrategy(%s, stream=%v) = (%s,%q), want (%s,%q)",
-				c.mode, c.rp.Stream != nil, eff, label, c.wantEffective, c.wantLabel)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			got := planAcquisition(c.mode, c.rp, c.sink)
+			if got != c.want {
+				t.Errorf("planAcquisition = %+v, want %+v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestDrainHooksEmitsFileEventsAsHooks(t *testing.T) {
+	spool := t.TempDir()
+	// Write a spool batch as a hook subprocess would: a session marker + parent
+	// conversation events, all file-sourced.
+	events := []transcript.ParsedEvent{
+		{HarnessSessionID: "s", Event: transcript.Event{Type: transcript.EventSessionMeta, Source: transcript.SourceFile}},
+		{HarnessSessionID: "s", Event: transcript.Event{Type: transcript.EventText, Text: "from file", Source: transcript.SourceFile}},
+	}
+	if err := writeSpool(spool, "stop", events); err != nil {
+		t.Fatal(err)
+	}
+	var got []transcript.EventEnvelope
+	tap := &streamTap{harness: "claude", runID: "r", onEvent: func(e transcript.EventEnvelope) error { got = append(got, e); return nil }}
+
+	if s := tap.drainHooks(spool); s != "hooks" {
+		t.Errorf("strategy = %q, want hooks (a parent event was captured)", s)
+	}
+	if len(got) != 2 {
+		t.Fatalf("emitted %d events, want 2", len(got))
+	}
+	// In Hooks authority, the file PARENT event is admitted (file is authoritative).
+	if got[1].Event.Text != "from file" {
+		t.Errorf("parent file event not emitted: %+v", got)
+	}
+}
+
+func TestDrainHooksFallsBackToShadowWhenNoHookFired(t *testing.T) {
+	spool := t.TempDir() // empty: no hook fired
+	tap := &streamTap{harness: "claude", runID: "r"}
+	tap.onEvent = func(transcript.EventEnvelope) error { return nil }
+	// Pretend the live stream was buffered during the run.
+	tap.shadow = []transcript.ParsedEvent{
+		{HarnessSessionID: "s", Event: transcript.Event{Type: transcript.EventText, Text: "live", Source: transcript.SourceLive}},
+	}
+	var got []transcript.EventEnvelope
+	tap.onEvent = func(e transcript.EventEnvelope) error { got = append(got, e); return nil }
+
+	if s := tap.drainHooks(spool); s != "stream" {
+		t.Errorf("strategy = %q, want stream (fallback to buffered live)", s)
+	}
+	if len(got) != 1 || got[0].Event.Text != "live" {
+		t.Fatalf("fallback did not flush the shadow buffer: %+v", got)
 	}
 }

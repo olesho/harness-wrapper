@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +108,61 @@ func TestRunStreamParseEndToEnd(t *testing.T) {
 	}
 	if got[2].Event.Type != transcript.EventToolResult || got[2].Event.ToolUseID != "toolu_9" || got[2].Event.Output == "" {
 		t.Errorf("event 2: %+v, want tool_result for toolu_9 with output", got[2].Event)
+	}
+}
+
+// TestRunHooksEnsuresConfigAndFallsBackToStream drives the Hooks strategy end
+// to end through a real PTY. The mock doesn't fire Claude hooks, so the spool
+// stays empty and the orchestrator falls back to the buffered live stream —
+// proving (a) EnsureConfig wrote the per-worktree settings.json, (b) the spool
+// env was set, and (c) the post-exit drain → shadow fallback never loses the
+// transcript when hooks don't fire.
+func TestRunHooksEnsuresConfigAndFallsBackToStream(t *testing.T) {
+	worktree := t.TempDir()
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "stream.jsonl")
+	if err := os.WriteFile(fixture, []byte(streamFixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []transcript.EventEnvelope
+	cfg := harness.Config{
+		Wrapper: wrapper.Config{
+			BinaryPath: mockBin,
+			Args:       []string{"--mode", "emit", "--emit-file", fixture},
+			Harness:    "claude",
+			WorkingDir: worktree,
+			Stdout:     io.Discard,
+		},
+		RunID:          "run-hooks",
+		TranscriptMode: harness.TranscriptHooks,
+		HookCommand:    []string{"/abs/loom", "hooks"},
+		OnEvent:        func(e transcript.EventEnvelope) error { got = append(got, e); return nil },
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := harness.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("harness.Run: %v", err)
+	}
+	// EnsureConfig wrote the per-worktree settings.json with loom's hooks.
+	settings, rerr := os.ReadFile(filepath.Join(worktree, ".claude", "settings.json"))
+	if rerr != nil {
+		t.Fatalf("settings.json not written by EnsureConfig: %v", rerr)
+	}
+	if !strings.Contains(string(settings), "/abs/loom") || !strings.Contains(string(settings), "HW_EVENT_SPOOL") {
+		t.Errorf("settings.json missing loom hook command:\n%s", settings)
+	}
+	// No hook fired (the mock isn't claude) → fall back to the buffered stream.
+	if res.TranscriptStrategy != "stream" {
+		t.Errorf("TranscriptStrategy = %q, want stream (hooks fallback)", res.TranscriptStrategy)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d events, want 3 (buffered stream flushed on fallback)", len(got))
+	}
+	if res.HarnessSessionID != "e2e-sess-9" {
+		t.Errorf("HarnessSessionID = %q, want e2e-sess-9", res.HarnessSessionID)
 	}
 }
 
