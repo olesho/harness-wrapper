@@ -17,6 +17,7 @@ package codex
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -110,15 +111,13 @@ type rolloutLine struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
-func parseJSONL(path string) ([]transcript.Event, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("codex transcript: open %s: %w", path, err)
-	}
-	defer func() { _ = f.Close() }()
-
+// Events parses Codex rollout JSONL bytes into the canonical event stream
+// (response_item lines → role-tagged text events; tool/unknown roles → system).
+// This is the file-source byte parser loom delegates to, so Codex parsing lives
+// in one place (the wrapper). Malformed JSON on a line is a hard error.
+func Events(data []byte) ([]transcript.Event, error) {
 	out := make([]transcript.Event, 0, 32)
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(bytes.NewReader(data))
 	// Some response_item lines can be large; bump buffer ceiling.
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	lineNo := 0
@@ -130,7 +129,7 @@ func parseJSONL(path string) ([]transcript.Event, error) {
 		}
 		var ln rolloutLine
 		if err := json.Unmarshal(raw, &ln); err != nil {
-			return nil, fmt.Errorf("codex transcript: parse line %d in %s: %w", lineNo, path, err)
+			return nil, fmt.Errorf("codex transcript: parse line %d: %w", lineNo, err)
 		}
 		if ln.Type != "response_item" {
 			continue
@@ -166,7 +165,20 @@ func parseJSONL(path string) ([]transcript.Event, error) {
 		})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("codex transcript: scan %s: %w", path, err)
+		return nil, fmt.Errorf("codex transcript: scan: %w", err)
 	}
 	return out, nil
+}
+
+// parseJSONL reads a Codex rollout file and parses it via Events.
+func parseJSONL(path string) ([]transcript.Event, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path located under the codex sessions root
+	if err != nil {
+		return nil, fmt.Errorf("codex transcript: open %s: %w", path, err)
+	}
+	evs, err := Events(data)
+	if err != nil {
+		return nil, fmt.Errorf("codex transcript: %s: %w", path, err)
+	}
+	return evs, nil
 }
