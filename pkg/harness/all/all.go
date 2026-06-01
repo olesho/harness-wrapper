@@ -9,5 +9,7 @@ package all
 
 import (
 	_ "github.com/olesho/harness-wrapper/pkg/harness/claude"
+	_ "github.com/olesho/harness-wrapper/pkg/harness/codex"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/gemini"
+	_ "github.com/olesho/harness-wrapper/pkg/harness/opencode"
 )
