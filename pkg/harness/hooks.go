@@ -28,6 +28,15 @@ type HookProvider interface {
 	// spool, all wrapper-set); the payload carries the native transcript
 	// LOCATION. It may return partial results with an error.
 	ParseHookPayload(ctx HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error)
+
+	// EnsureConfig idempotently + atomically installs the hook entries into the
+	// harness's PER-WORKTREE config under worktreePath, rendering each command
+	// from loomArgv (the loom binary path + "hooks", e.g. {"/abs/loom","hooks"})
+	// via RenderHookCommand. It preserves the user's existing hooks, marks loom's
+	// entries (owner marker) so they can be refreshed/removed, refreshes the
+	// absolute loom path each call (a moved binary self-heals), and is safe under
+	// concurrent same-worktree callers (flock-guarded, atomic temp+rename).
+	EnsureConfig(worktreePath string, loomArgv []string) error
 }
 
 // StaticHookProfile is an OPTIONAL interface a Profile implements when the
