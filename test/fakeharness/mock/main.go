@@ -10,6 +10,7 @@
 //	needs-input   prints a prompt, reads a line from stdin, exits 0 if it matches --expected-input
 //	cost-limited  prints a quota-exhausted message, exits with --exit-code
 //	api-error     prints --api-error-msg (optionally --api-error-repeat times) then either heartbeats until signal or, if --api-error-recover, continues to completed-style progress and exits 0
+//	emit          writes the verbatim contents of --emit-file to stdout, then exits 0 (used to replay a scripted stream-json transcript through the PTY)
 //
 // This binary has no external dependencies on a particular consumer.
 // It's a standalone fake harness invoked as a subprocess by tests
@@ -39,6 +40,7 @@ func main() {
 	apiErrorRepeatGap := flag.Duration("api-error-repeat-gap", 100*time.Millisecond, "delay between repeated api-error prints")
 	apiErrorRecover := flag.Bool("api-error-recover", false, "after printing, resume normal completed-style progress and exit 0 (else heartbeat until signal)")
 	apiErrorHeartbeat := flag.Duration("api-error-heartbeat", 200*time.Millisecond, "heartbeat interval for api-error mode")
+	emitFile := flag.String("emit-file", "", "for --mode emit: path to a file whose bytes are written verbatim to stdout")
 	flag.Parse()
 
 	installSignalCleanup()
@@ -61,6 +63,8 @@ func main() {
 		os.Exit(*exitCode)
 	case "api-error":
 		runAPIError(*apiErrorMsg, *apiErrorRepeat, *apiErrorRepeatGap, *apiErrorRecover, *apiErrorHeartbeat, *steps, *delay)
+	case "emit":
+		runEmit(*emitFile)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode %q\n", *mode)
 		os.Exit(2)
@@ -113,6 +117,19 @@ func runAPIError(msg string, repeat int, repeatGap time.Duration, recover bool, 
 		time.Sleep(heartbeat)
 		fmt.Print(".")
 	}
+}
+
+func runEmit(path string) {
+	if path == "" {
+		fmt.Fprintln(os.Stderr, "emit mode requires --emit-file")
+		os.Exit(2)
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // test fixture path from the test itself
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "emit: %v\n", err)
+		os.Exit(2)
+	}
+	_, _ = os.Stdout.Write(data)
 }
 
 func installSignalCleanup() {
