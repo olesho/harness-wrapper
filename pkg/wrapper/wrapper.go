@@ -113,6 +113,26 @@ type Config struct {
 	// Harness field — or, failing that, a generic cost/quota
 	// classifier — is used.
 	Classifier Classifier
+
+	// OnLine, if non-nil, is the DURABLE internal line tap. It receives every
+	// complete line of the harness's RAW PTY output, in order, with no drops:
+	// it is invoked synchronously in the PTY read loop, so a slow OnLine
+	// back-pressures the harness (slows it) rather than losing a line. This is
+	// the load-bearing tap for session-id capture and live transcript parsing,
+	// which must not drop.
+	//
+	// Framing: bytes are split on '\n'; a trailing '\r' (from '\r\n') is
+	// trimmed; a final unterminated line is flushed once when the PTY closes.
+	// There is NO line-length cap — a multi-MB single line is delivered whole.
+	// Bytes are RAW: ANSI/control sequences are NOT stripped, so the consumer
+	// (the pkg/harness orchestrator, feeding ExtractSessionID / ParseStreamLine)
+	// must tolerate non-JSON / ANSI-polluted lines and skip them.
+	//
+	// This is the low-level supervisor tap and is deliberately distinct from a
+	// best-effort, drop-under-load display callback (which belongs one layer up,
+	// in pkg/harness). pkg/wrapper stays stateless: it owns no persistence and
+	// does not import pkg/harness.
+	OnLine func(line string)
 }
 
 // Status is the normalized run status returned by the wrapper.

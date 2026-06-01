@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
 
 // Profile is the per-harness entry point. Implementations live in
@@ -66,6 +68,10 @@ type ResolvedProfile struct {
 	// Resume produces the CLI arg prefix that resumes a captured session.
 	// nil ⇒ resume unavailable (caller falls back to checkpoint).
 	Resume Resumer
+	// Stream parses lines of the harness's headless stream output into canonical
+	// events — the generic "stdout floor" transcript source. nil ⇒ no live
+	// stream parser this run (the orchestrator uses hooks/export/file instead).
+	Stream StreamParser
 }
 
 // SessionIDExtractor recovers the harness-assigned session UUID from a single
@@ -83,6 +89,24 @@ type Resumer interface {
 	// ResumeArgs returns the argv fragment that resumes sessionID (e.g.
 	// {"--resume","--session-id",id}). Returns nil for an empty id.
 	ResumeArgs(sessionID string) []string
+}
+
+// StreamParser parses a single line of the harness's headless stream output
+// (e.g. `claude -p --output-format stream-json`) into canonical events. This is
+// the generic "stdout floor" acquisition strategy: the orchestrator feeds it
+// each raw line from the wrapper's durable line tap (wrapper.Config.OnLine) and
+// concatenates the results.
+//
+// Contract: stateless and idempotent per line; one input line yields zero or
+// more ParsedEvents (an assistant line can carry a text block AND a tool_use
+// block). It MUST tolerate non-event lines — non-JSON, ANSI-polluted, or
+// non-conversational (system/result) — by returning nil rather than erroring,
+// because the tap delivers raw PTY bytes. Each returned event is tagged
+// Source=live; the orchestrator stamps RunID/Harness and assigns the
+// authoritative monotonic Seq from arrival order (stream lines carry no native
+// per-line timestamp, so arrival order is the order).
+type StreamParser interface {
+	ParseStreamLine(line string) []transcript.ParsedEvent
 }
 
 var (

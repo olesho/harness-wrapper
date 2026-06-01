@@ -22,16 +22,22 @@ type waitResult struct {
 // copyPTYOutput reads bytes from the PTY master and writes them to the
 // caller's stdout, recording the timestamp of the most recent byte for
 // idle detection.
-func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recentOutput *recentOutputBuffer) {
+func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recentOutput *recentOutputBuffer, tap *lineSplitter) {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := src.Read(buf)
 		if n > 0 {
 			lastOutput.Store(time.Now().UnixNano())
 			recentOutput.Write(buf[:n])
+			// Durable taps (recent-output ring + the line tap) consume the raw
+			// bytes BEFORE the display fanout, so the line tap is never
+			// downstream of the lossy attach path. tap is nil-safe.
+			tap.write(buf[:n])
 			_, _ = dst.Write(buf[:n])
 		}
 		if err != nil {
+			// EOF: deliver any final unterminated line before the goroutine ends.
+			tap.flush()
 			return
 		}
 	}

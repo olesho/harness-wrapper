@@ -263,7 +263,9 @@ func (s *Session) supervise(ctx context.Context) {
 	outWG.Add(1)
 	go func() {
 		defer outWG.Done()
-		copyPTYOutput(s.ptmx, s.fanout, s.lastOutput, s.recentOutput)
+		// newLineSplitter is nil when no durable line tap is configured, and all
+		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
+		copyPTYOutput(s.ptmx, s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
 	}()
 
 	var stdinDone chan struct{}
