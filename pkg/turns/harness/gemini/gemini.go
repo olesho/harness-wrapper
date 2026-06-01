@@ -64,5 +64,9 @@ func (*Adapter) ExtractSessionID(_ screen.Snapshot) (string, bool) {
 // ID is known — see the package-level comment for the open question
 // around how that ID is sourced.
 func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	return transcriptgemini.New().Read(harnessSessionID, workingDir)
+	evs, err := transcriptgemini.New().Read(harnessSessionID, workingDir)
+	if err != nil {
+		return nil, err
+	}
+	return transcript.TurnsFromEvents(evs), nil
 }

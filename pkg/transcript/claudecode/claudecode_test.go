@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
 
 func TestEncodedCWD(t *testing.T) {
@@ -62,6 +64,43 @@ func TestReadAgainstFixture(t *testing.T) {
 	}
 	if turns[1].Role != "assistant" || turns[1].Text != "hi\n\nthere" {
 		t.Errorf("turn 1 mismatch: %+v", turns[1])
+	}
+}
+
+// TestReadReturnsCanonicalEvents locks the P2b contract: Read returns canonical
+// transcript.Event values (Type=text, Source=file) with the native message UUID
+// captured for dedup identity.
+func TestReadReturnsCanonicalEvents(t *testing.T) {
+	dir := t.TempDir()
+	cwd := "/some/work/dir"
+	projDir := filepath.Join(dir, "projects", EncodedCWD(cwd))
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"type":"user","uuid":"u-1","message":{"role":"user","content":"hello"},"timestamp":"2026-05-14T12:00:00Z"}
+`
+	if err := os.WriteFile(filepath.Join(projDir, "sess.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	evs, err := (&Reader{ProjectsRoot: filepath.Join(dir, "projects")}).Read("sess", cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1", len(evs))
+	}
+	e := evs[0]
+	if e.Type != transcript.EventText {
+		t.Errorf("Type = %q, want %q", e.Type, transcript.EventText)
+	}
+	if e.Source != transcript.SourceFile {
+		t.Errorf("Source = %q, want %q", e.Source, transcript.SourceFile)
+	}
+	if e.UUID != "u-1" {
+		t.Errorf("UUID = %q, want u-1 (native message uuid)", e.UUID)
+	}
+	if e.ID() != "msg:u-1" {
+		t.Errorf("ID() = %q, want msg:u-1", e.ID())
 	}
 }
 

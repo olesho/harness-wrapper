@@ -118,5 +118,9 @@ func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
 // ReadTranscript reads the on-disk Claude Code session log. Implements
 // turns.TranscriptReader.
 func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	return transcriptcc.New().Read(harnessSessionID, workingDir)
+	evs, err := transcriptcc.New().Read(harnessSessionID, workingDir)
+	if err != nil {
+		return nil, err
+	}
+	return transcript.TurnsFromEvents(evs), nil
 }

@@ -89,5 +89,9 @@ func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
 // ReadTranscript reads the on-disk Codex session log. Implements
 // turns.TranscriptReader.
 func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	return transcriptcodex.New().Read(harnessSessionID, workingDir)
+	evs, err := transcriptcodex.New().Read(harnessSessionID, workingDir)
+	if err != nil {
+		return nil, err
+	}
+	return transcript.TurnsFromEvents(evs), nil
 }

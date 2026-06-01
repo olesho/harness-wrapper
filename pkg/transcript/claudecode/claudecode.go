@@ -44,10 +44,10 @@ type Reader struct {
 // New constructs a Claude Code transcript Reader.
 func New() *Reader { return &Reader{} }
 
-// Read returns the ordered list of turns for the given Claude Code
-// session UUID. workingDir is required: Claude Code indexes
-// transcripts by working directory.
-func (r *Reader) Read(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
+// Read returns the canonical Event stream for the given Claude Code session
+// UUID. workingDir is required: Claude Code indexes transcripts by working
+// directory.
+func (r *Reader) Read(harnessSessionID, workingDir string) ([]transcript.Event, error) {
 	if harnessSessionID == "" {
 		return nil, fmt.Errorf("claudecode transcript: empty session id")
 	}
@@ -106,6 +106,7 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 // passes.
 type sessionLine struct {
 	Type      string `json:"type"`
+	UUID      string `json:"uuid,omitempty"` // native message uuid → Event.UUID (dedup identity)
 	Timestamp string `json:"timestamp,omitempty"`
 	Message   struct {
 		Role    string          `json:"role"`
@@ -118,14 +119,14 @@ type contentBlock struct {
 	Text string `json:"text"`
 }
 
-func parseJSONL(path string) ([]transcript.Turn, error) {
+func parseJSONL(path string) ([]transcript.Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("claudecode transcript: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	out := make([]transcript.Turn, 0, 32)
+	out := make([]transcript.Event, 0, 32)
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	lineNo := 0
@@ -157,11 +158,18 @@ func parseJSONL(path string) ([]transcript.Turn, error) {
 		if ln.Timestamp != "" {
 			ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
 		}
-		out = append(out, transcript.Turn{
+		// P2b: faithful 1:1 text mapping into the canonical Event (Source=file).
+		// Tool-block extraction (tool_use/tool_result) lands with the loom-parser
+		// port in the parity step; here we preserve exactly the prior text turns.
+		ev := transcript.Event{
 			Role:      role,
+			Type:      transcript.EventText,
 			Text:      text,
 			Timestamp: ts,
-		})
+			Source:    transcript.SourceFile,
+			UUID:      ln.UUID,
+		}
+		out = append(out, ev)
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("claudecode transcript: scan %s: %w", path, err)

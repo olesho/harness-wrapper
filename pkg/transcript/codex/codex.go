@@ -40,7 +40,7 @@ func New() *Reader { return &Reader{} }
 // Read returns the ordered list of turns for the given Codex session
 // UUID. workingDir is ignored — Codex indexes sessions by date/UUID,
 // not by working directory.
-func (r *Reader) Read(harnessSessionID, _ string) ([]transcript.Turn, error) {
+func (r *Reader) Read(harnessSessionID, _ string) ([]transcript.Event, error) {
 	if harnessSessionID == "" {
 		return nil, fmt.Errorf("codex transcript: empty session id")
 	}
@@ -110,14 +110,14 @@ type rolloutLine struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
-func parseJSONL(path string) ([]transcript.Turn, error) {
+func parseJSONL(path string) ([]transcript.Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("codex transcript: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
-	out := make([]transcript.Turn, 0, 32)
+	out := make([]transcript.Event, 0, 32)
 	sc := bufio.NewScanner(f)
 	// Some response_item lines can be large; bump buffer ceiling.
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -157,10 +157,12 @@ func parseJSONL(path string) ([]transcript.Turn, error) {
 		if ln.Timestamp != "" {
 			ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
 		}
-		out = append(out, transcript.Turn{
+		out = append(out, transcript.Event{
 			Role:      role,
+			Type:      transcript.EventText,
 			Text:      strings.Join(parts, "\n\n"),
 			Timestamp: ts,
+			Source:    transcript.SourceFile,
 		})
 	}
 	if err := sc.Err(); err != nil {

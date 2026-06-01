@@ -44,5 +44,8 @@ type Turn struct {
 // lines parsed, then a malformed one) should error rather than
 // silently truncate.
 type Reader interface {
-	Read(harnessSessionID, workingDir string) ([]Turn, error)
+	// Read returns the canonical Event stream for a session. (Was []Turn; the
+	// richer Event is the canonical transcript unit — chat projects it back to
+	// []Turn via TurnsFromEvents at its boundary.)
+	Read(harnessSessionID, workingDir string) ([]Event, error)
 }
