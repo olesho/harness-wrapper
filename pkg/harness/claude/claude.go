@@ -21,14 +21,15 @@ type Profile struct{}
 // Name implements harness.Profile.
 func (Profile) Name() string { return "claude" }
 
-// Resolve implements harness.Profile. Claude's resume + live-stream
-// capabilities are statically available (no runtime probe needed), so it
-// unconditionally populates SessionID + Resume + Stream. ctx is unused for these.
+// Resolve implements harness.Profile. Claude's capabilities are all statically
+// available (documented + firm — no runtime probe needed), so it unconditionally
+// populates SessionID + Resume + Stream + Hooks. ctx is unused for these.
 func (Profile) Resolve(_ harness.ResolveContext) harness.ResolvedProfile {
 	return harness.ResolvedProfile{
 		SessionID: sessionIDExtractor{},
 		Resume:    resumer{},
 		Stream:    streamParser{},
+		Hooks:     hookProvider{},
 	}
 }
 

@@ -72,6 +72,10 @@ type ResolvedProfile struct {
 	// events — the generic "stdout floor" transcript source. nil ⇒ no live
 	// stream parser this run (the orchestrator uses hooks/export/file instead).
 	Stream StreamParser
+	// Hooks drives hook-based acquisition (config ensure + payload parsing).
+	// nil unless hook support is confirmed for this run (statically firm for
+	// Claude/Gemini; runtime-probed for Codex).
+	Hooks HookProvider
 }
 
 // SessionIDExtractor recovers the harness-assigned session UUID from a single
