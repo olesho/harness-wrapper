@@ -2,8 +2,10 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
@@ -59,7 +61,21 @@ type Config struct {
 	// panic in OnEvent is converted to an error, never swallowed. nil ⇒ no
 	// delivery (and no stream parsing is performed).
 	OnEvent func(transcript.EventEnvelope) error
+
+	// OnActivity, when non-nil, is invoked periodically from a background
+	// goroutine while the harness is alive, carrying the latest wrapper.Snapshot
+	// (notably LastOutputAt) so the caller can forward liveness to an external
+	// observer (e.g. a loom daemon IPC heartbeat). It must be cheap and
+	// non-blocking. A final call fires when the harness exits.
+	OnActivity func(wrapper.Snapshot)
+
+	// ActivityInterval is the OnActivity tick period. Zero ⇒ DefaultActivityInterval.
+	// Ignored when OnActivity is nil.
+	ActivityInterval time.Duration
 }
+
+// DefaultActivityInterval is the OnActivity cadence when none is configured.
+const DefaultActivityInterval = 10 * time.Second
 
 // Result wraps wrapper.Result with the transcript outcome.
 type Result struct {
@@ -77,6 +93,17 @@ type Result struct {
 	// back-pressure (0 when OnDisplayLine is unset or kept up). The durable
 	// transcript path never drops; this is only the best-effort display queue.
 	DisplayLinesDropped uint64
+
+	// RetryAfter is the largest wait hint the harness surfaced during the run
+	// (from session-limit / rate-limit banners), or 0. A retrying caller uses it
+	// as the backoff floor.
+	RetryAfter time.Duration
+
+	// SawAPIError reports whether the harness emitted a StatusAPIError event
+	// mid-run (even if it later exited with a different terminal status) — the
+	// out-of-band signal a retry policy needs for print-mode harnesses that don't
+	// recover internally.
+	SawAPIError bool
 }
 
 // Run resolves the per-harness Profile, composes wrapper.Run with the durable
@@ -133,10 +160,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		wc.OnLine = tap.onLine
 	}
 
-	wres, werr := wrapper.Run(runCtx, wc)
+	// Compose wrapper.Start (not wrapper.Run) so we can observe the event stream
+	// (RetryAfter / API-error hints a retrying caller needs) and sample Snapshot
+	// for OnActivity, while still owning the OnLine/OnEvent/hooks orchestration.
+	wres, obs, werr := superviseStart(runCtx, wc, cfg.OnActivity, cfg.ActivityInterval)
 
-	// The tap goroutine has joined (wrapper joins it before returning), so it is
-	// now safe to close the display sink (no concurrent push) and drain the spool.
+	// The tap goroutine has joined (Wait joins it before returning), so it is now
+	// safe to close the display sink (no concurrent push) and drain the spool.
 	dropped := tap.display.close()
 
 	// Post-exit (grace window): in hooks mode the SessionEnd/Stop hooks fire
@@ -146,7 +176,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		strategy = tap.drainHooks(spoolDir)
 	}
 
-	res := Result{Result: wres, TranscriptStrategy: strategy, HarnessSessionID: tap.sessionID, DisplayLinesDropped: dropped}
+	res := Result{
+		Result: wres, TranscriptStrategy: strategy, HarnessSessionID: tap.sessionID,
+		DisplayLinesDropped: dropped, RetryAfter: obs.retryAfter, SawAPIError: obs.sawAPIError,
+	}
 	if tap.deliverErr != nil {
 		// Surface the delivery failure as the run error: a fast-fail beats a
 		// silently truncated transcript. (The harness was already terminated via
@@ -154,6 +187,81 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return res, fmt.Errorf("harness: transcript delivery failed: %w", tap.deliverErr)
 	}
 	return res, werr
+}
+
+// observation bundles the out-of-band signals drained from the session's event
+// stream during a run — what a retrying caller needs beyond the terminal Result.
+type observation struct {
+	retryAfter  time.Duration
+	sawAPIError bool
+}
+
+// superviseStart runs cfg under wrapper.Start, draining the event stream for the
+// largest RetryAfter hint + whether any StatusAPIError fired, and (when onAct is
+// set) sampling Snapshot on a ticker. It returns the terminal Result, the
+// observation, and the wrapper error. On a Start failure it mirrors wrapper.Run's
+// categorical Status mapping.
+func superviseStart(ctx context.Context, cfg wrapper.Config, onAct func(wrapper.Snapshot), interval time.Duration) (wrapper.Result, observation, error) {
+	sess, err := wrapper.Start(ctx, cfg)
+	if err != nil {
+		res := wrapper.Result{ExitCode: -1}
+		if errors.Is(err, wrapper.ErrBinaryNotFound) {
+			res.Status = wrapper.StatusBinaryNotFound
+			res.Reason = err.Error()
+		}
+		return res, observation{}, err
+	}
+
+	var obs observation
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for ev := range sess.Events() {
+			if ev.RetryAfter > obs.retryAfter {
+				obs.retryAfter = ev.RetryAfter
+			}
+			if ev.Status == wrapper.StatusAPIError {
+				obs.sawAPIError = true
+			}
+		}
+	}()
+
+	stopObs := startActivityObserver(sess, onAct, interval)
+	res, werr := sess.Wait()
+	<-drained // happens-before: obs fields are safe to read after this
+	if stopObs != nil {
+		stopObs()
+	}
+	return res, obs, werr
+}
+
+// startActivityObserver samples sess.Snapshot() on a ticker into onAct until the
+// returned stop func is called (which fires one final sample). Returns nil when
+// no callback is configured.
+func startActivityObserver(sess *wrapper.Session, onAct func(wrapper.Snapshot), interval time.Duration) func() {
+	if onAct == nil {
+		return nil
+	}
+	if interval <= 0 {
+		interval = DefaultActivityInterval
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				onAct(sess.Snapshot())
+				return
+			case <-ticker.C:
+				onAct(sess.Snapshot())
+			}
+		}
+	}()
+	return func() { close(stop); <-done }
 }
 
 // resolveProfile looks up and resolves the per-harness Profile for the run, or

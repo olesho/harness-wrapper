@@ -211,6 +211,69 @@ func TestRunOnDisplayLineReceivesOutput(t *testing.T) {
 	}
 }
 
+// TestRunObservesAPIError confirms harness.Run drains the event stream for the
+// out-of-band retry signal a retrying caller needs: the mock emits an API-error
+// banner mid-run (then recovers + exits 0), and Run reports SawAPIError.
+func TestRunObservesAPIError(t *testing.T) {
+	cfg := harness.Config{
+		Wrapper: wrapper.Config{
+			BinaryPath: mockBin,
+			Args:       []string{"--mode", "api-error", "--api-error-recover"},
+			Harness:    "claude", // the claude classifier recognizes the API-error banner
+			Stdout:     io.Discard,
+			// Small idle thresholds so the classifier fires StatusAPIError during
+			// the recover pause (the mock goes quiet ~500ms after the banner).
+			IdleQuiet:    50 * time.Millisecond,
+			IdleClassify: 150 * time.Millisecond,
+		},
+		TranscriptMode: harness.TranscriptOff,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := harness.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("harness.Run: %v", err)
+	}
+	if !res.SawAPIError {
+		t.Error("SawAPIError = false, want true (mock emitted an API-error banner mid-run)")
+	}
+}
+
+// TestRunOnActivityFires confirms the activity observer samples Snapshot while
+// the harness runs (at least the final on-exit sample fires).
+func TestRunOnActivityFires(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "stream.jsonl")
+	if err := os.WriteFile(fixture, []byte(streamFixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu    sync.Mutex
+		calls int
+	)
+	cfg := harness.Config{
+		Wrapper: wrapper.Config{
+			BinaryPath: mockBin,
+			Args:       []string{"--mode", "emit", "--emit-file", fixture},
+			Harness:    "claude",
+			Stdout:     io.Discard,
+		},
+		TranscriptMode:   harness.TranscriptOff,
+		OnActivity:       func(wrapper.Snapshot) { mu.Lock(); calls++; mu.Unlock() },
+		ActivityInterval: 20 * time.Millisecond,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := harness.Run(ctx, cfg); err != nil {
+		t.Fatalf("harness.Run: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls == 0 {
+		t.Error("OnActivity never fired (expected at least the final on-exit sample)")
+	}
+}
+
 // TestRunOffModeEmitsNothing confirms Off mode delivers no events but still
 // composes the run (and captures the session id for resume).
 func TestRunOffModeEmitsNothing(t *testing.T) {
