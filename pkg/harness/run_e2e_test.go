@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,6 +164,50 @@ func TestRunHooksEnsuresConfigAndFallsBackToStream(t *testing.T) {
 	}
 	if res.HarnessSessionID != "e2e-sess-9" {
 		t.Errorf("HarnessSessionID = %q, want e2e-sess-9", res.HarnessSessionID)
+	}
+}
+
+// TestRunOnDisplayLineReceivesOutput proves the best-effort display callback is
+// wired through a real PTY run: every emitted line reaches OnDisplayLine (the
+// tiny fixture is well under the queue cap, so nothing is dropped).
+func TestRunOnDisplayLineReceivesOutput(t *testing.T) {
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, "stream.jsonl")
+	if err := os.WriteFile(fixture, []byte(streamFixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var (
+		mu    sync.Mutex
+		lines []string
+	)
+	cfg := harness.Config{
+		Wrapper: wrapper.Config{
+			BinaryPath: mockBin,
+			Args:       []string{"--mode", "emit", "--emit-file", fixture},
+			Harness:    "claude",
+			Stdout:     io.Discard,
+		},
+		TranscriptMode: harness.TranscriptOff, // display works regardless of transcript mode
+		OnDisplayLine: func(line string) {
+			mu.Lock()
+			lines = append(lines, line)
+			mu.Unlock()
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := harness.Run(ctx, cfg)
+	if err != nil {
+		t.Fatalf("harness.Run: %v", err)
+	}
+	if res.DisplayLinesDropped != 0 {
+		t.Errorf("DisplayLinesDropped = %d, want 0 for a tiny fixture", res.DisplayLinesDropped)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "e2e-sess-9") || !strings.Contains(joined, "running ls") {
+		t.Errorf("OnDisplayLine missing expected output; got %d lines:\n%s", len(lines), joined)
 	}
 }
 

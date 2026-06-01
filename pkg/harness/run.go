@@ -42,6 +42,14 @@ type Config struct {
 	// Hooks strategy (the guard is a hook). The caller owns its lifecycle.
 	Yield *YieldControl
 
+	// OnDisplayLine, if set, receives each raw output line on a BEST-EFFORT
+	// basis for the caller's usage/display needs (e.g. loom's stream UI). It is
+	// delivered via an internal bounded drop-oldest queue on a separate
+	// goroutine and NEVER blocks the harness — under sustained back-pressure the
+	// oldest lines are dropped (counted in Result.DisplayLinesDropped). For the
+	// transcript/session-id path, which must not drop, use OnEvent (durable).
+	OnDisplayLine func(line string)
+
 	// OnEvent is the durable, idempotent sink for normalized transcript events.
 	// It is invoked SYNCHRONOUSLY from the PTY read loop, so it back-pressures
 	// the harness (a slow sink slows the harness) rather than dropping an event,
@@ -64,6 +72,11 @@ type Result struct {
 	// HarnessSessionID is the native session id captured from the live stream
 	// (for resume / lock persistence), or empty if none was observed.
 	HarnessSessionID string
+
+	// DisplayLinesDropped counts the OnDisplayLine lines dropped under
+	// back-pressure (0 when OnDisplayLine is unset or kept up). The durable
+	// transcript path never drops; this is only the best-effort display queue.
+	DisplayLinesDropped uint64
 }
 
 // Run resolves the per-harness Profile, composes wrapper.Run with the durable
@@ -86,6 +99,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		onEvent:    cfg.OnEvent,
 		emitLive:   plan.useStream,
 		bufferLive: plan.shadow,
+		display:    newDisplaySink(cfg.OnDisplayLine),
 	}
 
 	wc := cfg.Wrapper
@@ -121,6 +135,10 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 
 	wres, werr := wrapper.Run(runCtx, wc)
 
+	// The tap goroutine has joined (wrapper joins it before returning), so it is
+	// now safe to close the display sink (no concurrent push) and drain the spool.
+	dropped := tap.display.close()
+
 	// Post-exit (grace window): in hooks mode the SessionEnd/Stop hooks fire
 	// around exit, so the spool is drained AFTER the process is gone.
 	strategy := plan.label
@@ -128,7 +146,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		strategy = tap.drainHooks(spoolDir)
 	}
 
-	res := Result{Result: wres, TranscriptStrategy: strategy, HarnessSessionID: tap.sessionID}
+	res := Result{Result: wres, TranscriptStrategy: strategy, HarnessSessionID: tap.sessionID, DisplayLinesDropped: dropped}
 	if tap.deliverErr != nil {
 		// Surface the delivery failure as the run error: a fast-fail beats a
 		// silently truncated transcript. (The harness was already terminated via
@@ -221,6 +239,7 @@ type streamTap struct {
 	onEvent    func(transcript.EventEnvelope) error
 	emitLive   bool               // emit live stream events (StreamParse)
 	bufferLive bool               // buffer live stream events (hooks fallback)
+	display    *displaySink       // best-effort display callback (nil ⇒ none)
 	cancel     context.CancelFunc // terminate the harness on a delivery failure
 
 	// --- mutated in the PTY copy goroutine during the run, then by Run after ---
@@ -232,7 +251,7 @@ type streamTap struct {
 
 // installs reports whether the durable line tap must be attached.
 func (o *streamTap) installs() bool {
-	return o.sessions != nil || o.emitLive || o.bufferLive
+	return o.sessions != nil || o.emitLive || o.bufferLive || o.display != nil
 }
 
 // onLine is wrapper.Config.OnLine: the durable per-line callback. It captures
@@ -240,6 +259,9 @@ func (o *streamTap) installs() bool {
 // stream events or buffers them for the hooks fallback. Once a delivery has
 // failed it becomes inert (the run is already being torn down).
 func (o *streamTap) onLine(line string) {
+	// Best-effort display first: every line, independent of the transcript path,
+	// and never blocking (the sink drops under back-pressure).
+	o.display.push(line)
 	if o.deliverErr != nil {
 		return
 	}
