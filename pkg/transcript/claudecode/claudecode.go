@@ -22,14 +22,10 @@
 package claudecode
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
-	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
@@ -58,7 +54,11 @@ func (r *Reader) Read(harnessSessionID, workingDir string) ([]transcript.Event, 
 	if err != nil {
 		return nil, err
 	}
-	return parseJSONL(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is located under projectsRoot
+	if err != nil {
+		return nil, fmt.Errorf("claudecode transcript: read %s: %w", path, err)
+	}
+	return Events(data)
 }
 
 // claudeCWDSanitize matches every character Claude Code rewrites when it names
@@ -101,107 +101,5 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 	return path, nil
 }
 
-// Internal JSONL line shape. message.content is polymorphic (string or
-// array of blocks); we capture it as json.RawMessage and decode in two
-// passes.
-type sessionLine struct {
-	Type      string `json:"type"`
-	UUID      string `json:"uuid,omitempty"` // native message uuid → Event.UUID (dedup identity)
-	Timestamp string `json:"timestamp,omitempty"`
-	Message   struct {
-		Role    string          `json:"role"`
-		Content json.RawMessage `json:"content"`
-	} `json:"message"`
-}
-
-type contentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-func parseJSONL(path string) ([]transcript.Event, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("claudecode transcript: open %s: %w", path, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	out := make([]transcript.Event, 0, 32)
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		raw := sc.Bytes()
-		if len(raw) == 0 {
-			continue
-		}
-		var ln sessionLine
-		if err := json.Unmarshal(raw, &ln); err != nil {
-			return nil, fmt.Errorf("claudecode transcript: parse line %d in %s: %w", lineNo, path, err)
-		}
-		if ln.Type != "user" && ln.Type != "assistant" {
-			continue
-		}
-		role := ln.Message.Role
-		if role == "" {
-			role = ln.Type
-		}
-		text, err := decodeContent(ln.Message.Content)
-		if err != nil {
-			return nil, fmt.Errorf("claudecode transcript: decode content on line %d in %s: %w", lineNo, path, err)
-		}
-		if text == "" {
-			continue
-		}
-		var ts time.Time
-		if ln.Timestamp != "" {
-			ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
-		}
-		// P2b: faithful 1:1 text mapping into the canonical Event (Source=file).
-		// Tool-block extraction (tool_use/tool_result) lands with the loom-parser
-		// port in the parity step; here we preserve exactly the prior text turns.
-		ev := transcript.Event{
-			Role:      role,
-			Type:      transcript.EventText,
-			Text:      text,
-			Timestamp: ts,
-			Source:    transcript.SourceFile,
-			UUID:      ln.UUID,
-		}
-		out = append(out, ev)
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("claudecode transcript: scan %s: %w", path, err)
-	}
-	return out, nil
-}
-
-func decodeContent(raw json.RawMessage) (string, error) {
-	if len(raw) == 0 {
-		return "", nil
-	}
-	// User messages: content is a plain string.
-	if raw[0] == '"' {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return "", err
-		}
-		return s, nil
-	}
-	// Assistant messages: array of blocks.
-	if raw[0] == '[' {
-		var blocks []contentBlock
-		if err := json.Unmarshal(raw, &blocks); err != nil {
-			return "", err
-		}
-		var parts []string
-		for _, b := range blocks {
-			if b.Type == "text" && b.Text != "" {
-				parts = append(parts, b.Text)
-			}
-		}
-		return strings.Join(parts, "\n\n"), nil
-	}
-	return "", nil
-}
+// The Claude line→Event parser (Events/userLineEvents/assistantLineEvents) lives
+// in parse_claude.go — a port of loomcli's tool-aware claude parser.

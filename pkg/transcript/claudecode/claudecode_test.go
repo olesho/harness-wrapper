@@ -52,18 +52,23 @@ func TestReadAgainstFixture(t *testing.T) {
 	}
 
 	r := &Reader{ProjectsRoot: filepath.Join(dir, "projects")}
-	turns, err := r.Read("sess-uuid", cwd)
+	evs, err := r.Read("sess-uuid", cwd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(turns) != 2 {
-		t.Fatalf("expected 2 turns, got %d", len(turns))
+	// Tool-aware parser emits ONE event per content block, so the assistant
+	// line's two text blocks become two events (not one joined turn).
+	if len(evs) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(evs))
 	}
-	if turns[0].Role != "user" || turns[0].Text != "hello" {
-		t.Errorf("turn 0 mismatch: %+v", turns[0])
+	if evs[0].Role != "user" || evs[0].Text != "hello" {
+		t.Errorf("event 0 mismatch: %+v", evs[0])
 	}
-	if turns[1].Role != "assistant" || turns[1].Text != "hi\n\nthere" {
-		t.Errorf("turn 1 mismatch: %+v", turns[1])
+	if evs[1].Role != "assistant" || evs[1].Text != "hi" {
+		t.Errorf("event 1 mismatch: %+v", evs[1])
+	}
+	if evs[2].Role != "assistant" || evs[2].Text != "there" {
+		t.Errorf("event 2 mismatch: %+v", evs[2])
 	}
 }
 
@@ -99,8 +104,37 @@ func TestReadReturnsCanonicalEvents(t *testing.T) {
 	if e.UUID != "u-1" {
 		t.Errorf("UUID = %q, want u-1 (native message uuid)", e.UUID)
 	}
-	if e.ID() != "msg:u-1" {
-		t.Errorf("ID() = %q, want msg:u-1", e.ID())
+	// Text events carry a source-prefixed, per-event NativeID (line uuid alone
+	// would collapse multiple blocks from one line); ID() returns it.
+	if e.NativeID == "" || e.ID() != e.NativeID {
+		t.Errorf("NativeID/ID() = %q / %q, want non-empty and equal", e.NativeID, e.ID())
+	}
+}
+
+// TestEventsToolAware locks the parity behavior: tool_use/tool_result blocks
+// become distinct tool events (not dropped), with stable cross-source tool ids.
+func TestEventsToolAware(t *testing.T) {
+	body := `{"type":"assistant","uuid":"a1","message":{"role":"assistant","content":[{"type":"text","text":"running"},{"type":"tool_use","id":"tu_1","name":"Bash","input":{"command":"ls"}}]},"timestamp":"2026-05-14T12:00:00Z"}
+{"type":"user","uuid":"u2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":[{"type":"text","text":"file.go"}]}]},"timestamp":"2026-05-14T12:00:01Z"}
+`
+	evs, err := Events([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 3 {
+		t.Fatalf("got %d events, want 3 (text + tool_use + tool_result)", len(evs))
+	}
+	if evs[1].Type != transcript.EventToolUse || evs[1].ToolName != "Bash" || evs[1].ToolUseID != "tu_1" {
+		t.Errorf("tool_use event wrong: %+v", evs[1])
+	}
+	if evs[1].ID() != "tool-use:tu_1" {
+		t.Errorf("tool_use ID() = %q, want tool-use:tu_1", evs[1].ID())
+	}
+	if evs[2].Type != transcript.EventToolResult || evs[2].ToolUseID != "tu_1" || evs[2].Output == "" {
+		t.Errorf("tool_result event wrong: %+v", evs[2])
+	}
+	if evs[2].ID() != "tool-result:tu_1" {
+		t.Errorf("tool_result ID() = %q, want tool-result:tu_1", evs[2].ID())
 	}
 }
 
