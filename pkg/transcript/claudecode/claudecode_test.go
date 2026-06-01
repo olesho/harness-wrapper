@@ -14,6 +14,24 @@ func TestEncodedCWD(t *testing.T) {
 	}
 }
 
+// TestEncodedCWD_NonAlphanumeric is the regression test for the empty-transcript
+// bug: paths under ~/.loom (the fleet/daemon worktree root) contain a '.', which
+// Claude Code encodes to '-'. The old '/'-only encoding produced the wrong dir
+// ("-...-.loom-...") so the transcript file was never found.
+func TestEncodedCWD_NonAlphanumeric(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/Users/oleh/.loom/WS/agent", "-Users-oleh--loom-WS-agent"}, // the bug: '.' → '-'
+		{"/a/b_c/d.e", "-a-b-c-d-e"},                                 // underscores + dots
+		{"/with-dash/x", "-with-dash-x"},                             // existing '-' preserved (no collapsing)
+		{"/p/v1.2.3", "-p-v1-2-3"},
+	}
+	for _, tc := range cases {
+		if got := EncodedCWD(tc.in); got != tc.want {
+			t.Errorf("EncodedCWD(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestReadAgainstFixture(t *testing.T) {
 	dir := t.TempDir()
 	cwd := "/some/work/dir"
