@@ -16,14 +16,10 @@
 package codex
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
@@ -96,79 +92,8 @@ func (r *Reader) locate(sessionID string) (string, error) {
 	return found, nil
 }
 
-// Internal JSONL line shape — only the fields we read.
-type rolloutLine struct {
-	Type    string `json:"type"`
-	Payload struct {
-		Role    string `json:"role"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	} `json:"payload"`
-	// Codex records a top-level "timestamp" on some line types; capture
-	// when present (RFC3339).
-	Timestamp string `json:"timestamp,omitempty"`
-}
-
-// Events parses Codex rollout JSONL bytes into the canonical event stream
-// (response_item lines → role-tagged text events; tool/unknown roles → system).
-// This is the file-source byte parser loom delegates to, so Codex parsing lives
-// in one place (the wrapper). Malformed JSON on a line is a hard error.
-func Events(data []byte) ([]transcript.Event, error) {
-	out := make([]transcript.Event, 0, 32)
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	// Some response_item lines can be large; bump buffer ceiling.
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		raw := sc.Bytes()
-		if len(raw) == 0 {
-			continue
-		}
-		var ln rolloutLine
-		if err := json.Unmarshal(raw, &ln); err != nil {
-			return nil, fmt.Errorf("codex transcript: parse line %d: %w", lineNo, err)
-		}
-		if ln.Type != "response_item" {
-			continue
-		}
-		role := ln.Payload.Role
-		switch role {
-		case "user", "assistant", "system":
-			// keep as-is
-		case "":
-			continue
-		default:
-			role = "system"
-		}
-		var parts []string
-		for _, c := range ln.Payload.Content {
-			if c.Text != "" {
-				parts = append(parts, c.Text)
-			}
-		}
-		if len(parts) == 0 {
-			continue
-		}
-		var ts time.Time
-		if ln.Timestamp != "" {
-			ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
-		}
-		out = append(out, transcript.Event{
-			Role:      role,
-			Type:      transcript.EventText,
-			Text:      strings.Join(parts, "\n\n"),
-			Timestamp: ts,
-			Source:    transcript.SourceFile,
-		})
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("codex transcript: scan: %w", err)
-	}
-	return out, nil
-}
+// The Codex rollout → Event parser (Events/ParseRollout + the tool-aware
+// message/function_call/function_call_output handling) lives in parse_codex.go.
 
 // parseJSONL reads a Codex rollout file and parses it via Events.
 func parseJSONL(path string) ([]transcript.Event, error) {

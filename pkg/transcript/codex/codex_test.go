@@ -12,8 +12,8 @@ func TestReadAgainstFixture(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"type":"response_item","payload":{"role":"user","content":[{"type":"text","text":"hello"}]}}
-{"type":"response_item","payload":{"role":"assistant","content":[{"type":"text","text":"hi there"}]}}
+	body := `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi there"}]}}
 {"type":"other"}
 `
 	path := filepath.Join(root, "rollout-2026-05-14T12-00-00-abc-def-ghi.jsonl")

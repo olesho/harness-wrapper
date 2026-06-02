@@ -1,0 +1,158 @@
+// Codex rollout JSONL → canonical, TOOL-AWARE transcript.Event parser.
+//
+// Ported from loomcli's tool-aware codex parser so Codex parsing lives in one
+// place (the wrapper). Local adaptations vs. loom: each Event is tagged
+// Source=file with a dedup-stable, kind-qualified NativeID (the wrapper dedups
+// by NativeID; loom's Event had neither field). The PUBLIC fields
+// (Seq/Timestamp/Role/Type/Text/Tool*/Output) match loom's output exactly, so
+// loom can delegate to this without a serving regression.
+package codex
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strconv"
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/transcript"
+)
+
+// Envelope is Codex's top-level rollout line: {timestamp, type, payload}.
+type Envelope struct {
+	Timestamp string          `json:"timestamp"`
+	Type      string          `json:"type"` // session_meta, event_msg, response_item, turn_context
+	Payload   json.RawMessage `json:"payload"`
+}
+
+// responseItem is the payload when Envelope.Type == "response_item".
+type responseItem struct {
+	Type      string          `json:"type"` // message, function_call, function_call_output, reasoning
+	Role      string          `json:"role,omitempty"`
+	Content   []contentBlock  `json:"content,omitempty"`
+	Name      string          `json:"name,omitempty"`      // function name (function_call)
+	Arguments string          `json:"arguments,omitempty"` // function args, a JSON string (function_call)
+	CallID    string          `json:"call_id,omitempty"`
+	Output    json.RawMessage `json:"output,omitempty"` // function_call_output payload
+}
+
+type contentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// ParseRollout reads Codex rollout JSONL bytes into envelope lines. Malformed
+// lines are skipped. Uses bufio.ReadBytes (not Scanner) so there is no
+// line-length cap — Codex tool I/O lines can be large.
+func ParseRollout(data []byte) ([]Envelope, error) {
+	var out []Envelope
+	reader := bufio.NewReader(bytes.NewReader(data))
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil && err != io.EOF {
+			return nil, fmt.Errorf("codex transcript: read rollout: %w", err)
+		}
+		if len(line) > 0 {
+			var env Envelope
+			if json.Unmarshal(line, &env) == nil {
+				out = append(out, env)
+			}
+		}
+		if err == io.EOF {
+			break
+		}
+	}
+	return out, nil
+}
+
+// Events parses Codex rollout JSONL bytes into the canonical, tool-aware event
+// stream. Only response_item entries are surfaced (message / function_call /
+// function_call_output); the rest are operational noise.
+func Events(data []byte) ([]transcript.Event, error) {
+	envelopes, err := ParseRollout(data)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]transcript.Event, 0, len(envelopes))
+	seq := 0
+	for _, env := range envelopes {
+		if env.Type != "response_item" {
+			continue
+		}
+		ts := parseCodexTime(env.Timestamp)
+		var item responseItem
+		if err := json.Unmarshal(env.Payload, &item); err != nil {
+			continue
+		}
+		switch item.Type {
+		case "message":
+			seq = appendMessageEvents(&out, item, ts, seq)
+		case "function_call":
+			out = append(out, transcript.Event{
+				Seq: seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventToolUse,
+				ToolName: item.Name, ToolUseID: item.CallID, ToolInput: json.RawMessage(item.Arguments),
+				Source: transcript.SourceFile, NativeID: "tool-use:" + item.CallID,
+			})
+			seq++
+		case "function_call_output":
+			out = append(out, transcript.Event{
+				Seq: seq, Timestamp: ts, Role: transcript.RoleTool, Type: transcript.EventToolResult,
+				ToolUseID: item.CallID, Output: decodeFunctionOutput(item.Output),
+				Source: transcript.SourceFile, NativeID: "tool-result:" + item.CallID,
+			})
+			seq++
+		}
+	}
+	return out, nil
+}
+
+// appendMessageEvents emits one text event per non-empty content block (user
+// text has IDE/system context tags stripped, matching loom + claudecode).
+func appendMessageEvents(out *[]transcript.Event, item responseItem, ts time.Time, seq int) int {
+	role := canonicalRole(item.Role)
+	for _, block := range item.Content {
+		text := block.Text
+		if role == transcript.RoleUser {
+			text = transcript.StripIDEContextTags(text)
+		}
+		if text == "" {
+			continue
+		}
+		*out = append(*out, transcript.Event{
+			Seq: seq, Timestamp: ts, Role: role, Type: transcript.EventText, Text: text,
+			Source: transcript.SourceFile, NativeID: transcript.SourceFile + ":text:" + strconv.Itoa(seq),
+		})
+		seq++
+	}
+	return seq
+}
+
+// decodeFunctionOutput pulls the text out of a function_call_output payload,
+// which is usually a JSON string and occasionally a structured object.
+func decodeFunctionOutput(raw json.RawMessage) string {
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		return str
+	}
+	return string(raw)
+}
+
+func canonicalRole(r string) string {
+	switch r {
+	case "user":
+		return transcript.RoleUser
+	case "assistant":
+		return transcript.RoleAssistant
+	default: // developer, system, tool, unknown → system
+		return transcript.RoleSystem
+	}
+}
+
+func parseCodexTime(s string) time.Time {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t
+	}
+	return time.Time{}
+}
