@@ -65,7 +65,9 @@ func TestExtractSessionID(t *testing.T) {
 func TestResumeArgs(t *testing.T) {
 	r := resumer{}
 	got := r.ResumeArgs("abc-123")
-	want := []string{"--resume", "--session-id", "abc-123"}
+	// Positional `--resume <id>` — NOT `--resume --session-id <id>`, which claude
+	// rejects unless --fork-session is also set (regression guard).
+	want := []string{"--resume", "abc-123"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ResumeArgs = %v, want %v", got, want)
 	}

@@ -91,7 +91,7 @@ type SessionIDExtractor interface {
 // id. The caller appends its own policy flags (output format, prompt, etc.).
 type Resumer interface {
 	// ResumeArgs returns the argv fragment that resumes sessionID (e.g.
-	// {"--resume","--session-id",id}). Returns nil for an empty id.
+	// {"--resume", id}). Returns nil for an empty id.
 	ResumeArgs(sessionID string) []string
 }
 

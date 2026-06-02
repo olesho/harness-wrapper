@@ -69,11 +69,18 @@ type resumer struct{}
 // ResumeArgs returns the resume-specific arg prefix for sessionID; the caller
 // appends its own policy flags (-p, output format, budget, prompt). Returns nil
 // for an empty id (cold start).
+//
+// The id is passed POSITIONALLY (`--resume <id>`), NOT via `--session-id`:
+// claude rejects `--resume --session-id <id>` with "Error: --session-id can only
+// be used with --continue or --resume if --fork-session is also specified", so
+// the earlier `--session-id` form made every headless resume exit 1 on argument
+// validation (never actually resuming). `--session-id` is for assigning a NEW
+// id (a fork); a plain resume is positional.
 func (resumer) ResumeArgs(sessionID string) []string {
 	if sessionID == "" {
 		return nil
 	}
-	return []string{"--resume", "--session-id", sessionID}
+	return []string{"--resume", sessionID}
 }
 
 func init() {
