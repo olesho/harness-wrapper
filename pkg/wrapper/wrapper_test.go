@@ -429,8 +429,11 @@ func TestRun_CostLimitedModeReportsBlockedByCost(t *testing.T) {
 	if res.ExitCode != 3 {
 		t.Errorf("ExitCode = %d, want 3", res.ExitCode)
 	}
-	if !strings.Contains(res.Reason, "limit") {
-		t.Errorf("Reason = %q, want limit context", res.Reason)
+	// The reason now carries the specific matched cost phrase (not a generic
+	// "cost, quota, or rate limit detected" string) so downstream consumers
+	// can distinguish billing from rate-limit signals.
+	if !strings.Contains(res.Reason, "quota exceeded") {
+		t.Errorf("Reason = %q, want the specific matched cost phrase", res.Reason)
 	}
 }
 

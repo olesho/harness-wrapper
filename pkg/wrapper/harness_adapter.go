@@ -15,6 +15,40 @@ type harnessAdapter struct {
 	patterns detector.Patterns
 }
 
+// transportRetryPatterns are provider-independent transport/network
+// failures that warrant a respawn-after-backoff. They are matched
+// case-insensitively as substrings against stripped output and are shared
+// by every classifier — the per-harness adapters here and the generic
+// defaultClassifier — so connection-refused-style errors are recognized
+// once, regardless of which harness produced them.
+var transportRetryPatterns = []string{
+	"connection refused",
+	"econnrefused",
+	"connection reset",
+	"econnreset",
+	"no route to host",
+	"ehostunreach",
+	"network is unreachable",
+	"fetch failed",
+	"socket hang up",
+	"eai_again",
+}
+
+// matchTransportRetry reports a StatusRetryLater classification when lower
+// (already lowercased, ANSI-stripped output) contains a transport-failure
+// fingerprint. Terminal: the wrapper should respawn the harness after a
+// backoff. The bool is false when nothing matched.
+func matchTransportRetry(lower string) (Classification, bool) {
+	if hit := detector.MatchAny(lower, transportRetryPatterns); hit != "" {
+		return Classification{
+			Status:   StatusRetryLater,
+			Reason:   hit,
+			Terminal: true,
+		}, true
+	}
+	return Classification{}, false
+}
+
 // Classify checks recent output against the harness's patterns.
 //
 // Order of checks:
@@ -70,6 +104,9 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 				Reason:   hit,
 				Terminal: true,
 			}
+		}
+		if c, ok := matchTransportRetry(lower); ok {
+			return c
 		}
 	}
 

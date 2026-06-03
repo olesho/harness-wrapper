@@ -32,6 +32,7 @@ func main() {
 	mode := flag.String("mode", "completed", "completed|failed|stuck|needs-input|cost-limited|api-error")
 	delay := flag.Duration("delay", 50*time.Millisecond, "delay between progress lines")
 	exitCode := flag.Int("exit-code", 1, "exit code for failed and cost-limited modes")
+	failedMsg := flag.String("failed-msg", "Fatal: workspace is not writable.", "stderr message for failed mode")
 	steps := flag.Int("steps", 3, "progress steps for completed mode")
 	prompt := flag.String("prompt", "Continue? [y/N] ", "prompt text for needs-input mode")
 	expected := flag.String("expected-input", "y", "accepted input for needs-input mode")
@@ -51,7 +52,7 @@ func main() {
 	case "completed":
 		runCompleted(*steps, *delay)
 	case "failed":
-		fmt.Fprintln(os.Stderr, "Fatal: workspace is not writable.")
+		fmt.Fprintln(os.Stderr, *failedMsg)
 		os.Exit(*exitCode)
 	case "stuck":
 		fmt.Println("Thinking...")

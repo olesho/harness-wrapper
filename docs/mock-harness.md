@@ -48,6 +48,7 @@ Optional flags:
 ```text
 --delay 250ms
 --exit-code 1
+--failed-msg "Fatal: workspace is not writable."
 --steps 3
 --prompt "Continue? [y/N] "
 --expected-input "y"

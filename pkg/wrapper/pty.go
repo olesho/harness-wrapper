@@ -46,7 +46,7 @@ func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recen
 // classifyExit maps a finished os/exec process state into the wrapper's
 // normalized status. When ctx was cancelled the wrapper considers the
 // run interrupted regardless of how the child happened to exit.
-func classifyExit(state *os.ProcessState, _ error, ctxErr error, recentOutput string) (Status, int, string, string) {
+func classifyExit(state *os.ProcessState, _ error, ctxErr error) (Status, int, string, string) {
 	if state == nil {
 		return StatusUnknown, -1, "", "process state unavailable"
 	}
@@ -57,16 +57,16 @@ func classifyExit(state *os.ProcessState, _ error, ctxErr error, recentOutput st
 		return StatusIdle, 0, "", ""
 	}
 	if state.Exited() {
-		if isCostOrQuotaLimited(recentOutput) {
-			return StatusBlockedByCost, state.ExitCode(), "", "cost, quota, or rate limit detected"
-		}
 		return StatusFailed, state.ExitCode(), "", fmt.Sprintf("exit code %d", state.ExitCode())
 	}
 	signal := signalFromState(state)
 	return StatusInterrupted, state.ExitCode(), signal, fmt.Sprintf("terminated by %s", signal)
 }
 
-func isCostOrQuotaLimited(output string) bool {
+// isCostOrQuotaLimited reports whether output contains a cost/quota/rate
+// fingerprint, returning the matched phrase so callers can use it as a
+// classification reason. The empty string with false means no match.
+func isCostOrQuotaLimited(output string) (string, bool) {
 	normalized := strings.ToLower(stripANSIEscapes(output))
 	patterns := []string{
 		"blocked by cost",
@@ -86,10 +86,10 @@ func isCostOrQuotaLimited(output string) bool {
 	}
 	for _, pattern := range patterns {
 		if strings.Contains(normalized, pattern) {
-			return true
+			return pattern, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func stripANSIEscapes(s string) string {

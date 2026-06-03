@@ -119,9 +119,16 @@ package wrapper
 
 func Run(ctx context.Context, cfg Config) (Result, error)
 func Start(ctx context.Context, cfg Config) (*Session, error)
+
+// ClassifyOutput is a stateless, post-hoc classification helper — not a run
+// entry point. It applies the same per-harness patterns the wrapper uses live
+// to a finished output blob (e.g. a log tail) and returns the Classification.
+func ClassifyOutput(harness, output string) Classification
 ```
 
 `Run` is synchronous: it starts the harness, supervises it, and returns when the process exits or `ctx` is cancelled. A non-nil `err` always indicates the wrapper itself failed; harness outcomes (clean exit, non-zero exit, signal kill, classified stop) come back through `Result` with `err == nil`. Context cancellation produces `Result.Status == StatusInterrupted` and does **not** propagate `ctx.Err()` as the returned error.
+
+`ClassifyOutput` runs the resolved per-harness classifier (selected by `harness` name, falling back to the generic cost/transport default for unknown names) over output the wrapper already produced — for example a daemon reading an exited agent's log tail — and returns the same `Classification` (cost, rate-limit, transport/connection-refused, API errors with HTTP code) the live run would have surfaced. It forces the idle gate open so cost/retry/transport patterns are eligible, and leaves the prompt gate closed since a finished process is not awaiting input. It is also what a failed run's own supervisor uses internally to upgrade a bare `StatusFailed` exit into an actionable status when the harness died too fast for the live classifier to poll.
 
 ### Config
 
