@@ -88,6 +88,25 @@ type ClassifierFunc func(input ClassifierInput) Classification
 // Classify calls f.
 func (f ClassifierFunc) Classify(input ClassifierInput) Classification { return f(input) }
 
+// ClassifyOutput runs the resolved per-harness classifier as a one-shot
+// over a finished output blob (e.g. a log tail, or the recent-output buffer
+// of an exited harness). Idle is forced on so the Cost/Retry/transport
+// patterns are eligible; Quiet is left off so a trailing interactive prompt
+// in a *dead* process's tail is not misreported as waiting_for_input.
+// Returns the zero Classification when nothing matches.
+//
+// It is the post-hoc counterpart to the live polling the wrapper performs
+// during a run — the single entry point external callers (e.g. loom's
+// agenterr adapter) should use to classify captured output with the same
+// patterns the wrapper applies internally.
+func ClassifyOutput(harness, output string) Classification {
+	return resolveClassifier(Config{Harness: harness}).Classify(ClassifierInput{
+		RecentOutput: output,
+		Idle:         true,
+		Quiet:        false,
+	})
+}
+
 // resolveClassifier picks the Classifier for a config. Order:
 //  1. cfg.Classifier if set.
 //  2. A per-harness classifier matching cfg.Harness.
@@ -121,12 +140,15 @@ func (defaultClassifier) Classify(input ClassifierInput) Classification {
 	if !input.Idle {
 		return Classification{}
 	}
-	if isCostOrQuotaLimited(input.RecentOutput) {
+	if phrase, ok := isCostOrQuotaLimited(input.RecentOutput); ok {
 		return Classification{
 			Status:   StatusBlockedByCost,
-			Reason:   "cost, quota, or rate limit detected",
+			Reason:   phrase,
 			Terminal: true,
 		}
+	}
+	if c, ok := matchTransportRetry(strings.ToLower(stripANSIEscapes(input.RecentOutput))); ok {
+		return c
 	}
 	return Classification{}
 }

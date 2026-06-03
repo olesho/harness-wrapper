@@ -349,10 +349,22 @@ waitLoop:
 		res.LastOutputAt = time.Unix(0, last)
 	}
 
-	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.cmd.ProcessState, waitErr, ctx.Err(), s.recentOutput.String())
-	if terminalClassDone != nil {
-		res.Status = terminalClassDone.status
-		res.Reason = terminalClassDone.reason
+	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.cmd.ProcessState, waitErr, ctx.Err())
+
+	// actionable is the classification whose structured fields (HTTPCode,
+	// RetryAfter, ResumeAt) flow into the terminal event. It is the mid-run
+	// terminal classification when one fired; otherwise, for a plain failed
+	// exit that was not a stop request, a final one-shot pass over recent
+	// output so fast-failing transport/API errors — which exit before the
+	// idle classifier ever polls — still upgrade StatusFailed into an
+	// actionable, retryable status.
+	actionable := terminalClassDone
+	if actionable == nil && !stopRequested && res.Status == StatusFailed {
+		actionable = s.classifyOnExit()
+	}
+	if actionable != nil {
+		res.Status = actionable.status
+		res.Reason = actionable.reason
 	}
 	if stopRequested && terminalClassDone == nil {
 		res.Status = StatusInterrupted
@@ -388,10 +400,10 @@ waitLoop:
 		Reason:     res.Reason,
 		Terminated: true,
 	}
-	if terminalClassDone != nil {
-		final.HTTPCode = terminalClassDone.httpCode
-		final.RetryAfter = terminalClassDone.retryAfter
-		final.ResumeAt = terminalClassDone.resumeAt
+	if actionable != nil {
+		final.HTTPCode = actionable.httpCode
+		final.RetryAfter = actionable.retryAfter
+		final.ResumeAt = actionable.resumeAt
 	}
 	s.emitEvent(final)
 }
@@ -557,6 +569,27 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 			}
 		}
 	}
+}
+
+// classifyOnExit runs a final one-shot classification over the harness's
+// recent output after a plain failed exit. A harness that fails fast — e.g.
+// prints "connection refused" and exits before the idle classifier polls —
+// never produces a mid-run classification, so without this pass its terminal
+// status stays StatusFailed and the retry layer can't act on it. Returns nil
+// when the output yields no actionable (or only a waiting-for-input)
+// classification. Uses the session's resolved classifier so a custom
+// cfg.Classifier is honored.
+func (s *Session) classifyOnExit() *classification {
+	c := s.classifier.Classify(ClassifierInput{
+		RecentOutput: s.recentOutput.String(),
+		Idle:         true,
+		Quiet:        false,
+	})
+	if c.Status == "" || c.Status == StatusWaitingForInput {
+		return nil
+	}
+	ic := toInternalClassification(c)
+	return &ic
 }
 
 func toInternalClassification(c Classification) classification {
