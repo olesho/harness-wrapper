@@ -42,6 +42,7 @@ func matchTransportRetry(lower string) (Classification, bool) {
 	if hit := detector.MatchAny(lower, transportRetryPatterns); hit != "" {
 		return Classification{
 			Status:   StatusRetryLater,
+			Class:    retryClass(hit),
 			Reason:   hit,
 			Terminal: true,
 		}, true
@@ -69,6 +70,7 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 		if hit, ok := h.patterns.APIError(stripped); ok {
 			return Classification{
 				Status:     StatusAPIError,
+				Class:      classFromHTTPCode(hit.Code),
 				Reason:     formatAPIErrorReason(hit),
 				Terminal:   false,
 				HTTPCode:   hit.Code,
@@ -81,6 +83,7 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 		if hit, ok := h.patterns.SessionLimit(stripped, time.Now()); ok {
 			return Classification{
 				Status:   StatusBlockedByCost,
+				Class:    ErrRateLimited, // a usage/session limit resets — transient, not a billing failure
 				Reason:   formatSessionLimitReason(hit),
 				Terminal: true,
 				ResumeAt: hit.ResumeAt,
@@ -94,6 +97,7 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 		if hit := detector.MatchAny(lower, h.patterns.Cost); hit != "" {
 			return Classification{
 				Status:   StatusBlockedByCost,
+				Class:    costClass(hit),
 				Reason:   hit,
 				Terminal: true,
 			}
@@ -101,6 +105,7 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 		if hit := detector.MatchAny(lower, h.patterns.Retry); hit != "" {
 			return Classification{
 				Status:   StatusRetryLater,
+				Class:    retryClass(hit),
 				Reason:   hit,
 				Terminal: true,
 			}
