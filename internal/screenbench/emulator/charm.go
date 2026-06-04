@@ -1,3 +1,5 @@
+//go:build screenbench
+
 package emulator
 
 import (

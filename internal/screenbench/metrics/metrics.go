@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // Package metrics provides comparison utilities for the screen emulator
 // bake-off. The bench compares emulator-extracted screen text against
 // hand-curated ground truth using a small set of stable metrics.

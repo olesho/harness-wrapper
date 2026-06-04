@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
@@ -106,6 +108,12 @@ type Config struct {
 	// "codex"). If both Harness and Classifier are set, Classifier
 	// wins. Unknown names fall through to the default classifier.
 	Harness string
+
+	// Effort requests a harness-specific reasoning effort level for this
+	// run. Empty leaves the harness default. Supported harnesses map this
+	// to their native controls (for example, Claude Code --effort and
+	// Codex model_reasoning_effort).
+	Effort string
 
 	// Classifier inspects recent harness output and produces actionable
 	// status classifications (blocked_by_cost, retry_later,
@@ -294,6 +302,8 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 		return nil, err
 	}
 	applyDefaults(&cfg)
+	cfg.Args = argsWithHarnessEffort(cfg.Harness, cfg.Args, cfg.Effort)
+	cfg.Env = envWithHarnessEffort(cfg.Harness, cfg.Env, cfg.Effort)
 	return startSession(ctx, cfg)
 }
 
@@ -310,7 +320,179 @@ func validateConfig(cfg *Config) error {
 	if cfg.StaleThreshold > 0 && cfg.IdleClassify > 0 && cfg.StaleThreshold < cfg.IdleClassify {
 		return fmt.Errorf("%w: StaleThreshold (%v) must be >= IdleClassify (%v)", ErrInvalidConfig, cfg.StaleThreshold, cfg.IdleClassify)
 	}
+	if cfg.Effort != "" {
+		if !isSupportedEffort(cfg.Effort) {
+			return fmt.Errorf("%w: Effort must be one of low, medium, high, xhigh, max", ErrInvalidConfig)
+		}
+		if !harnessSupportsEffort(cfg.Harness) {
+			return fmt.Errorf("%w: Effort is only supported for claude, codex, and gemini harnesses", ErrInvalidConfig)
+		}
+	}
 	return nil
+}
+
+func harnessSupportsEffort(harness string) bool {
+	switch harness {
+	case "claude", "codex", "gemini":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedEffort(effort string) bool {
+	switch effort {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func argsWithHarnessEffort(harness string, args []string, effort string) []string {
+	if effort == "" {
+		return args
+	}
+	switch harness {
+	case "claude":
+		if argsContainFlag(args, "--effort") {
+			return args
+		}
+		return prependArgs(args, "--effort", effort)
+	case "codex":
+		if argsContainConfigKey(args, "model_reasoning_effort") {
+			return args
+		}
+		return prependArgs(args, "-c", "model_reasoning_effort=\""+codexEffort(effort)+"\"")
+	default:
+		return args
+	}
+}
+
+func codexEffort(effort string) string {
+	if effort == "max" {
+		return "xhigh"
+	}
+	return effort
+}
+
+func prependArgs(args []string, prefix ...string) []string {
+	out := make([]string, 0, len(args)+len(prefix))
+	out = append(out, prefix...)
+	out = append(out, args...)
+	return out
+}
+
+func argsContainFlag(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
+}
+
+func argsContainConfigKey(args []string, key string) bool {
+	for i, arg := range args {
+		if arg == "-c" || arg == "--config" {
+			if i+1 < len(args) && configArgHasKey(args[i+1], key) {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-c") && len(arg) > len("-c") && configArgHasKey(arg[len("-c"):], key) {
+			return true
+		}
+		if strings.HasPrefix(arg, "--config=") && configArgHasKey(strings.TrimPrefix(arg, "--config="), key) {
+			return true
+		}
+	}
+	return false
+}
+
+func configArgHasKey(arg, key string) bool {
+	arg = strings.TrimSpace(arg)
+	return arg == key || strings.HasPrefix(arg, key+"=")
+}
+
+func envWithHarnessEffort(harness string, env []string, effort string) []string {
+	if effort == "" || harness != "gemini" || envHasKey(env, "GEMINI_CLI_SYSTEM_SETTINGS_PATH") {
+		return env
+	}
+	settingsPath := writeGeminiEffortSettings(effort)
+	if settingsPath == "" {
+		return env
+	}
+	if env == nil {
+		env = os.Environ()
+	}
+	out := make([]string, 0, len(env)+1)
+	out = append(out, env...)
+	out = append(out, "GEMINI_CLI_SYSTEM_SETTINGS_PATH="+settingsPath)
+	return out
+}
+
+func envHasKey(env []string, key string) bool {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeGeminiEffortSettings(effort string) string {
+	budget, ok := geminiThinkingBudget(effort)
+	if !ok {
+		return ""
+	}
+	f, err := os.CreateTemp("", "harness-wrapper-gemini-effort-*.json")
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	settings := fmt.Sprintf(`{
+  "modelConfigs": {
+    "customOverrides": [
+      {
+        "match": {
+          "overrideScope": "core"
+        },
+        "modelConfig": {
+          "generateContentConfig": {
+            "thinkingConfig": {
+              "thinkingBudget": %d
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+`, budget)
+	if _, err := io.WriteString(f, settings); err != nil {
+		_ = os.Remove(f.Name())
+		return ""
+	}
+	return f.Name()
+}
+
+func geminiThinkingBudget(effort string) (int, bool) {
+	switch effort {
+	case "low":
+		return 512, true
+	case "medium":
+		return 2048, true
+	case "high":
+		return 8192, true
+	case "xhigh":
+		return 16384, true
+	case "max":
+		return -1, true
+	default:
+		return 0, false
+	}
 }
 
 func applyDefaults(cfg *Config) {

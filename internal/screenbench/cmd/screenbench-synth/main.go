@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // screenbench-synth generates a synthetic bake-off corpus exercising
 // common TUI byte-stream patterns that real chat CLIs emit: SGR
 // styling, cursor moves, partial-line rewrites, alternate-screen
@@ -23,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/olesho/harness-wrapper/internal/screenbench/scenario"
+	"github.com/olesho/harness-wrapper-screenbench/scenario"
 )
 
 const (

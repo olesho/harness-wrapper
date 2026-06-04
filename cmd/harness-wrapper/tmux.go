@@ -69,9 +69,11 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 		self,
 		"--tmux-child", args.TmuxSession,
 		"--trace-file", tracePath,
-		args.HarnessName,
-		"--",
 	}
+	if args.Effort != "" {
+		reexec = append(reexec, "--effort", args.Effort)
+	}
+	reexec = append(reexec, args.HarnessName, "--")
 	reexec = append(reexec, args.HarnessArgs...)
 
 	tmuxArgs := []string{"new-session", "-d", "-s", tmuxName}

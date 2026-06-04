@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // Package emulator defines a thin adapter interface around candidate
 // vt100 emulator libraries so the bake-off harness can compare them on
 // equal footing. Each adapter wraps one upstream library and exposes

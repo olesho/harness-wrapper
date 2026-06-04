@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // Package scenario loads recorded bake-off scenarios from disk.
 //
 // A scenario is a directory laid out as:

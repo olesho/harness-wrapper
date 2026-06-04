@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // screenbench-record runs an interactive harness under wrapper
 // supervision while capturing the raw PTY byte stream to a corpus
 // scenario directory.
@@ -43,7 +45,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/olesho/harness-wrapper/internal/screenbench/scenario"
+	"github.com/olesho/harness-wrapper-screenbench/scenario"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 

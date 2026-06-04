@@ -75,6 +75,7 @@ func runHarnessWrapper(args []string) int {
 		Stdout:     os.Stdout,
 		Trace:      traceEmitter,
 		Harness:    parsed.HarnessName,
+		Effort:     parsed.Effort,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
