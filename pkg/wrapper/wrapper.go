@@ -206,6 +206,14 @@ type Result struct {
 	// Status is the normalized outcome.
 	Status Status
 
+	// Class is the canonical harness-output error taxonomy for the run.
+	// It carries the terminal classification's class, or — when the run
+	// exited Failed without a terminal classification — the last
+	// meaningful (non-ErrNone) class seen mid-run (e.g. a non-terminal
+	// API error that preceded a Failed exit). ErrNone for clean/idle/
+	// interrupted outcomes.
+	Class ErrorClass
+
 	// ExitCode is the harness process's exit code, or 128+signum if the
 	// process was terminated by a signal. -1 if the process never
 	// started.

@@ -46,6 +46,11 @@ type SessionEvent struct {
 	Reason     string
 	Terminated bool
 
+	// Class is the canonical harness-output error taxonomy for this event
+	// (ErrNone for non-error transitions). On the terminal event it equals
+	// Result.Class. Lets mid-run watchers observe the class per event.
+	Class ErrorClass
+
 	// HTTPCode is the upstream API status code when Status is
 	// StatusAPIError and the harness surfaced one. Zero otherwise.
 	HTTPCode int
@@ -103,6 +108,7 @@ type Session struct {
 // goroutine and the supervisor.
 type classification struct {
 	status     Status
+	class      ErrorClass
 	reason     string
 	terminal   bool
 	httpCode   int
@@ -299,6 +305,11 @@ func (s *Session) supervise(ctx context.Context) {
 		endedAt           time.Time
 		terminalClassDone *classification
 		stopRequested     bool
+		// lastErrClass is the most recent non-ErrNone class observed during
+		// the run (terminal or not). It lets Result.Class inherit a mid-run
+		// error class — e.g. a non-terminal API error — when the harness then
+		// exits Failed without a terminal classification.
+		lastErrClass ErrorClass
 	)
 
 waitLoop:
@@ -309,6 +320,9 @@ waitLoop:
 			endedAt = wr.endedAt
 			break waitLoop
 		case c := <-s.classifierCh:
+			if c.class != ErrNone {
+				lastErrClass = c.class
+			}
 			if !c.terminal {
 				s.recordStatusChange(c, false)
 				continue
@@ -366,6 +380,15 @@ waitLoop:
 		res.Status = actionable.status
 		res.Reason = actionable.reason
 	}
+	// Error class: prefer the actionable classification's class; otherwise,
+	// for a plain Failed exit, inherit the last meaningful class seen mid-run
+	// (e.g. a non-terminal API error). Clean/idle/interrupted stay ErrNone.
+	switch {
+	case actionable != nil && actionable.class != ErrNone:
+		res.Class = actionable.class
+	case res.Status == StatusFailed:
+		res.Class = lastErrClass
+	}
 	if stopRequested && terminalClassDone == nil {
 		res.Status = StatusInterrupted
 		if res.Reason == "" {
@@ -397,6 +420,7 @@ waitLoop:
 	final := SessionEvent{
 		At:         time.Now(),
 		Status:     res.Status,
+		Class:      res.Class,
 		Reason:     res.Reason,
 		Terminated: true,
 	}
@@ -423,6 +447,7 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 	s.emitEvent(SessionEvent{
 		At:         time.Now(),
 		Status:     c.status,
+		Class:      c.class,
 		Reason:     c.reason,
 		Terminated: terminated,
 		HTTPCode:   c.httpCode,
@@ -595,6 +620,7 @@ func (s *Session) classifyOnExit() *classification {
 func toInternalClassification(c Classification) classification {
 	return classification{
 		status:     c.Status,
+		class:      c.Class,
 		reason:     c.Reason,
 		terminal:   c.Terminal,
 		httpCode:   c.HTTPCode,

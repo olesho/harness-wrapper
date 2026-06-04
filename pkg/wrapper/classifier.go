@@ -6,6 +6,7 @@ import (
 
 	claudeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/claude"
 	codexharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex"
+	cursorharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/cursor"
 	geminiharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini"
 )
 
@@ -37,6 +38,12 @@ type Classification struct {
 	// Status is the actionable status the classifier matched. The zero
 	// value (empty string) means "no classification".
 	Status Status
+
+	// Class is the canonical harness-output error taxonomy for this
+	// classification (the mechanism half of the contract; consumers map
+	// it to policy). ErrNone for non-error states (waiting_for_input) and
+	// the zero Classification.
+	Class ErrorClass
 
 	// Reason is a short human-readable description that surfaces in the
 	// Result and any emitted events.
@@ -122,6 +129,8 @@ func resolveClassifier(cfg Config) Classifier {
 		return harnessAdapter{patterns: codexharness.Patterns}
 	case "gemini":
 		return harnessAdapter{patterns: geminiharness.Patterns}
+	case "cursor":
+		return harnessAdapter{patterns: cursorharness.Patterns}
 	}
 	return defaultClassifier{}
 }
@@ -143,6 +152,7 @@ func (defaultClassifier) Classify(input ClassifierInput) Classification {
 	if phrase, ok := isCostOrQuotaLimited(input.RecentOutput); ok {
 		return Classification{
 			Status:   StatusBlockedByCost,
+			Class:    costClass(phrase),
 			Reason:   phrase,
 			Terminal: true,
 		}
