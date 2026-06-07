@@ -44,12 +44,12 @@ import (
 // padding.
 //
 // Examples that match: "✻ Baked for 5s", "✻ Brewed for 4s",
-// "✻ Crunched for 2s" — each on a line by itself (trailing column
+// "✻ Sautéed for 4s" — each on a line by itself (trailing column
 // padding from the emulator is allowed).
 //
 // Examples that do NOT match (and used to mis-fire): the same
 // pattern surrounded by non-whitespace on the same line.
-var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ [A-Z][a-zA-Z]+ for \d+s)[^\S\r\n]*$`)
+var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+s)[^\S\r\n]*$`)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.

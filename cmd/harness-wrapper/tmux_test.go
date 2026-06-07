@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func getenvDefault(key, fallback string) string {
@@ -180,6 +182,58 @@ func TestTmuxRoundTrip(t *testing.T) {
 	listOut2, _ := listCmd2.Output()
 	if strings.Contains(string(listOut2), sessionName) {
 		t.Errorf("session %q still listed after kill: %s", sessionName, listOut2)
+	}
+}
+
+func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available; skipping integration test")
+	}
+
+	hwBin := buildHarnessWrapper(t)
+	shimDir := t.TempDir()
+	shimPath := filepath.Join(shimDir, "claude")
+	if err := os.WriteFile(shimPath, []byte("#!/bin/sh\necho fake claude\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
+
+	tracePath := filepath.Join(t.TempDir(), "short.trace.ndjson")
+	sessionName := "hwshort"
+	t.Cleanup(func() {
+		cmd := exec.Command(hwBin, "kill", sessionName)
+		cmd.Env = appendEnv(cmd.Env, "PATH="+envPATH)
+		_ = cmd.Run()
+	})
+
+	spawn := exec.Command(hwBin,
+		"--tmux-session", sessionName,
+		"--trace-file", tracePath,
+		"claude", "--",
+	)
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir())
+	if out, err := spawn.CombinedOutput(); err != nil {
+		t.Fatalf("spawn short run: %v\n%s", err, out)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for tmuxSessionExists(sessionName) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if tmuxSessionExists(sessionName) {
+		t.Fatalf("tmux session %q still alive after short run", sessionName)
+	}
+
+	last, err := readLastTraceEvent(tracePath)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	if last == nil {
+		t.Fatal("trace is empty")
+	}
+	if got := last["kind"]; got != "wrapper_cli_exited" {
+		b, _ := json.Marshal(last)
+		t.Fatalf("last trace kind = %v, want wrapper_cli_exited; event=%s", got, b)
 	}
 }
 
