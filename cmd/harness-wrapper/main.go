@@ -14,6 +14,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
@@ -68,7 +72,10 @@ func runHarnessWrapper(args []string) int {
 	}
 	defer closeTrace()
 
-	res, err := wrapper.Run(context.Background(), wrapper.Config{
+	ctx, stopSignalWatcher := signalAwareContext(context.Background(), traceEmitter)
+	defer stopSignalWatcher()
+
+	res, err := wrapper.Run(ctx, wrapper.Config{
 		BinaryPath: binPath,
 		Args:       parsed.HarnessArgs,
 		Stdin:      os.Stdin,
@@ -78,10 +85,75 @@ func runHarnessWrapper(args []string) int {
 		Effort:     parsed.Effort,
 	})
 	if err != nil {
+		emitCLIExitTrace(traceEmitter, res, err)
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
 		return 1
 	}
+	emitCLIExitTrace(traceEmitter, res, nil)
 	return exitCodeFor(res)
+}
+
+func signalAwareContext(parent context.Context, emitter trace.Emitter) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(parent)
+	signals := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	signal.Notify(signals, syscall.SIGHUP, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case sig := <-signals:
+			if emitter != nil {
+				emitter.Emit(trace.Event{
+					At:   time.Now(),
+					Kind: "wrapper_cli_signal",
+					Fields: map[string]any{
+						"signal": sig.String(),
+					},
+				})
+			}
+			cancel()
+		case <-done:
+		}
+	}()
+
+	var stopOnce sync.Once
+	return ctx, func() {
+		stopOnce.Do(func() {
+			signal.Stop(signals)
+			close(done)
+			cancel()
+		})
+	}
+}
+
+// emitCLIExitTrace records the wrapper CLI's final view of the run. The lower
+// wrapper layer also emits pty_closed/harness_exited, but this event gives tmux
+// status a final result even if the pane exits through an edge path before
+// every lower-level diagnostic is visible in the trace.
+func emitCLIExitTrace(emitter trace.Emitter, res wrapper.Result, runErr error) {
+	if emitter == nil {
+		return
+	}
+	fields := map[string]any{
+		"status":     string(res.Status),
+		"exit_code":  res.ExitCode,
+		"signal":     res.Signal,
+		"reason":     res.Reason,
+		"pid":        res.PID,
+		"started_at": res.StartedAt,
+		"ended_at":   res.EndedAt,
+	}
+	if !res.StartedAt.IsZero() && !res.EndedAt.IsZero() {
+		fields["duration_ms"] = res.EndedAt.Sub(res.StartedAt).Milliseconds()
+	}
+	if runErr != nil {
+		fields["error"] = runErr.Error()
+	}
+	emitter.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   "wrapper_cli_exited",
+		Fields: fields,
+	})
 }
 
 // openTraceEmitter returns a trace.Emitter for the parsed CLI flags.

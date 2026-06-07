@@ -20,8 +20,7 @@ import (
 //   - No prior assistant turn may be in flight. Send returns
 //     ErrTurnInFlight otherwise.
 //
-// The text is sent verbatim followed by a single carriage return; both
-// Codex and Claude Code accept this as the "submit" keystroke. Senders
+// The text is sent verbatim followed by the harness's submit key. Senders
 // that need richer input (multi-line, control characters) should use
 // Conversation.Wrapper().WriteStdin directly after acquiring control.
 func (c *Conversation) Send(ctx context.Context, text string) (turnID string, err error) {
@@ -41,6 +40,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		return "", ErrTurnInFlight
 	}
 	c.mu.Unlock()
+
+	if err := c.waitReadyForSend(ctx); err != nil {
+		return "", err
+	}
 
 	now := time.Now()
 
@@ -74,7 +77,8 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.currentTurn = &turnCopy
 	c.mu.Unlock()
 
-	if _, err := c.sess.WriteStdin([]byte(text + "\r")); err != nil {
+	submitKey := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
+	if _, err := c.sess.WriteStdin(append([]byte(text), submitKey...)); err != nil {
 		// Roll back the in-flight pointer and mark the turn errored.
 		c.mu.Lock()
 		c.currentTurn = nil

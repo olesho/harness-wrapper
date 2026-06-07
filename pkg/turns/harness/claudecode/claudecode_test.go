@@ -80,6 +80,12 @@ func TestClaudeCodeAdapterRefiresAcrossTurns(t *testing.T) {
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("turn 2: expected 1 event, got %d", len(evs))
 	}
+
+	// Claude Code can use accented verbs in the thinking summary.
+	scr.Write([]byte("⏺ third reply\r\n✻ Sautéed for 4s\r\n"))
+	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
+		t.Fatalf("turn 3: expected 1 event for accented verb, got %d", len(evs))
+	}
 }
 
 func TestClaudeCodeAdapterName(t *testing.T) {
