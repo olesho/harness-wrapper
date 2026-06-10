@@ -36,6 +36,25 @@ class HarnessChatError(RuntimeError):
 
 
 @dataclass
+class Session:
+    id: str
+    harness: str
+    working_dir: str = ""
+    created_at: str = ""
+    harness_session_id: str = ""
+
+    @classmethod
+    def from_json(cls, d: dict[str, Any]) -> "Session":
+        return cls(
+            id=d.get("id", ""),
+            harness=d.get("harness", ""),
+            working_dir=d.get("working_dir", ""),
+            created_at=d.get("created_at", ""),
+            harness_session_id=d.get("harness_session_id", ""),
+        )
+
+
+@dataclass
 class Turn:
     id: str
     session_id: str
@@ -78,6 +97,29 @@ class TurnEvent:
         return cls(turn=Turn.from_json(d.get("turn", {})), error=d.get("error", ""))
 
 
+@dataclass
+class RunTurnResult:
+    turn: Turn
+    session: Session
+    history: list[Turn]
+    process_stopped_after_turn: bool
+    wrapper_status: str = ""
+    wrapper_reason: str = ""
+    error: str = ""
+
+    @classmethod
+    def from_json(cls, d: dict[str, Any]) -> "RunTurnResult":
+        return cls(
+            turn=Turn.from_json(d.get("turn", {})),
+            session=Session.from_json(d.get("session", {})),
+            history=[Turn.from_json(t) for t in d.get("history", [])],
+            process_stopped_after_turn=bool(d.get("process_stopped_after_turn", False)),
+            wrapper_status=d.get("wrapper_status", ""),
+            wrapper_reason=d.get("wrapper_reason", ""),
+            error=d.get("error", ""),
+        )
+
+
 class Client:
     def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
@@ -108,6 +150,35 @@ class Client:
 
     def list(self) -> list[dict[str, Any]]:
         return self._request("GET", "/v1/conversations") or []
+
+    def run_turn(
+        self,
+        *,
+        harness: str,
+        binary_path: str,
+        prompt: str,
+        turn_harness: str = "",
+        args: list[str] | None = None,
+        working_dir: str = "",
+        env: list[str] | None = None,
+        timeout_seconds: int = 0,
+        cols: int = 0,
+        rows: int = 0,
+    ) -> RunTurnResult:
+        body = {
+            "harness": harness,
+            "turn_harness": turn_harness,
+            "binary_path": binary_path,
+            "args": args or [],
+            "working_dir": working_dir,
+            "env": env or [],
+            "prompt": prompt,
+            "exit_after_turn": True,
+            "timeout_seconds": timeout_seconds,
+            "cols": cols,
+            "rows": rows,
+        }
+        return RunTurnResult.from_json(self._request("POST", "/v1/turns", body))
 
     # --- internals ---
     def _request(self, method: str, path: str, body: Any = None) -> Any:

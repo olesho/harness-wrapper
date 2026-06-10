@@ -10,6 +10,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
+	"github.com/olesho/harness-wrapper/pkg/harness"
 )
 
 type convEntry struct {
@@ -77,6 +78,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
+	mux.HandleFunc("POST /v1/turns", s.runTurn)
 	mux.HandleFunc("POST /v1/conversations", s.openConv)
 	mux.HandleFunc("GET /v1/conversations", s.listConvs)
 	mux.HandleFunc("DELETE /v1/conversations/{id}", s.closeConv)
@@ -101,6 +103,63 @@ func (s *Server) Shutdown(ctx context.Context) {
 		e.releaseAll()
 		_ = e.conv.Close(ctx)
 	}
+}
+
+func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
+	var req runTurnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+
+	exitAfterTurn := true
+	if req.ExitAfterTurn != nil {
+		exitAfterTurn = *req.ExitAfterTurn
+	}
+	if !exitAfterTurn {
+		writeError(w, http.StatusBadRequest, "unsupported", "POST /v1/turns is one-shot and requires exit_after_turn=true")
+		return
+	}
+
+	ctx := r.Context()
+	if req.TimeoutSeconds > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.TimeoutSeconds)*time.Second)
+		defer cancel()
+	}
+
+	res, err := harness.RunTurn(ctx, harness.TurnConfig{
+		Harness:       req.Harness,
+		TurnHarness:   req.TurnHarness,
+		BinaryPath:    req.BinaryPath,
+		Args:          req.Args,
+		WorkingDir:    req.WorkingDir,
+		Env:           req.Env,
+		Prompt:        req.Prompt,
+		ExitAfterTurn: true,
+		Cols:          req.Cols,
+		Rows:          req.Rows,
+	})
+	if err != nil && !errors.Is(err, harness.ErrTurnErrored) {
+		writeRunTurnError(w, err)
+		return
+	}
+
+	out := runTurnResponse{
+		Turn:                    toTurnDTO(res.Turn),
+		Session:                 toSessionDTO(res.Session),
+		History:                 make([]turnDTO, 0, len(res.History)),
+		ProcessStoppedAfterTurn: res.ProcessStoppedAfterTurn,
+		WrapperStatus:           string(res.WrapperResult.Status),
+		WrapperReason:           res.WrapperResult.Reason,
+	}
+	for _, t := range res.History {
+		out.History = append(out.History, toTurnDTO(t))
+	}
+	if err != nil {
+		out.Error = err.Error()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
@@ -307,6 +366,17 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, errorResponse{Error: msg, Code: code})
+}
+
+func writeRunTurnError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		writeError(w, http.StatusGatewayTimeout, "timeout", err.Error())
+	case errors.Is(err, context.Canceled):
+		writeError(w, http.StatusRequestTimeout, "canceled", err.Error())
+	default:
+		writeChatError(w, err)
+	}
 }
 
 func writeChatError(w http.ResponseWriter, err error) {

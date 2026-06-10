@@ -14,6 +14,7 @@ go run ./cmd/harness-chatd --bind 127.0.0.1:8080
 
 | Method | Path | Body | Response |
 |---|---|---|---|
+| `POST` | `/v1/turns` | `{harness, binary_path, prompt, args?, working_dir?, env?, timeout_seconds?, cols?, rows?}` | `{turn, session, history, process_stopped_after_turn, wrapper_status?, error?}` |
 | `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?}` | `{id}` |
 | `GET`  | `/v1/conversations` | — | `[{id, harness, session_id?}]` |
 | `DELETE` | `/v1/conversations/{id}` | — | 204 |
@@ -32,6 +33,21 @@ Stdlib only.
 
 ```sh
 python clients/python/examples/basic.py /usr/local/bin/codex codex
+```
+
+One-shot turn, equivalent to the library `RunTurn` path:
+
+```python
+from harness_chat import Client
+
+res = Client("http://127.0.0.1:8080", timeout=180).run_turn(
+    harness="claude",
+    binary_path="/usr/local/bin/claude",
+    args=["--dangerously-skip-permissions"],
+    working_dir="/path/to/project",
+    prompt="summarize this project",
+)
+print(res.turn.text)
 ```
 
 ## TypeScript / Node
