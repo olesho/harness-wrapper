@@ -12,13 +12,15 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/gemini"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // Options configures a single Conversation.
 type Options struct {
 	// Harness names the per-harness adapter ("codex", "claude-code",
-	// "gemini", "generic"). Required.
+	// "gemini", "opencode", "pi", "generic"). Required.
 	Harness string
 
 	// BinaryPath is the harness executable. Required.
@@ -45,6 +47,21 @@ type Options struct {
 
 	// EventBuffer sizes the Conversation.Events() channel. Defaults to 32.
 	EventBuffer int
+
+	// InputPolicy pre-configures how blocking interactive prompts (e.g. the
+	// folder-trust dialog) are resolved without a live client. It is
+	// consulted first; when it yields "ask" (or is nil), the request falls
+	// through to OnInputRequest and then to Events(). JSON-serializable so
+	// transports can accept it at open time.
+	InputPolicy *InputPolicy
+
+	// OnInputRequest is an in-process resolver consulted when InputPolicy
+	// did not auto-answer. Returning ok=true answers the prompt with the
+	// returned InputAnswer; returning ok=false surfaces the request on
+	// Events() for an external client to Answer. It runs on the event pump
+	// goroutine, so it must return promptly. Not used by remote transports
+	// (they answer over the wire instead).
+	OnInputRequest func(InputRequest) (InputAnswer, bool)
 }
 
 // Conversation owns one supervised harness process and serves the
@@ -64,10 +81,25 @@ type Conversation struct {
 
 	session Session // chat-level Session record (also stored in Store)
 
-	eventCh chan TurnEvent
+	eventCh chan ConversationEvent
 
 	mu          sync.Mutex
 	currentTurn *Turn // pending/streaming assistant turn, if any
+
+	// currentInput is the blocking interactive prompt awaiting an answer, or
+	// nil. inputSurfaced is true once it has been emitted to the client (no
+	// policy/handler resolved it), which makes Send fail fast rather than
+	// block. inputStateCh is a buffered (1) wake signal for a Send blocked in
+	// waitReadyForSend so it re-checks when input state changes between
+	// screen redraws.
+	currentInput  *turns.InputRequest
+	inputSurfaced bool
+	inputStateCh  chan struct{}
+
+	// writeStdin, when non-nil, replaces sess.WriteStdin for interactive
+	// answer keystrokes. Production leaves it nil (writes go to the PTY); it
+	// exists so the input-resolution path is testable without a live session.
+	writeStdin func([]byte) (int, error)
 
 	closeOnce sync.Once
 	closed    chan struct{}
@@ -144,7 +176,8 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		releaseWriter: releaseWriter,
 		queue:         newControlQueue(),
 		session:       sessionRec,
-		eventCh:       make(chan TurnEvent, opts.EventBuffer),
+		eventCh:       make(chan ConversationEvent, opts.EventBuffer),
+		inputStateCh:  make(chan struct{}, 1),
 		closed:        make(chan struct{}),
 	}
 	c.watcher = turns.Watch(sess, scr, adapter)
@@ -161,7 +194,7 @@ func (c *Conversation) SessionID() string { return c.session.ID }
 
 // Events returns the channel of turn-state transitions. Closed after
 // Close has completed and the watcher has drained.
-func (c *Conversation) Events() <-chan TurnEvent { return c.eventCh }
+func (c *Conversation) Events() <-chan ConversationEvent { return c.eventCh }
 
 // AcquireControl blocks until this caller is granted the exclusive
 // control token. Holders are queued FIFO. The returned release function
@@ -210,6 +243,17 @@ func (c *Conversation) consumeWatcher() {
 // part of their end-of-turn footer, so this is the natural moment to
 // grab it.
 func (c *Conversation) handleTurnsEvent(ev turns.Event) {
+	// Interactive input prompts are independent of turn state — handle them
+	// before the current-turn machinery and return.
+	switch ev.Kind {
+	case turns.InputRequested:
+		c.handleInputRequested(ev.Input)
+		return
+	case turns.InputResolved:
+		c.handleInputResolved(ev.Input)
+		return
+	}
+
 	if ev.Kind == turns.TurnComplete {
 		c.maybeExtractSessionID()
 	}
@@ -253,10 +297,10 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 	}
 
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
-		c.emit(TurnEvent{Turn: *turn, Err: err})
+		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
 	}
-	c.emit(TurnEvent{Turn: *turn})
+	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
 }
 
 // maybeExtractSessionID opportunistically scrapes the harness's own
@@ -330,7 +374,7 @@ func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
 
 // emit pushes an event onto the chan. Drops if the buffer is full
 // rather than blocking the watcher pump.
-func (c *Conversation) emit(ev TurnEvent) {
+func (c *Conversation) emit(ev ConversationEvent) {
 	select {
 	case c.eventCh <- ev:
 	case <-c.closed:
@@ -349,6 +393,10 @@ func resolveAdapter(name string) (turns.Adapter, error) {
 		return claudecode.New(), nil
 	case "gemini":
 		return gemini.New(), nil
+	case "opencode":
+		return opencode.New(), nil
+	case "pi":
+		return pi.New(), nil
 	case "generic", "":
 		return generic.New(), nil
 	default:

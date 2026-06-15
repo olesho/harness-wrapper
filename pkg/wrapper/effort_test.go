@@ -23,11 +23,18 @@ func TestArgsWithHarnessEffort(t *testing.T) {
 			want:    []string{"--effort", "high", "-p", "prompt"},
 		},
 		{
-			name:    "existing claude effort wins",
+			name:    "existing effort wins",
 			harness: "claude",
 			args:    []string{"--effort", "low", "-p", "prompt"},
 			effort:  "high",
 			want:    []string{"--effort", "low", "-p", "prompt"},
+		},
+		{
+			name:    "empty effort leaves args unchanged",
+			harness: "claude",
+			args:    []string{"-p", "prompt"},
+			effort:  "",
+			want:    []string{"-p", "prompt"},
 		},
 		{
 			name:    "codex effort prepended as config override",
@@ -44,7 +51,7 @@ func TestArgsWithHarnessEffort(t *testing.T) {
 			want:    []string{"-c", "model_reasoning_effort=\"xhigh\"", "exec", "--json"},
 		},
 		{
-			name:    "existing codex effort wins",
+			name:    "codex existing effort wins",
 			harness: "codex",
 			args:    []string{"exec", "-c", "model_reasoning_effort=\"low\"", "--json"},
 			effort:  "high",
@@ -52,10 +59,10 @@ func TestArgsWithHarnessEffort(t *testing.T) {
 		},
 		{
 			name:    "unsupported harness leaves args unchanged",
-			harness: "opencode",
-			args:    []string{"run", "prompt"},
+			harness: "gemini",
+			args:    []string{"-p", "prompt"},
 			effort:  "high",
-			want:    []string{"run", "prompt"},
+			want:    []string{"-p", "prompt"},
 		},
 	}
 
@@ -66,6 +73,17 @@ func TestArgsWithHarnessEffort(t *testing.T) {
 				t.Fatalf("argsWithHarnessEffort() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsSupportedEffort(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		if !isSupportedEffort(effort) {
+			t.Fatalf("isSupportedEffort(%q) = false, want true", effort)
+		}
+	}
+	if isSupportedEffort("ultra") {
+		t.Fatal("isSupportedEffort(\"ultra\") = true, want false")
 	}
 }
 

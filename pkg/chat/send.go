@@ -59,7 +59,7 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	if err := c.store.AppendTurn(ctx, &userTurn); err != nil {
 		return "", fmt.Errorf("chat: append user turn: %w", err)
 	}
-	c.emit(TurnEvent{Turn: userTurn})
+	c.emit(ConversationEvent{Type: EventTurn, Turn: userTurn})
 
 	assistantTurn := Turn{
 		ID:        newID(),
@@ -89,11 +89,11 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		if uerr := c.store.UpdateTurn(ctx, &assistantTurn); uerr != nil {
 			return "", fmt.Errorf("chat: write stdin + update turn: write=%v update=%w", err, uerr)
 		}
-		c.emit(TurnEvent{Turn: assistantTurn, Err: err})
+		c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn, Err: err})
 		return assistantTurn.ID, fmt.Errorf("chat: write stdin: %w", err)
 	}
 
-	c.emit(TurnEvent{Turn: assistantTurn})
+	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
 	return assistantTurn.ID, nil
 }
 

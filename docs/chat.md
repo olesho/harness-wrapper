@@ -31,7 +31,7 @@ turnID, err := conv.Send(ctx, "summarize this project")
 if err != nil { return err }
 
 for ev := range conv.Events() {
-    if ev.Turn.ID == turnID && ev.Turn.State == chat.TurnStateComplete {
+    if ev.Type == chat.EventTurn && ev.Turn.ID == turnID && ev.Turn.State == chat.TurnStateComplete {
         break
     }
 }
@@ -112,20 +112,33 @@ reach past the API via `conv.Wrapper().WriteStdin(...)`.
 ## Events
 
 ```go
-type TurnEvent struct {
-    Turn Turn  // the affected turn at its new state
-    Err  error // non-nil only for chat-level errors (e.g. Store failures)
+type EventType string
+const (
+    EventTurn          EventType = "turn"
+    EventInputRequest  EventType = "input_request"
+    EventInputResolved EventType = "input_resolved"
+)
+
+type ConversationEvent struct {
+    Type  EventType     // which payload is set
+    Turn  Turn          // affected turn (EventTurn; zero otherwise)
+    Input *InputRequest // interactive prompt (EventInputRequest/Resolved)
+    Err   error         // non-nil only for chat-level errors (e.g. Store failures)
 }
 
-func (c *Conversation) Events() <-chan TurnEvent
+func (c *Conversation) Events() <-chan ConversationEvent
 ```
 
-Events fire on:
+`EventTurn` events fire on:
 - Initial recording of a user turn (`TurnStateComplete`).
 - Initial recording of an assistant turn (`TurnStatePending`).
 - Adapter-driven completion / error (`TurnStateComplete` /
   `TurnStateErrored`).
 - Write failures during `Send`.
+
+`EventInputRequest` / `EventInputResolved` events drive the interactive-input
+channel (see below). Switch on `Type`; for back-compat, turn-only consumers
+may read `Turn` directly (it is the zero `Turn` for input events).
 
 The channel is closed after `Close()` and the watcher has drained.
 
@@ -133,6 +146,43 @@ If the buffer fills (`EventBuffer`, default 32), additional events
 are dropped rather than blocking the watcher pump — slow consumers
 lose events. Consumers that need every event should drain promptly
 or size the buffer for their workload.
+
+## Interactive input (blocking prompts)
+
+Some harnesses block at startup on a dialog the normal `Send` flow cannot
+satisfy — Claude Code's folder-trust prompt ("Do you trust the files in this
+folder?") and the `--dangerously-skip-permissions` acceptance screen. The
+per-harness `turns.Adapter` detects these on the rendered screen and the
+`Conversation` surfaces them as a request/answer channel. The client answers
+**semantically** (an option ID or alias); the chat layer owns the keystrokes.
+
+```go
+type InputRequest struct {
+    ID      string        // stable per prompt; correlates the answer
+    Kind    string        // "trust_prompt" | "menu_select" | "confirm" | "text_input"
+    Prompt  string        // the question text
+    Options []InputOption // menu choices (ID, Alias, Label); nil for free text
+}
+type InputAnswer struct { OptionID string; Text string }
+
+func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAnswer) error
+```
+
+A detected prompt is resolved in this order:
+
+1. **`Options.InputPolicy`** — a declarative, JSON-serializable pre-configuration
+   set at open time. `{ByKind: {"trust_prompt": {Kind: "answer", OptionID: "proceed"}}}`
+   auto-answers without a client. `Kind` is `ask` (default) | `answer` | `deny`.
+2. **`Options.OnInputRequest`** — an in-process callback (Go only) consulted when
+   the policy says `ask`.
+3. **Surface to the client** — an `EventInputRequest` is emitted on `Events()`;
+   answer it with `Answer` (requires the control token, like `Send`). When it
+   clears, an `EventInputResolved` fires.
+
+`trust_prompt` answer aliases are `proceed` and `deny` (so a policy need not
+know the concrete wording). While a prompt is awaiting an external answer,
+`Send` returns `ErrInputPending` rather than blocking; while a policy/handler
+is auto-answering, `Send` waits for the prompt to clear.
 
 ## History
 
@@ -211,8 +261,12 @@ bypasses the control-token guard.
 |------------------------|--------------------------------------------------|
 | `ErrInvalidOptions`    | `Open`: required option missing or invalid       |
 | `ErrUnknownHarness`    | `Open`: `Options.Harness` not registered         |
-| `ErrNoControl`         | `Send`: control token not currently held         |
+| `ErrNoControl`         | `Send`/`Answer`: control token not currently held |
 | `ErrTurnInFlight`      | `Send`: previous assistant turn still pending    |
+| `ErrInputPending`      | `Send`: a prompt is awaiting an external answer  |
+| `ErrNoInputPending`    | `Answer`: no prompt currently pending            |
+| `ErrStaleInputRequest` | `Answer`: request ID no longer current           |
+| `ErrUnknownOption`     | `Answer`: option ID/alias matches no option      |
 | `ErrClosed`            | Any method after `Close` (or before re-use)      |
 
 Use `errors.Is` to discriminate.

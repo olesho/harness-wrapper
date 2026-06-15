@@ -99,7 +99,7 @@ func TestHandleTurnsEvent_APIErrorFieldsForwarded(t *testing.T) {
 	c := &Conversation{
 		store:       store,
 		session:     *sess,
-		eventCh:     make(chan TurnEvent, 4),
+		eventCh:     make(chan ConversationEvent, 4),
 		closed:      make(chan struct{}),
 		currentTurn: turn,
 	}
@@ -157,7 +157,7 @@ func TestHandleTurnsEvent_APIErrorTransportNoCode(t *testing.T) {
 	c := &Conversation{
 		store:       store,
 		session:     *sess,
-		eventCh:     make(chan TurnEvent, 4),
+		eventCh:     make(chan ConversationEvent, 4),
 		closed:      make(chan struct{}),
 		currentTurn: turn,
 	}

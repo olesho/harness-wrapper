@@ -11,9 +11,11 @@
 // Schema:
 //
 //	{
-//	  "codex":       {"package": "@openai/codex",             "binary": "codex",  "pinned": "0.130.0", "verified_at": "2026-05-15"},
-//	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude", "pinned": "2.1.141", "verified_at": "2026-05-15"},
-//	  "gemini":      {"package": "@google/gemini-cli",        "binary": "gemini", "pinned": "",        "verified_at": ""}
+//	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.130.0", "verified_at": "2026-05-15"},
+//	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.141", "verified_at": "2026-05-15"},
+//	  "gemini":      {"package": "@google/gemini-cli",        "binary": "gemini",   "pinned": "",        "verified_at": ""},
+//	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
+//	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "",        "verified_at": ""}
 //	}
 //
 // An empty pinned/verified_at string is allowed and means "not yet
