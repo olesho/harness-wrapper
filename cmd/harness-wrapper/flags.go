@@ -10,6 +10,7 @@ import (
 type harnessWrapperArgs struct {
 	TraceFile   string
 	TraceStderr bool
+	Effort      string
 	// TmuxSession requests the wrapper spawn the run inside a detached
 	// tmux session named hw-<TmuxSession> and exit immediately after
 	// `tmux new-session -d` succeeds. The wrapper will re-exec itself
@@ -48,10 +49,12 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 	fs.SetOutput(io.Discard)
 	var traceFile string
 	var traceStderr bool
+	var effort string
 	var tmuxSession string
 	var tmuxChild string
 	fs.StringVar(&traceFile, "trace-file", "", "path to write trace events as NDJSON (default: trace events are dropped)")
 	fs.BoolVar(&traceStderr, "trace-stderr", false, "write trace events as NDJSON to stderr (mutually exclusive with --trace-file)")
+	fs.StringVar(&effort, "effort", "", "reasoning effort for supported harnesses (low, medium, high, xhigh, max)")
 	fs.StringVar(&tmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
 	fs.StringVar(&tmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
 	if err := fs.Parse(pre); err != nil {
@@ -74,6 +77,7 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 	return harnessWrapperArgs{
 		TraceFile:   traceFile,
 		TraceStderr: traceStderr,
+		Effort:      effort,
 		TmuxSession: tmuxSession,
 		TmuxChild:   tmuxChild,
 		HarnessName: fs.Arg(0),

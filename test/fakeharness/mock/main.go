@@ -28,7 +28,7 @@ import (
 )
 
 func main() {
-	mode := flag.String("mode", "completed", "completed|failed|stuck|needs-input|cost-limited|api-error")
+	mode := flag.String("mode", "completed", "completed|failed|stuck|needs-input|trust|cost-limited|api-error")
 	delay := flag.Duration("delay", 50*time.Millisecond, "delay between progress lines")
 	exitCode := flag.Int("exit-code", 1, "exit code for failed and cost-limited modes")
 	steps := flag.Int("steps", 3, "progress steps for completed mode")
@@ -39,11 +39,22 @@ func main() {
 	apiErrorRepeatGap := flag.Duration("api-error-repeat-gap", 100*time.Millisecond, "delay between repeated api-error prints")
 	apiErrorRecover := flag.Bool("api-error-recover", false, "after printing, resume normal completed-style progress and exit 0 (else heartbeat until signal)")
 	apiErrorHeartbeat := flag.Duration("api-error-heartbeat", 200*time.Millisecond, "heartbeat interval for api-error mode")
+	readyPrompt := flag.Bool("ready-prompt", false, "emit a Claude Code-style ready prompt and consume one input line before running the mode (so chat-layer readiness passes); composes with modes that don't otherwise read stdin")
 	flag.Parse()
 
 	installSignalCleanup()
 
 	fmt.Println("Mock Agent CLI")
+
+	if *readyPrompt {
+		// Emulate Claude Code reaching its interactive prompt and the user
+		// submitting one message. This lets the chat layer's readiness gate
+		// (which looks for "Claude Code" + the "❯" prompt) pass before the
+		// selected mode produces its mid-turn behavior.
+		fmt.Println("Claude Code")
+		fmt.Println("❯")
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+	}
 
 	switch *mode {
 	case "completed":
@@ -56,6 +67,8 @@ func main() {
 		select {}
 	case "needs-input":
 		runNeedsInput(*prompt, *expected)
+	case "trust":
+		runTrust()
 	case "cost-limited":
 		fmt.Fprintln(os.Stderr, "ERROR: quota exceeded. Please try again after your usage limit resets.")
 		os.Exit(*exitCode)
@@ -87,6 +100,37 @@ func runNeedsInput(prompt, expected string) {
 	}
 	fmt.Fprintln(os.Stderr, "Rejected.")
 	os.Exit(2)
+}
+
+// runTrust simulates Claude Code's startup folder-trust dialog: it renders the
+// trust prompt as a numbered menu, waits for the choice digit, clears the
+// screen, then behaves like a normal interactive turn (read prompt, reply,
+// print a thinking-summary so the turn completes). Choosing anything but "1"
+// exits non-zero, like declining trust.
+func runTrust() {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("Do you trust the files in this folder?")
+	fmt.Println()
+	fmt.Println("❯ 1. Yes, proceed")
+	fmt.Println("  2. No, exit")
+
+	choice, _ := reader.ReadString('\n')
+	if strings.TrimRight(choice, "\r\n") != "1" {
+		fmt.Fprintln(os.Stderr, "Trust declined.")
+		os.Exit(2)
+	}
+
+	// Clear the screen so the dialog text no longer lingers in the emulated
+	// snapshot — this is what lets the watcher observe the prompt resolving.
+	fmt.Print("\x1b[2J\x1b[H")
+	fmt.Println("Claude Code")
+	fmt.Println("❯")
+
+	line, _ := reader.ReadString('\n')
+	fmt.Printf("assistant reply: %s\n", strings.TrimRight(line, "\r\n"))
+	fmt.Println("✻ Baked for 1s")
+	time.Sleep(200 * time.Millisecond)
 }
 
 func runAPIError(msg string, repeat int, repeatGap time.Duration, recover bool, heartbeat time.Duration, steps int, delay time.Duration) {

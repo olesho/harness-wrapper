@@ -7,17 +7,18 @@ import (
 )
 
 type runTurnRequest struct {
-	Harness        string   `json:"harness"`
-	TurnHarness    string   `json:"turn_harness,omitempty"`
-	BinaryPath     string   `json:"binary_path"`
-	Args           []string `json:"args,omitempty"`
-	WorkingDir     string   `json:"working_dir,omitempty"`
-	Env            []string `json:"env,omitempty"`
-	Prompt         string   `json:"prompt"`
-	ExitAfterTurn  *bool    `json:"exit_after_turn,omitempty"`
-	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
-	Cols           int      `json:"cols,omitempty"`
-	Rows           int      `json:"rows,omitempty"`
+	Harness        string            `json:"harness"`
+	TurnHarness    string            `json:"turn_harness,omitempty"`
+	BinaryPath     string            `json:"binary_path"`
+	Args           []string          `json:"args,omitempty"`
+	WorkingDir     string            `json:"working_dir,omitempty"`
+	Env            []string          `json:"env,omitempty"`
+	Prompt         string            `json:"prompt"`
+	ExitAfterTurn  *bool             `json:"exit_after_turn,omitempty"`
+	TimeoutSeconds int               `json:"timeout_seconds,omitempty"`
+	Cols           int               `json:"cols,omitempty"`
+	Rows           int               `json:"rows,omitempty"`
+	InputPolicy    *chat.InputPolicy `json:"input_policy,omitempty"`
 }
 
 type sessionDTO struct {
@@ -39,13 +40,14 @@ type runTurnResponse struct {
 }
 
 type openRequest struct {
-	Harness    string   `json:"harness"`
-	BinaryPath string   `json:"binary_path"`
-	Args       []string `json:"args,omitempty"`
-	WorkingDir string   `json:"working_dir,omitempty"`
-	Env        []string `json:"env,omitempty"`
-	Cols       int      `json:"cols,omitempty"`
-	Rows       int      `json:"rows,omitempty"`
+	Harness     string            `json:"harness"`
+	BinaryPath  string            `json:"binary_path"`
+	Args        []string          `json:"args,omitempty"`
+	WorkingDir  string            `json:"working_dir,omitempty"`
+	Env         []string          `json:"env,omitempty"`
+	Cols        int               `json:"cols,omitempty"`
+	Rows        int               `json:"rows,omitempty"`
+	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
 }
 
 type openResponse struct {
@@ -69,6 +71,40 @@ type sendRequest struct {
 
 type sendResponse struct {
 	TurnID string `json:"turn_id"`
+}
+
+// answerRequest answers a pending interactive prompt. RequestID is optional
+// (empty targets whatever prompt is currently pending). Set OptionID (id or
+// alias) for menu/trust prompts, or Text for free-text prompts.
+type answerRequest struct {
+	Token     string `json:"token"`
+	RequestID string `json:"request_id,omitempty"`
+	OptionID  string `json:"option_id,omitempty"`
+	Text      string `json:"text,omitempty"`
+}
+
+type inputOptionDTO struct {
+	ID    string `json:"id"`
+	Alias string `json:"alias,omitempty"`
+	Label string `json:"label"`
+}
+
+type inputRequestDTO struct {
+	ID      string           `json:"id"`
+	Kind    string           `json:"kind"`
+	Prompt  string           `json:"prompt"`
+	Options []inputOptionDTO `json:"options,omitempty"`
+}
+
+// eventDTO is the typed SSE envelope. Type discriminates the payload:
+// "turn" → Turn set; "input_request"/"input_resolved" → Input set. Turn
+// frames keep the same "turn" object shape as before, so existing consumers
+// that read .turn remain compatible.
+type eventDTO struct {
+	Type  string           `json:"type"`
+	Turn  *turnDTO         `json:"turn,omitempty"`
+	Input *inputRequestDTO `json:"input,omitempty"`
+	Error string           `json:"error,omitempty"`
 }
 
 type turnDTO struct {
@@ -123,10 +159,28 @@ func toTurnDTO(t chat.Turn) turnDTO {
 	return out
 }
 
-func toTurnEventDTO(ev chat.TurnEvent) turnEventDTO {
-	out := turnEventDTO{Turn: toTurnDTO(ev.Turn)}
+func toInputRequestDTO(r *chat.InputRequest) *inputRequestDTO {
+	if r == nil {
+		return nil
+	}
+	out := &inputRequestDTO{ID: r.ID, Kind: r.Kind, Prompt: r.Prompt}
+	for _, o := range r.Options {
+		out.Options = append(out.Options, inputOptionDTO{ID: o.ID, Alias: o.Alias, Label: o.Label})
+	}
+	return out
+}
+
+func toEventDTO(ev chat.ConversationEvent) eventDTO {
+	out := eventDTO{Type: string(ev.Type)}
 	if ev.Err != nil {
 		out.Error = ev.Err.Error()
+	}
+	switch ev.Type {
+	case chat.EventInputRequest, chat.EventInputResolved:
+		out.Input = toInputRequestDTO(ev.Input)
+	default: // EventTurn (and any future turn-shaped event)
+		t := toTurnDTO(ev.Turn)
+		out.Turn = &t
 	}
 	return out
 }

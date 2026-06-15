@@ -11,7 +11,7 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("All: %v", err)
 	}
-	for _, want := range []string{"codex", "claude-code", "gemini"} {
+	for _, want := range []string{"codex", "claude-code", "gemini", "opencode", "pi"} {
 		entry, ok := all[want]
 		if !ok {
 			t.Errorf("expected entry for %q in versions.json", want)
@@ -30,6 +30,14 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	// Gemini is intentionally unpinned in the initial versions.json.
 	if got, ok := Pinned("gemini"); ok {
 		t.Errorf("expected gemini to be unpinned, got %q", got)
+	}
+	// OpenCode is likewise unpinned until a corpus pins its version.
+	if got, ok := Pinned("opencode"); ok {
+		t.Errorf("expected opencode to be unpinned, got %q", got)
+	}
+	// pi is likewise unpinned until a corpus pins its version.
+	if got, ok := Pinned("pi"); ok {
+		t.Errorf("expected pi to be unpinned, got %q", got)
 	}
 	// claude-code's harness key differs from its on-PATH binary name;
 	// the Binary field is what discovery probes against.

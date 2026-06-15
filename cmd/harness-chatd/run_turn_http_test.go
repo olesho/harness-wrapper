@@ -24,6 +24,10 @@ IFS= read -r line
 echo "assistant reply: $line"
 echo "claude --resume 123e4567-e89b-12d3-a456-426614174000"
 echo "✻ Baked for 1s"
+# Stay alive like a real interactive REPL so the turn-complete marker is
+# observed before the process goes away. RunTurn(ExitAfterTurn) then stops us;
+# exiting immediately here races the screen-derived turn-complete signal.
+IFS= read -r _
 `)
 
 	srv := NewServer()

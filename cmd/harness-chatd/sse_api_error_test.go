@@ -59,6 +59,10 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 		BinaryPath: mockHarnessBin,
 		Args: []string{
 			"--mode", "api-error",
+			// --ready-prompt makes the mock reach a Claude-style ready prompt
+			// and consume the Send before erroring, so the api_error attaches
+			// to the now-pending turn (the chat readiness gate requires this).
+			"--ready-prompt",
 			"--api-error-msg", "API Error: 429 Too Many Requests. Retry after 30 seconds.",
 		},
 	})
@@ -81,7 +85,7 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	})
 
 	// Subscribe to SSE.
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	streamReq, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/v1/conversations/"+open.ID+"/events", nil)
 	streamReq.Header.Set("Accept", "text/event-stream")
@@ -121,7 +125,7 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	// Read SSE frames until we see one with http_code populated.
 	scanner := bufio.NewScanner(streamResp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	var matched turnEventDTO
 	for time.Now().Before(deadline) && scanner.Scan() {
 		line := scanner.Text()

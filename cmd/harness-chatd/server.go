@@ -85,6 +85,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/conversations/{id}/control", s.acquireControl)
 	mux.HandleFunc("DELETE /v1/conversations/{id}/control/{token}", s.releaseControl)
 	mux.HandleFunc("POST /v1/conversations/{id}/messages", s.sendMessage)
+	mux.HandleFunc("POST /v1/conversations/{id}/input", s.answerInput)
 	mux.HandleFunc("GET /v1/conversations/{id}/events", s.streamEvents)
 	mux.HandleFunc("GET /v1/conversations/{id}/history", s.history)
 	return mux
@@ -139,6 +140,7 @@ func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
 		ExitAfterTurn: true,
 		Cols:          req.Cols,
 		Rows:          req.Rows,
+		InputPolicy:   req.InputPolicy,
 	})
 	if err != nil && !errors.Is(err, harness.ErrTurnErrored) {
 		writeRunTurnError(w, err)
@@ -172,14 +174,15 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 	// which keeps it for the lifetime of the harness process. r.Context()
 	// would cancel as soon as this handler returns.
 	conv, err := chat.Open(context.Background(), chat.Options{
-		Harness:    req.Harness,
-		BinaryPath: req.BinaryPath,
-		Args:       req.Args,
-		WorkingDir: req.WorkingDir,
-		Env:        req.Env,
-		Cols:       req.Cols,
-		Rows:       req.Rows,
-		Store:      memstore.New(),
+		Harness:     req.Harness,
+		BinaryPath:  req.BinaryPath,
+		Args:        req.Args,
+		WorkingDir:  req.WorkingDir,
+		Env:         req.Env,
+		Cols:        req.Cols,
+		Rows:        req.Rows,
+		Store:       memstore.New(),
+		InputPolicy: req.InputPolicy,
 	})
 	if err != nil {
 		writeChatError(w, err)
@@ -278,6 +281,28 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, sendResponse{TurnID: turnID})
 }
 
+func (s *Server) answerInput(w http.ResponseWriter, r *http.Request) {
+	entry, ok := s.lookup(w, r)
+	if !ok {
+		return
+	}
+	var req answerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	if !entry.hasToken(req.Token) {
+		writeError(w, http.StatusConflict, "no_control", "caller does not hold the control token")
+		return
+	}
+	err := entry.conv.Answer(r.Context(), req.RequestID, chat.InputAnswer{OptionID: req.OptionID, Text: req.Text})
+	if err != nil {
+		writeChatError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	entry, ok := s.lookup(w, r)
 	if !ok {
@@ -317,7 +342,7 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			if _, err := w.Write([]byte("data: ")); err != nil {
 				return
 			}
-			if err := enc.Encode(toTurnEventDTO(ev)); err != nil {
+			if err := enc.Encode(toEventDTO(ev)); err != nil {
 				return
 			}
 			// json.Encoder.Encode writes a trailing \n; SSE needs \n\n.
@@ -389,6 +414,14 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "no_control", err.Error())
 	case errors.Is(err, chat.ErrTurnInFlight):
 		writeError(w, http.StatusConflict, "turn_in_flight", err.Error())
+	case errors.Is(err, chat.ErrInputPending):
+		writeError(w, http.StatusConflict, "input_pending", err.Error())
+	case errors.Is(err, chat.ErrNoInputPending):
+		writeError(w, http.StatusConflict, "no_input_pending", err.Error())
+	case errors.Is(err, chat.ErrStaleInputRequest):
+		writeError(w, http.StatusConflict, "stale_input_request", err.Error())
+	case errors.Is(err, chat.ErrUnknownOption):
+		writeError(w, http.StatusBadRequest, "unknown_option", err.Error())
 	case errors.Is(err, chat.ErrClosed):
 		writeError(w, http.StatusGone, "closed", err.Error())
 	default:

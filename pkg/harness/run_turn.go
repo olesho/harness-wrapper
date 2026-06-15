@@ -63,6 +63,17 @@ type TurnConfig struct {
 	// EventBuffer sizes the chat event channel. Zero uses chat.Open default.
 	EventBuffer int
 
+	// InputPolicy pre-resolves blocking interactive prompts (e.g. the
+	// folder-trust dialog) so a one-shot run proceeds unattended. Without it,
+	// an unanswerable prompt fails the run with chat.ErrInputPending rather
+	// than hanging to the deadline. For an untrusted worktree, set
+	// {ByKind: {"trust_prompt": {Kind: "answer", OptionID: "proceed"}}}.
+	InputPolicy *chat.InputPolicy
+
+	// OnInputRequest is an in-process resolver for prompts the policy didn't
+	// answer. Go-only (not exposed over transports).
+	OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
+
 	// Output, when non-nil, receives a best-effort copy of PTY output observed
 	// after RunTurn opens the conversation. This is diagnostic/display output;
 	// turn completion is driven by the screen adapter, not this writer.
@@ -117,15 +128,17 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 
 	store := memstore.New()
 	conv, err := chat.Open(ctx, chat.Options{
-		Harness:     turnHarnessName(cfg),
-		BinaryPath:  cfg.BinaryPath,
-		Args:        cfg.Args,
-		WorkingDir:  cfg.WorkingDir,
-		Env:         cfg.Env,
-		Cols:        cfg.Cols,
-		Rows:        cfg.Rows,
-		Store:       store,
-		EventBuffer: cfg.EventBuffer,
+		Harness:        turnHarnessName(cfg),
+		BinaryPath:     cfg.BinaryPath,
+		Args:           cfg.Args,
+		WorkingDir:     cfg.WorkingDir,
+		Env:            cfg.Env,
+		Cols:           cfg.Cols,
+		Rows:           cfg.Rows,
+		Store:          store,
+		EventBuffer:    cfg.EventBuffer,
+		InputPolicy:    cfg.InputPolicy,
+		OnInputRequest: cfg.OnInputRequest,
 	})
 	if err != nil {
 		return TurnResult{}, err
