@@ -123,6 +123,9 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	if opts.EventBuffer <= 0 {
 		opts.EventBuffer = 32
 	}
+	// Normalize the harness alias up front so the adapter and every
+	// input-handling switch (readiness, submit-key) agree on "claude-code".
+	opts.Harness = canonicalHarness(opts.Harness)
 
 	adapter, err := resolveAdapter(opts.Harness)
 	if err != nil {
@@ -382,6 +385,26 @@ func (c *Conversation) emit(ev ConversationEvent) {
 		// Buffer full — drop. Slow consumers lose events; this matches
 		// the wrapper's own slow-consumer policy.
 	}
+}
+
+// canonicalHarness normalizes harness aliases to the single name used by
+// every harness-specific switch in the chat layer (adapter selection AND the
+// input-handling switches: requiresPromptReadiness, readyForInput,
+// submitKeyForHarness). The wrapper/profile name "claude" maps to the chat
+// adapter name "claude-code".
+//
+// resolveAdapter accepts both spellings, but the input-handling switches key
+// on "claude-code" only — so a conversation opened as "claude" would get the
+// right turn-DETECTION adapter yet fall through to the generic input default
+// (plain LF submit, no readiness gate). Claude Code's enhanced-keyboard TUI
+// ignores a bare LF, so the typed prompt is never submitted: the turn sticks
+// in "pending" forever (surfacing downstream as turn_in_flight on the retry).
+// Canonicalizing once in Open keeps all the switches consistent.
+func canonicalHarness(name string) string {
+	if name == "claude" {
+		return "claude-code"
+	}
+	return name
 }
 
 // resolveAdapter maps Options.Harness to a concrete turns.Adapter.
