@@ -39,19 +39,22 @@ import (
 // the model echoes the marker shape as part of its reply content
 // (e.g. "you'd see '✻ Baked for 5s' here" in explanatory prose).
 //
-// Format: U+273B (✻) + space + capitalized verb + " for " + N + "s",
+// Format: U+273B (✻) + space + capitalized verb + " for " + a duration
+// that Claude Code prints in h/m/s units ("5s", "1m 22s", "1h 2m 3s"),
 // optionally surrounded by horizontal whitespace, on its own line.
 // The marker text is the first capture group, so the fingerprint
 // stored on the Adapter does not include the emulator's column
 // padding.
 //
 // Examples that match: "✻ Baked for 5s", "✻ Brewed for 4s",
-// "✻ Sautéed for 4s" — each on a line by itself (trailing column
-// padding from the emulator is allowed).
+// "✻ Sautéed for 4s", "✻ Thought for 1m 22s" — each on a line by
+// itself (trailing column padding from the emulator is allowed).
+// Minute/hour durations must match too: a turn that runs >=60s prints
+// "for 1m 22s", and missing it leaves the turn forever in-flight.
 //
 // Examples that do NOT match (and used to mis-fire): the same
 // pattern surrounded by non-whitespace on the same line.
-var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+s)[^\S\r\n]*$`)
+var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)[^\S\r\n]*$`)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.
