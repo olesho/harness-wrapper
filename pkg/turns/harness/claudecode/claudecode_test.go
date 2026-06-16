@@ -82,6 +82,49 @@ func TestClaudeCodeAdapterRefiresAcrossTurns(t *testing.T) {
 	}
 }
 
+// TestClaudeCodeAdapterFiresOnMinuteDurations is the regression guard for the
+// >=60s detection-miss: Claude Code renders a turn's duration as "1m 22s" (and
+// "1h 2m 3s") once it crosses a minute, but the old `for \d+s` pattern matched
+// only sub-minute "5s" summaries — so every turn of a minute or more never
+// emitted TurnComplete and RunTurn hung until a caller-side guard stepped in.
+// Reproduced live on Claude Code 2.1.178 ("✻ Cooked for 1m 22s").
+func TestClaudeCodeAdapterFiresOnMinuteDurations(t *testing.T) {
+	cases := []struct{ name, summary string }{
+		{"seconds", "✻ Baked for 5s"},
+		{"minutes", "✻ Cooked for 1m 22s"},
+		{"minutes-only", "✻ Brewed for 2m"},
+		{"hours", "✻ Pondered for 1h 2m 3s"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scr := screen.New(120, 40)
+			a := New()
+			scr.Write([]byte("⏺ reply\r\n" + tc.summary + "\r\n"))
+			evs := a.OnScreen(scr.Snapshot())
+			if len(evs) != 1 || evs[0].Kind != turns.TurnComplete {
+				t.Fatalf("%q: expected exactly 1 TurnComplete, got %+v", tc.summary, evs)
+			}
+		})
+	}
+}
+
+// TestClaudeCodeAdapter_TrailingContentNoFire locks in that a duration line
+// carrying in-progress trailing decoration ("· ↑ tokens · esc to interrupt")
+// does NOT mis-fire TurnComplete: the end anchor must reject any line with
+// trailing non-whitespace, so completion fires only on the settled bare
+// summary line. This is what keeps the broadened minute/hour duration pattern
+// from firing mid-turn.
+func TestClaudeCodeAdapter_TrailingContentNoFire(t *testing.T) {
+	scr := screen.New(120, 40)
+	a := New()
+	scr.Write([]byte("⏺ working\r\n✻ Cooked for 1m 22s · ↑ 3.1k tokens · esc to interrupt\r\n"))
+	for _, ev := range a.OnScreen(scr.Snapshot()) {
+		if ev.Kind == turns.TurnComplete {
+			t.Errorf("trailing-content duration line mis-fired TurnComplete: %+v", ev)
+		}
+	}
+}
+
 func TestClaudeCodeAdapterName(t *testing.T) {
 	if n := New().Name(); n != "claude-code" {
 		t.Errorf("expected Name()=claude-code, got %q", n)
