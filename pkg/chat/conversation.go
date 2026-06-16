@@ -389,7 +389,11 @@ func resolveAdapter(name string) (turns.Adapter, error) {
 	switch name {
 	case "codex":
 		return codex.New(), nil
-	case "claude-code":
+	// Accept both the wrapper/profile name "claude" (what RunTurn and the
+	// harness registry use, e.g. harness.Register("claude")) and the chat
+	// adapter name "claude-code". Callers that pass the profile name "claude"
+	// (consistent with "codex"/"gemini") otherwise hit ErrUnknownHarness.
+	case "claude", "claude-code":
 		return claudecode.New(), nil
 	case "gemini":
 		return gemini.New(), nil
