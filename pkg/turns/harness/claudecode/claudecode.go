@@ -39,19 +39,29 @@ import (
 // the model echoes the marker shape as part of its reply content
 // (e.g. "you'd see '✻ Baked for 5s' here" in explanatory prose).
 //
-// Format: U+273B (✻) + space + capitalized verb + " for " + N + "s",
-// optionally surrounded by horizontal whitespace, on its own line.
-// The marker text is the first capture group, so the fingerprint
-// stored on the Adapter does not include the emulator's column
-// padding.
+// Format: U+273B (✻) + space + capitalized verb + " for " + a duration,
+// optionally surrounded by horizontal whitespace, on its own line. The
+// marker text is the first capture group, so the fingerprint stored on the
+// Adapter does not include the emulator's column padding.
+//
+// The duration is one or more space-separated <number><unit> components,
+// unit ∈ {h,m,s}. Claude Code renders a sub-minute turn as "5s" but switches
+// to "1m 22s" once the turn crosses 60s (and "1h 2m 3s" past an hour).
+// Matching only `\d+s` silently missed EVERY turn ≥ 60s: the end-of-turn
+// event never fired, so RunTurn hung until a caller-side idle guard or the
+// liveness watchdog stepped in. Observed on Claude Code 2.1.178 — a long turn
+// summarised as "✻ Cooked for 1m 22s".
 //
 // Examples that match: "✻ Baked for 5s", "✻ Brewed for 4s",
-// "✻ Sautéed for 4s" — each on a line by itself (trailing column
-// padding from the emulator is allowed).
+// "✻ Sautéed for 4s", "✻ Cooked for 1m 22s", "✻ Pondered for 1h 2m 3s" —
+// each on a line by itself (trailing column padding from the emulator is
+// allowed).
 //
 // Examples that do NOT match (and used to mis-fire): the same
-// pattern surrounded by non-whitespace on the same line.
-var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+s)[^\S\r\n]*$`)
+// pattern surrounded by non-whitespace on the same line (e.g. the in-progress
+// "✻ Cooking… (1m 22s · esc to interrupt)" indicator, which has trailing
+// content the end anchor rejects).
+var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)[^\S\r\n]*$`)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.
