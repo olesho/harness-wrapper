@@ -65,13 +65,20 @@ func readyForInput(harness, text string) bool {
 	switch harness {
 	case "claude-code":
 		// A blocking dialog (folder-trust, bypass acceptance) renders its own
-		// "❯" selector and the "Claude Code" header, which would otherwise
-		// look ready. Treat the dialog as not-ready so Send waits for it to
-		// clear instead of typing the message into the menu.
+		// "❯" selector and looks ready. Treat the dialog as not-ready so Send
+		// waits for it to clear instead of typing the message into the menu.
 		if _, blocking := claudecode.DetectInput(text); blocking {
 			return false
 		}
-		return strings.Contains(text, "Claude Code") && strings.Contains(text, "❯")
+		// The "❯" prompt box means Claude is accepting input. We deliberately
+		// do NOT also require the "Claude Code" welcome banner: it is painted
+		// only on the fresh startup screen and scrolls off once a turn's prompt
+		// is tall enough to fill the viewport. Requiring it wedged every
+		// subsequent Send in waitReadyForSend until the caller timed out
+		// (a tall step prompt reproduces this on the very second turn).
+		// In-flight turns are already gated by currentTurn before
+		// waitReadyForSend is consulted, so the prompt box alone suffices.
+		return strings.Contains(text, "❯")
 	default:
 		return true
 	}
