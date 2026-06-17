@@ -186,6 +186,7 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	c.watcher = turns.Watch(sess, scr, adapter)
 
 	go c.consumeWatcher()
+	go c.idleCompletionWatcher()
 
 	return c, nil
 }
@@ -299,6 +300,95 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		return
 	}
 
+	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
+		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
+		return
+	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
+}
+
+// idleCompletionGap is how long the rendered screen must sit completely
+// unchanged, at the ready prompt, before an in-flight turn is treated as
+// complete by the idle fallback. Claude Code animates its working spinner
+// (and a per-second elapsed counter) while a turn runs, so any screen update
+// resets the timer — it only elapses once Claude has stopped and returned to
+// the prompt.
+const idleCompletionGap = 8 * time.Second
+
+// idleCompletionWatcher is a fallback end-of-turn detector. The primary
+// detector is the adapter's screen marker (Claude Code's "✻ <verb> for Ns"
+// summary); when that marker is missed — it can scroll off before a snapshot
+// captures it — the assistant turn's currentTurn pointer would otherwise stay
+// set forever and 409 (turn_in_flight) every subsequent Send. This watcher
+// closes that gap: if a turn is in flight and the screen has been idle at the
+// ready prompt for idleCompletionGap, the turn is completed from the settled
+// screen. No-op for harnesses without prompt-readiness semantics.
+func (c *Conversation) idleCompletionWatcher() {
+	if !requiresPromptReadiness(c.opts.Harness) {
+		return
+	}
+	notifyCh, unsubscribe := c.screen.Subscribe()
+	defer unsubscribe()
+	timer := time.NewTimer(idleCompletionGap)
+	defer timer.Stop()
+	for {
+		select {
+		case <-c.closed:
+			return
+		case _, ok := <-notifyCh:
+			if !ok {
+				return
+			}
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(idleCompletionGap)
+		case <-timer.C:
+			c.maybeIdleComplete()
+			timer.Reset(idleCompletionGap)
+		}
+	}
+}
+
+// maybeIdleComplete completes the in-flight turn if (and only if) the screen
+// has settled at the ready prompt — Claude finished and the end-of-turn marker
+// was not observed. Guards: no pending input dialog, the prompt is actually
+// ready, and the turn has been in flight at least idleCompletionGap (so a
+// just-sent turn is never closed on residual pre-send idle). A real marker
+// event that fires first clears currentTurn and makes this a no-op.
+func (c *Conversation) maybeIdleComplete() {
+	c.mu.Lock()
+	turn := c.currentTurn
+	c.mu.Unlock()
+	if turn == nil {
+		return
+	}
+	if c.inputAwaitingClient() {
+		return
+	}
+	snap := c.screen.Snapshot()
+	if !readyForInput(c.opts.Harness, snap.Text) {
+		return
+	}
+	if time.Since(turn.StartedAt) < idleCompletionGap {
+		return
+	}
+
+	c.mu.Lock()
+	if c.currentTurn == nil || c.currentTurn.ID != turn.ID {
+		c.mu.Unlock()
+		return
+	}
+	c.currentTurn = nil
+	c.mu.Unlock()
+
+	turn.State = TurnStateComplete
+	turn.CompletedAt = time.Now()
+	turn.Reason = "claude-code: idle-completion fallback (end-of-turn marker not observed)"
+	turn.Text = snap.Text
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
