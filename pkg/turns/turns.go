@@ -209,3 +209,14 @@ type Quitter interface {
 type MessageExtractor interface {
 	ExtractMessage(snap screen.Snapshot) (string, bool)
 }
+
+// BusyDetector is an optional capability adapters may implement to report, from
+// the rendered screen, whether the harness is still working on the current turn
+// (mid-generation or running a tool) versus sitting idle at the prompt. The
+// chat layer's idle-completion fallback consults it so it never declares a turn
+// complete while the harness is still busy — the harness's input prompt is
+// often painted even while it works, so prompt-readiness alone is not enough to
+// distinguish "done" from "thinking". Adapters that can't tell report false.
+type BusyDetector interface {
+	Busy(snap screen.Snapshot) bool
+}

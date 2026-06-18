@@ -375,6 +375,13 @@ func (c *Conversation) maybeIdleComplete() {
 	if !readyForInput(c.opts.Harness, snap.Text) {
 		return
 	}
+	// The harness's input prompt is often painted even while it works, so
+	// prompt-readiness alone can't tell "done" from "thinking/running a tool".
+	// If the adapter can report that the harness is still busy, honor it — never
+	// idle-complete a turn that's still in flight (that would cut work short).
+	if bd, ok := c.adapter.(turns.BusyDetector); ok && bd.Busy(snap) {
+		return
+	}
 	if time.Since(turn.StartedAt) < idleCompletionGap {
 		return
 	}

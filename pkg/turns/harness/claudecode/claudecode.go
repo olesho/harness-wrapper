@@ -133,8 +133,17 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	// Turn-complete detection — newest thinking marker differs from last fired.
 	// Capture group 1 holds the marker text without surrounding column
 	// padding so the fingerprint stays stable across redraws.
+	//
+	// Claude prints a "✻ <verb> for Ns" summary after EACH thinking block, not
+	// only at the very end — so an intermediate one (claude pausing to think,
+	// then continuing to write files / run tools) must NOT be mistaken for
+	// end-of-turn, or the turn is cut off before the work happens. Gate on
+	// Busy(): a real end-of-turn marker is shown while idle (no "esc to
+	// interrupt"); an intermediate one is shown while still working. When busy,
+	// we neither emit nor advance lastFingerprint, so the genuine end-of-turn
+	// marker (idle) still fires on a later snapshot.
 	matches := thinkingRE.FindAllStringSubmatch(snap.Text, -1)
-	if len(matches) > 0 {
+	if len(matches) > 0 && !a.Busy(snap) {
 		latest := matches[len(matches)-1][1]
 		if latest != a.lastFingerprint {
 			a.lastFingerprint = latest
@@ -393,6 +402,20 @@ func dedent(lines []string) string {
 		}
 	}
 	return strings.TrimRight(strings.Join(out, "\n"), "\n")
+}
+
+// busyMarker is the footer hint Claude Code shows ONLY while a turn is in
+// flight (generating or running a tool): "esc to interrupt". When Claude is
+// idle at the prompt the footer switches away from it (e.g. to "← for agents"),
+// so its presence is a reliable "still working" signal. Verified against the
+// screen corpus: every settled/idle final frame lacks it.
+const busyMarker = "esc to interrupt"
+
+// Busy reports whether Claude is still working on the current turn, so the chat
+// layer's idle-completion fallback won't complete a turn mid-flight (the "❯"
+// prompt box is painted even while Claude works). Implements turns.BusyDetector.
+func (*Adapter) Busy(snap screen.Snapshot) bool {
+	return strings.Contains(snap.Text, busyMarker)
 }
 
 // QuitSequence returns Claude Code's graceful-exit keys: two Ctrl-C presses
