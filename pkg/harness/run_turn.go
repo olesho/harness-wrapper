@@ -5,11 +5,51 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
+	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
+
+// gracefulQuitWait bounds how long RunTurn waits for the harness to exit on its
+// own after the quit sequence before conv.Close escalates to a signal.
+const gracefulQuitWait = 3 * time.Second
+
+// gracefulQuit asks the harness to exit cleanly (via its turns.Quitter
+// sequence) so it can flush/persist before termination, and waits briefly for
+// the process to go away. Returns true if a quit sequence was sent (the caller
+// may then re-read a freshly flushed transcript). A harness without a Quitter,
+// or an unavailable writer, is a no-op returning false — conv.Close then stops
+// it with a signal as before.
+func gracefulQuit(conv *chat.Conversation) bool {
+	q, ok := conv.Adapter().(turns.Quitter)
+	if !ok {
+		return false
+	}
+	keys := q.QuitSequence()
+	if len(keys) == 0 {
+		return false
+	}
+	release, ok := conv.Wrapper().AcquireWriter()
+	if !ok {
+		return false
+	}
+	if _, err := conv.Wrapper().WriteStdin(keys); err != nil {
+		release()
+		return false
+	}
+	release()
+
+	done := make(chan struct{})
+	go func() { _, _ = conv.Wrapper().Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(gracefulQuitWait):
+	}
+	return true
+}
 
 // ErrTurnErrored is returned by RunTurn when the harness reports that the
 // submitted assistant turn ended in an errored state. The returned TurnResult
@@ -160,6 +200,14 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 
 	if cfg.ExitAfterTurn {
 		result.ProcessStoppedAfterTurn = true
+		// Ask the harness to exit gracefully first (so it can flush/persist),
+		// then re-read History in case that produced a transcript; conv.Close
+		// below still guarantees termination if the harness ignores the quit.
+		if gracefulQuit(conv) {
+			if h, herr := conv.History(context.Background()); herr == nil && len(h) > 0 {
+				result.History = h
+			}
+		}
 		if err := conv.Close(context.Background()); err != nil {
 			if detach != nil {
 				detach()

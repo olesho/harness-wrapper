@@ -185,3 +185,27 @@ type TranscriptReader interface {
 	// ignore workingDir.
 	ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error)
 }
+
+// Quitter is an optional capability adapters may implement to surface the key
+// sequence that makes the interactive harness exit gracefully (so it can flush
+// state / persist its transcript), instead of being SIGTERM'd. RunTurn sends
+// this after a one-shot turn completes and waits briefly for a clean exit
+// before escalating to a signal.
+type Quitter interface {
+	// QuitSequence returns bytes to write to the harness PTY to request a
+	// graceful exit (e.g. double Ctrl-C for Claude Code). Empty means the
+	// adapter has no graceful-quit sequence; the caller falls back to a signal.
+	QuitSequence() []byte
+}
+
+// MessageExtractor is an optional capability adapters may implement to recover
+// the assistant's reply text from the rendered screen, stripped of the
+// harness's TUI chrome (banner, the echoed prompt, the thinking-summary
+// footer, box borders, the input prompt). The chat layer calls it when a turn
+// completes to populate Turn.Text with clean output instead of the raw screen
+// scrape — the difference between a parseable one-shot reply and a full-screen
+// dump. Returns ("", false) when the adapter can't isolate the message, in
+// which case the caller falls back to the raw snapshot text.
+type MessageExtractor interface {
+	ExtractMessage(snap screen.Snapshot) (string, bool)
+}

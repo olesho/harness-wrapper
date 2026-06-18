@@ -41,6 +41,10 @@ func run(args []string) int {
 		switch args[0] {
 		case "attach", "status", "kill", "list":
 			return runTmuxSubcommand(args)
+		case "run":
+			// One-shot prompt mode: the proper substitution for `claude -p`.
+			// Drives one turn via pkg/chat and prints the reply.
+			return runOneShot(args[1:])
 		}
 	}
 	return runHarnessWrapper(args)
@@ -215,6 +219,7 @@ func exitCodeFor(res wrapper.Result) int {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: harness-wrapper [wrapper-flags] <name> -- <harness args>")
+	fmt.Fprintln(w, "       harness-wrapper run <name> [wrapper-flags] -- <harness args>   (prompt on stdin)")
 	fmt.Fprintln(w, "       harness-wrapper attach <session>")
 	fmt.Fprintln(w, "       harness-wrapper status <session> [--json]")
 	fmt.Fprintln(w, "       harness-wrapper kill <session>")
@@ -230,6 +235,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "By default trace events are dropped, since stderr would corrupt an")
 	fmt.Fprintln(w, "interactive harness TUI. Pass --trace-file or --trace-stderr to enable.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "`run` is the unattended one-shot mode — the proper substitution for")
+	fmt.Fprintln(w, "`claude -p` / `codex exec`. It reads the prompt from stdin, drives ONE")
+	fmt.Fprintln(w, "turn through the real harness (PTY + turn detection), prints the reply")
+	fmt.Fprintln(w, "to stdout, and exits non-zero if the turn errors. --timeout via the")
+	fmt.Fprintln(w, "HARNESS_WRAPPER_RUN_TIMEOUT env var (default 15m).")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Tmux mode lets you detach from a long-running agent: the harness")
 	fmt.Fprintln(w, "keeps running inside the tmux session, and `harness-wrapper attach`")

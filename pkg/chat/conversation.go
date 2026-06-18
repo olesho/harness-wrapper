@@ -192,6 +192,11 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 // and is empty in v1 until adapter-level extraction lands).
 func (c *Conversation) SessionID() string { return c.session.ID }
 
+// Adapter returns the per-harness turns adapter backing this conversation, so
+// callers can probe its optional capabilities (e.g. turns.Quitter for a
+// graceful-exit sequence).
+func (c *Conversation) Adapter() turns.Adapter { return c.adapter }
+
 // Events returns the channel of turn-state transitions. Closed after
 // Close has completed and the watcher has drained.
 func (c *Conversation) Events() <-chan ConversationEvent { return c.eventCh }
@@ -273,7 +278,7 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
 		if ev.Snap != nil {
-			turn.Text = ev.Snap.Text
+			turn.Text = c.assistantText(*ev.Snap)
 		}
 	case turns.Blocked, turns.Errored:
 		turn.State = TurnStateErrored
@@ -344,6 +349,21 @@ func (c *Conversation) maybeExtractSessionID() {
 // back to the Store's recorded turns. The fallback only contains the
 // user-side text and any screen-derived assistant text the watcher
 // captured at TurnComplete.
+// assistantText returns the clean assistant reply for a completed turn: when
+// the adapter implements turns.MessageExtractor (e.g. claude-code) and can
+// isolate the message from the rendered TUI, that cleaned text is used;
+// otherwise we fall back to the raw screen snapshot. This keeps screen-derived
+// Turn.Text parseable (a one-shot reply, not a full-screen dump) without
+// depending on a persisted transcript.
+func (c *Conversation) assistantText(snap screen.Snapshot) string {
+	if ex, ok := c.adapter.(turns.MessageExtractor); ok {
+		if msg, ok := ex.ExtractMessage(snap); ok {
+			return msg
+		}
+	}
+	return snap.Text
+}
+
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
 	c.mu.Lock()
 	sessionCopy := c.session

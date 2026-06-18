@@ -5,3 +5,4 @@
 *.out
 .DS_Store
 clients/python/__pycache__/
+harness-wrapper-port
