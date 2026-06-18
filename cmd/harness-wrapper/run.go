@@ -67,6 +67,11 @@ func runOneShot(args []string) int {
 		BinaryPath:    binPath,
 		Args:          parsed.HarnessArgs,
 		WorkingDir:    wd,
+		// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*): when
+		// harness-wrapper itself runs inside a Claude Code session, a nested
+		// `claude` disables session persistence and never writes the JSONL
+		// transcript we read back. A top-level env makes it persist normally.
+		Env:           cleanedEnv(),
 		Prompt:        string(prompt),
 		ExitAfterTurn: true, // stop after the turn (graceful) → clean, bounded run
 		// Auto-accept blocking prompts (e.g. the folder-trust dialog) so an
@@ -109,15 +114,42 @@ func runOneShot(args []string) int {
 	return 0
 }
 
-// cleanReply returns the assistant's final message. RunTurn already populates
-// res.Turn.Text with the adapter's clean message extract (or transcript text
-// when a session id was captured); res.History is the transcript-backed
-// fallback. Both are scoped to the just-completed turn.
+// cleanReply returns the assistant's final message, PREFERRING the harness's
+// own transcript (res.History, read back via turns.TranscriptReader) — it is
+// authoritative and complete, with no TUI chrome and no risk of the
+// screen-extraction dropping content. It falls back to the screen-derived
+// res.Turn.Text (adapter ExtractMessage) only when no transcript was available
+// (e.g. the harness session id could not be captured). Set
+// HARNESS_WRAPPER_RUN_DEBUG=1 to log which source was used.
 func cleanReply(res harness.TurnResult) string {
-	if strings.TrimSpace(res.Turn.Text) != "" {
-		return res.Turn.Text
+	if t := lastAssistant(res.History); strings.TrimSpace(t) != "" {
+		if os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1" {
+			fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = transcript")
+		}
+		return t
 	}
-	return lastAssistant(res.History)
+	if os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1" {
+		fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = screen-extract (no transcript)")
+	}
+	return res.Turn.Text
+}
+
+// cleanedEnv returns the current environment minus Claude Code's nesting
+// markers, so a spawned `claude` runs as a top-level (persisting) session.
+func cleanedEnv() []string {
+	src := os.Environ()
+	out := make([]string, 0, len(src))
+	for _, kv := range src {
+		k := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			k = kv[:i]
+		}
+		if k == "CLAUDECODE" || strings.HasPrefix(k, "CLAUDE_CODE_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 func lastAssistant(turns []chat.Turn) string {
