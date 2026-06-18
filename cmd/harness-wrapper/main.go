@@ -14,6 +14,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
@@ -37,6 +41,10 @@ func run(args []string) int {
 		switch args[0] {
 		case "attach", "status", "kill", "list":
 			return runTmuxSubcommand(args)
+		case "run":
+			// One-shot prompt mode: the proper substitution for `claude -p`.
+			// Drives one turn via pkg/chat and prints the reply.
+			return runOneShot(args[1:])
 		}
 	}
 	return runHarnessWrapper(args)
@@ -68,19 +76,88 @@ func runHarnessWrapper(args []string) int {
 	}
 	defer closeTrace()
 
-	res, err := wrapper.Run(context.Background(), wrapper.Config{
+	ctx, stopSignalWatcher := signalAwareContext(context.Background(), traceEmitter)
+	defer stopSignalWatcher()
+
+	res, err := wrapper.Run(ctx, wrapper.Config{
 		BinaryPath: binPath,
 		Args:       parsed.HarnessArgs,
 		Stdin:      os.Stdin,
 		Stdout:     os.Stdout,
 		Trace:      traceEmitter,
 		Harness:    parsed.HarnessName,
+		Effort:     parsed.Effort,
 	})
 	if err != nil {
+		emitCLIExitTrace(traceEmitter, res, err)
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
 		return 1
 	}
+	emitCLIExitTrace(traceEmitter, res, nil)
 	return exitCodeFor(res)
+}
+
+func signalAwareContext(parent context.Context, emitter trace.Emitter) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(parent)
+	signals := make(chan os.Signal, 1)
+	done := make(chan struct{})
+	signal.Notify(signals, syscall.SIGHUP, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case sig := <-signals:
+			if emitter != nil {
+				emitter.Emit(trace.Event{
+					At:   time.Now(),
+					Kind: "wrapper_cli_signal",
+					Fields: map[string]any{
+						"signal": sig.String(),
+					},
+				})
+			}
+			cancel()
+		case <-done:
+		}
+	}()
+
+	var stopOnce sync.Once
+	return ctx, func() {
+		stopOnce.Do(func() {
+			signal.Stop(signals)
+			close(done)
+			cancel()
+		})
+	}
+}
+
+// emitCLIExitTrace records the wrapper CLI's final view of the run. The lower
+// wrapper layer also emits pty_closed/harness_exited, but this event gives tmux
+// status a final result even if the pane exits through an edge path before
+// every lower-level diagnostic is visible in the trace.
+func emitCLIExitTrace(emitter trace.Emitter, res wrapper.Result, runErr error) {
+	if emitter == nil {
+		return
+	}
+	fields := map[string]any{
+		"status":     string(res.Status),
+		"exit_code":  res.ExitCode,
+		"signal":     res.Signal,
+		"reason":     res.Reason,
+		"pid":        res.PID,
+		"started_at": res.StartedAt,
+		"ended_at":   res.EndedAt,
+	}
+	if !res.StartedAt.IsZero() && !res.EndedAt.IsZero() {
+		fields["duration_ms"] = res.EndedAt.Sub(res.StartedAt).Milliseconds()
+	}
+	if runErr != nil {
+		fields["error"] = runErr.Error()
+	}
+	emitter.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   "wrapper_cli_exited",
+		Fields: fields,
+	})
 }
 
 // openTraceEmitter returns a trace.Emitter for the parsed CLI flags.
@@ -142,6 +219,7 @@ func exitCodeFor(res wrapper.Result) int {
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: harness-wrapper [wrapper-flags] <name> -- <harness args>")
+	fmt.Fprintln(w, "       harness-wrapper run <name> [wrapper-flags] -- <harness args>   (prompt on stdin)")
 	fmt.Fprintln(w, "       harness-wrapper attach <session>")
 	fmt.Fprintln(w, "       harness-wrapper status <session> [--json]")
 	fmt.Fprintln(w, "       harness-wrapper kill <session>")
@@ -157,6 +235,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "By default trace events are dropped, since stderr would corrupt an")
 	fmt.Fprintln(w, "interactive harness TUI. Pass --trace-file or --trace-stderr to enable.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "`run` is the unattended one-shot mode — the proper substitution for")
+	fmt.Fprintln(w, "`claude -p` / `codex exec`. It reads the prompt from stdin, drives ONE")
+	fmt.Fprintln(w, "turn through the real harness (PTY + turn detection), prints the reply")
+	fmt.Fprintln(w, "to stdout, and exits non-zero if the turn errors. --timeout via the")
+	fmt.Fprintln(w, "HARNESS_WRAPPER_RUN_TIMEOUT env var (default 15m).")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Tmux mode lets you detach from a long-running agent: the harness")
 	fmt.Fprintln(w, "keeps running inside the tmux session, and `harness-wrapper attach`")

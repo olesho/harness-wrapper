@@ -47,6 +47,18 @@ const (
 	// exit, signal termination, classifier saw a fatal error. The turn
 	// did not complete and is unlikely to recover without intervention.
 	Errored Kind = "errored"
+
+	// InputRequested means the harness is blocked on an interactive prompt
+	// that the normal Send flow cannot satisfy — e.g. Claude Code's
+	// folder-trust dialog at startup. The structured request rides on
+	// Event.Input. The chat layer surfaces it (or auto-answers it from a
+	// policy) and writes the chosen option's keystrokes back into the PTY.
+	InputRequested Kind = "input_requested"
+
+	// InputResolved means a previously-requested interactive prompt is no
+	// longer on screen (answered or dismissed). Event.Input carries at
+	// least the resolved request's ID.
+	InputResolved Kind = "input_resolved"
 )
 
 // Event is one observation about the conversation flow.
@@ -79,6 +91,54 @@ type Event struct {
 	// harness's error message. Zero when no hint was available.
 	// Watcher-populated like HTTPCode.
 	RetryAfter time.Duration
+
+	// Input is the structured interactive prompt for InputRequested /
+	// InputResolved events. nil for every other kind.
+	Input *InputRequest
+}
+
+// InputRequest describes a blocking interactive prompt detected on screen
+// that must be answered out-of-band — the normal Send message flow cannot
+// satisfy it. Adapters produce it from a screen snapshot; the chat layer
+// either auto-answers it from a configured policy or surfaces it to the
+// client, then writes the chosen option's Keys back into the PTY.
+type InputRequest struct {
+	// ID is stable across redraws of the SAME prompt and changes for a
+	// genuinely new prompt. Derived from the prompt content so consecutive
+	// snapshots of one dialog collapse to a single request.
+	ID string
+
+	// Kind categorizes the prompt: "trust_prompt", "menu_select",
+	// "confirm", or "text_input". It is the key a declarative policy
+	// matches on.
+	Kind string
+
+	// Prompt is the question text shown to the user.
+	Prompt string
+
+	// Options are the selectable choices for menu/confirm/trust prompts.
+	// nil for free-text ("text_input") prompts.
+	Options []InputOption
+}
+
+// InputOption is one selectable choice in an InputRequest.
+type InputOption struct {
+	// ID is a stable identifier the answer references (e.g. "1"). Unique
+	// within an InputRequest.
+	ID string
+
+	// Alias is a portable, harness-agnostic intent a policy can target
+	// without knowing the concrete option id: "proceed" | "deny" | "yes" |
+	// "no". Empty when the option carries no recognized intent.
+	Alias string
+
+	// Label is the human-readable choice text ("Yes, proceed").
+	Label string
+
+	// Keys are the bytes to write to the PTY to select this option,
+	// including any submit key. SERVER-SIDE ONLY — never surfaced to a
+	// client; the client answers semantically via ID or Alias.
+	Keys []byte
 }
 
 // Adapter is the per-harness contract that translates raw signals
@@ -124,4 +184,28 @@ type TranscriptReader interface {
 	// turns. Different harnesses index transcripts differently; some
 	// ignore workingDir.
 	ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error)
+}
+
+// Quitter is an optional capability adapters may implement to surface the key
+// sequence that makes the interactive harness exit gracefully (so it can flush
+// state / persist its transcript), instead of being SIGTERM'd. RunTurn sends
+// this after a one-shot turn completes and waits briefly for a clean exit
+// before escalating to a signal.
+type Quitter interface {
+	// QuitSequence returns bytes to write to the harness PTY to request a
+	// graceful exit (e.g. double Ctrl-C for Claude Code). Empty means the
+	// adapter has no graceful-quit sequence; the caller falls back to a signal.
+	QuitSequence() []byte
+}
+
+// MessageExtractor is an optional capability adapters may implement to recover
+// the assistant's reply text from the rendered screen, stripped of the
+// harness's TUI chrome (banner, the echoed prompt, the thinking-summary
+// footer, box borders, the input prompt). The chat layer calls it when a turn
+// completes to populate Turn.Text with clean output instead of the raw screen
+// scrape — the difference between a parseable one-shot reply and a full-screen
+// dump. Returns ("", false) when the adapter can't isolate the message, in
+// which case the caller falls back to the raw snapshot text.
+type MessageExtractor interface {
+	ExtractMessage(snap screen.Snapshot) (string, bool)
 }

@@ -110,6 +110,22 @@ func TestParseHarnessWrapperArgs_TraceFileFlagPropagated(t *testing.T) {
 	}
 }
 
+func TestParseHarnessWrapperArgs_EffortFlagPropagated(t *testing.T) {
+	parsed, err := parseHarnessWrapperArgs([]string{"--effort", "high", "claude", "--", "-p", "prompt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parsed.Effort != "high" {
+		t.Errorf("Effort = %q, want high", parsed.Effort)
+	}
+	if parsed.HarnessName != "claude" {
+		t.Errorf("HarnessName = %q, want claude", parsed.HarnessName)
+	}
+	if !reflect.DeepEqual(parsed.HarnessArgs, []string{"-p", "prompt"}) {
+		t.Errorf("HarnessArgs = %v, want [-p prompt]", parsed.HarnessArgs)
+	}
+}
+
 func TestParseHarnessWrapperArgs_TraceStderrFlagPropagated(t *testing.T) {
 	parsed, err := parseHarnessWrapperArgs([]string{"--trace-stderr", "codex", "--"})
 	if err != nil {

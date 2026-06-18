@@ -1,3 +1,5 @@
+//go:build screenbench
+
 package main
 
 import (
@@ -10,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/olesho/harness-wrapper/internal/screenbench/scenario"
+	"github.com/olesho/harness-wrapper-screenbench/scenario"
 )
 
 // mockBin is the path to a freshly-built mock harness binary, set up

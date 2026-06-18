@@ -21,7 +21,7 @@
 //
 //	turnID, err := conv.Send(ctx, "hello")
 //	for ev := range conv.Events() {
-//	    if ev.Turn.ID == turnID && ev.Turn.State == chat.TurnStateComplete {
+//	    if ev.Type == EventTurn && ev.Turn.ID == turnID && ev.Turn.State == TurnStateComplete {
 //	        break
 //	    }
 //	}
@@ -97,10 +97,41 @@ type Turn struct {
 	RetryAfter time.Duration
 }
 
-// TurnEvent is a state transition the caller can observe on
-// Conversation.Events().
-type TurnEvent struct {
+// EventType discriminates the variants of a ConversationEvent.
+type EventType string
+
+const (
+	// EventTurn carries a Turn state transition. Turn is populated.
+	EventTurn EventType = "turn"
+
+	// EventInputRequest signals the harness is blocked on an interactive
+	// prompt that needs an out-of-band answer. Input is populated; answer it
+	// with Conversation.Answer. Emitted only when no configured policy or
+	// handler resolved the request server-side.
+	EventInputRequest EventType = "input_request"
+
+	// EventInputResolved signals a previously-requested prompt is no longer
+	// pending (answered or dismissed). Input is populated with at least the
+	// resolved request's ID.
+	EventInputResolved EventType = "input_resolved"
+)
+
+// ConversationEvent is a discriminated event observed on
+// Conversation.Events(). Inspect Type to learn which payload is set: Turn
+// for EventTurn, Input for EventInputRequest / EventInputResolved.
+type ConversationEvent struct {
+	// Type selects the populated payload. For back-compat, code that only
+	// cares about turns may read Turn directly: it is the zero Turn (empty
+	// ID) for non-turn events.
+	Type EventType
+
+	// Turn is the turn state transition for EventTurn. Zero for input events.
 	Turn Turn
+
+	// Input is the interactive prompt for EventInputRequest /
+	// EventInputResolved. nil for EventTurn.
+	Input *InputRequest
+
 	// Err is non-nil if the event represents an out-of-band error, e.g.
 	// Store failures. It is independent of Turn.State == TurnStateErrored
 	// (which represents harness-side failures).
@@ -142,6 +173,25 @@ var (
 
 	// ErrClosed is returned by methods called after Close.
 	ErrClosed = errors.New("chat: conversation closed")
+
+	// ErrInputPending is returned by Send when the harness is blocked on an
+	// interactive prompt awaiting an external answer. Answer it (or wait for
+	// EventInputResolved) before sending. Not returned when a policy or
+	// handler is auto-answering the prompt — in that case Send waits.
+	ErrInputPending = errors.New("chat: blocked on interactive input request")
+
+	// ErrNoInputPending is returned by Answer when no interactive prompt is
+	// currently awaiting an answer.
+	ErrNoInputPending = errors.New("chat: no input request pending")
+
+	// ErrStaleInputRequest is returned by Answer when the supplied request
+	// ID does not match the prompt currently on screen (it changed or was
+	// already resolved).
+	ErrStaleInputRequest = errors.New("chat: stale input request id")
+
+	// ErrUnknownOption is returned by Answer when the supplied option id or
+	// alias matches none of the request's options.
+	ErrUnknownOption = errors.New("chat: unknown input option")
 )
 
 // newID returns a fresh 16-byte hex ID. Used for chat-level Session

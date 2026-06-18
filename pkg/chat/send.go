@@ -20,8 +20,7 @@ import (
 //   - No prior assistant turn may be in flight. Send returns
 //     ErrTurnInFlight otherwise.
 //
-// The text is sent verbatim followed by a single carriage return; both
-// Codex and Claude Code accept this as the "submit" keystroke. Senders
+// The text is sent verbatim followed by the harness's submit key. Senders
 // that need richer input (multi-line, control characters) should use
 // Conversation.Wrapper().WriteStdin directly after acquiring control.
 func (c *Conversation) Send(ctx context.Context, text string) (turnID string, err error) {
@@ -42,6 +41,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	}
 	c.mu.Unlock()
 
+	if err := c.waitReadyForSend(ctx); err != nil {
+		return "", err
+	}
+
 	now := time.Now()
 
 	userTurn := Turn{
@@ -56,7 +59,7 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	if err := c.store.AppendTurn(ctx, &userTurn); err != nil {
 		return "", fmt.Errorf("chat: append user turn: %w", err)
 	}
-	c.emit(TurnEvent{Turn: userTurn})
+	c.emit(ConversationEvent{Type: EventTurn, Turn: userTurn})
 
 	assistantTurn := Turn{
 		ID:        newID(),
@@ -74,7 +77,8 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.currentTurn = &turnCopy
 	c.mu.Unlock()
 
-	if _, err := c.sess.WriteStdin([]byte(text + "\r")); err != nil {
+	submitKey := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
+	if _, err := c.sess.WriteStdin(append([]byte(text), submitKey...)); err != nil {
 		// Roll back the in-flight pointer and mark the turn errored.
 		c.mu.Lock()
 		c.currentTurn = nil
@@ -85,11 +89,11 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		if uerr := c.store.UpdateTurn(ctx, &assistantTurn); uerr != nil {
 			return "", fmt.Errorf("chat: write stdin + update turn: write=%v update=%w", err, uerr)
 		}
-		c.emit(TurnEvent{Turn: assistantTurn, Err: err})
+		c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn, Err: err})
 		return assistantTurn.ID, fmt.Errorf("chat: write stdin: %w", err)
 	}
 
-	c.emit(TurnEvent{Turn: assistantTurn})
+	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
 	return assistantTurn.ID, nil
 }
 

@@ -13,17 +13,17 @@ import (
 // their subscription point onward.
 type fanout struct {
 	mu          sync.Mutex
-	subscribers map[string]chan chat.TurnEvent
+	subscribers map[string]chan chat.ConversationEvent
 	closed      bool
 }
 
-func newFanout(src <-chan chat.TurnEvent) *fanout {
-	f := &fanout{subscribers: make(map[string]chan chat.TurnEvent)}
+func newFanout(src <-chan chat.ConversationEvent) *fanout {
+	f := &fanout{subscribers: make(map[string]chan chat.ConversationEvent)}
 	go f.pump(src)
 	return f
 }
 
-func (f *fanout) pump(src <-chan chat.TurnEvent) {
+func (f *fanout) pump(src <-chan chat.ConversationEvent) {
 	for ev := range src {
 		f.mu.Lock()
 		for _, ch := range f.subscribers {
@@ -46,8 +46,8 @@ func (f *fanout) pump(src <-chan chat.TurnEvent) {
 
 // subscribe returns a buffered channel + an unsubscribe func. Channel
 // is closed if the upstream is already closed.
-func (f *fanout) subscribe() (<-chan chat.TurnEvent, func()) {
-	ch := make(chan chat.TurnEvent, 64)
+func (f *fanout) subscribe() (<-chan chat.ConversationEvent, func()) {
+	ch := make(chan chat.ConversationEvent, 64)
 	f.mu.Lock()
 	if f.closed {
 		f.mu.Unlock()

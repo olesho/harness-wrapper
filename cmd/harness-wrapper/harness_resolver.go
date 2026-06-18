@@ -19,9 +19,11 @@ type harnessSpec struct {
 // harness lands or per-harness behavior diverges, this should graduate
 // to internal/wrapper/harness/<name>/ packages.
 var supportedHarnesses = map[string]harnessSpec{
-	"codex":  {Bin: "codex"},
-	"claude": {Bin: "claude"},
-	"gemini": {Bin: "gemini"},
+	"codex":    {Bin: "codex"},
+	"claude":   {Bin: "claude"},
+	"gemini":   {Bin: "gemini"},
+	"opencode": {Bin: "opencode"},
+	"pi":       {Bin: "pi"},
 }
 
 // resolveHarness looks up a harness by short name and returns the

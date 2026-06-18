@@ -1,3 +1,5 @@
+//go:build screenbench
+
 // screenbench replays recorded PTY byte streams through each registered
 // vt100 emulator candidate and reports fidelity, stability, and
 // throughput against ground-truth expected text.
@@ -18,9 +20,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/olesho/harness-wrapper/internal/screenbench/emulator"
-	"github.com/olesho/harness-wrapper/internal/screenbench/metrics"
-	"github.com/olesho/harness-wrapper/internal/screenbench/scenario"
+	"github.com/olesho/harness-wrapper-screenbench/emulator"
+	"github.com/olesho/harness-wrapper-screenbench/metrics"
+	"github.com/olesho/harness-wrapper-screenbench/scenario"
 )
 
 type result struct {

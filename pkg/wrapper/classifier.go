@@ -8,6 +8,8 @@ import (
 	codexharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex"
 	cursorharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/cursor"
 	geminiharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini"
+	opencodeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/opencode"
+	piharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/pi"
 )
 
 // ClassifierInput is the snapshot a Classifier inspects when deciding
@@ -131,6 +133,10 @@ func resolveClassifier(cfg Config) Classifier {
 		return harnessAdapter{patterns: geminiharness.Patterns}
 	case "cursor":
 		return harnessAdapter{patterns: cursorharness.Patterns}
+	case "opencode":
+		return harnessAdapter{patterns: opencodeharness.Patterns}
+	case "pi":
+		return harnessAdapter{patterns: piharness.Patterns}
 	}
 	return defaultClassifier{}
 }

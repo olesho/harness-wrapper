@@ -222,7 +222,7 @@ func TestDiscover_ReturnsAllHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	want := map[string]bool{"codex": false, "claude-code": false, "gemini": false}
+	want := map[string]bool{"codex": false, "claude-code": false, "gemini": false, "opencode": false, "pi": false}
 	for _, info := range all {
 		if _, ok := want[info.Harness]; !ok {
 			t.Errorf("unexpected harness in Discover: %q", info.Harness)
@@ -241,7 +241,7 @@ func TestDiscover_ReturnsAllHarnesses(t *testing.T) {
 }
 
 func TestInit_ShipsDefaultProbes(t *testing.T) {
-	for _, h := range []string{"codex", "claude-code", "gemini"} {
+	for _, h := range []string{"codex", "claude-code", "gemini", "opencode", "pi"} {
 		if _, ok := probeFor(h); !ok {
 			t.Errorf("expected default probe for %q after init()", h)
 		}
