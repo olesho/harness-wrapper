@@ -1,0 +1,8 @@
+{
+  "harness": "codex",
+  "binary_version": "0.140.0",
+  "recorded_at": "2026-06-19T15:57:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "Startup 'Update available!' menu interstitial (1. Update now / 2. Skip / 3. Skip until next version, Press enter to continue). Blocks the prompt box until dismissed."
+}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/turns"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 )
 
 // InputRequest is the client-facing view of a blocking interactive prompt
@@ -121,6 +122,13 @@ func (c *Conversation) handleInputRequested(req *turns.InputRequest) {
 	c.inputSurfaced = false
 	c.mu.Unlock()
 
+	if c.tryAutoDismissCodex(req) {
+		// Built-in dismissal of a Codex startup interstitial. Keep currentInput
+		// until the screen clears so the adapter's InputResolved drives the
+		// clear + notify, same as a policy-resolved request.
+		return
+	}
+
 	if c.tryResolveInput(req) {
 		// Auto-answered server-side: keep currentInput until the dialog
 		// clears so a slow/ineffective answer can be retried, and let the
@@ -176,6 +184,23 @@ func (c *Conversation) write(p []byte) error {
 	}
 	_, err := c.sess.WriteStdin(p)
 	return err
+}
+
+// tryAutoDismissCodex clears a Codex startup interstitial (update notice,
+// model migration) by writing its safe-dismiss keystrokes, unless the caller
+// disabled auto-dismiss. Returns true when it wrote a dismissal. It matches
+// only the interstitial request kinds, so Codex's real approval prompts fall
+// through to the normal policy/handler/surface path.
+func (c *Conversation) tryAutoDismissCodex(req *turns.InputRequest) bool {
+	if c.opts.Harness != "codex" || c.opts.DisableCodexAutoDismiss {
+		return false
+	}
+	keys, ok := codex.AutoDismissKeys(req)
+	if !ok {
+		return false
+	}
+	_ = c.write(keys)
+	return true
 }
 
 // tryResolveInput auto-answers req from the policy or the in-process handler.

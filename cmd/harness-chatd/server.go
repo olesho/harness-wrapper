@@ -183,6 +183,8 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		Rows:        req.Rows,
 		Store:       memstore.New(),
 		InputPolicy: req.InputPolicy,
+
+		DisableCodexAutoDismiss: req.DisableCodexAutoDismiss,
 	})
 	if err != nil {
 		writeChatError(w, err)

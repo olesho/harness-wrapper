@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 )
 
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
@@ -54,7 +55,7 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 
 func requiresPromptReadiness(harness string) bool {
 	switch harness {
-	case "claude-code":
+	case "claude-code", "codex":
 		return true
 	default:
 		return false
@@ -72,6 +73,18 @@ func readyForInput(harness, text string) bool {
 			return false
 		}
 		return strings.Contains(text, "Claude Code") && strings.Contains(text, "❯")
+	case "codex":
+		// A blocking startup interstitial (update notice, model migration)
+		// renders its own "›" highlight and looks ready. Treat it as not-ready
+		// so Send waits for the auto-dismiss to clear it instead of typing the
+		// message into the menu. Once cleared, the idle composer's "›" prompt
+		// (PromptReady) means Codex is accepting input. In-flight turns are
+		// gated by currentTurn before waitReadyForSend is consulted, so the
+		// composer prompt alone suffices here.
+		if _, blocking := codex.DetectInput(text); blocking {
+			return false
+		}
+		return codex.PromptReady(text)
 	default:
 		return true
 	}

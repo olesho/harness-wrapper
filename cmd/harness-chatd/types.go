@@ -48,6 +48,9 @@ type openRequest struct {
 	Cols        int               `json:"cols,omitempty"`
 	Rows        int               `json:"rows,omitempty"`
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
+	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
+	// blocking startup interstitials. Omitted/false keeps auto-dismiss on.
+	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
 }
 
 type openResponse struct {

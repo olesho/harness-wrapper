@@ -11,9 +11,10 @@
 // (blocked_by_cost, retry_later, failed) continue to flow through to
 // the event stream alongside the screen-derived signals.
 //
-// Verified against Codex 0.130.0. Markers may shift across upstream
-// versions; the golden-recording tests under test/corpus/codex/ are
-// the early-warning signal for that drift.
+// Verified against Codex 0.130.0; interstitial detection (input.go)
+// verified against 0.140.0. Markers may shift across upstream versions;
+// the golden-recording tests under test/corpus/codex/ are the
+// early-warning signal for that drift.
 package codex
 
 import (
@@ -46,6 +47,8 @@ type Adapter struct {
 
 	mu              sync.Mutex
 	lastFingerprint string
+	lastInputID     string
+	lastInput       *turns.InputRequest
 }
 
 // New constructs a Codex adapter.
@@ -61,19 +64,42 @@ func (*Adapter) Name() string { return "codex" }
 // State: the adapter remembers the most recently fired fingerprint and
 // suppresses repeat fires while the same footer remains on screen.
 func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
-	matches := tokenUsageRE.FindAllString(snap.Text, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	latest := matches[len(matches)-1]
-
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if latest == a.lastFingerprint {
-		return nil
+
+	var out []turns.Event
+
+	// Turn-complete detection — newest Token usage footer differs from last.
+	if matches := tokenUsageRE.FindAllString(snap.Text, -1); len(matches) > 0 {
+		latest := matches[len(matches)-1]
+		if latest != a.lastFingerprint {
+			a.lastFingerprint = latest
+			out = append(out, turns.Event{Kind: turns.TurnComplete, Reason: "codex: " + latest})
+		}
 	}
-	a.lastFingerprint = latest
-	return []turns.Event{{Kind: turns.TurnComplete, Reason: "codex: " + latest}}
+
+	// Blocking startup interstitial (update notice, model migration, …) —
+	// transition on the request ID. A new interstitial emits InputRequested;
+	// it clearing emits InputResolved. The chat layer auto-dismisses these by
+	// default; codex's real approval prompts are not detected here and so are
+	// never auto-confirmed.
+	if req, ok := DetectInput(snap.Text); ok {
+		if req.ID != a.lastInputID {
+			a.lastInputID = req.ID
+			a.lastInput = req
+			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: "codex: " + req.Prompt, Input: req})
+		}
+	} else if a.lastInputID != "" {
+		resolved := a.lastInput
+		if resolved == nil {
+			resolved = &turns.InputRequest{ID: a.lastInputID}
+		}
+		a.lastInputID = ""
+		a.lastInput = nil
+		out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "codex: input resolved", Input: resolved})
+	}
+
+	return out
 }
 
 // ExtractSessionID scrapes the "codex resume <uuid>" line Codex prints

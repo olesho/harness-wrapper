@@ -1,0 +1,8 @@
+{
+  "harness": "codex",
+  "binary_version": "0.140.0",
+  "recorded_at": "2026-06-19T15:58:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "Idle composer ready for input after the update notice was dismissed (Skip). The boxed 'Update available!' banner here is non-blocking; the composer prompt and model footer mark readiness."
+}

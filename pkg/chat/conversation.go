@@ -55,6 +55,17 @@ type Options struct {
 	// transports can accept it at open time.
 	InputPolicy *InputPolicy
 
+	// DisableCodexAutoDismiss turns off the built-in auto-dismissal of Codex's
+	// blocking startup interstitials (the "Update available!" menu, the
+	// model-migration screen). The zero value keeps auto-dismiss ENABLED: by
+	// default the chat layer clears those interstitials (selecting "Skip" on
+	// the update menu, never "Update now") so a stale Codex does not wedge the
+	// conversation. Set true to instead surface them on Events() for the
+	// client/InputPolicy to answer. This governs only those startup
+	// interstitial kinds — Codex's real approval prompts are never
+	// auto-dismissed regardless of this flag.
+	DisableCodexAutoDismiss bool
+
 	// OnInputRequest is an in-process resolver consulted when InputPolicy
 	// did not auto-answer. Returning ok=true answers the prompt with the
 	// returned InputAnswer; returning ok=false surfaces the request on
