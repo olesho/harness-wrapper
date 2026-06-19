@@ -209,6 +209,15 @@ func (c *Conversation) SessionID() string { return c.session.ID }
 // graceful-exit sequence).
 func (c *Conversation) Adapter() turns.Adapter { return c.adapter }
 
+// ScreenSnapshot returns a coherent point-in-time view of the conversation's
+// rendered terminal — the vt100-emulated screen the turn detector reads from.
+// Safe to call concurrently with the conversation running; the snapshot
+// reflects the screen as of the call and the underlying terminal keeps
+// mutating independently. This is a pure read: it needs no control token, so
+// any number of observers can inspect a live (e.g. stuck) harness without
+// disturbing it.
+func (c *Conversation) ScreenSnapshot() screen.Snapshot { return c.screen.Snapshot() }
+
 // Events returns the channel of turn-state transitions. Closed after
 // Close has completed and the watcher has drained.
 func (c *Conversation) Events() <-chan ConversationEvent { return c.eventCh }

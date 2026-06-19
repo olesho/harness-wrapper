@@ -88,6 +88,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/conversations/{id}/input", s.answerInput)
 	mux.HandleFunc("GET /v1/conversations/{id}/events", s.streamEvents)
 	mux.HandleFunc("GET /v1/conversations/{id}/history", s.history)
+	mux.HandleFunc("GET /v1/conversations/{id}/screen", s.screen)
 	return mux
 }
 
@@ -371,6 +372,26 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 		out.Turns = append(out.Turns, toTurnDTO(t))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// screen returns the conversation's rendered terminal snapshot. A pure read:
+// it requires no control token, so any number of observers can inspect a live
+// (e.g. stuck) harness without disturbing it. 404s once the conversation is
+// closed, since the screen lives only while the harness process is alive.
+func (s *Server) screen(w http.ResponseWriter, r *http.Request) {
+	entry, ok := s.lookup(w, r)
+	if !ok {
+		return
+	}
+	snap := entry.conv.ScreenSnapshot()
+	writeJSON(w, http.StatusOK, screenResponse{
+		Text:       snap.Text,
+		Cols:       snap.Cols,
+		Rows:       snap.Rows,
+		CursorCol:  snap.CursorCol,
+		CursorRow:  snap.CursorRow,
+		Generation: snap.Generation,
+	})
 }
 
 func (s *Server) lookup(w http.ResponseWriter, r *http.Request) (*convEntry, bool) {

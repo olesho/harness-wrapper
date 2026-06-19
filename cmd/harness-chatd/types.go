@@ -67,6 +67,18 @@ type controlResponse struct {
 	Token string `json:"token"`
 }
 
+// screenResponse is the rendered-terminal snapshot returned by
+// GET /v1/conversations/{id}/screen. Generation lets pollers skip no-op
+// redraws (compare against the previous response).
+type screenResponse struct {
+	Text       string `json:"text"`
+	Cols       int    `json:"cols"`
+	Rows       int    `json:"rows"`
+	CursorCol  int    `json:"cursor_col"`
+	CursorRow  int    `json:"cursor_row"`
+	Generation uint64 `json:"generation"`
+}
+
 type sendRequest struct {
 	Token string `json:"token"`
 	Text  string `json:"text"`
