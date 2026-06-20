@@ -43,6 +43,26 @@ const promptReadyScreen = `
   gpt-5.5 default · ~/Work/aether/harness-wrapper
 `
 
+// promptReady141Screen is the idle composer on codex-cli 0.141.0. It dropped the
+// space after the "›" glyph and butts the placeholder hint right against it
+// ("›Find…"), unlike 0.140.0's "› Run /review…". Requiring a trailing space made
+// PromptReady miss this, so the chat layer never sent a prompt and codex produced
+// no reply (session-mode codex was wedged until the glyph-only match below).
+const promptReady141Screen = `
+╭───────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.141.0)            │
+│                                       │
+│ model:     gpt-5.5   /model to change │
+│ directory: /private/tmp               │
+╰───────────────────────────────────────╯
+
+  Tip: Use /fast to enable our fastest inference with increased plan usage.
+
+›Find and fix a bug in @filename
+
+  gpt-5.5 default · /private/tmp
+`
+
 // migrationScreen is the model-migration interstitial (synthesized from the
 // 0.140.0 binary strings; could not be triggered on demand).
 const migrationScreen = `
@@ -143,6 +163,18 @@ func TestDetectInput_PromptReadyIsNotInterstitial(t *testing.T) {
 	}
 	if !PromptReady(promptReadyScreen) {
 		t.Error("PromptReady did not recognize the idle composer prompt")
+	}
+}
+
+func TestPromptReady_Codex0141Composer(t *testing.T) {
+	// Regression: codex 0.141.0 renders the composer prompt as "›Find…" with no
+	// space after the glyph. Requiring a trailing space made PromptReady return
+	// false, so the chat layer never sent the prompt and the turn never ran.
+	if !PromptReady(promptReady141Screen) {
+		t.Error("PromptReady did not recognize the codex 0.141.0 idle composer")
+	}
+	if _, ok := DetectInput(promptReady141Screen); ok {
+		t.Error("DetectInput false-positived on the 0.141.0 idle composer")
 	}
 }
 

@@ -50,10 +50,13 @@ var menuRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(?:›[^\S\r\n]*)?(\d+)\.[^\S\r\
 
 // promptRE matches the idle composer prompt indicator on its own line — the
 // "›" Codex prints at the start of the input box once it is ready for input.
-// Recorded on 0.140.0 (test/corpus/codex/prompt-ready). It is deliberately
-// minimal, mirroring claude-code's "❯": readiness only consults it once the
-// interstitial gate has confirmed no blocking screen is present.
-var promptRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›[^\S\r\n]`)
+// 0.140.0 rendered "› <placeholder>" (a space after the glyph); 0.141.0 dropped
+// that space and butts the placeholder hint right against it ("›Find and fix a
+// bug in @filename"). Requiring a trailing space made readiness silently miss the
+// 0.141.0 composer — the prompt was never sent and codex produced no reply — so
+// we match the glyph alone. Safe because readiness only consults this once the
+// interstitial gate (DetectInput) has confirmed no blocking menu is present.
+var promptRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›`)
 
 // DetectInput recognizes a blocking startup interstitial in the rendered
 // screen text and returns the structured request, or (nil, false) when none
