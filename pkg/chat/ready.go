@@ -100,6 +100,13 @@ func submitKeyForHarness(harness, screenText string) []byte {
 			return []byte("\x1b[13u")
 		}
 		return []byte("\n")
+	case "codex":
+		// codex 0.141.0 turns on the enhanced (kitty) keyboard protocol at startup,
+		// so a plain CR/LF from a synthetic PTY writer is NOT treated as submit — it
+		// only inserts a newline in the composer and the turn never runs. CSI 13 u is
+		// the unmodified Enter key in that mode (same as claude-code's enhanced TUI).
+		// 0.140.0 accepted "\n", but enhanced mode is unconditional now.
+		return []byte("\x1b[13u")
 	default:
 		return []byte("\n")
 	}
