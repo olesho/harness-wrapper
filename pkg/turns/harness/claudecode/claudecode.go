@@ -409,13 +409,36 @@ func dedent(lines []string) string {
 // idle at the prompt the footer switches away from it (e.g. to "← for agents"),
 // so its presence is a reliable "still working" signal. Verified against the
 // screen corpus: every settled/idle final frame lacks it.
+//
+// It is NOT sufficient on its own: while Claude waits on SUB-AGENTS (the Task /
+// Explore tool — "✶ Cerebrating… (57s · ↓ 4.8k tokens)" with "◯ Explore …" rows),
+// the "esc to interrupt" footer can flicker out for a redraw frame while the work
+// continues. A "✻ <verb> for Ns" intermediate summary landing on such a frame
+// would then pass the turn-complete gate and cut the turn off mid-sub-agent. So
+// Busy ALSO keys off the in-progress spinner line (workingRE), which is present
+// throughout active work and absent on every settled frame.
 const busyMarker = "esc to interrupt"
 
+// workingRE matches Claude Code's in-progress spinner line: a "<gerund>… (<dur> ·
+// <counter>)" indicator such as "✶ Cerebrating… (57s · ↓ 4.8k tokens)",
+// "✢ Schlepping… (3s · ↓2 tokens)", or "✻ Cooking… (1m 22s · esc to interrupt)".
+// It anchors on the structural signature — an ellipsis, then a parenthesized
+// elapsed duration, then the " · " separator before the live token/keybind
+// counter — NOT the rotating spinner glyph or the whimsical gerund (both of which
+// vary run-to-run and across versions). This shape appears ONLY while Claude is
+// actively working (generating, running a tool, or waiting on sub-agents); a
+// settled/idle frame shows the past-tense "✻ <verb> for Ns" summary, which has
+// no ellipsis or parenthetical and so never matches. Keeping it conservative
+// matters: a false match here would hang a genuinely-finished turn.
+var workingRE = regexp.MustCompile(`(?:…|\.\.\.)[^\S\r\n]*\(\d+[hms][^)\r\n]*·`)
+
 // Busy reports whether Claude is still working on the current turn, so the chat
-// layer's idle-completion fallback won't complete a turn mid-flight (the "❯"
-// prompt box is painted even while Claude works). Implements turns.BusyDetector.
+// layer's idle-completion fallback (and the turn-complete gate in OnScreen) won't
+// complete a turn mid-flight (the "❯" prompt box is painted even while Claude
+// works, and the footer can flicker during sub-agent execution). Implements
+// turns.BusyDetector.
 func (*Adapter) Busy(snap screen.Snapshot) bool {
-	return strings.Contains(snap.Text, busyMarker)
+	return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text)
 }
 
 // QuitSequence returns Claude Code's graceful-exit keys: two Ctrl-C presses
