@@ -97,6 +97,21 @@ type Conversation struct {
 	mu          sync.Mutex
 	currentTurn *Turn // pending/streaming assistant turn, if any
 
+	// endMarkerSeen is set once the adapter has reported an end-of-turn marker
+	// for the in-flight turn (claude-code only; see handleTurnsEvent). It does
+	// NOT complete the turn on its own — Claude prints a "✻ <verb> for Ns"
+	// summary after every thinking block, and the "still working" footer can
+	// flicker out for a redraw frame while sub-agents/tools run, so an instant
+	// marker-complete cuts the turn off mid-work. Instead the marker shortens the
+	// idle-completion gap (markerConfirmGap) so completion still requires the
+	// screen to quiesce at a non-busy prompt — robust against intermediate
+	// markers, which are always followed by more activity. Reset on each Send.
+	endMarkerSeen bool
+	// markerArmCh wakes the idle-completion watcher to re-arm on the short gap the
+	// moment a marker lands (so a settled end-of-turn confirms promptly, not after
+	// the full fallback gap). Buffered (1), non-blocking sender.
+	markerArmCh chan struct{}
+
 	// currentInput is the blocking interactive prompt awaiting an answer, or
 	// nil. inputSurfaced is true once it has been emitted to the client (no
 	// policy/handler resolved it), which makes Send fail fast rather than
@@ -189,6 +204,7 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		session:       sessionRec,
 		eventCh:       make(chan ConversationEvent, opts.EventBuffer),
 		inputStateCh:  make(chan struct{}, 1),
+		markerArmCh:   make(chan struct{}, 1),
 		closed:        make(chan struct{}),
 	}
 	c.watcher = turns.Watch(sess, scr, adapter)
@@ -282,6 +298,32 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 
 	if ev.Kind == turns.TurnComplete {
 		c.maybeExtractSessionID()
+
+		// Claude Code: a marker does NOT complete the turn outright. It prints a
+		// "✻ <verb> for Ns" summary after EVERY thinking block, and the "esc to
+		// interrupt" footer can flicker out for a redraw frame while sub-agents or
+		// tools run — so an instant complete on a non-busy frame cuts the turn off
+		// mid-work (the captured reply is then a pre-final preamble). Record the
+		// marker and let the idle-completion watcher confirm it once the screen
+		// quiesces at a non-busy prompt (markerConfirmGap). An intermediate marker
+		// is always followed by more activity, so it never confirms; the genuine
+		// end-of-turn marker, followed by a settled prompt, confirms in ~2s.
+		// Other harnesses (codex) keep the instant marker path below.
+		if c.opts.Harness == "claude-code" {
+			c.mu.Lock()
+			pending := c.currentTurn != nil
+			if pending {
+				c.endMarkerSeen = true
+			}
+			c.mu.Unlock()
+			if pending {
+				select {
+				case c.markerArmCh <- struct{}{}:
+				default:
+				}
+				return
+			}
+		}
 	}
 
 	c.mu.Lock()
@@ -337,6 +379,15 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 // the prompt.
 const idleCompletionGap = 8 * time.Second
 
+// markerConfirmGap is the (shorter) quiet window used once an end-of-turn marker
+// has been seen for the in-flight turn. The marker is strong evidence the turn
+// ended; we only need to confirm the screen then SETTLED at a non-busy prompt
+// (rather than continuing into the next tool call), which distinguishes a genuine
+// end-of-turn marker from an intermediate one. Must exceed Claude's working-frame
+// cadence (its spinner repaints ~1×/s, resetting the timer) so it never elapses
+// mid-work; 2s clears that with margin while keeping per-turn latency low.
+const markerConfirmGap = 2 * time.Second
+
 // idleCompletionWatcher is a fallback end-of-turn detector. The primary
 // detector is the adapter's screen marker (Claude Code's "✻ <verb> for Ns"
 // summary); when that marker is missed — it can scroll off before a snapshot
@@ -353,6 +404,26 @@ func (c *Conversation) idleCompletionWatcher() {
 	defer unsubscribe()
 	timer := time.NewTimer(idleCompletionGap)
 	defer timer.Stop()
+	// gap is the quiet window the screen must hold before we try to complete: the
+	// short markerConfirmGap once an end-of-turn marker has been seen, else the
+	// long fallback. Recomputed on every re-arm so a mid-turn marker promptly
+	// switches the watcher to the fast confirmation.
+	reset := func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		c.mu.Lock()
+		marker := c.endMarkerSeen
+		c.mu.Unlock()
+		gap := idleCompletionGap
+		if marker {
+			gap = markerConfirmGap
+		}
+		timer.Reset(gap)
+	}
 	for {
 		select {
 		case <-c.closed:
@@ -361,16 +432,14 @@ func (c *Conversation) idleCompletionWatcher() {
 			if !ok {
 				return
 			}
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
-			}
-			timer.Reset(idleCompletionGap)
+			reset()
+		case <-c.markerArmCh:
+			// A marker just landed — re-arm on the short gap even if the screen
+			// has already gone quiet (no further notify would otherwise come).
+			reset()
 		case <-timer.C:
 			c.maybeIdleComplete()
-			timer.Reset(idleCompletionGap)
+			reset()
 		}
 	}
 }
@@ -391,8 +460,19 @@ func (c *Conversation) maybeIdleComplete() {
 	if c.inputAwaitingClient() {
 		return
 	}
+	c.mu.Lock()
+	marker := c.endMarkerSeen
+	c.mu.Unlock()
 	snap := c.screen.Snapshot()
-	if !readyForInput(c.opts.Harness, snap.Text) {
+	// Two completion modes share this settled-screen check:
+	//   - marker-confirmed (claude-code): an end-of-turn marker was reported and
+	//     the screen then held quiet for markerConfirmGap. The marker is the
+	//     authoritative end signal, so we do NOT also require readyForInput (its
+	//     header/prompt heuristic can lag a frame); !Busy + the quiet window are
+	//     enough, and avoid hanging a finished turn on a missed header.
+	//   - fallback (no marker, or non-claude harness): the marker was missed, so
+	//     prompt-readiness is the only end signal — require it.
+	if !marker && !readyForInput(c.opts.Harness, snap.Text) {
 		return
 	}
 	// The harness's input prompt is often painted even while it works, so
@@ -402,7 +482,11 @@ func (c *Conversation) maybeIdleComplete() {
 	if bd, ok := c.adapter.(turns.BusyDetector); ok && bd.Busy(snap) {
 		return
 	}
-	if time.Since(turn.StartedAt) < idleCompletionGap {
+	gap := idleCompletionGap
+	if marker {
+		gap = markerConfirmGap
+	}
+	if time.Since(turn.StartedAt) < gap {
 		return
 	}
 
@@ -412,11 +496,16 @@ func (c *Conversation) maybeIdleComplete() {
 		return
 	}
 	c.currentTurn = nil
+	c.endMarkerSeen = false
 	c.mu.Unlock()
 
 	turn.State = TurnStateComplete
 	turn.CompletedAt = time.Now()
-	turn.Reason = "claude-code: idle-completion fallback (end-of-turn marker not observed)"
+	if marker {
+		turn.Reason = "claude-code: end-of-turn marker confirmed at a settled prompt"
+	} else {
+		turn.Reason = "claude-code: idle-completion fallback (end-of-turn marker not observed)"
+	}
 	turn.Text = snap.Text
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})

@@ -75,6 +75,7 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.mu.Lock()
 	turnCopy := assistantTurn
 	c.currentTurn = &turnCopy
+	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
 	c.mu.Unlock()
 
 	submitKey := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
