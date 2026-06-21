@@ -1,0 +1,5 @@
+--effort <*flag.stringValue> = "" : reasoning effort for supported harnesses (low, medium, high, xhigh, max)
+--tmux-child <*flag.stringValue> = "" : internal: in-pane re-exec marker; do not set manually
+--tmux-session <*flag.stringValue> = "" : spawn the run inside a detached tmux session named hw-<value> and exit immediately
+--trace-file <*flag.stringValue> = "" : path to write trace events as NDJSON (default: trace events are dropped)
+--trace-stderr <*flag.boolValue> = "false" : write trace events as NDJSON to stderr (mutually exclusive with --trace-file)

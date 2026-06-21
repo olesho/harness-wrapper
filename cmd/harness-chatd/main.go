@@ -28,10 +28,18 @@ func main() {
 	}
 }
 
-func run(args []string) error {
+// chatdFlagSet registers harness-chatd's CLI flags onto a fresh FlagSet and
+// returns it alongside the bound --bind target. Single definition of the flag
+// surface so the contract test can enumerate it (see contract_test.go).
+func chatdFlagSet() (*flag.FlagSet, *string) {
 	fs := flag.NewFlagSet("harness-chatd", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	bind := fs.String("bind", "127.0.0.1:8080", "host:port to listen on")
+	return fs, bind
+}
+
+func run(args []string) error {
+	fs, bind := chatdFlagSet()
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("harness-chatd: %w", err)
 	}

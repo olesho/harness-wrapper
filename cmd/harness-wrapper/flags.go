@@ -45,25 +45,15 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 	pre := in[:sep]
 	harnessArgs := in[sep+1:]
 
-	fs := flag.NewFlagSet("harness-wrapper", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var traceFile string
-	var traceStderr bool
-	var effort string
-	var tmuxSession string
-	var tmuxChild string
-	fs.StringVar(&traceFile, "trace-file", "", "path to write trace events as NDJSON (default: trace events are dropped)")
-	fs.BoolVar(&traceStderr, "trace-stderr", false, "write trace events as NDJSON to stderr (mutually exclusive with --trace-file)")
-	fs.StringVar(&effort, "effort", "", "reasoning effort for supported harnesses (low, medium, high, xhigh, max)")
-	fs.StringVar(&tmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
-	fs.StringVar(&tmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
+	var args harnessWrapperArgs
+	fs := harnessWrapperFlagSet(&args)
 	if err := fs.Parse(pre); err != nil {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: %w", err)
 	}
-	if traceFile != "" && traceStderr {
+	if args.TraceFile != "" && args.TraceStderr {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: --trace-file and --trace-stderr are mutually exclusive")
 	}
-	if tmuxSession != "" && tmuxChild != "" {
+	if args.TmuxSession != "" && args.TmuxChild != "" {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: --tmux-session and --tmux-child are mutually exclusive")
 	}
 	if fs.NArg() == 0 {
@@ -74,13 +64,21 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 			"harness-wrapper: expected exactly one harness name before --, got %d args (%v); wrapper flags like --trace-file must come BEFORE the harness name",
 			fs.NArg(), fs.Args())
 	}
-	return harnessWrapperArgs{
-		TraceFile:   traceFile,
-		TraceStderr: traceStderr,
-		Effort:      effort,
-		TmuxSession: tmuxSession,
-		TmuxChild:   tmuxChild,
-		HarnessName: fs.Arg(0),
-		HarnessArgs: harnessArgs,
-	}, nil
+	args.HarnessName = fs.Arg(0)
+	args.HarnessArgs = harnessArgs
+	return args, nil
+}
+
+// harnessWrapperFlagSet registers the wrapper's CLI flags onto a fresh
+// FlagSet, binding them into a. It is the single definition of the flag
+// surface, so the contract test can enumerate it (see contract_test.go).
+func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
+	fs := flag.NewFlagSet("harness-wrapper", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&a.TraceFile, "trace-file", "", "path to write trace events as NDJSON (default: trace events are dropped)")
+	fs.BoolVar(&a.TraceStderr, "trace-stderr", false, "write trace events as NDJSON to stderr (mutually exclusive with --trace-file)")
+	fs.StringVar(&a.Effort, "effort", "", "reasoning effort for supported harnesses (low, medium, high, xhigh, max)")
+	fs.StringVar(&a.TmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
+	fs.StringVar(&a.TmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
+	return fs
 }

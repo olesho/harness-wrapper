@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,6 +56,24 @@ func TestContract_Routes(t *testing.T) {
 	}
 	sort.Strings(lines)
 	assertGolden(t, "routes.golden", strings.Join(lines, "\n")+"\n")
+}
+
+// TestContract_Flags freezes the CLI flag surface: name, type, default, usage.
+func TestContract_Flags(t *testing.T) {
+	fs, _ := chatdFlagSet()
+	assertGolden(t, "flags.golden", flagSurface(fs))
+}
+
+// flagSurface renders a FlagSet as a stable, sorted "name <type> = <default>
+// : <usage>" line per flag — the frozen shape of a binary's CLI.
+func flagSurface(fs *flag.FlagSet) string {
+	var lines []string
+	fs.VisitAll(func(f *flag.Flag) {
+		typ := reflect.TypeOf(f.Value).String()
+		lines = append(lines, fmt.Sprintf("--%s <%s> = %q : %s", f.Name, typ, f.DefValue, f.Usage))
+	})
+	sort.Strings(lines)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // assertGolden compares got against testdata/<name>, regenerating it when
