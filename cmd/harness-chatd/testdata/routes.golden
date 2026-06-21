@@ -1,0 +1,12 @@
+DELETE /v1/conversations/{id}
+DELETE /v1/conversations/{id}/control/{token}
+GET /healthz
+GET /v1/conversations
+GET /v1/conversations/{id}/events
+GET /v1/conversations/{id}/history
+GET /v1/conversations/{id}/screen
+POST /v1/conversations
+POST /v1/conversations/{id}/control
+POST /v1/conversations/{id}/input
+POST /v1/conversations/{id}/messages
+POST /v1/turns

@@ -1,0 +1,95 @@
+answerRequest
+	Token string `json:"token"`
+	RequestID string `json:"request_id,omitempty"`
+	OptionID string `json:"option_id,omitempty"`
+	Text string `json:"text,omitempty"`
+controlResponse
+	Token string `json:"token"`
+conversationSummary
+	ID string `json:"id"`
+	Harness string `json:"harness"`
+	SessionID string `json:"session_id,omitempty"`
+errorResponse
+	Error string `json:"error"`
+	Code string `json:"code,omitempty"`
+eventDTO
+	Type string `json:"type"`
+	Turn *main.turnDTO `json:"turn,omitempty"`
+	Input *main.inputRequestDTO `json:"input,omitempty"`
+	Error string `json:"error,omitempty"`
+historyResponse
+	Turns []main.turnDTO `json:"turns"`
+inputOptionDTO
+	ID string `json:"id"`
+	Alias string `json:"alias,omitempty"`
+	Label string `json:"label"`
+inputRequestDTO
+	ID string `json:"id"`
+	Kind string `json:"kind"`
+	Prompt string `json:"prompt"`
+	Options []main.inputOptionDTO `json:"options,omitempty"`
+openRequest
+	Harness string `json:"harness"`
+	BinaryPath string `json:"binary_path"`
+	Args []string `json:"args,omitempty"`
+	WorkingDir string `json:"working_dir,omitempty"`
+	Env []string `json:"env,omitempty"`
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
+	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
+	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
+openResponse
+	ID string `json:"id"`
+runTurnRequest
+	Harness string `json:"harness"`
+	TurnHarness string `json:"turn_harness,omitempty"`
+	BinaryPath string `json:"binary_path"`
+	Args []string `json:"args,omitempty"`
+	WorkingDir string `json:"working_dir,omitempty"`
+	Env []string `json:"env,omitempty"`
+	Prompt string `json:"prompt"`
+	ExitAfterTurn *bool `json:"exit_after_turn,omitempty"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
+	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
+runTurnResponse
+	Turn main.turnDTO `json:"turn"`
+	Session main.sessionDTO `json:"session"`
+	History []main.turnDTO `json:"history"`
+	ProcessStoppedAfterTurn bool `json:"process_stopped_after_turn"`
+	WrapperStatus string `json:"wrapper_status,omitempty"`
+	WrapperReason string `json:"wrapper_reason,omitempty"`
+	Error string `json:"error,omitempty"`
+screenResponse
+	Text string `json:"text"`
+	Cols int `json:"cols"`
+	Rows int `json:"rows"`
+	CursorCol int `json:"cursor_col"`
+	CursorRow int `json:"cursor_row"`
+	Generation uint64 `json:"generation"`
+sendRequest
+	Token string `json:"token"`
+	Text string `json:"text"`
+sendResponse
+	TurnID string `json:"turn_id"`
+sessionDTO
+	ID string `json:"id"`
+	Harness string `json:"harness"`
+	WorkingDir string `json:"working_dir,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	HarnessSessionID string `json:"harness_session_id,omitempty"`
+turnDTO
+	ID string `json:"id"`
+	SessionID string `json:"session_id"`
+	Role string `json:"role"`
+	State string `json:"state"`
+	Text string `json:"text,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	StartedAt time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at,omitzero"`
+	HTTPCode int `json:"http_code,omitempty"`
+	RetryAfter string `json:"retry_after,omitempty"`
+turnEventDTO
+	Turn main.turnDTO `json:"turn"`
+	Error string `json:"error,omitempty"`
