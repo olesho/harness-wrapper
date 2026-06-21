@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.141",
-  "recorded_at": "2026-05-14T20:36:11.991054Z",
+  "binary_version": "2.1.185",
+  "recorded_at": "2026-06-21T03:15:52.428541Z",
   "cols": 120,
   "rows": 40,
-  "notes": "user interrupts mid-stream with Esc/Ctrl-C"
+  "notes": "rebake via Makefile on 2026-06-21T03:15:39Z"
 }
