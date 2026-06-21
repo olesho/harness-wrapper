@@ -211,13 +211,18 @@ go test ./pkg/chat -run TestIntegration_SubAgentFlicker -count=1   # must FAIL o
   the recorder submitted with a raw `\n` (which enhanced-keyboard versions
   ignore — see the submit-key gotcha above), and its corpus/script path lookup
   plus the `make rebake-corpus` target broke when screenbench became a nested
-  module. All fixed. One scenario resists re-bake by nature:
-  `interrupted-mid-reply` depends on Ctrl-C landing mid-stream, and 2.1.185's
-  first-token latency now exceeds the script's 1500ms sleep, so a re-record
-  captures a pre-stream cancel. It is left at its honest `2.1.141` recording
-  (as is the hand-authored `adversarial` scenario) — a mixed-version corpus is
-  fine because every `meta.json` states the version it was actually taken
-  against, and the adapter tests assert version-independent structure, not text.
+  module. All fixed. `interrupted-mid-reply` initially resisted re-bake: it
+  Ctrl-C'd on a fixed 1500ms sleep calibrated to 2.1.141's latency, and against
+  2.1.185 that fired before the reply streamed (cancel during "thinking", no
+  marker). The durable fix was to make it **marker-driven** — wait for the `⏺`
+  reply bullet, then a short settle, so the interrupt lands mid-stream
+  regardless of model latency. (The busy `esc to interrupt` footer is no good
+  as a wait marker: it is ANSI-split in the byte stream and never matches
+  contiguously, falling back to idle-timeout that only fires after the turn
+  completes.) Now re-baked at 2.1.185. Only the hand-authored `adversarial`
+  scenario stays at `2.1.141` — a mixed-version corpus is fine because every
+  `meta.json` states the version it was taken against, and the adapter tests
+  assert version-independent structure, not text.
 - The builder covers claude-code and codex. gemini / opencode / pi have stub
   adapters (no screen markers yet); when their detection lands, add their glyph
   vocabulary and scenarios the same way.
