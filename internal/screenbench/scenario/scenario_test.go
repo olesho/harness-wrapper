@@ -45,9 +45,14 @@ func repoCorpusRoot(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+	// Walk up looking for a directory that actually contains test/corpus.
+	// Stopping at the first go.mod is wrong: screenbench is its own nested
+	// module, and the corpus lives at the OUTER repo root, above
+	// internal/screenbench/go.mod.
 	for range 8 {
-		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
-			return filepath.Join(cwd, "test", "corpus")
+		corpus := filepath.Join(cwd, "test", "corpus")
+		if fi, err := os.Stat(corpus); err == nil && fi.IsDir() {
+			return corpus
 		}
 		parent := filepath.Dir(cwd)
 		if parent == cwd {
@@ -55,6 +60,6 @@ func repoCorpusRoot(t *testing.T) string {
 		}
 		cwd = parent
 	}
-	t.Fatalf("could not find repo root from %s", cwd)
+	t.Fatalf("could not find test/corpus above %s", cwd)
 	return ""
 }
