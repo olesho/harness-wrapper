@@ -202,14 +202,22 @@ go test ./pkg/chat -run TestIntegration_SubAgentFlicker -count=1   # must FAIL o
   against the `versions.json` pin; `TestConformance_SentinelRoundTrip` drives one
   real turn per harness and asserts the sentinel survives. The drift check earns
   its keep immediately — it caught the codex pin sitting at `0.140.0` after the
-  adapter had already moved to `0.141.0` (since resolved: pin bumped to `0.141.0`
-  once the live sentinel round-trip confirmed the adapter), and it currently
-  flags a second drift: **claude-code installed `2.1.185` vs pin `2.1.141`**.
-  The live sentinel round-trips on `2.1.185`, so the core contract holds, but the
-  pin is left at `2.1.141` deliberately — that 44-patch jump wants an adapter
-  re-verify + corpus re-bake before `verified_at` can honestly move. Re-bake
-  (`make rebake-corpus HARNESS=claude …`), confirm the adapter patterns, then
-  bump `versions.json`.
+  adapter had already moved to `0.141.0`, and a second drift of claude-code
+  (`2.1.141` → `2.1.185`). Both are now resolved: the pins were bumped once the
+  live sentinel round-trip and a corpus re-bake confirmed the adapters against
+  the installed versions, and conformance now reports zero drift.
+
+  Re-baking against a current binary surfaced two tooling bugs worth knowing:
+  the recorder submitted with a raw `\n` (which enhanced-keyboard versions
+  ignore — see the submit-key gotcha above), and its corpus/script path lookup
+  plus the `make rebake-corpus` target broke when screenbench became a nested
+  module. All fixed. One scenario resists re-bake by nature:
+  `interrupted-mid-reply` depends on Ctrl-C landing mid-stream, and 2.1.185's
+  first-token latency now exceeds the script's 1500ms sleep, so a re-record
+  captures a pre-stream cancel. It is left at its honest `2.1.141` recording
+  (as is the hand-authored `adversarial` scenario) — a mixed-version corpus is
+  fine because every `meta.json` states the version it was actually taken
+  against, and the adapter tests assert version-independent structure, not text.
 - The builder covers claude-code and codex. gemini / opencode / pi have stub
   adapters (no screen markers yet); when their detection lands, add their glyph
   vocabulary and scenarios the same way.
