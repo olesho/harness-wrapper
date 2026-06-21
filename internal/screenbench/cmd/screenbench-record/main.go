@@ -41,6 +41,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -233,6 +234,11 @@ func run(c recorderConfig) error {
 // Most CLIs print a single-line version banner ("codex 0.130.0",
 // "@google/gemini-cli 0.42.0", "Claude Code 2.1.141"); the first-line
 // rule is robust enough for them.
+// versionSemverRE extracts a clean semver from noisy `--version` output like
+// "2.1.185 (Claude Code)" or "codex-cli 0.141.0", so meta.binary_version is a
+// bare version that lines up with the versions.json pin.
+var versionSemverRE = regexp.MustCompile(`\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?`)
+
 func captureBinaryVersion(bin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -240,6 +246,10 @@ func captureBinaryVersion(bin string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if v := versionSemverRE.FindString(string(out)); v != "" {
+		return v, nil
+	}
+	// No semver matched — fall back to the first non-empty line verbatim.
 	for line := range strings.SplitSeq(string(out), "\n") {
 		if t := strings.TrimSpace(line); t != "" {
 			return t, nil

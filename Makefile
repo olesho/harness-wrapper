@@ -72,13 +72,14 @@ endif
 	if [ ! -f "$$script_path" ]; then echo "✗ missing script $$script_path"; exit 2; fi; \
 	echo "→ recording $$harness_dir/$(SCENARIO) via $$bin"; \
 	mkdir -p $$out_dir; \
-	go run ./internal/screenbench/cmd/screenbench-record \
-	  --harness $$corpus_dir \
-	  --bin "$$bin" \
-	  --out "$$out_dir" \
-	  --auto-version \
-	  --script "$$script_path" \
-	  --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	( cd $(CURDIR)/internal/screenbench && \
+	  go run -tags screenbench ./cmd/screenbench-record \
+	    --harness $$corpus_dir \
+	    --bin "$$bin" \
+	    --out "$(CURDIR)/$$out_dir" \
+	    --auto-version \
+	    --script "$(CURDIR)/$$script_path" \
+	    --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)" )
 
 # rebake-corpus-all: refresh every canonical scenario across every
 # harness. Spends real API dollars for codex/claude (gemini uses

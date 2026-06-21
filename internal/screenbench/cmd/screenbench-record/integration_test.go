@@ -164,8 +164,10 @@ func main() {
 	if err := json.Unmarshal(metaBytes, &meta); err != nil {
 		t.Fatal(err)
 	}
-	if meta.BinaryVersion != "versioned-mock 9.9.9" {
-		t.Errorf("meta.BinaryVersion = %q, want %q", meta.BinaryVersion, "versioned-mock 9.9.9")
+	// --auto-version extracts a clean semver from the noisy "versioned-mock
+	// 9.9.9" --version line so meta lines up with the versions.json pin.
+	if meta.BinaryVersion != "9.9.9" {
+		t.Errorf("meta.BinaryVersion = %q, want %q", meta.BinaryVersion, "9.9.9")
 	}
 }
 
