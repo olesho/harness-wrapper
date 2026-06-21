@@ -28,7 +28,7 @@ stays green forever, including the day a new version breaks every real user.
 
 | Layer | Tests | Hermetic? | Cadence | Where |
 |---|---|---|---|---|
-| 0. API-freeze | HTTP routes + wire DTOs as golden snapshots | yes | per-commit | `cmd/harness-chatd/contract_test.go` |
+| 0. API-freeze | HTTP routes + wire DTOs + CLI flags + exported `pkg/chat` Go API as golden snapshots | yes | per-commit | `cmd/harness-chatd/contract_test.go`, `cmd/harness-wrapper/contract_test.go`, `pkg/chat/contract_test.go` |
 | 1. Pattern units | the adapter regexes / markers | yes | per-commit | `pkg/turns/harness/**`, `pkg/wrapper/internal/harness/**` |
 | 2. Corpus replay | recorded byte-streams → adapter → boundaries+text | yes | per-commit | `pkg/turns/harness/**/*_test.go`, `test/corpus/**` |
 | 3. **Fake-harness integration** | full PTY→screen→turns→chat→HTTP against a scriptable fake | yes | per-commit | `internal/fakeharness`, `cmd/fakeharness`, `pkg/chat/integration_test.go` |
@@ -183,11 +183,17 @@ go test ./pkg/chat -run TestIntegration_SubAgentFlicker -count=1   # must FAIL o
   needs the mock to consume a real submit, make its input raw / submit-key-
   agnostic (input flags only — keep `OPOST` so its `fmt.Println` output isn't
   staircased) or migrate that test to `internal/fakeharness`.
-- **Layer 0** freezes the chatd HTTP surface — routes and wire DTOs — as golden
-  snapshots (`cmd/harness-chatd/testdata/*.golden`). After an INTENTIONAL
-  contract change, regenerate with `UPDATE_GOLDEN=1 go test ./cmd/harness-chatd/`.
-  Not yet frozen: the CLI flag set (lives in a local FlagSet) and the exported
-  `pkg/chat` Go API — add these the same way if they start churning.
+- **Layer 0** freezes four outward surfaces as golden snapshots, regenerated
+  after an INTENTIONAL change with `UPDATE_GOLDEN=1 go test ./<pkg>/`:
+  - chatd HTTP routes + wire DTOs (`cmd/harness-chatd/testdata/{routes,wire_contract}.golden`).
+  - both binaries' CLI flags — name/type/default/usage
+    (`cmd/harness-{wrapper,chatd}/testdata/flags.golden`). The FlagSets are built
+    by enumerable helpers (`harnessWrapperFlagSet`, `chatdFlagSet`) so the test
+    and the parser share one definition.
+  - the exported `pkg/chat` Go API (`pkg/chat/testdata/go_api.golden`) — struct
+    fields + method sets via reflection, plus a hand-listed registry of
+    package-level funcs / typed consts / error sentinels (removing one breaks
+    compilation of `contract_test.go`).
 - **Layer 4** (`pkg/harness/conformance_test.go`) is gated behind
   `HARNESS_WRAPPER_CONFORMANCE=1` and skips any harness whose binary is absent,
   so it is safe in normal runs and meant for a nightly job:
@@ -196,7 +202,14 @@ go test ./pkg/chat -run TestIntegration_SubAgentFlicker -count=1   # must FAIL o
   against the `versions.json` pin; `TestConformance_SentinelRoundTrip` drives one
   real turn per harness and asserts the sentinel survives. The drift check earns
   its keep immediately — it caught the codex pin sitting at `0.140.0` after the
-  adapter had already moved to `0.141.0`.
+  adapter had already moved to `0.141.0` (since resolved: pin bumped to `0.141.0`
+  once the live sentinel round-trip confirmed the adapter), and it currently
+  flags a second drift: **claude-code installed `2.1.185` vs pin `2.1.141`**.
+  The live sentinel round-trips on `2.1.185`, so the core contract holds, but the
+  pin is left at `2.1.141` deliberately — that 44-patch jump wants an adapter
+  re-verify + corpus re-bake before `verified_at` can honestly move. Re-bake
+  (`make rebake-corpus HARNESS=claude …`), confirm the adapter patterns, then
+  bump `versions.json`.
 - The builder covers claude-code and codex. gemini / opencode / pi have stub
   adapters (no screen markers yet); when their detection lands, add their glyph
   vocabulary and scenarios the same way.
