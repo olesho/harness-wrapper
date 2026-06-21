@@ -8,27 +8,23 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/internal/fakeharness"
 )
 
 func TestRunTurnEndpoint_ClaudeStyleOneShot(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script fake harness is Unix-only")
-	}
-	bin := writeHTTPRunTurnExecutable(t, `#!/bin/sh
-echo "Fake Claude Code"
-echo "❯"
-IFS= read -r line
-echo "assistant reply: $line"
-echo "claude --resume 123e4567-e89b-12d3-a456-426614174000"
-echo "✻ Baked for 1s"
-# Stay alive like a real interactive REPL so the turn-complete marker is
-# observed before the process goes away. RunTurn(ExitAfterTurn) then stops us;
-# exiting immediately here races the screen-derived turn-complete signal.
-IFS= read -r _
-`)
+	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	bin := fakeHarnessBin(t)
+	env := fakeScriptEnv(t, fakeharness.New("claude-code").
+		Session(sessionID).
+		Idle().
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+		ExitOnQuit().
+		Build())
 
 	srv := NewServer()
 	ts := httptest.NewServer(srv.Routes())
@@ -38,6 +34,7 @@ IFS= read -r _
 	body, _ := json.Marshal(runTurnRequest{
 		Harness:       "claude",
 		BinaryPath:    bin,
+		Env:           env,
 		Prompt:        "ship the HTTP turn API",
 		ExitAfterTurn: &exitAfter,
 	})
@@ -72,11 +69,28 @@ IFS= read -r _
 	}
 }
 
-func writeHTTPRunTurnExecutable(t *testing.T, body string) string {
+// fakeHarnessBin builds the scriptable fake harness once per process (skipping
+// when the Go toolchain is unavailable); fakeScriptEnv writes a script to a temp
+// file and returns the env pointing the fake at it. Shared by the chatd HTTP
+// integration tests so they drive the fake over a real PTY with CSI-13u submit.
+func fakeHarnessBin(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "fake-claude")
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake harness: %v", err)
+	p, err := fakeharness.BuildOnce()
+	if err != nil {
+		t.Skipf("fakeharness unavailable: %v", err)
 	}
-	return path
+	return p
+}
+
+func fakeScriptEnv(t *testing.T, s fakeharness.Script) []string {
+	t.Helper()
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal script: %v", err)
+	}
+	p := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	return append(os.Environ(), fakeharness.EnvVar+"="+p)
 }

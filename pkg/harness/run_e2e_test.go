@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/fakeharness"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/all" // register built-in profiles (claude)
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -28,7 +29,6 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmp)
 
 	mockBin = filepath.Join(tmp, "mock")
 	build := exec.Command("go", "build", "-o", mockBin, "github.com/olesho/harness-wrapper/test/fakeharness/mock")
@@ -36,7 +36,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "build mock: %v\n%s", err, out)
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	// run_turn_test.go drives the scriptable fake harness (built lazily via
+	// fakeharness.BuildOnce); clean its binary up alongside the mock. os.Exit
+	// skips defers, so remove explicitly before exiting.
+	code := m.Run()
+	fakeharness.Cleanup()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 // streamFixture is a scripted Claude stream-json transcript: a system/init

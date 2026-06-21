@@ -3,40 +3,68 @@ package harness_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/fakeharness"
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
-func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
-	bin := writeExecutable(t, "fake-claude", `#!/bin/sh
-echo "Fake Claude Code"
-echo "❯"
-i=1
-while IFS= read -r line; do
-  echo "assistant reply $i: $line"
-  echo "claude --resume 123e4567-e89b-12d3-a456-426614174000"
-  echo "✻ Baked for ${i}s"
-  i=$((i + 1))
-done
-`)
+// fakeBin builds the scriptable fake harness (cmd/fakeharness) once per process,
+// skipping when the Go toolchain is unavailable. scriptEnv marshals a script to
+// a temp file and returns the env that points the fake at it — passed to RunTurn
+// via TurnConfig.Env so the one-shot driver spawns the fake over a real PTY and
+// submits with CSI 13u (no newline coupling).
+func fakeBin(t *testing.T) string {
+	t.Helper()
+	p, err := fakeharness.BuildOnce()
+	if err != nil {
+		t.Skipf("fakeharness unavailable: %v", err)
+	}
+	return p
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func scriptEnv(t *testing.T, s fakeharness.Script) []string {
+	t.Helper()
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal script: %v", err)
+	}
+	p := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(p, data, 0o600); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	return append(os.Environ(), fakeharness.EnvVar+"="+p)
+}
+
+func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
+	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	bin := fakeBin(t)
+	env := scriptEnv(t, fakeharness.New("claude-code").
+		Session(sessionID).
+		Idle().
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+		ExitOnQuit().
+		Build())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	var out bytes.Buffer
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
 		Harness:       "claude",
 		BinaryPath:    bin,
+		Env:           env,
 		Prompt:        "ship the turn API",
 		ExitAfterTurn: true,
 		Output:        &out,
@@ -48,7 +76,7 @@ done
 	if res.Turn.State != chat.TurnStateComplete {
 		t.Fatalf("Turn.State = %q, want complete", res.Turn.State)
 	}
-	if res.Session.HarnessSessionID != "123e4567-e89b-12d3-a456-426614174000" {
+	if res.Session.HarnessSessionID != sessionID {
 		t.Fatalf("HarnessSessionID = %q", res.Session.HarnessSessionID)
 	}
 	if len(res.History) < 2 {
@@ -63,30 +91,31 @@ done
 	if res.WrapperResult.Status != wrapper.StatusInterrupted {
 		t.Fatalf("raw WrapperResult.Status = %q, want interrupted after intentional stop", res.WrapperResult.Status)
 	}
-	if !strings.Contains(out.String(), "assistant reply 1") {
+	if !strings.Contains(out.String(), "assistant reply: ship the turn API") {
 		t.Fatalf("Output missing assistant reply:\n%s", out.String())
 	}
 }
 
 func TestRunTurn_CanKeepConversationAlive(t *testing.T) {
-	bin := writeExecutable(t, "fake-claude", `#!/bin/sh
-echo "Fake Claude Code"
-echo "❯"
-i=1
-while IFS= read -r line; do
-  echo "assistant reply $i: $line"
-  echo "✻ Baked for ${i}s"
-  echo "❯"
-  i=$((i + 1))
-done
-`)
+	bin := fakeBin(t)
+	env := scriptEnv(t, fakeharness.New("claude-code").
+		Idle().
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply one", "Baked", "1s").
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply two", "Baked", "2s").
+		ExitOnQuit().
+		Build())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
 		Harness:       "claude",
 		BinaryPath:    bin,
+		Env:           env,
 		Prompt:        "first turn",
 		ExitAfterTurn: false,
 	})
@@ -123,20 +152,20 @@ done
 }
 
 func TestRunTurn_ReturnsErrTurnErrored(t *testing.T) {
-	bin := writeExecutable(t, "fake-claude-fail", `#!/bin/sh
-echo "Fake Claude Code"
-echo "❯"
-IFS= read -r line
-echo "fatal turn failure: $line" >&2
-exit 2
-`)
+	bin := fakeBin(t)
+	env := scriptEnv(t, fakeharness.New("claude-code").
+		Idle().
+		AwaitSubmit().
+		Exit(2). // crash mid-turn, like a harness that dies after the prompt
+		Build())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
 		Harness:    "claude",
 		BinaryPath: bin,
+		Env:        env,
 		Prompt:     "fail this turn",
 	})
 	if !errors.Is(err, harness.ErrTurnErrored) {
@@ -246,16 +275,4 @@ func requireRealClaude(t *testing.T) string {
 		t.Skipf("claude not found on PATH: %v", err)
 	}
 	return claudePath
-}
-
-func writeExecutable(t *testing.T, name, body string) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("shell-script fake harness is Unix-only")
-	}
-	path := filepath.Join(t.TempDir(), name)
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake harness: %v", err)
-	}
-	return path
 }

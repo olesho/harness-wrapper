@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/olesho/harness-wrapper/internal/fakeharness"
 )
 
 // mockHarnessBin is built once for the SSE integration tests in this
@@ -33,6 +35,10 @@ func runTests(m *testing.M) int {
 		return 1
 	}
 	defer os.RemoveAll(tmp)
+	// The SSE api-error test now drives the scriptable fake harness (built lazily
+	// via fakeharness.BuildOnce); clean its binary up too. The mock is still built
+	// here for the other chatd tests (screen, sse_input).
+	defer fakeharness.Cleanup()
 
 	mockHarnessBin = filepath.Join(tmp, "mock")
 	cmd := exec.Command("go", "build", "-o", mockHarnessBin,
@@ -53,18 +59,20 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
-	// Open a conversation against the mock in api-error mode.
+	// Open a conversation against the fake harness: it reaches a Claude-style
+	// ready prompt, consumes the Send (CSI 13u), then emits an "API Error: 429 …"
+	// line. The wrapper's line classifier turns that into a Blocked event, which
+	// the chat layer attaches to the now-pending turn — so the api_error reaches
+	// the SSE stream with http_code/retry_after populated.
+	apiErrScript := fakeharness.New("claude-code").
+		Idle().
+		AwaitSubmit().
+		Raw(0, "API Error: 429 Too Many Requests. Retry after 30 seconds.").
+		Build()
 	openBody, _ := json.Marshal(openRequest{
 		Harness:    "claude-code",
-		BinaryPath: mockHarnessBin,
-		Args: []string{
-			"--mode", "api-error",
-			// --ready-prompt makes the mock reach a Claude-style ready prompt
-			// and consume the Send before erroring, so the api_error attaches
-			// to the now-pending turn (the chat readiness gate requires this).
-			"--ready-prompt",
-			"--api-error-msg", "API Error: 429 Too Many Requests. Retry after 30 seconds.",
-		},
+		BinaryPath: fakeHarnessBin(t),
+		Env:        fakeScriptEnv(t, apiErrScript),
 	})
 	resp, err := http.Post(ts.URL+"/v1/conversations", "application/json", bytes.NewReader(openBody))
 	if err != nil {
