@@ -73,22 +73,43 @@ func NewServer() *Server {
 	return &Server{convs: make(map[string]*convEntry)}
 }
 
+// routeDef is one registered HTTP route. The table is the single source of
+// truth for the server's surface; Routes() wires it into a mux and the
+// API-freeze test (contract_test.go) enumerates it against a golden snapshot.
+type routeDef struct {
+	method  string
+	pattern string
+	handler http.HandlerFunc
+}
+
+// routes returns the full HTTP surface. Keep additions in sync with the golden
+// snapshot in TestContract_Routes (regenerate with UPDATE_GOLDEN=1).
+func (s *Server) routes() []routeDef {
+	return []routeDef{
+		{"GET", "/healthz", s.healthz},
+		{"POST", "/v1/turns", s.runTurn},
+		{"POST", "/v1/conversations", s.openConv},
+		{"GET", "/v1/conversations", s.listConvs},
+		{"DELETE", "/v1/conversations/{id}", s.closeConv},
+		{"POST", "/v1/conversations/{id}/control", s.acquireControl},
+		{"DELETE", "/v1/conversations/{id}/control/{token}", s.releaseControl},
+		{"POST", "/v1/conversations/{id}/messages", s.sendMessage},
+		{"POST", "/v1/conversations/{id}/input", s.answerInput},
+		{"GET", "/v1/conversations/{id}/events", s.streamEvents},
+		{"GET", "/v1/conversations/{id}/history", s.history},
+		{"GET", "/v1/conversations/{id}/screen", s.screen},
+	}
+}
+
+func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	})
-	mux.HandleFunc("POST /v1/turns", s.runTurn)
-	mux.HandleFunc("POST /v1/conversations", s.openConv)
-	mux.HandleFunc("GET /v1/conversations", s.listConvs)
-	mux.HandleFunc("DELETE /v1/conversations/{id}", s.closeConv)
-	mux.HandleFunc("POST /v1/conversations/{id}/control", s.acquireControl)
-	mux.HandleFunc("DELETE /v1/conversations/{id}/control/{token}", s.releaseControl)
-	mux.HandleFunc("POST /v1/conversations/{id}/messages", s.sendMessage)
-	mux.HandleFunc("POST /v1/conversations/{id}/input", s.answerInput)
-	mux.HandleFunc("GET /v1/conversations/{id}/events", s.streamEvents)
-	mux.HandleFunc("GET /v1/conversations/{id}/history", s.history)
-	mux.HandleFunc("GET /v1/conversations/{id}/screen", s.screen)
+	for _, r := range s.routes() {
+		mux.HandleFunc(r.method+" "+r.pattern, r.handler)
+	}
 	return mux
 }
 
