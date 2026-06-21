@@ -1,7 +1,8 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals observed on 2.1.141:
+// Detection signals first observed on 2.1.141; re-verified against 2.1.185
+// (corpus multi-turn/tool-call re-baked, live sentinel round-trip):
 //
 //   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
 //     line appears, where <verb> is a colorful word like Baked, Brewed,

@@ -88,7 +88,7 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 }
 
 func TestLookup_InstalledViaBinaryName(t *testing.T) {
-	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho 2.1.141\n"})
+	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho 2.1.185\n"})
 
 	got, err := Lookup("claude")
 	if err != nil {
@@ -103,8 +103,8 @@ func TestLookup_InstalledViaBinaryName(t *testing.T) {
 	if got.Binary != "claude" {
 		t.Errorf("want Binary=claude, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "2.1.141" {
-		t.Errorf("want DetectedVersion=2.1.141, got %q", got.DetectedVersion)
+	if got.DetectedVersion != "2.1.185" {
+		t.Errorf("want DetectedVersion=2.1.185, got %q", got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true")

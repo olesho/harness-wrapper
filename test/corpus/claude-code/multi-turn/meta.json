@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.141",
-  "recorded_at": "2026-05-14T20:38:21.499168Z",
+  "binary_version": "2.1.185",
+  "recorded_at": "2026-06-21T03:03:17.119068Z",
   "cols": 120,
   "rows": 40,
-  "notes": "three back-and-forth exchanges"
+  "notes": "rebake via Makefile on 2026-06-21T03:02:51Z"
 }
