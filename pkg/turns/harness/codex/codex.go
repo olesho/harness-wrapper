@@ -12,7 +12,8 @@
 // the event stream alongside the screen-derived signals.
 //
 // Verified against Codex 0.130.0; interstitial detection (input.go)
-// verified against 0.140.0. Markers may shift across upstream versions;
+// verified against 0.140.0, and the 0.141.0 idle composer + CSI-13u submit
+// (see input_test.go). Markers may shift across upstream versions;
 // the golden-recording tests under test/corpus/codex/ are the
 // early-warning signal for that drift.
 package codex

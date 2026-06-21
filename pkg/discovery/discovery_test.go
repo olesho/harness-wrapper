@@ -52,8 +52,8 @@ func TestLookup_NotInstalled(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.PinnedVersion != "0.140.0" {
-		t.Errorf("want PinnedVersion=0.140.0, got %q", got.PinnedVersion)
+	if got.PinnedVersion != "0.141.0" {
+		t.Errorf("want PinnedVersion=0.141.0, got %q", got.PinnedVersion)
 	}
 	if got.InstallHint == "" || !strings.Contains(got.InstallHint, "codex") {
 		t.Errorf("InstallHint should mention codex, got %q", got.InstallHint)
@@ -64,7 +64,7 @@ func TestLookup_NotInstalled(t *testing.T) {
 }
 
 func TestLookup_InstalledViaHarnessKey(t *testing.T) {
-	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.140.0\n"})
+	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.141.0\n"})
 
 	got, err := Lookup("codex")
 	if err != nil {
@@ -79,8 +79,8 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "0.140.0" {
-		t.Errorf("want DetectedVersion=0.140.0, got %q", got.DetectedVersion)
+	if got.DetectedVersion != "0.141.0" {
+		t.Errorf("want DetectedVersion=0.141.0, got %q", got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true (detected matches pin)")
@@ -166,8 +166,8 @@ func TestLookup_VersionMismatch_FlagsDrift(t *testing.T) {
 	if got.DetectedVersion != "9.9.9" {
 		t.Errorf("want DetectedVersion=9.9.9, got %q", got.DetectedVersion)
 	}
-	if got.PinnedVersion != "0.140.0" {
-		t.Errorf("want PinnedVersion=0.140.0, got %q", got.PinnedVersion)
+	if got.PinnedVersion != "0.141.0" {
+		t.Errorf("want PinnedVersion=0.141.0, got %q", got.PinnedVersion)
 	}
 	if got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=false (detected drifts from pin)")
@@ -290,7 +290,7 @@ func swapCodexProbe(t *testing.T, p Probe) {
 func TestLookup_CachesByPathAndMtime(t *testing.T) {
 	cp := &countingProbe{inner: semverDashVProbe{}}
 	swapCodexProbe(t, cp)
-	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.140.0\n"})
+	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.141.0\n"})
 
 	if _, err := Lookup("codex"); err != nil {
 		t.Fatalf("first Lookup: %v", err)
@@ -307,7 +307,7 @@ func TestLookup_CachesByPathAndMtime(t *testing.T) {
 func TestLookup_ResetCacheReprobes(t *testing.T) {
 	cp := &countingProbe{inner: semverDashVProbe{}}
 	swapCodexProbe(t, cp)
-	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.140.0\n"})
+	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.141.0\n"})
 
 	if _, err := Lookup("codex"); err != nil {
 		t.Fatalf("first Lookup: %v", err)
