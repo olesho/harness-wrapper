@@ -97,6 +97,58 @@ func (r *recordingStdin) String() string {
 	return string(r.sent)
 }
 
+// TestDriver_SubmitKeyTranslation pins the inward submit-key contract for the
+// recorder: with a submitKey set, a Send step's trailing "\n" is replaced by
+// the enhanced Enter (so the turn submits on enhanced-keyboard harnesses),
+// while the typed body is preserved and a Send with no trailing newline is
+// passed through untouched. Nil submitKey keeps the legacy raw behavior.
+func TestDriver_SubmitKeyTranslation(t *testing.T) {
+	if got := submitKeyForHarness("claude-code"); string(got) != "\x1b[13u" {
+		t.Errorf("claude-code submit key = %q, want CSI 13u", got)
+	}
+	if got := submitKeyForHarness("codex"); string(got) != "\x1b[13u" {
+		t.Errorf("codex submit key = %q, want CSI 13u", got)
+	}
+	if got := submitKeyForHarness("gemini"); got != nil {
+		t.Errorf("gemini submit key = %q, want nil (raw)", got)
+	}
+
+	t.Run("translates trailing newline", func(t *testing.T) {
+		stdin := &recordingStdin{}
+		d := newScriptDriver(stdin, time.Second, 0)
+		d.submitKey = []byte("\x1b[13u")
+		if err := d.send("what is 2 plus 2?\n"); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := stdin.String(), "what is 2 plus 2?\x1b[13u"; got != want {
+			t.Errorf("sent %q, want %q", got, want)
+		}
+	})
+
+	t.Run("nil submitKey stays raw", func(t *testing.T) {
+		stdin := &recordingStdin{}
+		d := newScriptDriver(stdin, time.Second, 0)
+		if err := d.send("hi\n"); err != nil {
+			t.Fatal(err)
+		}
+		if got := stdin.String(); got != "hi\n" {
+			t.Errorf("sent %q, want raw %q", got, "hi\n")
+		}
+	})
+
+	t.Run("no trailing newline passes through", func(t *testing.T) {
+		stdin := &recordingStdin{}
+		d := newScriptDriver(stdin, time.Second, 0)
+		d.submitKey = []byte("\x1b[13u")
+		if err := d.send("partial"); err != nil {
+			t.Fatal(err)
+		}
+		if got := stdin.String(); got != "partial" {
+			t.Errorf("sent %q, want %q", got, "partial")
+		}
+	})
+}
+
 // TestDriver_WaitForThenSendThenWaitFor exercises the canonical
 // wait-then-send-then-wait sequence by hand-feeding bytes through the
 // driver's Write method. No PTY required.
@@ -353,10 +405,15 @@ func TestCanonicalScriptsLoad(t *testing.T) {
 
 func repoScriptsRoot(t *testing.T) string {
 	t.Helper()
+	// Walk up looking for a directory that actually contains test/scripts.
+	// Stopping at the first go.mod is wrong: screenbench is its own nested
+	// module, and the canonical scripts live at the OUTER repo root, above
+	// internal/screenbench/go.mod.
 	cwd, _ := os.Getwd()
 	for range 8 {
-		if _, err := os.Stat(filepath.Join(cwd, "go.mod")); err == nil {
-			return filepath.Join(cwd, "test", "scripts")
+		scripts := filepath.Join(cwd, "test", "scripts")
+		if fi, err := os.Stat(scripts); err == nil && fi.IsDir() {
+			return scripts
 		}
 		parent := filepath.Dir(cwd)
 		if parent == cwd {
@@ -364,7 +421,7 @@ func repoScriptsRoot(t *testing.T) string {
 		}
 		cwd = parent
 	}
-	t.Fatal("could not find repo root")
+	t.Fatal("could not find test/scripts above the working directory")
 	return ""
 }
 

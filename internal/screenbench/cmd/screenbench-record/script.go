@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -135,6 +136,13 @@ type scriptDriver struct {
 	idleTimeout time.Duration
 	bufCap      int
 
+	// submitKey, when non-nil, replaces the trailing "\n" of a Send step.
+	// Enhanced-keyboard harnesses (claude-code, codex ≥ their enhanced
+	// versions) do not treat a raw CR/LF from a PTY writer as submit — only
+	// CSI 13 u (the unmodified Enter). Nil preserves the legacy raw-byte
+	// behavior. See submitKeyForHarness.
+	submitKey []byte
+
 	mu        sync.Mutex
 	buf       []byte
 	lastOut   time.Time
@@ -215,8 +223,7 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 	case step.WaitFor != "":
 		return d.waitFor(ctx, step.WaitFor)
 	case step.Send != "":
-		_, err := d.stdin.WriteStdin([]byte(step.Send))
-		return err
+		return d.send(step.Send)
 	case step.Interrupt:
 		_, err := d.stdin.WriteStdin([]byte{0x03})
 		return err
@@ -230,6 +237,37 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 		}
 	}
 	return errors.New("empty step")
+}
+
+// send writes a Send step's bytes. When submitKey is set and the step ends
+// in "\n" (the script convention for "type this, then submit"), the trailing
+// newline is replaced by the harness's enhanced Enter so the turn actually
+// runs — a raw "\n" only inserts a newline in enhanced-keyboard composers.
+func (d *scriptDriver) send(s string) error {
+	if d.submitKey != nil && strings.HasSuffix(s, "\n") {
+		if body := strings.TrimSuffix(s, "\n"); body != "" {
+			if _, err := d.stdin.WriteStdin([]byte(body)); err != nil {
+				return err
+			}
+		}
+		_, err := d.stdin.WriteStdin(d.submitKey)
+		return err
+	}
+	_, err := d.stdin.WriteStdin([]byte(s))
+	return err
+}
+
+// submitKeyForHarness returns the byte sequence that submits the composer for
+// a harness, or nil to use the raw Send bytes. This mirrors
+// pkg/chat.submitKeyForHarness — the inward submit-key contract — kept in
+// sync so re-baked corpus is recorded the same way the wrapper drives turns.
+func submitKeyForHarness(harness string) []byte {
+	switch harness {
+	case "claude-code", "codex":
+		return []byte("\x1b[13u") // CSI 13 u — unmodified Enter in enhanced keyboard mode
+	default:
+		return nil
+	}
 }
 
 // waitFor blocks until pattern matches the rolling buffer OR the

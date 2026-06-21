@@ -184,6 +184,7 @@ func run(c recorderConfig) error {
 	)
 	if scr != nil {
 		driver := newScriptDriver(sess, c.IdleTimeout, 0)
+		driver.submitKey = submitKeyForHarness(c.Harness)
 		detachDriver := sess.AttachOutput(driver)
 		defer detachDriver()
 
