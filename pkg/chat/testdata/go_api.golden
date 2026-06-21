@@ -1,0 +1,101 @@
+type Options struct
+	field Harness string
+	field BinaryPath string
+	field Args []string
+	field WorkingDir string
+	field Env []string
+	field Cols int
+	field Rows int
+	field Store chat.Store
+	field EventBuffer int
+	field InputPolicy *chat.InputPolicy
+	field DisableCodexAutoDismiss bool
+	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
+type Conversation struct
+	method AcquireControl(context.Context) (func(), error)
+	method Adapter() turns.Adapter
+	method Answer(context.Context, string, chat.InputAnswer) error
+	method Close(context.Context) error
+	method Events() <-chan chat.ConversationEvent
+	method History(context.Context) ([]chat.Turn, error)
+	method ScreenSnapshot() screen.Snapshot
+	method Send(context.Context, string) (string, error)
+	method SessionID() string
+	method Wrapper() *wrapper.Session
+type Turn struct
+	field ID string
+	field SessionID string
+	field Role chat.Role
+	field State chat.TurnState
+	field Text string
+	field Reason string
+	field StartedAt time.Time
+	field CompletedAt time.Time
+	field HTTPCode int
+	field RetryAfter time.Duration
+type Session struct
+	field ID string
+	field Harness string
+	field WorkingDir string
+	field CreatedAt time.Time
+	field HarnessSessionID string
+type ConversationEvent struct
+	field Type chat.EventType
+	field Turn chat.Turn
+	field Input *chat.InputRequest
+	field Err error
+type InputRequest struct
+	field ID string `json:"id"`
+	field Kind string `json:"kind"`
+	field Prompt string `json:"prompt"`
+	field Options []chat.InputOption `json:"options,omitempty"`
+type InputOption struct
+	field ID string `json:"id"`
+	field Alias string `json:"alias,omitempty"`
+	field Label string `json:"label"`
+type InputAnswer struct
+	field OptionID string `json:"option_id,omitempty"`
+	field Text string `json:"text,omitempty"`
+type Disposition struct
+	field Kind chat.DispositionKind `json:"kind"`
+	field OptionID string `json:"option_id,omitempty"`
+	field Text string `json:"text,omitempty"`
+type InputPolicy struct
+	field Default chat.DispositionKind `json:"default,omitempty"`
+	field ByKind map[string]chat.Disposition `json:"by_kind,omitempty"`
+type Store interface
+	method AppendTurn(context.Context, *chat.Turn) error
+	method CreateSession(context.Context, *chat.Session) error
+	method GetSession(context.Context, string) (*chat.Session, error)
+	method ListTurns(context.Context, string) ([]chat.Turn, error)
+	method UpdateSession(context.Context, *chat.Session) error
+	method UpdateTurn(context.Context, *chat.Turn) error
+
+-- functions --
+func Open (context.Context, chat.Options) (*chat.Conversation, error)
+
+-- consts --
+RoleUser Role = "user"
+RoleAssistant Role = "assistant"
+RoleSystem Role = "system"
+TurnStatePending TurnState = "pending"
+TurnStateStreaming TurnState = "streaming"
+TurnStateComplete TurnState = "complete"
+TurnStateErrored TurnState = "errored"
+EventTurn EventType = "turn"
+EventInputRequest EventType = "input_request"
+EventInputResolved EventType = "input_resolved"
+DispositionAsk DispositionKind = "ask"
+DispositionAnswer DispositionKind = "answer"
+DispositionDeny DispositionKind = "deny"
+
+-- errors --
+ErrInvalidOptions = "chat: invalid options"
+ErrUnknownHarness = "chat: unknown harness"
+ErrNoControl = "chat: control token not held"
+ErrTurnInFlight = "chat: previous turn still in flight"
+ErrClosed = "chat: conversation closed"
+ErrInputPending = "chat: blocked on interactive input request"
+ErrNoInputPending = "chat: no input request pending"
+ErrStaleInputRequest = "chat: stale input request id"
+ErrUnknownOption = "chat: unknown input option"
