@@ -19,12 +19,19 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	if !requiresPromptReadiness(c.opts.Harness) {
 		return nil
 	}
+
+	// Subscribe BEFORE the readiness check to avoid a lost-wakeup race: if the
+	// prompt-ready frame lands between the check and Subscribe and the harness
+	// then paints nothing further (it can sit idle at a static prompt — no
+	// spinner, no cursor blink), the notification is missed and we block until
+	// ctx. Subscribing first guarantees any later frame wakes us; the check
+	// below still returns immediately for a prompt that was already ready.
+	notifyCh, unsubscribe := c.screen.Subscribe()
+	defer unsubscribe()
+
 	if readyForInput(c.opts.Harness, c.screen.Snapshot().Text) {
 		return nil
 	}
-
-	notifyCh, unsubscribe := c.screen.Subscribe()
-	defer unsubscribe()
 
 	for {
 		select {
@@ -93,13 +100,14 @@ func readyForInput(harness, text string) bool {
 func submitKeyForHarness(harness, screenText string) []byte {
 	switch harness {
 	case "claude-code":
-		if strings.Contains(screenText, "bypass permissions") || strings.Contains(screenText, "ctrl+g to edit in Vim") {
-			// Claude Code enables enhanced keyboard handling in its TUI and
-			// does not submit the input box when a synthetic PTY writer sends
-			// plain CR/LF. CSI 13 u is the unmodified Enter key in that mode.
-			return []byte("\x1b[13u")
-		}
-		return []byte("\n")
+		// Claude Code enables enhanced keyboard handling in its TUI and does
+		// not submit the input box when a synthetic PTY writer sends plain
+		// CR/LF — it only inserts a newline and the turn never runs. CSI 13 u
+		// is the unmodified Enter key in that mode. Recent versions (≥2.1.x)
+		// turn enhanced mode on unconditionally at startup — the auto-mode
+		// composer shows neither "bypass permissions" nor "ctrl+g to edit in
+		// Vim" — so we always send the enhanced Enter, mirroring codex below.
+		return []byte("\x1b[13u")
 	case "codex":
 		// codex 0.141.0 turns on the enhanced (kitty) keyboard protocol at startup,
 		// so a plain CR/LF from a synthetic PTY writer is NOT treated as submit — it

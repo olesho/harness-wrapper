@@ -21,10 +21,12 @@ func TestSubmitKeyForHarness(t *testing.T) {
 		// codex 0.141.0: enhanced keyboard mode is unconditional, so always CSI 13u.
 		{"codex composer", "codex", "›Find and fix a bug in @filename", csi13u},
 		{"codex any screen", "codex", "whatever is on screen", csi13u},
-		// claude-code: CSI 13u only in its enhanced TUI (detected by footer hints).
+		// claude-code (≥2.1.x): enhanced keyboard mode is unconditional — the
+		// auto-mode composer shows neither "bypass permissions" nor the Vim hint,
+		// yet a plain CR/LF still won't submit. Always CSI 13u, like codex.
 		{"claude bypass", "claude-code", "... bypass permissions ...", csi13u},
 		{"claude vim hint", "claude-code", "ctrl+g to edit in Vim", csi13u},
-		{"claude plain", "claude-code", "Claude Code ❯", "\n"},
+		{"claude auto mode", "claude-code", "Claude Code ❯ ... auto mode on", csi13u},
 		// Unknown harnesses keep the plain newline.
 		{"unknown", "gemini", "anything", "\n"},
 	}

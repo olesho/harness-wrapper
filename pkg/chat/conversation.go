@@ -73,6 +73,14 @@ type Options struct {
 	// goroutine, so it must return promptly. Not used by remote transports
 	// (they answer over the wire instead).
 	OnInputRequest func(InputRequest) (InputAnswer, bool)
+
+	// idleGap, markerGap optionally override the idle-completion windows
+	// (idleCompletionGap / markerConfirmGap) for a single Conversation. They
+	// are unexported on purpose: only same-package tests set them (the
+	// PTY-driven integration suite shrinks them so it runs in ~1s). Zero means
+	// "use the package default". Set once at Open and never mutated, so the
+	// idleCompletionWatcher goroutine reads them race-free.
+	idleGap, markerGap time.Duration
 }
 
 // Conversation owns one supervised harness process and serves the
@@ -376,7 +384,9 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 // complete by the idle fallback. Claude Code animates its working spinner
 // (and a per-second elapsed counter) while a turn runs, so any screen update
 // resets the timer — it only elapses once Claude has stopped and returned to
-// the prompt.
+// the prompt. This is the default; a Conversation may shrink it via the
+// unexported Options.idleGap (see idleGapDur) — the integration suite does this
+// to keep PTY-driven tests fast.
 const idleCompletionGap = 8 * time.Second
 
 // markerConfirmGap is the (shorter) quiet window used once an end-of-turn marker
@@ -386,7 +396,26 @@ const idleCompletionGap = 8 * time.Second
 // end-of-turn marker from an intermediate one. Must exceed Claude's working-frame
 // cadence (its spinner repaints ~1×/s, resetting the timer) so it never elapses
 // mid-work; 2s clears that with margin while keeping per-turn latency low.
+// Default; per-Conversation override via Options.markerGap (see markerGapDur).
 const markerConfirmGap = 2 * time.Second
+
+// idleGapDur / markerGapDur return this Conversation's completion windows: the
+// unexported Options override when set (tests), else the package default. opts
+// is fixed at Open and never mutated, so these are safe to call from the
+// idleCompletionWatcher goroutine without synchronization.
+func (c *Conversation) idleGapDur() time.Duration {
+	if c.opts.idleGap > 0 {
+		return c.opts.idleGap
+	}
+	return idleCompletionGap
+}
+
+func (c *Conversation) markerGapDur() time.Duration {
+	if c.opts.markerGap > 0 {
+		return c.opts.markerGap
+	}
+	return markerConfirmGap
+}
 
 // idleCompletionWatcher is a fallback end-of-turn detector. The primary
 // detector is the adapter's screen marker (Claude Code's "✻ <verb> for Ns"
@@ -402,7 +431,7 @@ func (c *Conversation) idleCompletionWatcher() {
 	}
 	notifyCh, unsubscribe := c.screen.Subscribe()
 	defer unsubscribe()
-	timer := time.NewTimer(idleCompletionGap)
+	timer := time.NewTimer(c.idleGapDur())
 	defer timer.Stop()
 	// gap is the quiet window the screen must hold before we try to complete: the
 	// short markerConfirmGap once an end-of-turn marker has been seen, else the
@@ -418,9 +447,9 @@ func (c *Conversation) idleCompletionWatcher() {
 		c.mu.Lock()
 		marker := c.endMarkerSeen
 		c.mu.Unlock()
-		gap := idleCompletionGap
+		gap := c.idleGapDur()
 		if marker {
-			gap = markerConfirmGap
+			gap = c.markerGapDur()
 		}
 		timer.Reset(gap)
 	}
@@ -482,9 +511,9 @@ func (c *Conversation) maybeIdleComplete() {
 	if bd, ok := c.adapter.(turns.BusyDetector); ok && bd.Busy(snap) {
 		return
 	}
-	gap := idleCompletionGap
+	gap := c.idleGapDur()
 	if marker {
-		gap = markerConfirmGap
+		gap = c.markerGapDur()
 	}
 	if time.Since(turn.StartedAt) < gap {
 		return
@@ -506,7 +535,10 @@ func (c *Conversation) maybeIdleComplete() {
 	} else {
 		turn.Reason = "claude-code: idle-completion fallback (end-of-turn marker not observed)"
 	}
-	turn.Text = snap.Text
+	// Use the adapter's message extractor (when available) so Turn.Text is the
+	// clean assistant reply rather than a full-screen dump — matching the
+	// marker-event completion path in onTurnEvent.
+	turn.Text = c.assistantText(snap)
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
