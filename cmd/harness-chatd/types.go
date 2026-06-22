@@ -21,7 +21,6 @@ type runTurnRequest struct {
 	InputPolicy    *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort         string            `json:"effort,omitempty"`
 	Model          string            `json:"model,omitempty"`
-	MaxTokens      int               `json:"max_tokens,omitempty"`
 }
 
 type sessionDTO struct {
@@ -51,12 +50,11 @@ type openRequest struct {
 	Cols        int               `json:"cols,omitempty"`
 	Rows        int               `json:"rows,omitempty"`
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
-	// Effort / Model / MaxTokens are execution-mode controls threaded to
-	// wrapper.Config (claude --effort/--model, codex config overrides, token cap
-	// best-effort). Omitted/zero leaves the harness default.
-	Effort    string `json:"effort,omitempty"`
-	Model     string `json:"model,omitempty"`
-	MaxTokens int    `json:"max_tokens,omitempty"`
+	// Effort / Model are execution-mode controls threaded to wrapper.Config
+	// (claude --effort/--model, codex config overrides). Omitted leaves the
+	// harness default.
+	Effort string `json:"effort,omitempty"`
+	Model  string `json:"model,omitempty"`
 	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
 	// blocking startup interstitials. Omitted/false keeps auto-dismiss on.
 	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`

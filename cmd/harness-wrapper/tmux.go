@@ -76,9 +76,6 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 	if args.Model != "" {
 		reexec = append(reexec, "--model", args.Model)
 	}
-	if args.MaxTokens > 0 {
-		reexec = append(reexec, "--max-tokens", fmt.Sprintf("%d", args.MaxTokens))
-	}
 	reexec = append(reexec, args.HarnessName, "--")
 	reexec = append(reexec, args.HarnessArgs...)
 

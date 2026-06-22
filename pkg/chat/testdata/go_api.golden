@@ -6,7 +6,6 @@ type Options struct
 	field Env []string
 	field Effort string
 	field Model string
-	field MaxTokens int
 	field Cols int
 	field Rows int
 	field Store chat.Store

@@ -39,7 +39,6 @@ openRequest
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Model string `json:"model,omitempty"`
-	MaxTokens int `json:"max_tokens,omitempty"`
 	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
 openResponse
 	ID string `json:"id"`
@@ -58,7 +57,6 @@ runTurnRequest
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Model string `json:"model,omitempty"`
-	MaxTokens int `json:"max_tokens,omitempty"`
 runTurnResponse
 	Turn main.turnDTO `json:"turn"`
 	Session main.sessionDTO `json:"session"`

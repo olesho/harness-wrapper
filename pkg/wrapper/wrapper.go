@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -120,13 +119,6 @@ type Config struct {
 	// default. Supported harnesses map this to their native flag (Claude Code
 	// --model, Codex -c model="…").
 	Model string
-
-	// MaxTokens requests a hard output-token cap for this run. Zero leaves the
-	// harness default. Best-effort per harness: applied where the harness
-	// exposes a cap (Codex -c model_max_output_tokens), otherwise a no-op plus a
-	// harness_token_cap_unsupported trace (Claude Code has no CLI output-token
-	// flag).
-	MaxTokens int
 
 	// Classifier inspects recent harness output and produces actionable
 	// status classifications (blocked_by_cost, retry_later,
@@ -317,7 +309,6 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	applyDefaults(&cfg)
 	cfg.Args = argsWithHarnessEffort(cfg.Harness, cfg.Args, cfg.Effort)
 	cfg.Args = argsWithHarnessModel(cfg.Harness, cfg.Args, cfg.Model)
-	cfg.Args = argsWithHarnessMaxTokens(cfg.Harness, cfg.Args, cfg.MaxTokens, cfg.Trace)
 	cfg.Env = envWithHarnessEffort(cfg.Harness, cfg.Env, cfg.Effort)
 	return startSession(ctx, cfg)
 }
@@ -342,9 +333,6 @@ func validateConfig(cfg *Config) error {
 		if !harnessSupportsEffort(cfg.Harness) {
 			return fmt.Errorf("%w: Effort is only supported for claude, codex, and gemini harnesses", ErrInvalidConfig)
 		}
-	}
-	if cfg.MaxTokens < 0 {
-		return fmt.Errorf("%w: MaxTokens must be non-negative", ErrInvalidConfig)
 	}
 	return nil
 }
@@ -421,37 +409,6 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 	default:
 		return args
 	}
-}
-
-// argsWithHarnessMaxTokens applies a hard output-token cap where the harness
-// exposes one. Codex takes it as a config override; Claude Code has no CLI
-// output-token flag, so it degrades to a no-op plus a trace (the seam is here
-// for when/if one lands). An explicit cap already in args wins.
-func argsWithHarnessMaxTokens(harness string, args []string, maxTokens int, tr trace.Emitter) []string {
-	if maxTokens <= 0 {
-		return args
-	}
-	switch normHarness(harness) {
-	case "codex":
-		if argsContainConfigKey(args, "model_max_output_tokens") {
-			return args
-		}
-		return prependArgs(args, "-c", "model_max_output_tokens="+strconv.Itoa(maxTokens))
-	default:
-		emitTokenCapUnsupported(tr, normHarness(harness), maxTokens)
-		return args
-	}
-}
-
-func emitTokenCapUnsupported(tr trace.Emitter, harness string, maxTokens int) {
-	if tr == nil {
-		return
-	}
-	tr.Emit(trace.Event{
-		At:     time.Now(),
-		Kind:   "harness_token_cap_unsupported",
-		Fields: map[string]any{"harness": harness, "max_tokens": maxTokens},
-	})
 }
 
 func prependArgs(args []string, prefix ...string) []string {

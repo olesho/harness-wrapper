@@ -1,5 +1,4 @@
 --effort <*flag.stringValue> = "" : reasoning effort for supported harnesses (low, medium, high, xhigh, max)
---max-tokens <*flag.intValue> = "0" : hard output-token cap where the harness supports one (0 = harness default)
 --model <*flag.stringValue> = "" : model id for supported harnesses (claude --model, codex -c model)
 --tmux-child <*flag.stringValue> = "" : internal: in-pane re-exec marker; do not set manually
 --tmux-session <*flag.stringValue> = "" : spawn the run inside a detached tmux session named hw-<value> and exit immediately

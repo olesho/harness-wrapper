@@ -4,8 +4,6 @@ import (
 	"io"
 	"reflect"
 	"testing"
-
-	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
 )
 
 func TestArgsWithHarnessModel(t *testing.T) {
@@ -78,39 +76,6 @@ func TestArgsWithHarnessModel(t *testing.T) {
 	}
 }
 
-func TestArgsWithHarnessMaxTokens(t *testing.T) {
-	t.Run("codex cap as config override", func(t *testing.T) {
-		got := argsWithHarnessMaxTokens("codex", []string{"exec"}, 32000, trace.Discard)
-		want := []string{"-c", "model_max_output_tokens=32000", "exec"}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("argsWithHarnessMaxTokens() = %v, want %v", got, want)
-		}
-	})
-	t.Run("codex existing cap wins", func(t *testing.T) {
-		args := []string{"-c", "model_max_output_tokens=10", "exec"}
-		got := argsWithHarnessMaxTokens("codex", args, 32000, trace.Discard)
-		if !reflect.DeepEqual(got, args) {
-			t.Fatalf("argsWithHarnessMaxTokens() = %v, want %v", got, args)
-		}
-	})
-	t.Run("zero leaves args unchanged", func(t *testing.T) {
-		got := argsWithHarnessMaxTokens("codex", []string{"exec"}, 0, trace.Discard)
-		if !reflect.DeepEqual(got, []string{"exec"}) {
-			t.Fatalf("argsWithHarnessMaxTokens() = %v, want [exec]", got)
-		}
-	})
-	t.Run("claude-code is a no-op plus an unsupported trace", func(t *testing.T) {
-		cap := &captureEmitter{}
-		got := argsWithHarnessMaxTokens("claude-code", []string{"-p"}, 32000, cap)
-		if !reflect.DeepEqual(got, []string{"-p"}) {
-			t.Fatalf("args changed for claude-code: %v", got)
-		}
-		if len(cap.events) != 1 || cap.events[0].Kind != "harness_token_cap_unsupported" {
-			t.Fatalf("want one harness_token_cap_unsupported event, got %v", cap.events)
-		}
-	})
-}
-
 // TestHarnessNameNormalization guards the linchpin fix: the chat layer passes
 // "claude-code", which must reach the same effort path as "claude".
 func TestHarnessNameNormalization(t *testing.T) {
@@ -133,14 +98,3 @@ func TestValidateConfig_ClaudeCodeEffort(t *testing.T) {
 		t.Fatalf("validateConfig() = %v, want nil", err)
 	}
 }
-
-func TestValidateConfig_NegativeMaxTokens(t *testing.T) {
-	err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: "codex", MaxTokens: -1})
-	if err == nil {
-		t.Fatal("validateConfig() = nil, want error for negative MaxTokens")
-	}
-}
-
-type captureEmitter struct{ events []trace.Event }
-
-func (c *captureEmitter) Emit(ev trace.Event) { c.events = append(c.events, ev) }

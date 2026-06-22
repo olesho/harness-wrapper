@@ -68,7 +68,6 @@ func runOneShot(args []string) int {
 		Args:       parsed.HarnessArgs,
 		Effort:     parsed.Effort,
 		Model:      parsed.Model,
-		MaxTokens:  parsed.MaxTokens,
 		WorkingDir: wd,
 		// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*): when
 		// harness-wrapper itself runs inside a Claude Code session, a nested

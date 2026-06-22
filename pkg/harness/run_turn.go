@@ -81,12 +81,11 @@ type TurnConfig struct {
 	WorkingDir string
 	Env        []string
 
-	// Effort, Model, MaxTokens are execution-mode knobs forwarded to
-	// chat.Options → wrapper.Config (Claude Code --effort/--model, Codex config
-	// overrides, token cap best-effort). Empty/zero leaves the harness default.
-	Effort    string
-	Model     string
-	MaxTokens int
+	// Effort and Model are execution-mode knobs forwarded to chat.Options →
+	// wrapper.Config (Claude Code --effort/--model, Codex config overrides).
+	// Empty leaves the harness default.
+	Effort string
+	Model  string
 
 	// Prompt is submitted as one user message.
 	Prompt string
@@ -175,7 +174,6 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 		Env:            cfg.Env,
 		Effort:         cfg.Effort,
 		Model:          cfg.Model,
-		MaxTokens:      cfg.MaxTokens,
 		Cols:           cfg.Cols,
 		Rows:           cfg.Rows,
 		Store:          store,

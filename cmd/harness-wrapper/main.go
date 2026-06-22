@@ -88,7 +88,6 @@ func runHarnessWrapper(args []string) int {
 		Harness:    parsed.HarnessName,
 		Effort:     parsed.Effort,
 		Model:      parsed.Model,
-		MaxTokens:  parsed.MaxTokens,
 	})
 	if err != nil {
 		emitCLIExitTrace(traceEmitter, res, err)

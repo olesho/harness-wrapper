@@ -37,12 +37,10 @@ type Options struct {
 	// process's environment.
 	Env []string
 
-	// Effort, Model, MaxTokens are execution-mode knobs forwarded to
-	// wrapper.Config; see harness-wrapper wrapper.Config. Empty/zero leaves the
-	// harness default.
-	Effort    string
-	Model     string
-	MaxTokens int
+	// Effort and Model are execution-mode knobs forwarded to wrapper.Config; see
+	// harness-wrapper wrapper.Config. Empty leaves the harness default.
+	Effort string
+	Model  string
 
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
@@ -204,7 +202,6 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		Harness:    opts.Harness,
 		Effort:     opts.Effort,
 		Model:      opts.Model,
-		MaxTokens:  opts.MaxTokens,
 	}
 	// When the adapter can recover the harness's own session id from a raw
 	// output line, tap the wrapper's durable, no-drop line stream to capture
