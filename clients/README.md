@@ -2,6 +2,9 @@
 
 Reference clients for the [`harness-chatd`](../cmd/harness-chatd) HTTP + SSE sidecar.
 
+> 📖 The full endpoint reference, SSE envelope, and protocol walkthrough are in the
+> **[HTTP Gateway guide](../docs/md/guide/gateway.md)**. This file only covers running the examples.
+
 ## Run the sidecar
 
 ```sh
@@ -9,22 +12,6 @@ go run ./cmd/harness-chatd --bind 127.0.0.1:8080
 ```
 
 > **Auth:** none in v1. Bind to localhost only.
-
-## HTTP surface
-
-| Method | Path | Body | Response |
-|---|---|---|---|
-| `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?}` | `{id}` |
-| `GET`  | `/v1/conversations` | — | `[{id, harness, session_id?}]` |
-| `DELETE` | `/v1/conversations/{id}` | — | 204 |
-| `POST` | `/v1/conversations/{id}/control` | — | `{token}` |
-| `DELETE` | `/v1/conversations/{id}/control/{token}` | — | 204 |
-| `POST` | `/v1/conversations/{id}/messages` | `{token, text}` | `{turn_id}` |
-| `GET`  | `/v1/conversations/{id}/events` | — | SSE stream of `{turn, error?}` |
-| `GET`  | `/v1/conversations/{id}/history` | — | `{turns: [...]}` |
-| `GET`  | `/healthz` | — | `{ok: true}` |
-
-Errors: `{error, code}` with HTTP status mapped from `pkg/chat` sentinels.
 
 ## Python
 

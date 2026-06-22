@@ -1,0 +1,57 @@
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Five testing tiers">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.5; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.6; }
+    .warn { fill: var(--d-lane); stroke: var(--d-warn); stroke-width: 1.5; stroke-dasharray: 5 3; }
+    .badge { fill: var(--d-accent); }
+    .bt { fill: #fff; font-family: var(--font-mono, monospace); font-size: 13px; font-weight: 700; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 13px; font-weight: 700; }
+    .t { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11px; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .mono { font-family: var(--font-mono, monospace); }
+    .line { stroke: var(--d-line); stroke-width: 1.4; fill: none; }
+  </style>
+
+  <!-- Tier rows: L0 (top) .. L4 (bottom) -->
+  <!-- L0 -->
+  <rect class="node" x="60" y="36" width="560" height="52" rx="9"/>
+  <circle class="badge" cx="86" cy="62" r="15"/><text class="bt" x="86" y="67" text-anchor="middle">0</text>
+  <text class="tb" x="116" y="58">API-freeze</text>
+  <text class="ts" x="116" y="76">HTTP routes + wire DTOs + CLI flags + exported pkg/chat API — golden snapshots</text>
+  <text class="ts mono" x="612" y="67" text-anchor="end">UPDATE_GOLDEN=1</text>
+
+  <!-- L1 -->
+  <rect class="node" x="60" y="96" width="560" height="52" rx="9"/>
+  <circle class="badge" cx="86" cy="122" r="15"/><text class="bt" x="86" y="127" text-anchor="middle">1</text>
+  <text class="tb" x="116" y="118">Pattern units</text>
+  <text class="ts" x="116" y="136">the adapter regexes / markers in isolation (✻ verb for Ns · Token usage:)</text>
+
+  <!-- L2 -->
+  <rect class="node" x="60" y="156" width="560" height="52" rx="9"/>
+  <circle class="badge" cx="86" cy="182" r="15"/><text class="bt" x="86" y="187" text-anchor="middle">2</text>
+  <text class="tb" x="116" y="178">Corpus replay</text>
+  <text class="ts" x="116" y="196">recorded byte-streams → adapter → turn boundaries + extracted text (test/corpus/**)</text>
+
+  <!-- L3 (key timing layer) -->
+  <rect class="accent" x="60" y="216" width="560" height="56" rx="9"/>
+  <circle class="badge" cx="86" cy="244" r="15"/><text class="bt" x="86" y="249" text-anchor="middle">3</text>
+  <text class="tb" x="116" y="240">Fake-harness integration</text>
+  <text class="ts" x="116" y="258">full PTY → screen → turns → chat → HTTP against a scriptable real-PTY fake</text>
+  <text class="ts" x="116" y="271">— the only layer that exercises the watcher's wall-clock timing</text>
+
+  <!-- L4 (non-hermetic) -->
+  <rect class="warn" x="60" y="280" width="560" height="56" rx="9"/>
+  <circle cx="86" cy="308" r="15" fill="var(--d-warn)"/><text class="bt" x="86" y="313" text-anchor="middle">4</text>
+  <text class="tb" x="116" y="304">Live conformance + drift</text>
+  <text class="ts" x="116" y="322">real installed binaries: version-drift check + sentinel round-trip per harness</text>
+  <text class="ts mono" x="612" y="313" text-anchor="end">HARNESS_WRAPPER_CONFORMANCE=1</text>
+
+  <!-- right bracket: hermetic vs not -->
+  <path class="line" d="M634,40 L644,40 L644,204 L634,204"/>
+  <text class="ts" x="650" y="118" transform="rotate(90 650 118)" text-anchor="middle">hermetic · per-commit</text>
+  <path class="line" d="M634,284 L644,284 L644,332 L634,332"/>
+  <text class="ts" x="654" y="308" transform="rotate(90 654 308)" text-anchor="middle">nightly</text>
+
+  <text class="ts" x="60" y="364">Layers 1–2 verify the adapter at rest — green forever, even the day a new harness version breaks every user.</text>
+  <text class="ts" x="60" y="380">Layer 3 catches timing regressions; Layer 4 catches upstream drift. Both are what keep the screen-scrape contract honest.</text>
+</svg>

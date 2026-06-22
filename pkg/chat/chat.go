@@ -146,9 +146,11 @@ type Session struct {
 	WorkingDir string
 	CreatedAt  time.Time
 	// HarnessSessionID is the ID the underlying harness assigned to its
-	// own session (Codex's resume UUID, Claude Code's session UUID).
-	// Empty until detected; v1 leaves this empty — extraction is
-	// scheduled for a follow-up.
+	// own session (Codex's resume UUID, Claude Code's session UUID). It is
+	// populated once the adapter surfaces it — from the rendered screen
+	// (turns.SessionIDExtractor) or the raw output line stream
+	// (turns.RawSessionIDExtractor, e.g. Claude Code's "claude --resume <uuid>"
+	// exit hint). Empty until then, and for harnesses with no extractor.
 	HarnessSessionID string
 }
 
@@ -192,6 +194,11 @@ var (
 	// ErrUnknownOption is returned by Answer when the supplied option id or
 	// alias matches none of the request's options.
 	ErrUnknownOption = errors.New("chat: unknown input option")
+
+	// ErrQuitUnsupported is returned by Quit when the harness adapter exposes
+	// no graceful-quit sequence (it does not implement turns.Quitter). The
+	// caller should fall back to Close, which signals the process.
+	ErrQuitUnsupported = errors.New("chat: harness has no graceful-quit sequence")
 )
 
 // newID returns a fresh 16-byte hex ID. Used for chat-level Session

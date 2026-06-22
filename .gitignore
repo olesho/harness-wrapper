@@ -7,3 +7,6 @@
 clients/python/__pycache__/
 harness-wrapper-port
 /harness-chatd
+
+# Generated docs site (canonical sources live in docs/md/; build with `make docs`).
+/docs/html/

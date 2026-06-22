@@ -174,6 +174,22 @@ type SessionIDExtractor interface {
 	ExtractSessionID(snap screen.Snapshot) (string, bool)
 }
 
+// RawSessionIDExtractor is an optional capability adapters may implement to
+// surface the harness's own session ID from a single RAW PTY output line,
+// rather than from the rendered screen. Some harnesses (Claude Code) only print
+// their session UUID — e.g. the "claude --resume <uuid>" hint — to the normal
+// screen as the TUI tears down on exit, where it never lands in the vt100
+// snapshot a SessionIDExtractor would scrape. The chat layer feeds every raw
+// line of the harness's output (via the wrapper's durable line tap) to this
+// extractor; once a non-empty ID is returned it is persisted and no longer
+// queried. Lines carry raw ANSI/control bytes, so implementations must tolerate
+// non-matching/polluted lines by returning ("", false).
+type RawSessionIDExtractor interface {
+	// ExtractSessionIDFromLine returns the harness-assigned session UUID if it
+	// appears in line, else ("", false).
+	ExtractSessionIDFromLine(line string) (string, bool)
+}
+
 // TranscriptReader is an optional capability adapters may implement to
 // provide access to the harness's persisted conversation log. The chat
 // layer uses this to hydrate Conversation.History() once a harness

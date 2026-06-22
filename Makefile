@@ -1,4 +1,4 @@
-.PHONY: help test build check-versions rebake-corpus rebake-corpus-all schema-canary-gemini
+.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-gemini
 
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Kept in sync with test/scripts/<harness>/*.json.
@@ -10,6 +10,8 @@ help:
 	@echo ""
 	@echo "  make test                  hermetic suite (go vet + gofmt + go test -race)"
 	@echo "  make build                 go build ./..."
+	@echo "  make docs                  build the docs site (docs/md/ -> docs/html/)"
+	@echo "  make docs-serve            preview the docs site at http://localhost:4321"
 	@echo "  make check-versions        offline upstream-version drift check (npm registry)"
 	@echo "  make rebake-corpus HARNESS=<name> SCENARIO=<name>"
 	@echo "                             re-record one scenario via screenbench-record --script"
@@ -33,12 +35,22 @@ test:
 build:
 	go build ./...
 
+# docs: regenerate the static documentation site from the canonical markdown
+# under docs/md/ into docs/html/ (a gitignored build artifact). The generator is
+# a nested Go module (docs/gen) so its deps don't touch the main module.
+docs:
+	cd docs/gen && go run . build
+
+# docs-serve: preview the built site locally (override the port with PORT).
+docs-serve:
+	cd docs/gen && go run . serve
+
 check-versions:
 	@go run ./internal/cmd/upstream-version-sentry 2>/dev/null; \
 	code=$$?; \
 	case $$code in \
 		0) echo "" ; echo "✓ all pins match latest" ;; \
-		1) echo "" ; echo "⚠ drift detected — see docs/upgrade-playbook.md (unit 7) when ready" ;; \
+		1) echo "" ; echo "⚠ drift detected — see docs/md/internal/versions-drift.md when ready" ;; \
 		2) echo "" ; echo "✗ sentry could not query the npm registry" ; exit 2 ;; \
 	esac
 
@@ -85,7 +97,7 @@ endif
 # harness. Spends real API dollars for codex/claude (gemini uses
 # local oauth). After recording, re-runs the adapter test suite to
 # surface any TUI-marker drift — failure means escalate to the
-# upgrade playbook (docs/upgrade-playbook.md).
+# upgrade playbook (docs/md/internal/versions-drift.md).
 rebake-corpus-all:
 	@echo "▶ rebake-corpus-all will run 18 live recordings (6 scenarios × 3 harnesses)."
 	@echo "  codex + claude consume API tokens; estimated total ~\$$0.50."
@@ -103,13 +115,13 @@ rebake-corpus-all:
 	echo ""; \
 	if [ -n "$$failed" ]; then \
 		echo "✗ failed scenarios:$$failed"; \
-		echo "  Diagnose with the upgrade playbook (docs/upgrade-playbook.md)."; \
+		echo "  Diagnose with the upgrade playbook (docs/md/internal/versions-drift.md)."; \
 		exit 1; \
 	fi; \
 	echo "▶ all scenarios recorded; running adapter regression..."; \
 	go test -race ./pkg/turns/harness/... ./internal/screenbench/scenario/ || { \
 		echo "✗ adapter tests failed against fresh corpus — TUI marker likely shifted."; \
-		echo "  See docs/upgrade-playbook.md."; \
+		echo "  See docs/md/internal/versions-drift.md."; \
 		exit 1; \
 	}; \
 	echo "✓ corpus refreshed and adapter tests green."

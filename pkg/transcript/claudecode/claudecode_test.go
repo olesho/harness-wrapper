@@ -72,6 +72,50 @@ func TestReadAgainstFixture(t *testing.T) {
 	}
 }
 
+// TestReadResolvesSymlinkedWorkingDir is the regression test for the symlinked
+// cwd slug mismatch: Claude Code names the project dir from the REALPATH of the
+// working dir (it resolves symlinks first), so a cwd under a symlinked root
+// (macOS /var and /tmp both link into /private) is written under the resolved
+// slug. The reader must EvalSymlinks before encoding or it never finds the file.
+func TestReadResolvesSymlinkedWorkingDir(t *testing.T) {
+	root := t.TempDir()
+
+	// A real working dir and a symlink pointing at it.
+	base := t.TempDir()
+	realWD := filepath.Join(base, "realproj")
+	if err := os.MkdirAll(realWD, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkWD := filepath.Join(base, "linkproj")
+	if err := os.Symlink(realWD, linkWD); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claude writes under the realpath slug.
+	resolved, err := filepath.EvalSymlinks(realWD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projDir := filepath.Join(root, EncodedCWD(resolved))
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"type":"user","message":{"role":"user","content":"hello"},"timestamp":"2026-05-14T12:00:00Z"}
+`
+	if err := os.WriteFile(filepath.Join(projDir, "sess.jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reading via the SYMLINK path must resolve to the realpath slug and find it.
+	evs, err := (&Reader{ProjectsRoot: root}).Read("sess", linkWD)
+	if err != nil {
+		t.Fatalf("Read via symlink: %v", err)
+	}
+	if len(evs) != 1 || evs[0].Role != "user" || evs[0].Text != "hello" {
+		t.Fatalf("unexpected events: %+v", evs)
+	}
+}
+
 // TestReadReturnsCanonicalEvents locks the P2b contract: Read returns canonical
 // transcript.Event values (Type=text, Source=file) with the native message UUID
 // captured for dedup identity.

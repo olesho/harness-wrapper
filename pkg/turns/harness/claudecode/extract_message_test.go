@@ -107,10 +107,41 @@ func TestExtractMessage_NoBulletReturnsFalse(t *testing.T) {
 	}
 }
 
-// QuitSequence is the graceful-exit keys RunTurn sends before SIGTERM.
+// QuitSequence is the graceful-exit keystrokes RunTurn sends before SIGTERM:
+// the "/quit" slash command plus Claude's enhanced Enter (CSI 13 u), which is
+// what actually submits the composer in Claude's kitty-protocol TUI.
 func TestQuitSequence(t *testing.T) {
 	q := (&Adapter{}).QuitSequence()
-	if len(q) != 2 || q[0] != 0x03 || q[1] != 0x03 {
-		t.Fatalf("QuitSequence = %v, want double Ctrl-C [3 3]", q)
+	if want := "/quit\x1b[13u"; string(q) != want {
+		t.Fatalf("QuitSequence = %q, want %q", q, want)
+	}
+}
+
+// ExtractSessionIDFromLine pulls the session UUID out of the "claude --resume
+// <uuid>" exit hint as it appears in the raw PTY line stream — including when
+// trailing ANSI styling and a carriage return ride along on the same line.
+func TestExtractSessionIDFromLine(t *testing.T) {
+	a := &Adapter{}
+	const id = "74ca2184-c064-492c-88dc-c79c128de13e"
+	cases := []struct {
+		name   string
+		line   string
+		want   string
+		wantOK bool
+	}{
+		{"plain", "claude --resume " + id, id, true},
+		{"ansi-and-cr", "  claude --resume " + id + "\x1b[22m\r", id, true},
+		{"with-prose", "Resume this conversation with: claude --resume " + id + " later", id, true},
+		{"no-hint", "✻ Baked for 5s", "", false},
+		{"empty", "", "", false},
+		{"bad-uuid", "claude --resume not-a-uuid", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := a.ExtractSessionIDFromLine(tc.line)
+			if ok != tc.wantOK || got != tc.want {
+				t.Fatalf("ExtractSessionIDFromLine(%q) = (%q, %v), want (%q, %v)", tc.line, got, ok, tc.want, tc.wantOK)
+			}
+		})
 	}
 }
