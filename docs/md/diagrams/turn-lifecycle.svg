@@ -1,0 +1,78 @@
+<svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Turn lifecycle">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.5; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.6; }
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; stroke-dasharray: 5 3; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 13px; font-weight: 700; }
+    .t { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12px; }
+    .mono { font-family: var(--font-mono, monospace); }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .line { stroke: var(--d-line); stroke-width: 1.6; fill: none; }
+    .feed { stroke: var(--d-accent); stroke-width: 1.5; fill: none; stroke-dasharray: 4 3; }
+    .ok { fill: var(--d-ok); }
+    .er { fill: var(--d-err); }
+  </style>
+  <defs>
+    <marker id="l-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--d-line)"/>
+    </marker>
+    <marker id="l-feed" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--d-accent)"/>
+    </marker>
+  </defs>
+
+  <!-- Send -->
+  <rect class="accent" x="24" y="150" width="120" height="56" rx="10"/>
+  <text class="tb mono" x="84" y="173" text-anchor="middle">Send(text)</text>
+  <text class="ts" x="84" y="191" text-anchor="middle">control token held</text>
+
+  <!-- User turn (records instantly) -->
+  <rect class="node" x="188" y="40" width="200" height="56" rx="9"/>
+  <text class="t mono" x="288" y="62" text-anchor="middle">user turn · RoleUser</text>
+  <text class="ts ok" x="288" y="80" text-anchor="middle">recorded → complete immediately</text>
+  <path class="line" marker-end="url(#l-arr)" d="M144,158 C170,110 175,90 186,82"/>
+
+  <!-- Assistant turn lifecycle -->
+  <text class="ts" x="188" y="128" text-anchor="start">assistant turn · RoleAssistant</text>
+  <rect class="node" x="188" y="150" width="120" height="56" rx="9"/>
+  <text class="tb mono" x="248" y="174" text-anchor="middle">pending</text>
+  <text class="ts" x="248" y="192" text-anchor="middle">queued</text>
+
+  <rect class="accent" x="346" y="150" width="120" height="56" rx="9"/>
+  <text class="tb mono" x="406" y="174" text-anchor="middle">streaming</text>
+  <text class="ts" x="406" y="192" text-anchor="middle">work observed</text>
+
+  <rect class="node" x="560" y="92" width="170" height="50" rx="9"/>
+  <text class="tb mono ok" x="645" y="114" text-anchor="middle">complete</text>
+  <text class="ts" x="645" y="131" text-anchor="middle">TurnComplete · final reply</text>
+
+  <rect class="node" x="560" y="214" width="170" height="50" rx="9"/>
+  <text class="tb mono er" x="645" y="236" text-anchor="middle">errored</text>
+  <text class="ts" x="645" y="253" text-anchor="middle">Errored / Blocked</text>
+
+  <path class="line" marker-end="url(#l-arr)" d="M144,180 L186,180"/>
+  <path class="line" marker-end="url(#l-arr)" d="M308,178 L344,178"/>
+  <text class="ts" x="326" y="170" text-anchor="middle">PTY</text>
+  <path class="line" marker-end="url(#l-arr)" d="M466,168 C520,150 530,130 558,120"/>
+  <path class="line" marker-end="url(#l-arr)" d="M466,190 C520,210 530,225 558,235"/>
+
+  <!-- Watcher / adapter feeding state from below -->
+  <rect class="lane" x="188" y="300" width="380" height="78" rx="10"/>
+  <text class="ts" x="378" y="322" text-anchor="middle">turns.Watcher — drives the transitions above</text>
+  <rect class="node" x="206" y="332" width="160" height="36" rx="8"/>
+  <text class="t mono" x="286" y="354" text-anchor="middle">adapter.OnScreen</text>
+  <rect class="node" x="386" y="332" width="166" height="36" rx="8"/>
+  <text class="t mono" x="469" y="354" text-anchor="middle">OnWrapperStatus</text>
+  <path class="feed" marker-end="url(#l-feed)" d="M406,330 L406,208"/>
+  <path class="feed" marker-end="url(#l-feed)" d="M520,332 C540,300 600,280 645,266"/>
+  <text class="ts" x="486" y="300" text-anchor="middle">TurnComplete · Errored · Blocked</text>
+
+  <!-- Events emitted -->
+  <rect class="accent" x="600" y="300" width="140" height="78" rx="10"/>
+  <text class="tb mono" x="670" y="328" text-anchor="middle">Events()</text>
+  <text class="ts" x="670" y="346" text-anchor="middle">EventTurn on</text>
+  <text class="ts" x="670" y="360" text-anchor="middle">every state change</text>
+  <path class="feed" marker-end="url(#l-feed)" d="M645,142 C690,180 690,250 685,298"/>
+
+  <text class="ts" x="24" y="408">One assistant turn per Send. ErrTurnInFlight rejects a second Send while a turn is pending/streaming. user/assistant turns persist to the Store.</text>
+</svg>

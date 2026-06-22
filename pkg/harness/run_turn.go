@@ -9,7 +9,6 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
-	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -17,30 +16,24 @@ import (
 // own after the quit sequence before conv.Close escalates to a signal.
 const gracefulQuitWait = 3 * time.Second
 
-// gracefulQuit asks the harness to exit cleanly (via its turns.Quitter
-// sequence) so it can flush/persist before termination, and waits briefly for
-// the process to go away. Returns true if a quit sequence was sent (the caller
-// may then re-read a freshly flushed transcript). A harness without a Quitter,
-// or an unavailable writer, is a no-op returning false — conv.Close then stops
-// it with a signal as before.
+// gracefulQuit asks the harness to exit cleanly via Conversation.Quit (its
+// turns.Quitter sequence — for Claude Code, the "/quit" slash command) so it can
+// flush/persist its transcript before termination, and waits briefly for the
+// process to go away. Returns true if the quit was sent: the caller may then
+// re-read a freshly flushed transcript AND the harness session id the durable
+// line tap captured from the exit output. A harness with no quit sequence is a
+// no-op returning false — conv.Close then stops it with a signal as before.
+//
+// Quit (not the old wrapper.AcquireWriter dance) is what makes this work: the
+// chat Conversation holds the PTY writer lock for its whole life, so an external
+// AcquireWriter here always failed and the quit keys were never sent — the
+// harness only ever died on Close's SIGTERM.
 func gracefulQuit(conv *chat.Conversation) bool {
-	q, ok := conv.Adapter().(turns.Quitter)
-	if !ok {
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulQuitWait)
+	defer cancel()
+	if err := conv.Quit(ctx); err != nil {
 		return false
 	}
-	keys := q.QuitSequence()
-	if len(keys) == 0 {
-		return false
-	}
-	release, ok := conv.Wrapper().AcquireWriter()
-	if !ok {
-		return false
-	}
-	if _, err := conv.Wrapper().WriteStdin(keys); err != nil {
-		release()
-		return false
-	}
-	release()
 
 	done := make(chan struct{})
 	go func() { _, _ = conv.Wrapper().Wait(); close(done) }()
@@ -87,6 +80,13 @@ type TurnConfig struct {
 	// WorkingDir and Env are passed through to the harness process.
 	WorkingDir string
 	Env        []string
+
+	// Effort, Model, MaxTokens are execution-mode knobs forwarded to
+	// chat.Options → wrapper.Config (Claude Code --effort/--model, Codex config
+	// overrides, token cap best-effort). Empty/zero leaves the harness default.
+	Effort    string
+	Model     string
+	MaxTokens int
 
 	// Prompt is submitted as one user message.
 	Prompt string
@@ -173,6 +173,9 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 		Args:           cfg.Args,
 		WorkingDir:     cfg.WorkingDir,
 		Env:            cfg.Env,
+		Effort:         cfg.Effort,
+		Model:          cfg.Model,
+		MaxTokens:      cfg.MaxTokens,
 		Cols:           cfg.Cols,
 		Rows:           cfg.Rows,
 		Store:          store,
@@ -200,10 +203,16 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 
 	if cfg.ExitAfterTurn {
 		result.ProcessStoppedAfterTurn = true
-		// Ask the harness to exit gracefully first (so it can flush/persist),
-		// then re-read History in case that produced a transcript; conv.Close
+		// Ask the harness to exit gracefully first (so it can flush/persist).
+		// The graceful exit prints the harness session id, which the durable
+		// line tap captures into the stored Session — so after the quit we
+		// refresh result.Session (now carrying HarnessSessionID) and re-read
+		// History, which is transcript-backed once that id is known. conv.Close
 		// below still guarantees termination if the harness ignores the quit.
 		if gracefulQuit(conv) {
+			if s, serr := store.GetSession(context.Background(), conv.SessionID()); serr == nil && s != nil {
+				result.Session = *s
+			}
 			if h, herr := conv.History(context.Background()); herr == nil && len(h) > 0 {
 				result.History = h
 			}

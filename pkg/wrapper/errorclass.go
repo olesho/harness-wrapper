@@ -16,15 +16,15 @@ type ErrorClass int
 const (
 	// ErrNone is the zero value: not an error (clean exit, waiting-for-input,
 	// idle). Callers handle clean outcomes before consulting any error policy.
-	ErrNone ErrorClass = iota
-	ErrRateLimited     // 429 / usage|session limit / rate limit — transient, resets
-	ErrAuth            // 401 / invalid key — fatal
-	ErrBilling         // 402 / payment required / insufficient credits / quota exceeded — fatal
-	ErrModelNotFound   // 404 / model does not exist
-	ErrContextOverflow // context length / token limit exceeded (reserved; not yet emitted by built-in packs)
-	ErrTimeout         // request/connection timeout / deadline exceeded
-	ErrTransient       // 5xx / transport reset / temporary failure
-	ErrUnknown         // unclassifiable failure
+	ErrNone            ErrorClass = iota
+	ErrRateLimited                // 429 / usage|session limit / rate limit — transient, resets
+	ErrAuth                       // 401 / invalid key — fatal
+	ErrBilling                    // 402 / payment required / insufficient credits / quota exceeded — fatal
+	ErrModelNotFound              // 404 / model does not exist
+	ErrContextOverflow            // context length / token limit exceeded (reserved; not yet emitted by built-in packs)
+	ErrTimeout                    // request/connection timeout / deadline exceeded
+	ErrTransient                  // 5xx / transport reset / temporary failure
+	ErrUnknown                    // unclassifiable failure
 )
 
 // String returns the canonical wire/display name. These strings are a

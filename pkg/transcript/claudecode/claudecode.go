@@ -94,11 +94,31 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(root, EncodedCWD(workingDir), sessionID+".jsonl")
-	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("claudecode transcript: %s: %w", path, err)
+	// Claude Code derives the project dir from the REALPATH of the cwd (it
+	// resolves symlinks before encoding), so a symlinked working dir yields a
+	// slug that never matches unless we resolve too. macOS is the common trap:
+	// temp dirs live under /var and /tmp, both symlinks into /private, so a cwd
+	// of /var/folders/... is written as "-private-var-folders-...". Try the
+	// resolved slug first, then fall back to the path as given — covering a
+	// harness that did NOT resolve, and a since-removed dir EvalSymlinks can't
+	// stat.
+	candidates := make([]string, 0, 2)
+	if resolved, rerr := filepath.EvalSymlinks(workingDir); rerr == nil && resolved != workingDir {
+		candidates = append(candidates, resolved)
 	}
-	return path, nil
+	candidates = append(candidates, workingDir)
+
+	var firstPath string
+	var firstErr error
+	for _, wd := range candidates {
+		path := filepath.Join(root, EncodedCWD(wd), sessionID+".jsonl")
+		if _, statErr := os.Stat(path); statErr == nil {
+			return path, nil
+		} else if firstPath == "" {
+			firstPath, firstErr = path, statErr
+		}
+	}
+	return "", fmt.Errorf("claudecode transcript: %s: %w", firstPath, firstErr)
 }
 
 // The Claude line→Event parser (Events/userLineEvents/assistantLineEvents) lives

@@ -442,15 +442,28 @@ func (*Adapter) Busy(snap screen.Snapshot) bool {
 	return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text)
 }
 
-// QuitSequence returns Claude Code's graceful-exit keys: two Ctrl-C presses
-// (the first arms "press again to exit", the second quits), letting Claude
-// shut down cleanly rather than being SIGTERM'd. Implements turns.Quitter.
-func (*Adapter) QuitSequence() []byte { return []byte{0x03, 0x03} }
+// quitCommand is Claude Code's "/quit" slash command followed by its enhanced
+// Enter (CSI 13 u). Claude's TUI runs the kitty keyboard protocol, so a plain
+// CR does NOT submit the composer — it only inserts a newline and "/quit" never
+// runs (see pkg/chat.submitKeyForHarness, which sends the same \x1b[13u for the
+// normal Send path). The "/quit" command exits cleanly: Claude flushes its
+// transcript and prints the "claude --resume <uuid>" hint we capture on the way
+// out (verified live on 2.1.185).
+var quitCommand = []byte("/quit\x1b[13u")
 
-// ExtractSessionID scrapes the "claude --resume <uuid>" hint that
-// identifies the on-disk transcript file. Implements turns.SessionIDExtractor.
-func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
-	m := resumeRE.FindStringSubmatch(snap.Text)
+// QuitSequence returns Claude Code's graceful-exit keystrokes: the "/quit"
+// slash command plus the enhanced Enter that submits it, letting Claude shut
+// down cleanly (flushing its transcript) rather than being SIGTERM'd.
+// Implements turns.Quitter.
+func (*Adapter) QuitSequence() []byte { return quitCommand }
+
+// ExtractSessionIDFromLine scrapes the "claude --resume <uuid>" hint that names
+// the on-disk transcript file. Claude prints it to the normal screen as the TUI
+// tears down on exit, so it shows up in the raw PTY line stream but NOT in the
+// rendered vt100 snapshot — hence this is a turns.RawSessionIDExtractor (raw
+// line) rather than a turns.SessionIDExtractor (screen scrape).
+func (*Adapter) ExtractSessionIDFromLine(line string) (string, bool) {
+	m := resumeRE.FindStringSubmatch(line)
 	if len(m) < 2 {
 		return "", false
 	}

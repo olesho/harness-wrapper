@@ -11,6 +11,8 @@ type harnessWrapperArgs struct {
 	TraceFile   string
 	TraceStderr bool
 	Effort      string
+	Model       string
+	MaxTokens   int
 	// TmuxSession requests the wrapper spawn the run inside a detached
 	// tmux session named hw-<TmuxSession> and exit immediately after
 	// `tmux new-session -d` succeeds. The wrapper will re-exec itself
@@ -78,6 +80,8 @@ func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
 	fs.StringVar(&a.TraceFile, "trace-file", "", "path to write trace events as NDJSON (default: trace events are dropped)")
 	fs.BoolVar(&a.TraceStderr, "trace-stderr", false, "write trace events as NDJSON to stderr (mutually exclusive with --trace-file)")
 	fs.StringVar(&a.Effort, "effort", "", "reasoning effort for supported harnesses (low, medium, high, xhigh, max)")
+	fs.StringVar(&a.Model, "model", "", "model id for supported harnesses (claude --model, codex -c model)")
+	fs.IntVar(&a.MaxTokens, "max-tokens", 0, "hard output-token cap where the harness supports one (0 = harness default)")
 	fs.StringVar(&a.TmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
 	fs.StringVar(&a.TmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
 	return fs

@@ -37,6 +37,13 @@ type Options struct {
 	// process's environment.
 	Env []string
 
+	// Effort, Model, MaxTokens are execution-mode knobs forwarded to
+	// wrapper.Config; see harness-wrapper wrapper.Config. Empty/zero leaves the
+	// harness default.
+	Effort    string
+	Model     string
+	MaxTokens int
+
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
 
@@ -165,7 +172,29 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 
 	scr := screen.New(opts.Cols, opts.Rows)
 
-	sess, err := wrapper.Start(ctx, wrapper.Config{
+	// Build the Conversation BEFORE starting the wrapper so the durable line
+	// tap (below) can target c.captureRawSessionID. Every field the tap reads
+	// (mu, session, store, adapter) is initialized here; sess/releaseWriter are
+	// filled in right after Start and are not touched by the tap.
+	c := &Conversation{
+		opts:    opts,
+		store:   opts.Store,
+		adapter: adapter,
+		screen:  scr,
+		queue:   newControlQueue(),
+		session: Session{
+			ID:         newID(),
+			Harness:    opts.Harness,
+			WorkingDir: opts.WorkingDir,
+			CreatedAt:  time.Now(),
+		},
+		eventCh:      make(chan ConversationEvent, opts.EventBuffer),
+		inputStateCh: make(chan struct{}, 1),
+		markerArmCh:  make(chan struct{}, 1),
+		closed:       make(chan struct{}),
+	}
+
+	cfg := wrapper.Config{
 		BinaryPath: opts.BinaryPath,
 		Args:       opts.Args,
 		WorkingDir: opts.WorkingDir,
@@ -173,10 +202,26 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		Stdin:      nil,
 		Stdout:     scr,
 		Harness:    opts.Harness,
-	})
+		Effort:     opts.Effort,
+		Model:      opts.Model,
+		MaxTokens:  opts.MaxTokens,
+	}
+	// When the adapter can recover the harness's own session id from a raw
+	// output line, tap the wrapper's durable, no-drop line stream to capture
+	// it. Claude Code prints "claude --resume <uuid>" only to the normal screen
+	// as the TUI tears down on exit, where it never reaches the rendered
+	// snapshot a turns.SessionIDExtractor scrapes — so the raw line is the only
+	// surface that carries it. Wired only when the capability is present, so
+	// other harnesses pay no per-line tap cost.
+	if _, ok := adapter.(turns.RawSessionIDExtractor); ok {
+		cfg.OnLine = c.captureRawSessionID
+	}
+
+	sess, err := wrapper.Start(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("chat: wrapper start: %w", err)
 	}
+	c.sess = sess
 
 	releaseWriter, ok := sess.AcquireWriter()
 	if !ok {
@@ -184,37 +229,22 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		_ = sess.Stop(context.Background())
 		return nil, fmt.Errorf("chat: failed to acquire wrapper writer lock")
 	}
+	c.releaseWriter = releaseWriter
 
 	// Match the PTY size to the virtual screen size so the harness's
 	// re-renders target the same dimensions our emulator is tracking.
 	_ = sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
 
-	sessionRec := Session{
-		ID:         newID(),
-		Harness:    opts.Harness,
-		WorkingDir: opts.WorkingDir,
-		CreatedAt:  time.Now(),
-	}
+	// Persist the session record. Pass a copy: the PTY read loop is already
+	// live, so the tap may touch c.session (under c.mu) concurrently — the
+	// store must not alias it.
+	sessionRec := c.session
 	if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
 		releaseWriter()
 		_ = sess.Stop(context.Background())
 		return nil, fmt.Errorf("chat: store CreateSession: %w", err)
 	}
 
-	c := &Conversation{
-		opts:          opts,
-		store:         opts.Store,
-		adapter:       adapter,
-		sess:          sess,
-		screen:        scr,
-		releaseWriter: releaseWriter,
-		queue:         newControlQueue(),
-		session:       sessionRec,
-		eventCh:       make(chan ConversationEvent, opts.EventBuffer),
-		inputStateCh:  make(chan struct{}, 1),
-		markerArmCh:   make(chan struct{}, 1),
-		closed:        make(chan struct{}),
-	}
 	c.watcher = turns.Watch(sess, scr, adapter)
 
 	go c.consumeWatcher()
@@ -224,8 +254,8 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 }
 
 // SessionID returns the chat-level session ID. Distinct from the
-// underlying harness's session ID (which is Session.HarnessSessionID
-// and is empty in v1 until adapter-level extraction lands).
+// underlying harness's session ID (Session.HarnessSessionID), which the
+// adapter surfaces from the harness's own output when available.
 func (c *Conversation) SessionID() string { return c.session.ID }
 
 // Adapter returns the per-harness turns adapter backing this conversation, so
@@ -568,6 +598,42 @@ func (c *Conversation) maybeExtractSessionID() {
 	}
 
 	c.mu.Lock()
+	c.session.HarnessSessionID = id
+	updated := c.session
+	c.mu.Unlock()
+	_ = c.store.UpdateSession(context.Background(), &updated)
+}
+
+// captureRawSessionID is the wrapper's durable line-tap callback (wired in Open
+// only when the adapter implements turns.RawSessionIDExtractor). It runs
+// synchronously in the PTY read goroutine — one call per raw output line, in
+// order — and records the harness's own session ID the moment it appears in the
+// stream (e.g. Claude Code's "claude --resume <uuid>" exit hint). Once captured
+// we stop probing. Kept cheap so it does not back-pressure the read loop:
+// a string compare short-circuits after capture, and the regex only runs while
+// the ID is still unknown.
+func (c *Conversation) captureRawSessionID(line string) {
+	c.mu.Lock()
+	already := c.session.HarnessSessionID != ""
+	c.mu.Unlock()
+	if already {
+		return
+	}
+
+	ext, ok := c.adapter.(turns.RawSessionIDExtractor)
+	if !ok {
+		return
+	}
+	id, ok := ext.ExtractSessionIDFromLine(line)
+	if !ok {
+		return
+	}
+
+	c.mu.Lock()
+	if c.session.HarnessSessionID != "" {
+		c.mu.Unlock()
+		return
+	}
 	c.session.HarnessSessionID = id
 	updated := c.session
 	c.mu.Unlock()

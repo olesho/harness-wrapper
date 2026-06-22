@@ -63,10 +63,13 @@ func runOneShot(args []string) int {
 
 	wd, _ := os.Getwd()
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
-		Harness:       parsed.HarnessName,
-		BinaryPath:    binPath,
-		Args:          parsed.HarnessArgs,
-		WorkingDir:    wd,
+		Harness:    parsed.HarnessName,
+		BinaryPath: binPath,
+		Args:       parsed.HarnessArgs,
+		Effort:     parsed.Effort,
+		Model:      parsed.Model,
+		MaxTokens:  parsed.MaxTokens,
+		WorkingDir: wd,
 		// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*): when
 		// harness-wrapper itself runs inside a Claude Code session, a nested
 		// `claude` disables session persistence and never writes the JSONL

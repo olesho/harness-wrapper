@@ -1,0 +1,92 @@
+<svg viewBox="0 0 760 510" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Conversation sequence">
+  <style>
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; }
+    .head { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.4; }
+    .step { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.3; }
+    .hb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12px; font-weight: 700; }
+    .hm { font-family: var(--font-mono, monospace); }
+    .t  { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11px; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10px; }
+    .msg { stroke: var(--d-line); stroke-width: 1.5; fill: none; }
+    .ret { stroke: var(--d-line); stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+    .ok { fill: var(--d-ok); font-family: var(--font-sans, sans-serif); font-weight: 700; font-size: 10px; }
+    .mono { font-family: var(--font-mono, monospace); }
+  </style>
+  <defs>
+    <marker id="q-arr" markerWidth="8" markerHeight="8" refX="6.5" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--d-line)"/>
+    </marker>
+  </defs>
+
+  <!-- lanes -->
+  <rect class="lane" x="14"  y="48" width="136" height="446" rx="6"/>
+  <rect class="lane" x="166" y="48" width="206" height="446" rx="6"/>
+  <rect class="lane" x="388" y="48" width="160" height="446" rx="6"/>
+  <rect class="lane" x="564" y="48" width="182" height="446" rx="6"/>
+
+  <rect class="head" x="14"  y="14" width="136" height="30" rx="6"/><text class="hb" x="82"  y="34" text-anchor="middle">Client</text>
+  <rect class="head" x="166" y="14" width="206" height="30" rx="6"/><text class="hb hm" x="269" y="34" text-anchor="middle">pkg/chat</text>
+  <rect class="head" x="388" y="14" width="160" height="30" rx="6"/><text class="hb hm" x="468" y="34" text-anchor="middle">wrapper.Session</text>
+  <rect class="head" x="564" y="14" width="182" height="30" rx="6"/><text class="hb" x="655" y="34" text-anchor="middle">harness (PTY)</text>
+
+  <!-- 1: Open -->
+  <text class="ts mono" x="82" y="70" text-anchor="middle">Open(opts)</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M150,76 L164,76"/>
+  <rect class="step" x="166" y="62" width="206" height="40" rx="6"/>
+  <text class="t" x="269" y="80" text-anchor="middle">start Session · screen · watcher</text>
+  <text class="ts" x="269" y="94" text-anchor="middle">claim writer lock for lifetime</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M372,86 L386,86"/>
+  <path class="msg" marker-end="url(#q-arr)" d="M548,92 L562,92"/>
+  <text class="ts" x="555" y="86" text-anchor="middle">spawn</text>
+
+  <!-- 2: AcquireControl -->
+  <text class="ts mono" x="82" y="126" text-anchor="middle">AcquireControl()</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M150,132 L164,132"/>
+  <path class="ret" marker-end="url(#q-arr)" d="M164,146 L150,146"/>
+  <text class="ok" x="100" y="160" text-anchor="middle">release()</text>
+
+  <!-- 3: Send -->
+  <text class="ts mono" x="82" y="184" text-anchor="middle">Send("prompt")</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M150,190 L164,190"/>
+  <rect class="step" x="166" y="176" width="206" height="40" rx="6"/>
+  <text class="t" x="269" y="194" text-anchor="middle">record user+assistant turns</text>
+  <text class="ts" x="269" y="208" text-anchor="middle">WriteStdin(text + CR)</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M372,196 L386,196"/>
+  <path class="msg" marker-end="url(#q-arr)" d="M548,200 L562,200"/>
+  <text class="ts" x="555" y="194" text-anchor="middle">CSI 13u</text>
+
+  <!-- 4: harness works, paints -->
+  <rect class="step" x="564" y="232" width="182" height="40" rx="6"/>
+  <text class="t" x="655" y="250" text-anchor="middle">work · paint frames</text>
+  <text class="ts" x="655" y="264" text-anchor="middle">spinner → reply</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M562,278 L390,278"/>
+  <text class="ts" x="476" y="272" text-anchor="middle">PTY bytes</text>
+
+  <!-- 5: screen.Write -> watcher -> adapter -->
+  <path class="msg" marker-end="url(#q-arr)" d="M386,292 L374,292"/>
+  <rect class="step" x="166" y="298" width="206" height="44" rx="6"/>
+  <text class="t" x="269" y="316" text-anchor="middle">screen.Write → watcher</text>
+  <text class="ts" x="269" y="332" text-anchor="middle">adapter.OnScreen → TurnComplete</text>
+
+  <!-- 6: event to client -->
+  <text class="ok" x="269" y="362" text-anchor="middle">turn → complete</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M164,372 L100,372"/>
+  <text class="ts mono" x="120" y="388" text-anchor="end">Events()</text>
+  <rect class="step" x="14" y="360" width="78" height="26" rx="6"/>
+  <text class="ts" x="53" y="377" text-anchor="middle">EventTurn</text>
+
+  <!-- 7: History -->
+  <text class="ts mono" x="82" y="412" text-anchor="middle">History()</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M150,418 L164,418"/>
+  <rect class="step" x="166" y="404" width="206" height="40" rx="6"/>
+  <text class="t" x="269" y="422" text-anchor="middle">pkg/transcript reads JSONL</text>
+  <text class="ts" x="269" y="436" text-anchor="middle">(fallback: Store)</text>
+  <path class="ret" marker-end="url(#q-arr)" d="M564,424 L374,424"/>
+  <text class="ts" x="468" y="418" text-anchor="middle">~/.codex · ~/.claude logs</text>
+
+  <!-- 8: Close -->
+  <text class="ts mono" x="82" y="466" text-anchor="middle">Close()</text>
+  <path class="msg" marker-end="url(#q-arr)" d="M150,472 L164,472"/>
+  <rect class="step" x="166" y="458" width="206" height="28" rx="6"/>
+  <text class="t" x="269" y="476" text-anchor="middle">stop watcher · Session · release lock</text>
+</svg>

@@ -4,6 +4,9 @@ type Options struct
 	field Args []string
 	field WorkingDir string
 	field Env []string
+	field Effort string
+	field Model string
+	field MaxTokens int
 	field Cols int
 	field Rows int
 	field Store chat.Store
@@ -18,6 +21,7 @@ type Conversation struct
 	method Close(context.Context) error
 	method Events() <-chan chat.ConversationEvent
 	method History(context.Context) ([]chat.Turn, error)
+	method Quit(context.Context) error
 	method ScreenSnapshot() screen.Snapshot
 	method Send(context.Context, string) (string, error)
 	method SessionID() string
@@ -99,3 +103,4 @@ ErrInputPending = "chat: blocked on interactive input request"
 ErrNoInputPending = "chat: no input request pending"
 ErrStaleInputRequest = "chat: stale input request id"
 ErrUnknownOption = "chat: unknown input option"
+ErrQuitUnsupported = "chat: harness has no graceful-quit sequence"

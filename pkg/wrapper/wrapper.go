@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -114,6 +115,18 @@ type Config struct {
 	// to their native controls (for example, Claude Code --effort and
 	// Codex model_reasoning_effort).
 	Effort string
+
+	// Model requests a specific model for this run. Empty leaves the harness
+	// default. Supported harnesses map this to their native flag (Claude Code
+	// --model, Codex -c model="…").
+	Model string
+
+	// MaxTokens requests a hard output-token cap for this run. Zero leaves the
+	// harness default. Best-effort per harness: applied where the harness
+	// exposes a cap (Codex -c model_max_output_tokens), otherwise a no-op plus a
+	// harness_token_cap_unsupported trace (Claude Code has no CLI output-token
+	// flag).
+	MaxTokens int
 
 	// Classifier inspects recent harness output and produces actionable
 	// status classifications (blocked_by_cost, retry_later,
@@ -303,6 +316,8 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	}
 	applyDefaults(&cfg)
 	cfg.Args = argsWithHarnessEffort(cfg.Harness, cfg.Args, cfg.Effort)
+	cfg.Args = argsWithHarnessModel(cfg.Harness, cfg.Args, cfg.Model)
+	cfg.Args = argsWithHarnessMaxTokens(cfg.Harness, cfg.Args, cfg.MaxTokens, cfg.Trace)
 	cfg.Env = envWithHarnessEffort(cfg.Harness, cfg.Env, cfg.Effort)
 	return startSession(ctx, cfg)
 }
@@ -328,12 +343,21 @@ func validateConfig(cfg *Config) error {
 			return fmt.Errorf("%w: Effort is only supported for claude, codex, and gemini harnesses", ErrInvalidConfig)
 		}
 	}
+	if cfg.MaxTokens < 0 {
+		return fmt.Errorf("%w: MaxTokens must be non-negative", ErrInvalidConfig)
+	}
 	return nil
 }
 
+// normHarness normalizes a harness name for switch matching. The chat layer
+// uses adapter-style names ("claude-code", "gemini-cli") while the CLI/effort
+// code historically switched on short names ("claude", "gemini"); normalizing
+// lets both reach the same per-harness translation. Mirrors classifier.go.
+func normHarness(h string) string { return strings.ToLower(strings.TrimSpace(h)) }
+
 func harnessSupportsEffort(harness string) bool {
-	switch harness {
-	case "claude", "codex", "gemini":
+	switch normHarness(harness) {
+	case "claude", "claude-code", "codex", "gemini", "gemini-cli":
 		return true
 	default:
 		return false
@@ -353,8 +377,8 @@ func argsWithHarnessEffort(harness string, args []string, effort string) []strin
 	if effort == "" {
 		return args
 	}
-	switch harness {
-	case "claude":
+	switch normHarness(harness) {
+	case "claude", "claude-code":
 		if argsContainFlag(args, "--effort") {
 			return args
 		}
@@ -374,6 +398,60 @@ func codexEffort(effort string) string {
 		return "xhigh"
 	}
 	return effort
+}
+
+// argsWithHarnessModel prepends a per-harness model override (Claude Code
+// --model, Codex -c model="…"). Empty leaves the harness default. An explicit
+// model flag already in args wins (so spec.harnessArgs beats the mode policy).
+func argsWithHarnessModel(harness string, args []string, model string) []string {
+	if model == "" {
+		return args
+	}
+	switch normHarness(harness) {
+	case "claude", "claude-code":
+		if argsContainFlag(args, "--model") {
+			return args
+		}
+		return prependArgs(args, "--model", model)
+	case "codex":
+		if argsContainConfigKey(args, "model") {
+			return args
+		}
+		return prependArgs(args, "-c", "model=\""+model+"\"")
+	default:
+		return args
+	}
+}
+
+// argsWithHarnessMaxTokens applies a hard output-token cap where the harness
+// exposes one. Codex takes it as a config override; Claude Code has no CLI
+// output-token flag, so it degrades to a no-op plus a trace (the seam is here
+// for when/if one lands). An explicit cap already in args wins.
+func argsWithHarnessMaxTokens(harness string, args []string, maxTokens int, tr trace.Emitter) []string {
+	if maxTokens <= 0 {
+		return args
+	}
+	switch normHarness(harness) {
+	case "codex":
+		if argsContainConfigKey(args, "model_max_output_tokens") {
+			return args
+		}
+		return prependArgs(args, "-c", "model_max_output_tokens="+strconv.Itoa(maxTokens))
+	default:
+		emitTokenCapUnsupported(tr, normHarness(harness), maxTokens)
+		return args
+	}
+}
+
+func emitTokenCapUnsupported(tr trace.Emitter, harness string, maxTokens int) {
+	if tr == nil {
+		return
+	}
+	tr.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   "harness_token_cap_unsupported",
+		Fields: map[string]any{"harness": harness, "max_tokens": maxTokens},
+	})
 }
 
 func prependArgs(args []string, prefix ...string) []string {
@@ -416,7 +494,7 @@ func configArgHasKey(arg, key string) bool {
 }
 
 func envWithHarnessEffort(harness string, env []string, effort string) []string {
-	if effort == "" || harness != "gemini" || envHasKey(env, "GEMINI_CLI_SYSTEM_SETTINGS_PATH") {
+	if effort == "" || (normHarness(harness) != "gemini" && normHarness(harness) != "gemini-cli") || envHasKey(env, "GEMINI_CLI_SYSTEM_SETTINGS_PATH") {
 		return env
 	}
 	settingsPath := writeGeminiEffortSettings(effort)

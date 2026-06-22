@@ -87,6 +87,7 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrNoControl", ErrNoControl}, {"ErrTurnInFlight", ErrTurnInFlight}, {"ErrClosed", ErrClosed},
 		{"ErrInputPending", ErrInputPending}, {"ErrNoInputPending", ErrNoInputPending},
 		{"ErrStaleInputRequest", ErrStaleInputRequest}, {"ErrUnknownOption", ErrUnknownOption},
+		{"ErrQuitUnsupported", ErrQuitUnsupported},
 	} {
 		fmt.Fprintf(&b, "%s = %q\n", e.name, e.err.Error())
 	}
