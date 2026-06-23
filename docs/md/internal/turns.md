@@ -58,9 +58,10 @@ feature-detect with a type assertion):
 
 | Interface | Method | Purpose |
 |---|---|---|
-| `SessionIDExtractor` | `ExtractSessionID(snap) (string, bool)` | Scrape the harness's resume UUID from screen (e.g. `codex resume <uuid>`). |
+| `SessionIDExtractor` | `ExtractSessionID(snap) (string, bool)` | Scrape the harness's resume UUID from the rendered screen (e.g. `codex resume <uuid>`). |
+| `RawSessionIDExtractor` | `ExtractSessionIDFromLine(line) (string, bool)` | Recover the UUID from a raw PTY line — for hints that flash by as the TUI tears down on exit and never reach a rendered snapshot (claude-code prints `claude --resume <uuid>` on `/quit`). |
 | `TranscriptReader` | `ReadTranscript(harnessSessionID, workingDir) ([]transcript.Turn, error)` | Locate + parse the harness's own JSONL log. |
-| `Quitter` | `QuitSequence() []byte` | Bytes for a graceful exit (claude-code: double Ctrl-C). |
+| `Quitter` | `QuitSequence() []byte` | Bytes for a graceful exit (claude-code: the `/quit` command + enhanced Enter). |
 | `MessageExtractor` | `ExtractMessage(snap) (string, bool)` | Isolate the assistant reply from TUI chrome. |
 | `BusyDetector` | `Busy(snap) bool` | Distinguish "still working" from "idle at the prompt". |
 
