@@ -96,6 +96,13 @@ func run() error {
 				}
 			}
 
+		case step.Hold != nil:
+			// Hold at the prompt until the wrapper closes the PTY (it kills us
+			// on Conversation.Close) — the explicit form of the end-of-timeline
+			// fall-through below.
+			_, _ = io.Copy(io.Discard, in)
+			return nil
+
 		case step.Exit != nil:
 			os.Exit(step.Exit.Code)
 		}

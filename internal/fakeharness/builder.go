@@ -197,10 +197,16 @@ func (b *Builder) Raw(delayMs int, text string) *Builder {
 	return b
 }
 
-// ExitOnQuit waits for the harness's graceful-quit sequence (claude-code's
-// double Ctrl-C) and exits 0 — modelling a real TUI that quits promptly when
-// the wrapper asks it to, so RunTurn's graceful-quit does not wait out its
-// timeout. Append it last in one-shot scenarios.
-func (b *Builder) ExitOnQuit() *Builder {
-	return b.waitInput("\x03\x03", false, "quit").Exit(0)
+// StayAliveUntilStopped holds the fake at its prompt after the scripted timeline
+// — like a real interactive harness waiting for the next message — until the
+// wrapper terminates it. In a one-shot (ExitAfterTurn) scenario this is what
+// makes RunTurn's best-effort graceful quit time out and conv.Close SIGTERM the
+// process, so WrapperResult.Status ends up StatusInterrupted — matching real
+// Claude Code (see TestRunTurn_RealClaudeDogfood). Append it last.
+//
+// The binary also holds this way by default once the timeline ends (see
+// cmd/fakeharness); this just states the intent explicitly at the call site.
+func (b *Builder) StayAliveUntilStopped() *Builder {
+	b.s.Steps = append(b.s.Steps, Step{Hold: &Hold{}})
+	return b
 }

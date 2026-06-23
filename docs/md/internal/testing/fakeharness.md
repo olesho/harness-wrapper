@@ -28,7 +28,7 @@ script := fakeharness.New("claude-code").
     MarkerFlicker(30, "Pondered", "3s", "drafting").     // ✻ marker on a NON-busy frame, mid-turn ← the trap
     Working(30, "Exploring").                            // spinner returns: work continues
     Reply(40, "Answer: "+fakeharness.PromptRef(), "Synthesized", "12s"). // settled end-of-turn (echoes prompt)
-    ExitOnQuit().                                        // exit on double-Ctrl-C so RunTurn's quit is prompt
+    StayAliveUntilStopped().                             // hold at the prompt until RunTurn stops the one-shot harness (→ interrupted)
     Build()
 ```
 
@@ -47,7 +47,7 @@ is reproduced.
 | `Raw(d, text)` | verbatim line for the wrapper's line classifier (e.g. `API Error: 429 …`) | n/a | n/a |
 
 Input / lifecycle: `AwaitSubmit()` (CSI 13u, captures the prompt), `AwaitMenuChoice()` (digit+CR),
-`Exit(code)`, `ExitOnQuit()` (double-Ctrl-C → exit 0). `PromptRef()` is the placeholder substituted
+`Exit(code)`, `StayAliveUntilStopped()` (hold at the prompt until RunTurn's one-shot stop → `interrupted`). `PromptRef()` is the placeholder substituted
 with the captured prompt in any echoed frame.
 
 **Codex** uses a different completion model — no `Busy()`, no quiescence: the chat layer completes a
