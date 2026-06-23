@@ -202,7 +202,22 @@ for the on-disk paths. Otherwise it falls back to the `Store`'s recorded turns.
 
 Harness session IDs are extracted opportunistically: after each `TurnComplete`, the `Conversation`
 invokes the adapter's `SessionIDExtractor` (if any) on the current screen, persists the ID via
-`Store.UpdateSession`, and stops re-querying.
+`Store.UpdateSession`, and stops re-querying. Adapters that surface the id only as the TUI tears down
+(claude-code, on `/quit`) implement `turns.RawSessionIDExtractor` instead; `Open` taps the wrapper's
+durable line stream and captures the id the moment the exit hint (`claude --resume <uuid>`) streams by.
+
+## Graceful quit
+
+```go
+func (c *Conversation) Quit(ctx context.Context) error
+```
+
+`Quit` sends the adapter's graceful-quit sequence (claude-code: the `/quit` command) through the
+writer the conversation already holds, so the harness exits cleanly. Combined with the raw session-id
+capture above, a `History` read *after* the process has exited still returns transcript-backed
+history — which is how the one-shot [`run`](cli.md) / [`POST /v1/turns`](gateway.md) paths end a turn
+yet still hand back the harness session id. Returns `ErrQuitUnsupported` when the adapter implements no
+`turns.Quitter`.
 
 ## Store interface
 
@@ -246,6 +261,7 @@ func (c *Conversation) ScreenSnapshot() screen.Snapshot // current rendered scre
 | `ErrNoInputPending` | `Answer`: no prompt currently pending |
 | `ErrStaleInputRequest` | `Answer`: request ID no longer current |
 | `ErrUnknownOption` | `Answer`: option ID/alias matches no option |
+| `ErrQuitUnsupported` | `Quit`: the adapter exposes no graceful-quit sequence |
 | `ErrClosed` | any method after `Close` |
 
 All `Conversation` methods are safe for concurrent use; `Close` is idempotent. Discriminate with

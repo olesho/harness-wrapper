@@ -23,7 +23,7 @@ func TestRunTurnEndpoint_ClaudeStyleOneShot(t *testing.T) {
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
-		ExitOnQuit().
+		StayAliveUntilStopped().
 		Build())
 
 	srv := NewServer()

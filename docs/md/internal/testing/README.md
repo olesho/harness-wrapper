@@ -9,7 +9,7 @@ we don't control, and they change. The suite is structured to keep that contract
 1. **Outward** — the HTTP routes, JSON DTOs, CLI flags, and exported `pkg/chat` API. We own it; it
    breaks only when we edit it carelessly.
 2. **Inward** — our assumptions about how claude-code/codex *render* (`✻ Verb for Ns`,
-   `esc to interrupt`, `❯`, `Token usage:`, the CSI-13u submit, the double-Ctrl-C quit). We don't own
+   `esc to interrupt`, `❯`, `Token usage:`, the CSI-13u submit, the `/quit` exit). We don't own
    it; it breaks silently whenever those tools ship a new version.
 3. **Correspondence** — the actual promise to callers: *report turn boundaries correctly and hand back
    the real final reply, not a mid-turn preamble.* This is what the timing-sensitive completion logic

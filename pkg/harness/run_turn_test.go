@@ -54,7 +54,7 @@ func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
-		ExitOnQuit().
+		StayAliveUntilStopped().
 		Build())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -106,7 +106,7 @@ func TestRunTurn_CanKeepConversationAlive(t *testing.T) {
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply two", "Baked", "2s").
-		ExitOnQuit().
+		StayAliveUntilStopped().
 		Build())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

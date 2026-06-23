@@ -44,7 +44,7 @@ The most fully-featured adapter.
 - **Session-ID**: `claude --resume <uuid>` hint → resume with `claude --resume <uuid>`.
 - **Transcript**: JSONL under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`.
 - **Interactive input**: folder-trust prompt and `--dangerously-skip-permissions` bypass-acceptance,
-  with a numbered-menu parser (`proceed` / `deny` aliases). **Graceful quit** via double Ctrl-C.
+  with a numbered-menu parser (`proceed` / `deny` aliases). **Graceful quit** via the `/quit` command.
 
 ## gemini, opencode, pi
 

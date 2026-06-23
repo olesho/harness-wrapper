@@ -42,10 +42,12 @@ type Script struct {
 	Steps     []Step `json:"steps"`
 }
 
-// Step is exactly one of: paint a Frame, WaitInput for typed bytes, or Exit.
+// Step is exactly one of: paint a Frame, WaitInput for typed bytes, Hold at the
+// prompt until the wrapper stops the process, or Exit.
 type Step struct {
 	Frame     *Frame     `json:"frame,omitempty"`
 	WaitInput *WaitInput `json:"wait_input,omitempty"`
+	Hold      *Hold      `json:"hold,omitempty"`
 	Exit      *Exit      `json:"exit,omitempty"`
 }
 
@@ -84,3 +86,10 @@ type WaitInput struct {
 type Exit struct {
 	Code int `json:"code"`
 }
+
+// Hold keeps the fake at its prompt after the timeline — like a real interactive
+// harness waiting for the next message — and blocks until the wrapper closes the
+// PTY (Conversation.Close, which SIGTERMs it). It makes the "stay alive until
+// stopped" intent explicit in the script; the binary also holds this way by
+// default once the timeline ends.
+type Hold struct{}
