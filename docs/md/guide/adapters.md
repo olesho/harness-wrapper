@@ -11,7 +11,7 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 | **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass |
 | **gemini** | ✅ | ⏳ via `waiting_for_input` | ❌ | ✅ `~/.gemini/tmp/<project>/chats/` | — |
 | **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — |
-| **pi** | ✅ | ⏳ via `waiting_for_input` | ❌ | ✅ `~/.pi/agent/sessions/` | — |
+| **pi** | ✅ | ⏳ idle + `Busy` | ⏳ headless | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` |
 | **generic** | ✅ | — maps wrapper status | — | — | — |
 
 **Legend** — ✅ implemented · ⏳ partial / pending a real on-screen marker (turn completion falls back
@@ -59,8 +59,19 @@ signal (lower fidelity: no intermediate work detection).
 - **opencode** — transcript reading is **deferred**: the on-disk store is migrating from per-message
   JSON files to SQLite, and shipping a reader that silently breaks across that migration is worse than
   none.
-- **pi** — transcript reader implemented (JSONL v3 under `~/.pi/agent/sessions/`); session-ID
-  extraction pending an identified on-screen marker.
+- **pi** — verified live against **0.76.0** (cerebras/gpt-oss-120b). Interactive turns work
+  end-to-end: Send is gated on a readiness marker (`pi.PromptReady` — the idle status line, past
+  pi's network-touching startup), the composer is submitted with a carriage return (`\r`; pi does
+  **not** use the kitty keyboard protocol), a `BusyDetector` keys on the `Working...` / `Thinking...`
+  spinner so the busy-aware idle fallback completes the turn without cutting it short, and a
+  `turns.Quitter` sends `/quit\r` for a clean exit. Transcript reader implemented (JSONL v3 under
+  `~/.pi/agent/sessions/`). A headless [`harness.Profile`](../internal/turns.md) (`pkg/harness/pi`)
+  supplies **session-ID + resume + stream**: `pi --mode json`'s `{"type":"session",…,"id":…}` header
+  yields the id, resume uses `--session <id>`, and a `StreamParser` maps the per-`message_end` events
+  (text / `toolCall` / `toolResult`) to canonical transcript events. Still pending (seed captures in
+  [`test/corpus/pi/`](https://github.com/olesho/harness-wrapper/tree/main/test/corpus/pi)): a formal
+  screenbench golden recording (prerequisite for pinning the version), a screen-derived end-of-turn
+  marker + `MessageExtractor` for clean one-shot `Turn.Text`, and interactive-path session-ID capture.
 
 ## generic
 
