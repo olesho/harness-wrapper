@@ -4,6 +4,10 @@
 *.test
 *.out
 .DS_Store
+
+# Local secrets (provider API keys for live harness runs, e.g. CEREBRAS_API_KEY).
+.env
+.env.*
 clients/python/__pycache__/
 harness-wrapper-port
 /harness-chatd
