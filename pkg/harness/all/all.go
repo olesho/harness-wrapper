@@ -12,4 +12,5 @@ import (
 	_ "github.com/olesho/harness-wrapper/pkg/harness/codex"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/gemini"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/opencode"
+	_ "github.com/olesho/harness-wrapper/pkg/harness/pi"
 )
