@@ -134,6 +134,12 @@ type TurnResult struct {
 	// harness session ID was captured; otherwise it is the chat store fallback.
 	History []chat.Turn
 
+	// HistorySource reports which of those two paths produced History. The
+	// presence of turns alone can't distinguish them — the store fallback also
+	// returns non-empty slices — so callers that care about fidelity (e.g. the
+	// run command's debug logging) must consult this field, not len(History).
+	HistorySource chat.HistorySource
+
 	// WrapperResult is populated when ExitAfterTurn is true and the harness
 	// process was stopped before returning. This is the raw process-level
 	// outcome from the lower-level wrapper; StatusInterrupted is expected when
@@ -211,8 +217,9 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 			if s, serr := store.GetSession(context.Background(), conv.SessionID()); serr == nil && s != nil {
 				result.Session = *s
 			}
-			if h, herr := conv.History(context.Background()); herr == nil && len(h) > 0 {
+			if h, src, herr := conv.HistoryWithSource(context.Background()); herr == nil && len(h) > 0 {
 				result.History = h
+				result.HistorySource = src
 			}
 		}
 		if err := conv.Close(context.Background()); err != nil {
@@ -271,16 +278,17 @@ func runConversationTurn(ctx context.Context, conv *chat.Conversation, store cha
 
 func snapshotTurnResult(ctx context.Context, conv *chat.Conversation, store chat.Store, turn chat.Turn) TurnResult {
 	session, _ := store.GetSession(ctx, conv.SessionID())
-	history, err := conv.History(ctx)
+	history, source, err := conv.HistoryWithSource(ctx)
 	if err != nil {
 		history, _ = store.ListTurns(ctx, conv.SessionID())
+		source = chat.HistorySourceStore
 	}
 
 	var sess chat.Session
 	if session != nil {
 		sess = *session
 	}
-	return TurnResult{Turn: turn, Session: sess, History: history}
+	return TurnResult{Turn: turn, Session: sess, History: history, HistorySource: source}
 }
 
 func turnHarnessName(cfg TurnConfig) string {

@@ -190,6 +190,21 @@ type RawSessionIDExtractor interface {
 	ExtractSessionIDFromLine(line string) (string, bool)
 }
 
+// SessionIDLocator is an optional capability adapters may implement to recover
+// the harness session ID from on-disk state, keyed on the working directory,
+// rather than from the rendered screen (SessionIDExtractor) or the raw output
+// stream (RawSessionIDExtractor). The chat layer calls this as a fallback at
+// TurnComplete when the screen-scrape extractor has not yielded an ID — some
+// harnesses (Codex 0.142+) stopped printing the "resume <uuid>" hint to the
+// screen, leaving the persisted session log's metadata as the only anchor.
+// Because it touches disk it must stay version-independent and tolerate junk
+// files by returning ("", false).
+type SessionIDLocator interface {
+	// LocateSessionID returns the harness session UUID associated with
+	// workingDir, or ("", false) if none can be found.
+	LocateSessionID(workingDir string) (string, bool)
+}
+
 // TranscriptReader is an optional capability adapters may implement to
 // provide access to the harness's persisted conversation log. The chat
 // layer uses this to hydrate Conversation.History() once a harness

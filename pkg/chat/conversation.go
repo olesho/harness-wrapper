@@ -573,10 +573,14 @@ func (c *Conversation) maybeIdleComplete() {
 	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
 }
 
-// maybeExtractSessionID opportunistically scrapes the harness's own
-// session ID from the rendered screen. Once we've persisted one, we
-// don't probe again. No-op for adapters that don't implement
-// turns.SessionIDExtractor.
+// maybeExtractSessionID opportunistically recovers the harness's own session
+// ID, preferring a cheap screen scrape (turns.SessionIDExtractor) and falling
+// back to an on-disk lookup keyed on the working directory
+// (turns.SessionIDLocator). The disk fallback exists because some harnesses
+// (Codex 0.142+) stopped printing the "resume <uuid>" hint to the screen, so
+// the scrape returns nothing and the only remaining anchor is the persisted
+// session log. Once we've persisted an ID we don't probe again. No-op for
+// adapters that implement neither capability.
 func (c *Conversation) maybeExtractSessionID() {
 	c.mu.Lock()
 	if c.session.HarnessSessionID != "" {
@@ -585,11 +589,7 @@ func (c *Conversation) maybeExtractSessionID() {
 	}
 	c.mu.Unlock()
 
-	ext, ok := c.adapter.(turns.SessionIDExtractor)
-	if !ok {
-		return
-	}
-	id, ok := ext.ExtractSessionID(c.screen.Snapshot())
+	id, ok := c.extractSessionID()
 	if !ok {
 		return
 	}
@@ -599,6 +599,22 @@ func (c *Conversation) maybeExtractSessionID() {
 	updated := c.session
 	c.mu.Unlock()
 	_ = c.store.UpdateSession(context.Background(), &updated)
+}
+
+// extractSessionID tries the screen scrape first, then the on-disk locator.
+// Returns ("", false) when neither yields an ID.
+func (c *Conversation) extractSessionID() (string, bool) {
+	if ext, ok := c.adapter.(turns.SessionIDExtractor); ok {
+		if id, ok := ext.ExtractSessionID(c.screen.Snapshot()); ok {
+			return id, true
+		}
+	}
+	if loc, ok := c.adapter.(turns.SessionIDLocator); ok {
+		if id, ok := loc.LocateSessionID(c.opts.WorkingDir); ok {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // captureRawSessionID is the wrapper's durable line-tap callback (wired in Open
@@ -666,18 +682,44 @@ func (c *Conversation) assistantText(snap screen.Snapshot) string {
 }
 
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
+	out, _, err := c.HistoryWithSource(ctx)
+	return out, err
+}
+
+// HistorySource identifies where a History result came from.
+type HistorySource string
+
+const (
+	// HistorySourceTranscript means the turns were read from the harness's own
+	// persisted session log (turns.TranscriptReader) — authoritative and
+	// complete, with no TUI chrome.
+	HistorySourceTranscript HistorySource = "transcript"
+	// HistorySourceStore means the turns came from the chat store fallback:
+	// user-side text plus whatever screen-derived assistant text the watcher
+	// captured. Used when the adapter can't read transcripts or the harness
+	// session id was never captured.
+	HistorySourceStore HistorySource = "store"
+)
+
+// HistoryWithSource is History plus the provenance of the returned turns. The
+// distinction matters to callers that need to know whether they got the
+// authoritative transcript or the lossy screen-derived store fallback — the
+// presence of turns alone does not tell them apart, since both paths return
+// non-empty slices.
+func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySource, error) {
 	c.mu.Lock()
 	sessionCopy := c.session
 	c.mu.Unlock()
 
 	reader, hasReader := c.adapter.(turns.TranscriptReader)
 	if !hasReader || sessionCopy.HarnessSessionID == "" {
-		return c.store.ListTurns(ctx, sessionCopy.ID)
+		out, err := c.store.ListTurns(ctx, sessionCopy.ID)
+		return out, HistorySourceStore, err
 	}
 
 	tturns, err := reader.ReadTranscript(sessionCopy.HarnessSessionID, c.opts.WorkingDir)
 	if err != nil {
-		return nil, fmt.Errorf("chat: read transcript: %w", err)
+		return nil, HistorySourceTranscript, fmt.Errorf("chat: read transcript: %w", err)
 	}
 	out := make([]Turn, 0, len(tturns))
 	for _, tt := range tturns {
@@ -690,7 +732,7 @@ func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
 			CompletedAt: tt.Timestamp,
 		})
 	}
-	return out, nil
+	return out, HistorySourceTranscript, nil
 }
 
 // emit pushes an event onto the chan. Drops if the buffer is full
