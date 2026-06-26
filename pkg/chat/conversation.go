@@ -318,7 +318,8 @@ func (c *Conversation) consumeWatcher() {
 // On every TurnComplete the watcher loop also opportunistically tries
 // to extract the harness's own session ID — most harnesses print it as
 // part of their end-of-turn footer, so this is the natural moment to
-// grab it.
+// grab it. The idle-completion fallback (maybeIdleComplete) makes the
+// same attempt, so a turn that completes there is not left without an id.
 func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 	// Interactive input prompts are independent of turn state — handle them
 	// before the current-turn machinery and return.
@@ -505,7 +506,9 @@ func (c *Conversation) idleCompletionWatcher() {
 // was not observed. Guards: no pending input dialog, the prompt is actually
 // ready, and the turn has been in flight at least idleCompletionGap (so a
 // just-sent turn is never closed on residual pre-send idle). A real marker
-// event that fires first clears currentTurn and makes this a no-op.
+// event that fires first clears currentTurn and makes this a no-op. When it does
+// complete, it recovers the harness session id (maybeExtractSessionID) just like
+// the TurnComplete-event path, so completing here never loses the id.
 func (c *Conversation) maybeIdleComplete() {
 	c.mu.Lock()
 	turn := c.currentTurn
@@ -554,6 +557,18 @@ func (c *Conversation) maybeIdleComplete() {
 	c.currentTurn = nil
 	c.endMarkerSeen = false
 	c.mu.Unlock()
+
+	// The turn is now committed to completing here. Recover the harness's own
+	// session id, exactly as the TurnComplete-event path does in handleTurnsEvent
+	// — otherwise a turn that completes via THIS idle fallback never captures it.
+	// That gap is real for Codex 0.142+: it renders neither the Token-usage footer
+	// that fires a TurnComplete event nor the "resume <uuid>" hint, so its turns
+	// land here with no id, and History silently degrades to the lossy screen
+	// scrape instead of the on-disk transcript. Done before the completion event
+	// is emitted so any consumer reacting to it sees the id already persisted.
+	// No-op for adapters without a screen/disk extractor (e.g. claude-code, whose
+	// id arrives via the raw line tap), so this never disturbs their path.
+	c.maybeExtractSessionID()
 
 	turn.State = TurnStateComplete
 	turn.CompletedAt = time.Now()

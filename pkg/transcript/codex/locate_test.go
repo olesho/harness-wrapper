@@ -119,3 +119,42 @@ func TestLocateLatestSession_CleansPaths(t *testing.T) {
 		t.Fatalf("LocateLatestSession(%q) ok=false; want match after path clean (got %q)", "/work/project/", got)
 	}
 }
+
+// TestLocateLatestSession_MatchesThroughSymlinkedWorkingDir is the regression
+// for the symlink defect: the wrapper passes os.Getwd() (a symlinked path like
+// /tmp/x) while Codex records its resolved cwd (/private/tmp/x). A plain
+// filepath.Clean leaves those unequal and the lookup silently fails for any run
+// under a symlinked working directory — common on macOS, where /tmp→/private/tmp
+// and even t.TempDir() lives under /var→/private/var. The locator must compare
+// after resolving symlinks so the two spellings of the same directory match.
+func TestLocateLatestSession_MatchesThroughSymlinkedWorkingDir(t *testing.T) {
+	root := t.TempDir()
+
+	// A real working directory and a symlink that points at it.
+	realDir := filepath.Join(t.TempDir(), "real-cwd")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	linkDir := filepath.Join(t.TempDir(), "link-cwd")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Skipf("symlinks unsupported on this platform/filesystem: %v", err)
+	}
+
+	// Model Codex recording its *resolved* cwd (what it actually writes), while
+	// the caller below queries with the *symlinked* spelling.
+	recordedCwd, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "00000000-0000-0000-0000-0000000000cc"
+	writeRollout(t, root, want, recordedCwd, time.Now())
+
+	r := &Reader{SessionsRoot: root}
+	got, ok := r.LocateLatestSession(linkDir)
+	if !ok {
+		t.Fatalf("LocateLatestSession(%q) ok=false; want a match through the symlink to recorded cwd %q", linkDir, recordedCwd)
+	}
+	if got != want {
+		t.Fatalf("LocateLatestSession(%q) = %q, want %q", linkDir, got, want)
+	}
+}

@@ -23,15 +23,19 @@ type sessionMetaPayload struct {
 // (e.g. Codex 0.142+, which no longer renders the resume hint). Returns
 // ("", false) when workingDir is empty or no rollout matches.
 //
-// Paths are compared after filepath.Clean so a trailing-slash or otherwise
-// non-canonical workingDir still matches the recorded cwd. Empty, malformed,
+// Paths are compared after canonicalDir, which resolves symlinks before
+// cleaning, so a symlinked workingDir still matches the recorded cwd. This is
+// not cosmetic: the wrapper hands us os.Getwd() (e.g. /tmp/x) while Codex
+// records its resolved cwd (/private/tmp/x on macOS, where /tmp→/private/tmp),
+// and a plain filepath.Clean leaves those two spellings unequal — silently
+// defeating the lookup for any run under a symlinked path. Empty, malformed,
 // or non-session_meta rollouts are skipped rather than treated as errors —
 // a single bad file must never starve the lookup.
 func (r *Reader) LocateLatestSession(workingDir string) (string, bool) {
 	if workingDir == "" {
 		return "", false
 	}
-	want := filepath.Clean(workingDir)
+	want := canonicalDir(workingDir)
 
 	root, err := r.sessionsRoot()
 	if err != nil {
@@ -51,7 +55,7 @@ func (r *Reader) LocateLatestSession(workingDir string) (string, bool) {
 			return nil
 		}
 		meta, ok := readSessionMeta(path)
-		if !ok || meta.SessionID == "" || filepath.Clean(meta.Cwd) != want {
+		if !ok || meta.SessionID == "" || canonicalDir(meta.Cwd) != want {
 			return nil
 		}
 		info, err := d.Info()
@@ -65,6 +69,19 @@ func (r *Reader) LocateLatestSession(workingDir string) (string, bool) {
 	})
 
 	return bestID, found
+}
+
+// canonicalDir returns a directory path suitable for comparing two spellings
+// that may name the same location. It resolves symlinks (so /tmp/x and the
+// macOS-resolved /private/tmp/x compare equal) and, since EvalSymlinks already
+// returns a cleaned path, that result is used directly. EvalSymlinks requires
+// the path to exist; when it errors (path gone, permission, etc.) we fall back
+// to a plain Clean so a still-valid lexical match is not lost.
+func canonicalDir(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return resolved
+	}
+	return filepath.Clean(p)
 }
 
 // readSessionMeta reads only the first line of a rollout and, if it is a
