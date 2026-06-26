@@ -1,7 +1,10 @@
 {
+  "_comment": "codex 0.142+ has no 'Token usage:' footer; completion is idle-timeout driven. Record with --idle-timeout 8s.",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "›"},
     {"send": "write a 4-paragraph markdown summary of recursion. include a heading, an unordered list of three items, and inline `code` formatting. keep it under 250 words.\n"},
-    {"wait_for": "Token usage:"}
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__IDLE_AWAIT__"}
   ]
 }

@@ -52,8 +52,8 @@ func TestLookup_NotInstalled(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.PinnedVersion != "0.141.0" {
-		t.Errorf("want PinnedVersion=0.141.0, got %q", got.PinnedVersion)
+	if got.PinnedVersion != "0.142.2" {
+		t.Errorf("want PinnedVersion=0.142.2, got %q", got.PinnedVersion)
 	}
 	if got.InstallHint == "" || !strings.Contains(got.InstallHint, "codex") {
 		t.Errorf("InstallHint should mention codex, got %q", got.InstallHint)
@@ -64,7 +64,7 @@ func TestLookup_NotInstalled(t *testing.T) {
 }
 
 func TestLookup_InstalledViaHarnessKey(t *testing.T) {
-	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.141.0\n"})
+	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.142.2\n"})
 
 	got, err := Lookup("codex")
 	if err != nil {
@@ -79,8 +79,8 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "0.141.0" {
-		t.Errorf("want DetectedVersion=0.141.0, got %q", got.DetectedVersion)
+	if got.DetectedVersion != "0.142.2" {
+		t.Errorf("want DetectedVersion=0.142.2, got %q", got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true (detected matches pin)")
@@ -88,7 +88,7 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 }
 
 func TestLookup_InstalledViaBinaryName(t *testing.T) {
-	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho 2.1.185\n"})
+	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho 2.1.193\n"})
 
 	got, err := Lookup("claude")
 	if err != nil {
@@ -103,8 +103,8 @@ func TestLookup_InstalledViaBinaryName(t *testing.T) {
 	if got.Binary != "claude" {
 		t.Errorf("want Binary=claude, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "2.1.185" {
-		t.Errorf("want DetectedVersion=2.1.185, got %q", got.DetectedVersion)
+	if got.DetectedVersion != "2.1.193" {
+		t.Errorf("want DetectedVersion=2.1.193, got %q", got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true")
@@ -166,8 +166,8 @@ func TestLookup_VersionMismatch_FlagsDrift(t *testing.T) {
 	if got.DetectedVersion != "9.9.9" {
 		t.Errorf("want DetectedVersion=9.9.9, got %q", got.DetectedVersion)
 	}
-	if got.PinnedVersion != "0.141.0" {
-		t.Errorf("want PinnedVersion=0.141.0, got %q", got.PinnedVersion)
+	if got.PinnedVersion != "0.142.2" {
+		t.Errorf("want PinnedVersion=0.142.2, got %q", got.PinnedVersion)
 	}
 	if got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=false (detected drifts from pin)")

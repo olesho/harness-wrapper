@@ -1,33 +1,11 @@
-Token usage: total=66,174 input=60,398 (+ 830,976 cached) output=5,776 (reasoning 411)
-To continue this session, run codex resume 019e2827-9f24-7073-8a5b-00769d079f89g/wrapper/pty.go:25. If PTY IO failure is
+# Recursion
 
+Recursion is a problem-solving technique where a function calls itself to break a larger problem into smaller versions of the same problem. It is common in algorithms that process nested or repeated structures, such as trees, directories, and mathematical sequences.
 
+A recursive solution usually has two key parts: a base case and a recursive case. The base case stops the process, while the recursive case moves the problem closer to that stopping point. For example, a `factorial` function keeps calling itself with smaller numbers until it reaches `1`.
 
+- Base case: the condition that ends recursion
+- Recursive case: the step that calls the same function again
+- Progress: the change that moves each call closer to completion
 
-
-  First, decide the idle contract. Either implement terminal idle classification after IdleClassify, or update docs/comm
-e
-
-
-  Second, pass Harness: parsed.HarnessName from the CLI into wrapper.Config. That is a small change with high architectu
-r
-
-  Third, separate “lossy observations” from “state contract.” Trace can stay lossy. Session.Events() should either be re
-l
-
-
-  Fourth, move toward a shared harness spec: name, binary, classifier patterns, default args/env behavior, maybe capabil
-i
-
-  Fifth, align docs with reality. The implementation has already moved beyond the Phase 1/Phase 2 split: Start, Session,
-
-
-
-
-
-  I ran go test ./.... pkg/wrapper and pkg/wrapper/trace pass. The full suite fails only at cmd/harness-wrapper’s tmux i
-ntegration test because this sandbox cannot connect to the tmux
-
-
-─ Worked for 2m 33s ────────────────────────────────────────────────────────────────────────────────────────────────────
-─
+Recursion can make code elegant and concise, but it must be used carefully. Without a reliable base case, recursion can run forever or cause a stack overflow. A good recursive function is clear, bounded, and easy to reason about.

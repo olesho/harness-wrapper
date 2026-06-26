@@ -18,7 +18,7 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 to the wrapper's `waiting_for_input` signal) · ❌ not yet / deferred · — not applicable.
 
 Pinned & verified upstream versions live in [`versions.json`](../internal/versions-drift.md): codex
-`0.141.0`, claude-code `2.1.185` (verified 2026-06-21). gemini / opencode / pi are unpinned pending
+`0.142.2`, claude-code `2.1.193` (verified 2026-06-26). gemini / opencode / pi are unpinned pending
 corpus capture.
 
 ## codex

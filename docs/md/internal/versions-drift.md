@@ -12,8 +12,8 @@ against. It is embedded into `pkg/versions` at build time.
 
 ```json
 {
-  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.141.0", "verified_at": "2026-06-21"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.185", "verified_at": "2026-06-21"},
+  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.142.2", "verified_at": "2026-06-26"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.193", "verified_at": "2026-06-26"},
   "gemini":      {"package": "@google/gemini-cli",         "binary": "gemini",   "pinned": "",        "verified_at": ""},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "",        "verified_at": ""}
@@ -97,6 +97,23 @@ fixture round-trip test, and re-run the canary.
 
 - **Auth on first launch** — codex/claude prompt for interactive login on a fresh machine; the
   scripted recorder can't survive it. Authenticate by hand once, then re-record.
+- **codex 0.142+ has no on-screen end-of-turn marker** — it dropped the `Token usage:` footer (and the
+  `codex resume <uuid>` hint), so `wait_for "Token usage:"` is dead and completion is purely the
+  recorder's idle-timeout. Record codex with `--idle-timeout 8s` (longer for `long-markdown`/`code-block`);
+  the scripts now `wait_for "esc to interrupt"` to confirm the turn started, then let idle close it. The
+  adapter regression `TestCodexAdapter_NoFireOnRealRecording` asserts OnScreen stays silent on these
+  recordings (idle-driven completion), not that it fires.
+- **codex auto-updates on launch** — a stale codex silently runs `npm install -g @openai/codex` on first
+  launch (e.g. 0.142.0→0.142.2), polluting the first recording and moving the pin target. There is no
+  config key to disable it; instead update to latest by hand first (`codex --version` twice), then bake.
+- **codex environment noise** — the user's `~/.codex/config.toml` (MCP servers like `codex_apps`, model
+  NUX, usage notices) bleeds into recordings. Bake with an isolated `CODEX_HOME=<tmp>` holding a copied
+  `auth.json` and an empty `config.toml`, plus `-- -a never -s read-only` so `tool-call` runs its command
+  without an approval prompt. The isolated `CODEX_HOME/sessions` also makes `expected.txt` extraction
+  unambiguous.
+- **Full-screen TUIs need a sized PTY** — the recorder now calls `Session.Resize(--cols,--rows)` after
+  start (scripted mode has no controlling TTY to inherit a size from). Without it a ratatui TUI (codex
+  0.142) renders into a ~0×0 PTY and replays blank.
 - **Slow API** — raise `--max-duration` (default 5m) for long scenarios.
 - **Wrong `wait_for`** — the idle-timeout fallback lets the script proceed without matching, capturing
   a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex.

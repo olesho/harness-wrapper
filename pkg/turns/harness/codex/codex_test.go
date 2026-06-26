@@ -26,27 +26,29 @@ func corpusBytes(t *testing.T, scenario string) []byte {
 	return nil
 }
 
-func TestCodexAdapterFiresOnRealRecording(t *testing.T) {
-	bytes := corpusBytes(t, "short-reply")
-
-	scr := screen.New(120, 40)
-	scr.Write(bytes)
-	snap := scr.Snapshot()
-
-	a := New()
-
-	// First call: marker present, fires TurnComplete exactly once.
-	evs := a.OnScreen(snap)
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d: %+v", len(evs), evs)
-	}
-	if evs[0].Kind != turns.TurnComplete {
-		t.Errorf("expected Kind=TurnComplete, got %s", evs[0].Kind)
-	}
-
-	// Second call with same snapshot: marker unchanged → no event.
-	if evs := a.OnScreen(snap); len(evs) != 0 {
-		t.Errorf("expected 0 events on second call, got %d", len(evs))
+// TestCodexAdapter_NoFireOnRealRecording is the post-0.142 contract for the
+// canonical corpus (re-baked at 0.142.2). Codex 0.142 removed the on-screen
+// "Token usage:" footer, so OnScreen has nothing to fingerprint and must stay
+// SILENT on a real recording — completion is the chat layer's idle path, not an
+// adapter screen marker (see the package comment). This is the live regression:
+// if a future Codex restores an on-screen end-of-turn marker, OR someone loosens
+// tokenUsageRE so it false-fires on reply prose, this goes red and prompts a
+// re-bake + adapter revisit. The "fires" path itself is covered synthetically by
+// TestCodexAdapterRefiresWhenFingerprintChanges.
+func TestCodexAdapter_NoFireOnRealRecording(t *testing.T) {
+	for _, scenario := range []string{
+		"short-reply", "long-markdown", "code-block", "tool-call", "multi-turn",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			scr := screen.New(120, 40)
+			scr.Write(corpusBytes(t, scenario))
+			for _, ev := range New().OnScreen(scr.Snapshot()) {
+				if ev.Kind == turns.TurnComplete {
+					t.Errorf("codex 0.142 recording %q unexpectedly fired TurnComplete "+
+						"(on-screen footer drift — re-check tokenUsageRE and re-bake): %+v", scenario, ev)
+				}
+			}
+		})
 	}
 }
 

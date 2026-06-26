@@ -1,7 +1,10 @@
 {
+  "_comment": "codex 0.142+ has no 'Token usage:' footer; completion is idle-timeout driven. Record with --idle-timeout 10s and a CODEX_HOME whose config sets approval_policy=never + sandbox_mode=read-only so the directory listing runs without an approval prompt.",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "›"},
     {"send": "list the entries in the current directory and tell me how many .go files there are\n"},
-    {"wait_for": "Token usage:"}
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__IDLE_AWAIT__"}
   ]
 }

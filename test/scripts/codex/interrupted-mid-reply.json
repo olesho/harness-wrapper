@@ -1,9 +1,11 @@
 {
+  "_comment": "codex 0.142+: wait for the '›' composer, send a long prompt, let it stream briefly, then Ctrl-C interrupt. No 'Token usage:' footer involved. Record with --idle-timeout 8s.",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "›"},
     {"send": "tell me a long detailed story about a wizard navigating a haunted library. take at least 1500 words and include vivid descriptions of every room.\n"},
+    {"wait_for": "esc to interrupt"},
     {"sleep": "1500ms"},
     {"interrupt": true},
-    {"sleep": "1000ms"}
+    {"sleep": "1500ms"}
   ]
 }

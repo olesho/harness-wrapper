@@ -1,0 +1,12 @@
+Current directory entries:
+
+```text
+cmd
+emulator
+go.mod
+go.sum
+metrics
+scenario
+```
+
+There are `0` `.go` files directly in the current directory.

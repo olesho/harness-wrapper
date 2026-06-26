@@ -1,8 +1,8 @@
 {
   "harness": "codex",
-  "binary_version": "0.130.0",
-  "recorded_at": "2026-05-14T20:30:24.524758Z",
+  "binary_version": "0.142.2",
+  "recorded_at": "2026-06-26T08:10:52.25173Z",
   "cols": 120,
   "rows": 40,
-  "notes": "fenced code block, ~30+ lines"
+  "notes": "rebake 0.142.2 (clean CODEX_HOME, idle 10s)"
 }

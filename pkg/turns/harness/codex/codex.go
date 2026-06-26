@@ -1,21 +1,30 @@
 // Package codex provides a turn-detection adapter for the Codex CLI
 // (codex-cli, github.com/openai/codex).
 //
-// Detection signal: every turn ends with a "Token usage:" footer
-// containing per-turn input/output counts. Because the counts change
-// between turns, the full footer line acts as a per-turn fingerprint —
-// when a new fingerprint appears on screen the adapter emits
-// TurnComplete.
+// Detection signal (legacy, codex ≤0.141): every turn ended with a "Token
+// usage:" footer containing per-turn counts. The full footer acts as a per-turn
+// fingerprint — a new fingerprint on screen emits TurnComplete (see
+// tokenUsageRE / OnScreen).
+//
+// Codex 0.142+ REMOVED that on-screen footer (and the "codex resume <uuid>"
+// hint). There is no longer ANY on-screen end-of-turn marker, so OnScreen stays
+// silent and this adapter no longer drives completion for current Codex. Turn
+// completion is instead detected by the chat layer's idle-completion (the screen
+// settles at the "›" composer; see pkg/chat) and reply CONTENT comes from the
+// on-disk rollout transcript (see pkg/transcript/codex), keyed on the session id
+// the rollout's session_meta records. The legacy OnScreen path is retained for
+// any codex still emitting the footer; the test/corpus/codex recordings (baked
+// at 0.142.2) lock in that OnScreen correctly does NOT fire on current Codex.
 //
 // This adapter embeds generic.Adapter so wrapper.Status transitions
 // (blocked_by_cost, retry_later, failed) continue to flow through to
 // the event stream alongside the screen-derived signals.
 //
-// Verified against Codex 0.130.0; interstitial detection (input.go)
-// verified against 0.140.0, and the 0.141.0 idle composer + CSI-13u submit
-// (see input_test.go). Markers may shift across upstream versions;
-// the golden-recording tests under test/corpus/codex/ are the
-// early-warning signal for that drift.
+// Verified against Codex 0.142.2 (footer/resume-hint removal confirmed; corpus
+// re-baked). Interstitial detection (input.go) verified against 0.140.0, and the
+// 0.141.0 idle composer + CSI-13u submit (see input_test.go). Markers may shift
+// across upstream versions; the golden-recording tests under test/corpus/codex/
+// are the early-warning signal for that drift.
 package codex
 
 import (
@@ -29,12 +38,18 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
 )
 
-// tokenUsageRE matches the per-turn Token usage footer Codex prints
-// when a turn ends. Format observed on 0.130.0:
+// tokenUsageRE matches the per-turn Token usage footer Codex printed when a turn
+// ended on codex ≤0.141. Format observed on 0.130.0:
 //
 //	Token usage: total=5,288 input=5,158 (+ 20,864 cached) output=130 (reasoning 42)
 //
 // The "(reasoning N)" suffix is optional. Numbers can include commas.
+//
+// codex 0.142+ no longer renders this footer at all (see the package comment), so
+// on current Codex this never matches and OnScreen stays silent — completion is
+// the chat layer's idle path. The regex is kept for any codex still emitting it
+// and is exercised synthetically by TestCodexAdapterRefiresWhenFingerprintChanges;
+// keep it strict (anchored full footer) so it cannot false-fire on reply prose.
 var tokenUsageRE = regexp.MustCompile(`Token usage: total=[\d,]+ input=[\d,]+ \(\+ [\d,]+ cached\) output=[\d,]+(?: \(reasoning \d+\))?`)
 
 // resumeRE matches the "codex resume <uuid>" hint Codex prints at end

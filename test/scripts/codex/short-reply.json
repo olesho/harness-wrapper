@@ -1,7 +1,10 @@
 {
+  "_comment": "codex 0.142+ dropped the on-screen 'Token usage:' footer; turn completion is the recorder's idle-timeout (screen settles), not a marker. Per turn: wait for the '›' composer, send, confirm start ('esc to interrupt'), then a never-matching wait lets idle-timeout close the turn. Record with --idle-timeout 8s.",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "›"},
     {"send": "say hi in one short word\n"},
-    {"wait_for": "Token usage:"}
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__IDLE_AWAIT__"}
   ]
 }

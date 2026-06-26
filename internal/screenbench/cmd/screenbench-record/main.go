@@ -176,6 +176,13 @@ func run(c recorderConfig) error {
 	if err != nil {
 		return fmt.Errorf("wrapper start: %w", err)
 	}
+	// Size the PTY to the target geometry. The wrapper only auto-sizes from the
+	// controlling terminal when stdin AND stdout are TTYs; in scripted mode both
+	// are non-TTYs (stdin nil, stdout io.Discard), so without this the PTY keeps
+	// pty.Start's ~0x0 default. A full-screen TUI (codex 0.142's ratatui, claude)
+	// renders for the actual winsize, so an unsized PTY yields a degenerate stream
+	// that replays blank at --cols×--rows. Mirrors pkg/chat.Open's Resize.
+	_ = sess.Resize(uint16(c.Cols), uint16(c.Rows))
 	detachRaw := sess.AttachOutput(rawFile)
 	defer detachRaw()
 

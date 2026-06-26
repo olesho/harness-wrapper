@@ -13,8 +13,8 @@ harness-wrapper is a Go toolkit. You can consume it three ways, in increasing or
 
 - **Go 1.25+** (the module targets `go 1.25.0`).
 - At least one harness CLI installed and logged in. The version each adapter was last verified against
-  is pinned in [`pkg/versions/versions.json`](../internal/versions-drift.md) (currently codex `0.141.0`,
-  claude-code `2.1.185`).
+  is pinned in [`pkg/versions/versions.json`](../internal/versions-drift.md) (currently codex `0.142.2`,
+  claude-code `2.1.193`).
 
 ## Install
 

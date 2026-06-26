@@ -1,11 +1,18 @@
 {
+  "_comment": "codex 0.142+ has no 'Token usage:' footer; each turn completes via idle-timeout. Three exchanges; per turn: send, confirm start, let idle close it before the next send. Record with --idle-timeout 8s.",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "›"},
     {"send": "what is 2 plus 2?\n"},
-    {"wait_for": "Token usage:"},
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__TURN1_DONE__"},
     {"send": "what is double that?\n"},
-    {"wait_for": "Token usage:"},
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__TURN2_DONE__"},
     {"send": "and what is double that?\n"},
-    {"wait_for": "Token usage:"}
+    {"wait_for": "esc to interrupt"},
+    {"sleep": "2s"},
+    {"wait_for": "__TURN3_DONE__"}
   ]
 }
