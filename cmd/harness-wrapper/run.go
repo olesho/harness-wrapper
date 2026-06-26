@@ -123,17 +123,33 @@ func runOneShot(args []string) int {
 // res.Turn.Text (adapter ExtractMessage) only when no transcript was available
 // (e.g. the harness session id could not be captured). Set
 // HARNESS_WRAPPER_RUN_DEBUG=1 to log which source was used.
+//
+// The source label is taken from res.HistorySource, NOT from whether
+// res.History happens to be non-empty: the store fallback also returns turns,
+// so len(History) can't distinguish the transcript from the lossy screen
+// scrape. We only report "transcript" when History is genuinely
+// transcript-backed AND carries assistant text.
 func cleanReply(res harness.TurnResult) string {
-	if t := lastAssistant(res.History); strings.TrimSpace(t) != "" {
-		if os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1" {
-			fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = transcript")
+	debug := os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1"
+
+	if res.HistorySource == chat.HistorySourceTranscript {
+		if t := lastAssistant(res.History); strings.TrimSpace(t) != "" {
+			if debug {
+				fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = transcript")
+			}
+			return t
 		}
-		return t
 	}
-	if os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1" {
+	if debug {
 		fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = screen-extract (no transcript)")
 	}
-	return res.Turn.Text
+	// Screen-derived fallback: prefer the completing turn's extracted message;
+	// if that's empty, use the last assistant turn the store recorded (also
+	// screen-derived) so we never silently drop a reply we did capture.
+	if strings.TrimSpace(res.Turn.Text) != "" {
+		return res.Turn.Text
+	}
+	return lastAssistant(res.History)
 }
 
 // cleanedEnv returns the current environment minus Claude Code's nesting

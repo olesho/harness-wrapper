@@ -158,7 +158,7 @@ for the endpoint reference and ready-to-run Python and TypeScript example client
 | claude-code | ✅                | ✅ `✻ <verb> for Ns` line  | ✅ `claude --resume <uuid>`| ✅ `~/.claude/projects/`   |
 | gemini      | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ✅ `~/.gemini/tmp/<project>/chats/` |
 | opencode    | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ⏳ (on-disk store in flux: JSON → SQLite) |
-| pi          | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ✅ `~/.pi/agent/sessions/` |
+| pi          | ✅                | ⏳ idle + `Busy` spinner    | ⏳ headless via `--mode json` | ✅ `~/.pi/agent/sessions/` |
 | generic     | ✅ (fallback)     | ✅ via `waiting_for_input` | —                        | —                        |
 
 The per-harness detail and "adding a harness" workflow are in the

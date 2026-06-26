@@ -6,6 +6,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
 )
 
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
@@ -62,7 +63,7 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 
 func requiresPromptReadiness(harness string) bool {
 	switch harness {
-	case "claude-code", "codex":
+	case "claude-code", "codex", "pi":
 		return true
 	default:
 		return false
@@ -92,6 +93,13 @@ func readyForInput(harness, text string) bool {
 			return false
 		}
 		return codex.PromptReady(text)
+	case "pi":
+		// pi has a noisy, network-touching startup (model resolution, optional
+		// fd/ripgrep download, an "Update Available" banner) during which the
+		// composer is painted but not yet listening. Gate Send until pi's idle
+		// status line is up and no turn is mid-flight, so the prompt + CR aren't
+		// typed into a composer that drops them.
+		return pi.PromptReady(text)
 	default:
 		return true
 	}
@@ -115,6 +123,14 @@ func submitKeyForHarness(harness, screenText string) []byte {
 		// the unmodified Enter key in that mode (same as claude-code's enhanced TUI).
 		// 0.140.0 accepted "\n", but enhanced mode is unconditional now.
 		return []byte("\x1b[13u")
+	case "pi":
+		// pi's composer submits on a carriage return (the actual Enter byte); a bare
+		// "\n" (line feed) is NOT treated as submit — it leaves the typed prompt sitting
+		// in the composer unsent (verified live against pi 0.76.0: the prompt rendered
+		// in the input box but the turn never ran). pi does NOT enable the kitty keyboard
+		// protocol (only bracketed-paste / synchronized-output), so the enhanced CSI 13u
+		// that claude-code/codex need is unnecessary — a plain CR submits.
+		return []byte("\r")
 	default:
 		return []byte("\n")
 	}

@@ -46,6 +46,11 @@ var resumeRE = regexp.MustCompile(`codex resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[
 type Adapter struct {
 	generic.Adapter // inherits OnWrapperStatus + (no-op) OnScreen-but-we-override
 
+	// SessionsRoot overrides the default ~/.codex/sessions location used by
+	// the on-disk session-id fallback (LocateSessionID). Empty means default;
+	// set only in tests.
+	SessionsRoot string
+
 	mu              sync.Mutex
 	lastFingerprint string
 	lastInputID     string
@@ -113,10 +118,19 @@ func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
 	return m[1], true
 }
 
+// LocateSessionID recovers the Codex session UUID from the most recent
+// on-disk rollout whose session_meta cwd matches workingDir. This is the
+// version-independent fallback for the screen-scrape ExtractSessionID, which
+// returns nothing on Codex 0.142+ (the resume hint is no longer rendered).
+// Implements turns.SessionIDLocator.
+func (a *Adapter) LocateSessionID(workingDir string) (string, bool) {
+	return (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).LocateLatestSession(workingDir)
+}
+
 // ReadTranscript reads the on-disk Codex session log. Implements
 // turns.TranscriptReader.
-func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	evs, err := transcriptcodex.New().Read(harnessSessionID, workingDir)
+func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
+	evs, err := (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).Read(harnessSessionID, workingDir)
 	if err != nil {
 		return nil, err
 	}

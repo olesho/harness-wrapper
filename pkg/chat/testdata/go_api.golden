@@ -20,6 +20,7 @@ type Conversation struct
 	method Close(context.Context) error
 	method Events() <-chan chat.ConversationEvent
 	method History(context.Context) ([]chat.Turn, error)
+	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
 	method Quit(context.Context) error
 	method ScreenSnapshot() screen.Snapshot
 	method Send(context.Context, string) (string, error)
