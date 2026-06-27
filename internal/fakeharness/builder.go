@@ -60,6 +60,13 @@ func (b *Builder) AwaitMenuChoice() *Builder {
 	return b.waitInput(`[0-9]\r`, false, "menu-choice")
 }
 
+// AwaitSubmitCR blocks until the wrapper submits a turn with a bare carriage
+// return (pi's submit key) and captures the typed text as the prompt for later
+// Echo frames. Pins pi's submit contract the way AwaitSubmit pins CSI 13u.
+func (b *Builder) AwaitSubmitCR() *Builder {
+	return b.waitInput(regexp.QuoteMeta(SubmitCR), true, "submit-cr")
+}
+
 // --- claude-code screen vocabulary --------------------------------------
 //
 // busyMarker:  "esc to interrupt"           → claudecode busyMarker
@@ -183,6 +190,46 @@ func (b *Builder) CodexReply(delayMs int, body string) *Builder {
 	n := len(b.s.Steps) + 1
 	tokenUsage := fmt.Sprintf("Token usage: total=%d input=%d (+ 0 cached) output=%d", 1000*n, 800*n, 200*n)
 	return b.frame(delayMs, b.ccScreen("Codex", "", body, "", tokenUsage, "", codexPrompt, b.resumeHint()), true)
+}
+
+// --- pi screen vocabulary -----------------------------------------------
+//
+// pi differs from both claude-code and codex: no end-of-turn screen marker and
+// no kitty keyboard protocol. A turn completes via the chat layer's busy-aware
+// idle fallback, so the vocabulary only needs a ready idle status line
+// (pi.PromptReady — the "<pct>%/<ctx>k" context indicator), a busy spinner
+// ("Working..." → pi.Busy), and a settled reply frame. Submit is a bare CR.
+
+const (
+	piStatus  = "↑1.2k ↓32 $0.000 0.9%/131k (auto)                      gpt-oss-120b • medium"
+	piRule    = "────────────────────────────────────────"
+	piSpinner = " ⠧ Working..." // contains pi.busyTexts "Working..."
+)
+
+// frameLines joins screen lines like ccScreen but without the claude-specific
+// name, for the pi vocabulary.
+func (b *Builder) frameLines(lines ...string) string { return strings.Join(lines, "\n") + "\n" }
+
+// PiIdle paints pi's idle composer: the context-usage status line is up
+// (pi.PromptReady true) and no spinner (not busy). MUST be the first step so
+// chat.Send's readiness gate passes.
+func (b *Builder) PiIdle() *Builder {
+	return b.frame(0, b.frameLines(piRule, "", piRule, "~/proj (main)", piStatus), false)
+}
+
+// PiWorking paints an in-flight pi frame: the "Working..." spinner makes pi.Busy
+// true, so the idle-completion fallback defers instead of closing the turn.
+func (b *Builder) PiWorking(delayMs int) *Builder {
+	return b.frame(delayMs, b.frameLines(piSpinner, "", piRule, "", piRule, piStatus), false)
+}
+
+// PiReply paints the settled end-of-turn pi frame: the reply body (echoing the
+// captured prompt) and the idle status line, with NO spinner — so once the
+// screen goes quiet the busy-aware idle fallback completes the turn with this
+// frame's text. pi surfaces no on-screen session id, so no resume hint rides
+// along (interactive History stays store-backed until a session id is known).
+func (b *Builder) PiReply(delayMs int, body string) *Builder {
+	return b.frame(delayMs, b.frameLines(body, "", piRule, "", piRule, "~/proj (main)", piStatus), true)
 }
 
 // --- raw output & lifecycle (wrapper-level scenarios) -------------------
