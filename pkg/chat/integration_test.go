@@ -118,6 +118,71 @@ func TestIntegration_NoMarkerFallback(t *testing.T) {
 	}
 }
 
+// TestIntegration_Pi_IdleFallback drives pi end to end. pi has no end-of-turn
+// screen marker and no kitty keyboard protocol, so the turn is submitted with a
+// bare CR (AwaitSubmitCR pins that contract), defers while the "Working..."
+// spinner is up (pi.Busy), and completes via the busy-aware idle fallback once
+// the settled status line returns (pi.PromptReady). The submitted sentinel must
+// round-trip into the reply, and the completion reason must name pi (not the
+// previously hardcoded claude-code).
+func TestIntegration_Pi_IdleFallback(t *testing.T) {
+	const sentinel = "PI-OK-88"
+
+	script := fakeharness.New("pi").
+		PiIdle().
+		AwaitSubmitCR().
+		PiWorking(30).
+		PiWorking(30).
+		PiReply(40, "pi reply: "+fakeharness.PromptRef()).
+		Build()
+
+	conv := openFake(t, script)
+	sendOneTurn(t, conv, "Reply with "+sentinel)
+
+	turn := waitForTerminalTurn(t, conv, 4*time.Second)
+
+	if turn.State != TurnStateComplete {
+		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
+	}
+	if !strings.Contains(turn.Text, sentinel) {
+		t.Errorf("reply did not round-trip the sentinel %q\n--- captured text ---\n%s", sentinel, turn.Text)
+	}
+	if !strings.Contains(turn.Reason, "fallback") {
+		t.Errorf("reason = %q, want idle-completion fallback", turn.Reason)
+	}
+	if !strings.Contains(turn.Reason, "pi:") {
+		t.Errorf("reason = %q, want the pi harness named (not hardcoded claude-code)", turn.Reason)
+	}
+}
+
+// TestIntegration_Pi_MultiTurn confirms pi turn boundaries across two turns: each
+// Send yields exactly one completed assistant turn carrying that turn's sentinel,
+// and the readiness gate lets the second Send proceed off the first turn's
+// settled frame.
+func TestIntegration_Pi_MultiTurn(t *testing.T) {
+	sentinels := []string{"PI-AA", "PI-BB"}
+
+	b := fakeharness.New("pi").PiIdle()
+	for range sentinels {
+		b = b.AwaitSubmitCR().PiWorking(20).PiReply(30, "echo: "+fakeharness.PromptRef())
+	}
+	conv := openFake(t, b.Build())
+
+	for i, s := range sentinels {
+		sendOneTurn(t, conv, "Say "+s)
+		turn := waitForTerminalTurn(t, conv, 4*time.Second)
+		if turn.State != TurnStateComplete {
+			t.Fatalf("turn %d: state = %q (reason %q), want complete", i, turn.State, turn.Reason)
+		}
+		if !strings.Contains(turn.Text, s) {
+			t.Errorf("turn %d: reply missing sentinel %q\n--- captured text ---\n%s", i, s, turn.Text)
+		}
+		if i > 0 && strings.Contains(turn.Text, sentinels[i-1]) {
+			t.Errorf("turn %d: reply leaked the previous turn's sentinel %q", i, sentinels[i-1])
+		}
+	}
+}
+
 // TestIntegration_Codex_TokenUsageCompletesTurn covers the codex completion
 // path end to end: a turn completes the instant a fresh "Token usage: …" footer
 // appears (no quiescence dance, unlike claude-code), the submitted prompt
