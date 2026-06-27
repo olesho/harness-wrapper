@@ -26,6 +26,13 @@ const EnvVar = "FAKEHARNESS_SCRIPT"
 // fails loudly.
 const SubmitCSI13u = "\x1b[13u"
 
+// SubmitCR is the byte chat.Send writes to submit a turn for pi: a bare carriage
+// return. pi does not enable the kitty keyboard protocol (unlike claude-code /
+// codex), so plain Enter submits. Scenarios wait for it via Builder.AwaitSubmitCR,
+// which pins the pi submit-key contract — if the wrapper stops sending exactly
+// this, the fake never advances and the test fails loudly.
+const SubmitCR = "\r"
+
 // promptPlaceholder is substituted with the captured prompt in any Frame whose
 // Echo is set. It lets a scenario assert a round-trip: the exact text the
 // wrapper submitted reappears verbatim in the harness's reply.
