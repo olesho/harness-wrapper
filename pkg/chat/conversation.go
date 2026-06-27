@@ -573,9 +573,13 @@ func (c *Conversation) maybeIdleComplete() {
 	turn.State = TurnStateComplete
 	turn.CompletedAt = time.Now()
 	if marker {
-		turn.Reason = "claude-code: end-of-turn marker confirmed at a settled prompt"
+		// The marker path is only reached for adapters that emit an end-of-turn
+		// marker (claude-code today).
+		turn.Reason = c.opts.Harness + ": end-of-turn marker confirmed at a settled prompt"
 	} else {
-		turn.Reason = "claude-code: idle-completion fallback (end-of-turn marker not observed)"
+		// The fallback path is harness-agnostic (pi, gemini, …); name the harness
+		// that actually completed rather than hardcoding claude-code.
+		turn.Reason = c.opts.Harness + ": idle-completion fallback (end-of-turn marker not observed)"
 	}
 	// Use the adapter's message extractor (when available) so Turn.Text is the
 	// clean assistant reply rather than a full-screen dump — matching the
