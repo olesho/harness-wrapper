@@ -35,9 +35,10 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if got, ok := Pinned("opencode"); ok {
 		t.Errorf("expected opencode to be unpinned, got %q", got)
 	}
-	// pi is likewise unpinned until a corpus pins its version.
-	if got, ok := Pinned("pi"); ok {
-		t.Errorf("expected pi to be unpinned, got %q", got)
+	// pi is pinned: its adapter/profile are verified against 0.76.0 with a
+	// committed corpus (test/corpus/pi/) and replay/e2e tests.
+	if got, ok := Pinned("pi"); !ok || got == "" {
+		t.Errorf("expected pi to be pinned, got %q ok=%v", got, ok)
 	}
 	// claude-code's harness key differs from its on-PATH binary name;
 	// the Binary field is what discovery probes against.
