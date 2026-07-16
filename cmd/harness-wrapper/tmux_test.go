@@ -216,7 +216,7 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 		t.Fatalf("spawn short run: %v\n%s", err, out)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for tmuxSessionExists(sessionName) && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
 	}

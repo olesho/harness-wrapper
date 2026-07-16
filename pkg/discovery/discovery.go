@@ -85,7 +85,7 @@ type Probe interface {
 // detection spuriously fail under heavy parallel load — the probe child
 // was SIGKILLed mid-start ("--version: signal: killed"), reported as an
 // unknown version and, with a pin set, a false drift signal.
-const defaultProbeTimeout = 10 * time.Second
+const defaultProbeTimeout = 20 * time.Second
 
 var (
 	probesMu sync.RWMutex

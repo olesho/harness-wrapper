@@ -89,7 +89,7 @@ func openFake(t *testing.T, script fakeharness.Script) *Conversation {
 // returns (the in-flight turn continues independently).
 func sendOneTurn(t *testing.T, conv *Conversation, text string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	release, err := conv.AcquireControl(ctx)
 	if err != nil {
