@@ -21,3 +21,4 @@ harness-wrapper-port
 # Root package.json exists only as a no-op npm bootstrap target (see package.json); ignore its artifacts.
 /node_modules/
 /package-lock.json
+/bun.lock
