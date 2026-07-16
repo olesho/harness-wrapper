@@ -2,15 +2,20 @@
   "name": "harness-wrapper",
   "version": "0.0.0",
   "private": true,
-  "description": "Go module; this package.json exists only so generic npm-based tooling (e.g. release-gate bootstrap) treats this repo as a valid no-op npm project — no JS code lives at the repo root.",
+  "description": "Go module; JS at the repo root is limited to the docs/ tooling under scripts/docs/ (see docs/README or the docs/gen -> scripts/docs port notes) plus its tests.",
   "scripts": {
+    "docs": "node scripts/docs/build.mjs",
+    "docs:serve": "node scripts/docs/serve.mjs",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@xterm/headless": "^6.0.0",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
+    "markdown-it-anchor": "^9.2.1",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.10"
   }
 }
