@@ -156,3 +156,41 @@ check now passes); (3) make the pending `meta-harness` routing decision for
 and do not mark those resolved on the basis of any change here; (4) leave `-25`
 to its own signature. Adding or re-touching application code under this ticket
 would be a mis-port; the only edit made here is this dedup note.
+
+## HARNESS-WRAPPER-28 — blocked-backlog re-file (4th), duplicate of HARNESS-WRAPPER-22 / -27
+
+**Filed as:** `[observer] blocked backlog growing (backlog:blocked)`, observer
+signature `obs-sig:de2a6070ed` — the **same** signature already triaged as
+HARNESS-WRAPPER-22 (closed/merged/done) and HARNESS-WRAPPER-27 (at `review`).
+This is the **fourth** occurrence of one anomaly.
+
+**Why it is out of scope (pointer, not a re-analysis):** the full write-up
+already lives in §HARNESS-WRAPPER-27 above (Cause A stray `bun.lock`, already
+root-fixed at `.gitignore:24` / `8e2964d`; Cause B cross-repo `meta-harness`
+mismatch with no in-repo code surface; `-25` mis-counted under its own signature
+`obs-sig:92d69f4a2f`). Nothing in that analysis has changed at this base
+(`f32e256`): `git check-ignore bun.lock` still passes, `git log --all` over the
+`meta-harness` paths (`src/chat/**`, `src/wrapper/**`, `src/discovery/**`,
+`src/cli/run.ts`, `test/chat/fakeharness.ts`) is still 0 commits, and
+`internal/screenbench/{metrics,scenario,cmd,emulator}` still exists. There is no
+new un-actioned in-repo code defect to fix. Re-deriving §-27 here would be the
+"pure noise" the observer itself warned of, so this entry is deliberately a
+cross-reference only.
+
+**The recurring defect is external.** The reason this keeps re-filing is
+`orche`'s `@orche/agent` observer (`packages/agent/src/observer.ts`):
+`fileAnomaly`'s convergence guard is gated to `a.kind === 'reopen-loop'` and does
+not suppress a `backlog:blocked` signature whose prior ticket is already
+`closed`/`done` or sitting in `review`, and the `backlog:blocked` count still
+includes a stale-blocked ticket (`-19`) and a foreign-signature ticket (`-25`).
+Both are the same class flagged in §HARNESS-WRAPPER-23 and §HARNESS-WRAPPER-26.
+
+**Resolution:** no source change and no re-analysis made in this repo. For the
+human at the `review` gate: (1) **close this as a duplicate** of HARNESS-WRAPPER-22
+/ -27; (2) make the still-pending Cause B `meta-harness` routing decision; (3)
+operationally re-queue `HARNESS-WRAPPER-19` against current base (no code — its
+clean-tree check now passes); (4) route the real observer dedup/convergence fix
+to `orche` (`packages/agent/src/observer.ts`, with tests in
+`packages/agent/test/observer.unit.test.ts`), extending the convergence guard to
+cover `backlog:blocked` and excluding stale-blocked/foreign-signature tickets
+from the count. This dedup pointer is the only edit made here.
