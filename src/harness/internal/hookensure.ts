@@ -5,7 +5,7 @@
 // file has NO imports from anywhere else in src/harness/**, matching the Go
 // original's package-local (no cross-file dependency) shape.
 
-import { constants, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs"
+import { constants, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs"
 import { dirname } from "node:path"
 
 /**
@@ -98,13 +98,24 @@ const LOCK_POLL_MS = 20
  *    written file either way — but a lost *merge* is possible until the next
  *    self-healing `ensure` call re-applies it.
  *
- * The sidecar is also NEVER cleaned up after use — matching Go's behavior of
- * leaving `<targetPath>.lock` on disk permanently. This is BY DESIGN, not a
- * leak: the staleness check needs a stable path to stat across the *next*
- * invocation (very possibly a different process), and removing it after use
- * would just recreate the same "doesn't exist yet" race that O_EXCL exists to
- * close. (Go's comment: flock needs a stable inode to lock, so cleanup would
- * defeat the guard — same reasoning applies here to the stable path.)
+ * The sidecar is also NEVER unlinked on a normal, cooperative release —
+ * matching Go's behavior of leaving `<targetPath>.lock` on disk permanently.
+ * This is BY DESIGN, not a leak: the staleness check needs a stable path to
+ * stat across the *next* invocation (very possibly a different process), and
+ * removing it after use would just recreate the same "doesn't exist yet"
+ * race that O_EXCL exists to close. (Go's comment: flock needs a stable
+ * inode to lock, so cleanup would defeat the guard — same reasoning applies
+ * here to the stable path.) Instead, a cooperative release BACKDATES the
+ * sidecar's mtime (via `utimesSync`, past the staleness threshold) rather
+ * than deleting it: the file stays in place (so `existsSync` on it is always
+ * true, immediately after `withLockedFile` returns as much as at any other
+ * time), but the NEXT `acquireLock` sees an already-stale mtime and takes
+ * over on its very first check instead of blocking for a fresh ~10s window.
+ * A holder that dies mid-critical-section (SIGKILL) never reaches this
+ * backdate step, so its lock file keeps a FRESH mtime and waiters correctly
+ * pay the full staleness window before assuming abandonment — the backdate
+ * only short-circuits the common cooperative-release case, it does not weaken
+ * the crash-detection guarantee.
  *
  * ## Blocking scope: the whole process, not one caller
  *
@@ -139,7 +150,24 @@ export function withLockedFile(targetPath: string, fn: (existing: Buffer | null)
     if (next === null) return
     atomicWriteFile(targetPath, next)
   } finally {
-    closeSync(fd)
+    releaseLock(fd, lockPath)
+  }
+}
+
+/**
+ * Releases a cleanly-held lock: closes the fd and backdates the sidecar's
+ * mtime past the staleness threshold instead of unlinking it, so the file
+ * stays on disk (see withLockedFile's doc comment) while the next
+ * acquireLock's staleness check succeeds immediately rather than waiting out
+ * a fresh ~10s window.
+ */
+function releaseLock(fd: number, lockPath: string): void {
+  closeSync(fd)
+  const past = new Date(Date.now() - STALE_LOCK_MS - 1_000)
+  try {
+    utimesSync(lockPath, past, past)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err
   }
 }
 
