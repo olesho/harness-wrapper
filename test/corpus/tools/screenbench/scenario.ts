@@ -136,7 +136,11 @@ export async function discover(root: string): Promise<Scenario[]> {
     } catch {
       continue
     }
-    out.push(await load(dir))
+    try {
+      out.push(await load(dir))
+    } catch (err) {
+      throw wrapError(`load ${dir}`, err)
+    }
   }
 
   out.sort((a, b) => {
