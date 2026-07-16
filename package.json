@@ -6,7 +6,8 @@
   "scripts": {
     "docs": "node scripts/docs/build.mjs",
     "docs:serve": "node scripts/docs/serve.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "corpus:synth": "tsx test/corpus/tools/synth-corpus.ts --out test/corpus"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
