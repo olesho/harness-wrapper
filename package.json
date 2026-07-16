@@ -1,0 +1,6 @@
+{
+  "name": "harness-wrapper",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Go module; this package.json exists only so generic npm-based tooling (e.g. release-gate bootstrap) treats this repo as a valid no-op npm project — no JS code lives at the repo root."
+}

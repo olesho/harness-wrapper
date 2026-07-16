@@ -14,3 +14,7 @@ harness-wrapper-port
 
 # Generated docs site (canonical sources live in docs/md/; build with `make docs`).
 /docs/html/
+
+# Root package.json exists only as a no-op npm bootstrap target (see package.json); ignore its artifacts.
+/node_modules/
+/package-lock.json
