@@ -79,8 +79,16 @@ class XtermHeadlessAdapter implements BenchEmulator {
   snapshot(): string {
     const buf = this.term.buffer.active;
     const lines: string[] = [];
+    // Read the *visible viewport* (baseY..baseY+rows-1), not the top of the
+    // buffer. `buffer.active` retains scrollback, so getLine(0) is the oldest
+    // scrolled-off line, not the top of what's on screen. Offsetting by baseY
+    // returns the current visible-screen contents this method documents (and
+    // matches vt10x's fixed-size, no-scrollback screen the corpus ground truth
+    // was authored against). Without this, scenarios that overflow the screen
+    // (e.g. test/corpus/synth/scrollback-overflow) snapshot the wrong rows.
+    const base = buf.baseY;
     for (let i = 0; i < this.term.rows; i++) {
-      const line = buf.getLine(i);
+      const line = buf.getLine(base + i);
       lines.push(line ? line.translateToString(false) : "");
     }
     return lines.join("\n");
