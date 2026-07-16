@@ -33,18 +33,58 @@ export function highlightCode(code, lang) {
   }
 }
 
-// selectorRe matches the selector portion of a single highlight.js CSS rule,
-// allowing an optional leading "/* comment */". Mirrors docs/gen/highlight.go's
-// selectorRe.
-const selectorRe = /^(\/\*.*?\*\/\s*)?([^{]+?)(\s*\{)/gm
-
-// scopeCSS prefixes every selector in css with scope, preserving any leading
-// comment. Comma-separated selector lists are handled element-by-element.
+// scopeCSS prefixes every selector in css with scope, preserving comments and
+// rule bodies verbatim. Comma-separated selector lists are handled
+// element-by-element.
+//
+// docs/gen/highlight.go's scopeCSS is a single regex pass, safe only because
+// chroma emits one rule per line (no newlines between a selector and its
+// "{"). highlight.js ships normally-formatted, human-readable CSS instead —
+// selector lists and leading doc comments both span multiple lines — so a
+// line-oriented regex would walk a non-greedy match straight through a rule
+// body into the next selector. This is a small forward-scanning state
+// machine instead: outside a rule body, text is buffered as a candidate
+// selector until a "{" or a "/* */" comment is seen; inside a rule body,
+// everything up to the matching "}" passes through untouched.
 export function scopeCSS(css, scope) {
-  return css.replace(selectorRe, (match, comment, selectors, brace) => {
-    const parts = selectors.split(",").map((p) => `${scope} ${p.trim()}`)
-    return `${comment || ""}${parts.join(", ")}${brace}`
-  })
+  let out = ""
+  let selectorBuf = ""
+  let inRule = false
+  let i = 0
+
+  while (i < css.length) {
+    if (!inRule && css.startsWith("/*", i)) {
+      out += selectorBuf
+      selectorBuf = ""
+      const end = css.indexOf("*/", i + 2)
+      const commentEnd = end === -1 ? css.length : end + 2
+      out += css.slice(i, commentEnd)
+      i = commentEnd
+      continue
+    }
+    const ch = css[i]
+    if (!inRule && ch === "{") {
+      out += `${prefixSelectors(selectorBuf, scope)} {`
+      selectorBuf = ""
+      inRule = true
+    } else if (inRule && ch === "}") {
+      out += "}"
+      inRule = false
+    } else if (inRule) {
+      out += ch
+    } else {
+      selectorBuf += ch
+    }
+    i++
+  }
+  return out + selectorBuf
+}
+
+function prefixSelectors(raw, scope) {
+  const leading = raw.match(/^\s*/)[0]
+  const trimmed = raw.trim()
+  if (!trimmed) return leading
+  return leading + trimmed.split(",").map((p) => `${scope} ${p.trim()}`).join(", ")
 }
 
 function readThemeCSS(themeName) {

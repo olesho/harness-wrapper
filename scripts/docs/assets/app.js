@@ -1,8 +1,7 @@
 /* Progressive enhancement only — the site is fully readable with JS off.
    Theme toggle (localStorage), mobile nav drawer, copy-code buttons, scroll-spy TOC.
-   Port of docs/gen/assets/app.js; localStorage key renamed hw-theme -> mh-theme
-   (meta-harness `hw-` -> `mh-` convention, rather than baking harness-wrapper's
-   own storage key into the ported asset). */
+   Port of docs/gen/assets/app.js, with the localStorage key updated to the
+   mh- convention instead of baking the old product prefix into this asset. */
 (function () {
   'use strict';
 
