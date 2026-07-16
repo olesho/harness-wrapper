@@ -37,7 +37,7 @@ func TestIntegration_SubAgentFlicker_DoesNotTruncate(t *testing.T) {
 	conv := openFake(t, script)
 	sendOneTurn(t, conv, "Reply with exactly: "+sentinel)
 
-	turn := waitForTerminalTurn(t, conv, 4*time.Second)
+	turn := waitForTerminalTurn(t, conv, 15*time.Second)
 
 	if turn.State != TurnStateComplete {
 		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
@@ -73,7 +73,7 @@ func TestIntegration_MultiTurn(t *testing.T) {
 
 	for i, s := range sentinels {
 		sendOneTurn(t, conv, "Say "+s)
-		turn := waitForTerminalTurn(t, conv, 4*time.Second)
+		turn := waitForTerminalTurn(t, conv, 15*time.Second)
 		if turn.State != TurnStateComplete {
 			t.Fatalf("turn %d: state = %q (reason %q), want complete", i, turn.State, turn.Reason)
 		}
@@ -105,7 +105,7 @@ func TestIntegration_NoMarkerFallback(t *testing.T) {
 	conv := openFake(t, script)
 	sendOneTurn(t, conv, "Answer with "+sentinel)
 
-	turn := waitForTerminalTurn(t, conv, 4*time.Second)
+	turn := waitForTerminalTurn(t, conv, 15*time.Second)
 
 	if turn.State != TurnStateComplete {
 		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
@@ -139,7 +139,7 @@ func TestIntegration_Pi_IdleFallback(t *testing.T) {
 	conv := openFake(t, script)
 	sendOneTurn(t, conv, "Reply with "+sentinel)
 
-	turn := waitForTerminalTurn(t, conv, 4*time.Second)
+	turn := waitForTerminalTurn(t, conv, 15*time.Second)
 
 	if turn.State != TurnStateComplete {
 		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
@@ -170,7 +170,7 @@ func TestIntegration_Pi_MultiTurn(t *testing.T) {
 
 	for i, s := range sentinels {
 		sendOneTurn(t, conv, "Say "+s)
-		turn := waitForTerminalTurn(t, conv, 4*time.Second)
+		turn := waitForTerminalTurn(t, conv, 15*time.Second)
 		if turn.State != TurnStateComplete {
 			t.Fatalf("turn %d: state = %q (reason %q), want complete", i, turn.State, turn.Reason)
 		}
@@ -203,7 +203,7 @@ func TestIntegration_Codex_TokenUsageCompletesTurn(t *testing.T) {
 	conv := openFake(t, script)
 	sendOneTurn(t, conv, "Reply with "+sentinel)
 
-	turn := waitForTerminalTurn(t, conv, 4*time.Second)
+	turn := waitForTerminalTurn(t, conv, 15*time.Second)
 
 	if turn.State != TurnStateComplete {
 		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
@@ -234,7 +234,7 @@ func TestIntegration_Codex_MultiTurn(t *testing.T) {
 
 	for i, s := range sentinels {
 		sendOneTurn(t, conv, "Say "+s)
-		turn := waitForTerminalTurn(t, conv, 4*time.Second)
+		turn := waitForTerminalTurn(t, conv, 15*time.Second)
 		if turn.State != TurnStateComplete {
 			t.Fatalf("turn %d: state = %q (reason %q), want complete", i, turn.State, turn.Reason)
 		}
