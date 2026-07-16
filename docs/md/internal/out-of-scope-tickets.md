@@ -96,3 +96,63 @@ different live agent (and/or the task is labeled `implemented`)**, asserting
 that no `dead-spawner` anomaly is filed (and no "still occurring" comment is
 added). That single guard stops both the false positive and the recursive
 re-flag loop.
+
+## HARNESS-WRAPPER-27 — blocked-backlog re-file, duplicate of HARNESS-WRAPPER-22
+
+**Filed as:** `[observer] blocked backlog growing (backlog:blocked)`, observer
+signature `obs-sig:de2a6070ed`.
+
+**Why it landed here / why it is out of scope:** this is a **re-file of
+HARNESS-WRAPPER-22** — identical observer signature (`obs-sig:de2a6070ed`) — and
+that anomaly is already closed/merged/done. Grounding every contributing ticket
+against the current tree shows there is **no un-actioned in-repo code defect
+left**, so there is nothing safe for an automated worker to code. It was
+escalated to `review` for human sign-off; this entry records the dedup so the
+ticket is visibly investigated, not silently no-op'd.
+
+**The 7 `blocked` tickets and their real status:**
+
+- **Cause A — stray `bun.lock` (already root-fixed).** The integrator's
+  post-merge clean-tree check saw an untracked `bun.lock` (a bun/npm bootstrap
+  artifact of the root no-op `package.json`; no Bun usage exists in tracked
+  source). That was fixed and merged by HARNESS-WRAPPER-22: `.gitignore:24` now
+  contains `/bun.lock` (commit `8e2964d`, an ancestor of this worktree's base),
+  and `git check-ignore bun.lock` confirms it is ignored. The one ticket it
+  still blocks, `HARNESS-WRAPPER-19`, is **stale-blocked** — it exhausted its
+  single auto-retry on the pre-fix `?? bun.lock` block and was never retried
+  after the fix landed. Its task body targets `internal/screenbench/` (which
+  **exists** in-repo: `internal/screenbench/{metrics,scenario,cmd,emulator}`),
+  a legitimate in-repo Go→TS port. It needs an **operational re-queue, not a
+  code change** — once retried, the merge gate's `git status --porcelain` will
+  report nothing for `bun.lock`.
+
+- **Cause B — cross-repo mismatch (not fixable by any commit here).** Plan
+  `HARNESS-WRAPPER-1`'s children `-7/-14/-3` (blocking `-2/-4` transitively via
+  plan-decompose/critic loops) were scoped against the TypeScript `meta-harness`
+  module surface (`src/chat/**`, `src/wrapper/**`, `src/discovery/**`,
+  `src/cli/run.ts`, `test/chat/fakeharness.ts`) — **none of which has ever
+  existed in this repo** (`git log --all` over those paths → 0 commits). This
+  workspace provisions worktrees against the **Go** `harness-wrapper` repo
+  (`go.mod` → `module github.com/olesho/harness-wrapper`). No commit to this
+  repository can supply another repo's dependency graph. The genuine fix is an
+  **operator routing decision with no single obviously-correct answer** —
+  repoint the `HARNESS-WRAPPER` workspace's `project-dir` at
+  `/Users/oleh/Work/aether/meta-harness`, stand up a dedicated workspace, or
+  re-scope `-1` — already flagged 5+ times and escalated in HARNESS-WRAPPER-22;
+  **still pending**.
+
+- **`HARNESS-WRAPPER-25` — mis-attributed, do not count.** It carries a
+  **different** observer signature (`obs-sig:92d69f4a2f`,
+  `dead-spawner:integrator:HARNESS-WRAPPER-5`), is already `triaged`/`implemented`
+  (see HARNESS-WRAPPER-26 above), and must **not** be counted as a
+  `backlog:blocked` cause — listing it double-counts a separate anomaly.
+
+**Resolution:** no source change made in this repo — Cause A is already merged
+(`.gitignore:24` / `8e2964d`) and Cause B has no in-repo code surface. For the
+human reviewing: (1) dedup this against HARNESS-WRAPPER-22; (2) re-queue
+`HARNESS-WRAPPER-19` against current base (low-risk, no code — its clean-tree
+check now passes); (3) make the pending `meta-harness` routing decision for
+`-7/-14/-3` — **do not** port `meta-harness` dependencies into `harness-wrapper`
+and do not mark those resolved on the basis of any change here; (4) leave `-25`
+to its own signature. Adding or re-touching application code under this ticket
+would be a mis-port; the only edit made here is this dedup note.
