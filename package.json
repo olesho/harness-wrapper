@@ -1,0 +1,6 @@
+{
+  "name": "harness-wrapper",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Go module. This root package.json is a no-op npm bootstrap target so the dev→release gate's root-level `npm install` succeeds. Real JS lives in scripts/docs/ (docs Node port) and clients/typescript/."
+}
