@@ -4,8 +4,8 @@
 // OpenCode is provider-agnostic: a single session can be backed by
 // Anthropic, OpenAI, Google, local models, and dozens of others, so the
 // error text it surfaces varies by provider. There is no single
-// bracketed/anchored API-error format to key on the way Gemini and
-// Claude Code have, so APIError is left nil here and the Cost/Retry
+// bracketed/anchored API-error format to key on the way Claude Code
+// has, so APIError is left nil here and the Cost/Retry
 // string lists carry the conservative cross-provider fingerprints
 // instead. Patterns should be tightened (and an APIError matcher added)
 // once a recorded corpus under test/corpus/opencode/ exists.

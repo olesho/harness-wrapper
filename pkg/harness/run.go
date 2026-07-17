@@ -402,8 +402,8 @@ func (o *streamTap) drainHooks(spoolDir string) string {
 	parents := 0
 	for _, pe := range drained {
 		// Recover the session id from hooks when the live stream didn't supply
-		// it (e.g. a harness with no StreamParser/SessionIDExtractor, like
-		// gemini) — so resume/lock persistence still gets it.
+		// it (e.g. a harness with no StreamParser/SessionIDExtractor) — so
+		// resume/lock persistence still gets it.
 		if o.sessionID == "" && pe.HarnessSessionID != "" && pe.ParentSessionID == "" {
 			o.sessionID = pe.HarnessSessionID
 		}

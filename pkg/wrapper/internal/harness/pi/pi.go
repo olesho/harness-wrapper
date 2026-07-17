@@ -6,7 +6,7 @@
 // OpenAI, Google, local models, and others (its assistant messages carry
 // the originating provider/model), so the error text it surfaces varies
 // by provider. There is no single bracketed/anchored API-error format to
-// key on the way Gemini and Claude Code have, so APIError is left nil
+// key on the way Claude Code has, so APIError is left nil
 // here and the Cost/Retry string lists carry the conservative
 // cross-provider fingerprints instead. Patterns should be tightened (and
 // an APIError matcher added) once a recorded corpus under

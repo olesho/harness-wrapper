@@ -27,12 +27,9 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if _, ok := Pinned("nonexistent"); ok {
 		t.Error("expected Pinned to return false for unknown harness")
 	}
-	// The gemini harness has been removed; it must not appear in versions.json.
-	if _, ok := all["gemini"]; ok {
-		t.Error("expected no gemini entry in versions.json")
-	}
-	if _, ok := Pinned("gemini"); ok {
-		t.Error("expected Pinned to return false for removed gemini harness")
+	// Exactly the supported set is declared — no removed harnesses linger.
+	if len(all) != 4 {
+		t.Errorf("versions.json has %d entries, want exactly 4 (codex, claude-code, opencode, pi)", len(all))
 	}
 	// OpenCode is unpinned until a corpus pins its version.
 	if got, ok := Pinned("opencode"); ok {

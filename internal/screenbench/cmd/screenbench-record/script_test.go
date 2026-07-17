@@ -109,8 +109,8 @@ func TestDriver_SubmitKeyTranslation(t *testing.T) {
 	if got := submitKeyForHarness("codex"); string(got) != "\x1b[13u" {
 		t.Errorf("codex submit key = %q, want CSI 13u", got)
 	}
-	if got := submitKeyForHarness("gemini"); got != nil {
-		t.Errorf("gemini submit key = %q, want nil (raw)", got)
+	if got := submitKeyForHarness("opencode"); got != nil {
+		t.Errorf("opencode submit key = %q, want nil (raw)", got)
 	}
 
 	t.Run("translates trailing newline", func(t *testing.T) {
@@ -372,12 +372,12 @@ func TestDriver_ContextCancelStopsRun(t *testing.T) {
 	}
 }
 
-// TestCanonicalScriptsLoad walks test/scripts/{codex,claude,gemini}
+// TestCanonicalScriptsLoad walks test/scripts/{codex,claude}
 // and parses every .json with loadScript. Catches typos and bad
 // regexes at commit time so a CI cron doesn't trip on them.
 func TestCanonicalScriptsLoad(t *testing.T) {
 	root := repoScriptsRoot(t)
-	for _, harness := range []string{"codex", "claude", "gemini"} {
+	for _, harness := range []string{"codex", "claude"} {
 		harness := harness
 		t.Run(harness, func(t *testing.T) {
 			dir := filepath.Join(root, harness)

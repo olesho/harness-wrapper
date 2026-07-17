@@ -241,13 +241,15 @@ func TestDiscover_ReturnsAllHarnesses(t *testing.T) {
 }
 
 func TestInit_ShipsDefaultProbes(t *testing.T) {
-	for _, h := range []string{"codex", "claude-code", "opencode", "pi"} {
+	shipped := []string{"codex", "claude-code", "opencode", "pi"}
+	for _, h := range shipped {
 		if _, ok := probeFor(h); !ok {
 			t.Errorf("expected default probe for %q after init()", h)
 		}
 	}
-	if _, ok := probeFor("gemini"); ok {
-		t.Error("did not expect a default probe for \"gemini\" after init()")
+	// Exactly the shipped set is registered — no removed harnesses linger.
+	if len(probes) != len(shipped) {
+		t.Errorf("probes registry has %d entries, want exactly %d (%v)", len(probes), len(shipped), shipped)
 	}
 }
 

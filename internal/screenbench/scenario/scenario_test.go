@@ -15,7 +15,7 @@ import (
 // declare binary_version="screenbench-synth" or leave it for the
 // generator to populate; this test exempts them.
 //
-// Recordings against real upstream CLIs (codex, claude-code, gemini, …)
+// Recordings against real upstream CLIs (codex, claude-code, …)
 // must always pin the upstream version they were taken against so the
 // upgrade playbook has a starting point.
 func TestEveryMetaJSONHasBinaryVersion(t *testing.T) {

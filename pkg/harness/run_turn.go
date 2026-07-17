@@ -60,7 +60,7 @@ var ErrTurnErrored = errors.New("harness: turn errored")
 // non-interactive job without relying on print/headless modes.
 type TurnConfig struct {
 	// Harness names the wrapper harness/profile ("claude", "codex",
-	// "gemini", ...). It is also used to pick the chat adapter unless
+	// ...). It is also used to pick the chat adapter unless
 	// TurnHarness is set.
 	Harness string
 

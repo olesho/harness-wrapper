@@ -35,10 +35,11 @@ type Patterns struct {
 
 	// APIError parses high-confidence upstream API error markers out of
 	// the harness's stripped output. Each harness formats API errors
-	// differently (Claude: "API Error: <code> ...", Gemini: "[API
-	// Error: ... (Status: <code>)]", Codex: phrase-based), so the
-	// matcher is supplied per-harness rather than a single shared
-	// regex. nil means "no API-error detection for this harness".
+	// differently (Claude: "API Error: <code> ...", others use a
+	// bracketed "[API Error: ... (Status: <code>)]" form, Codex:
+	// phrase-based), so the matcher is supplied per-harness rather than
+	// a single shared regex. nil means "no API-error detection for this
+	// harness".
 	APIError APIErrorMatcher
 
 	// SessionLimit parses high-confidence "session/usage limit reached"
