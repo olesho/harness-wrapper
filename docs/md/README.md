@@ -1,4 +1,4 @@
-harness-wrapper supervises CLI agent harnesses — **Claude Code, Codex, Gemini, OpenCode, pi** — under
+harness-wrapper supervises CLI agent harnesses — **Claude Code, Codex, OpenCode, pi** — under
 a pseudoterminal, classifies their execution state into a small normalized vocabulary, and exposes
 them as programmable, multi-turn **chat sessions**. Drive them from Go, from the CLI, or from any
 language over HTTP.

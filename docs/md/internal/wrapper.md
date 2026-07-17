@@ -44,7 +44,7 @@ type Config struct {
 	WaitDelay      time.Duration // SIGTERM→SIGKILL grace on cancellation (default 5s)
 
 	Trace      trace.Emitter      // diagnostic events; observability only
-	Harness    string             // selects a built-in classifier ("claude", "codex", "gemini", …)
+	Harness    string             // selects a built-in classifier ("claude", "codex", "opencode", "pi", …)
 	Effort     string             // reasoning effort ("low"|"medium"|"high"|"xhigh"|"max"; "" = default)
 	Classifier Classifier         // explicit classifier; wins over Harness
 	OnLine     func(line string)  // durable line tap (session-id / transcript hooks)

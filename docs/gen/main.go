@@ -148,7 +148,7 @@ func buildLanding(mdDir, htmlDir, diagramsDir string) error {
 	hero := `<div class="hero">
   <h1 class="hero-title">` + escapeHTML(SiteTitle) + `</h1>
   <p class="hero-tagline">` + escapeHTML(SiteTagline) + `</p>
-  <p class="hero-sub">Run Claude Code, Codex, Gemini and friends under a PTY, classify their
+  <p class="hero-sub">Run Claude Code, Codex, OpenCode, pi and friends under a PTY, classify their
   state into a small normalized vocabulary, and drive them as multi-turn chat sessions — from
   Go, the CLI, or any language over HTTP.</p>
   <div class="hero-actions">
