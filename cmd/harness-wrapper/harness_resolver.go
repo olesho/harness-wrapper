@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
+	"strings"
 )
 
 // harnessSpec describes how to invoke a single harness. Phase 1 only
@@ -34,11 +36,29 @@ func resolveHarness(name string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unsupported harness %q (supported: %s)", name, supportedHarnessNames())
 	}
+	// Binary override seam (mirrors MH structured-runner's resolveBinaryPath):
+	// honor HARNESS_BINARY_<NAME> then a generic HARNESS_BINARY, checked BEFORE
+	// PATH resolution so tests can inject a scripted fake hermetically. When no
+	// override env is present, plain PATH resolution is unaffected.
+	if override := harnessBinaryOverride(name); override != "" {
+		return override, nil
+	}
 	path, err := exec.LookPath(spec.Bin)
 	if err != nil {
 		return "", fmt.Errorf("harness %q not found in PATH: %w", spec.Bin, err)
 	}
 	return path, nil
+}
+
+// harnessBinaryOverride returns the caller-supplied override binary path for a
+// harness short name, or "" when none is set. HARNESS_BINARY_<NAME> (name
+// upper-cased, '-'→'_') wins over the generic HARNESS_BINARY.
+func harnessBinaryOverride(name string) string {
+	key := "HARNESS_BINARY_" + strings.ReplaceAll(strings.ToUpper(name), "-", "_")
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return os.Getenv("HARNESS_BINARY")
 }
 
 func supportedHarnessNames() string {

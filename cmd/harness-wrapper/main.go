@@ -45,6 +45,10 @@ func run(args []string) int {
 			// One-shot prompt mode: the proper substitution for `claude -p`.
 			// Drives one turn via pkg/chat and prints the reply.
 			return runOneShot(args[1:])
+		case "structured-run":
+			// Structured sibling of `run`: drives one turn and emits a single
+			// machine-readable turnproto.StructuredTurnResult JSON line.
+			return runStructuredRun(args[1:])
 		}
 	}
 	return runHarnessWrapper(args)
