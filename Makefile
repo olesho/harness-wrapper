@@ -1,9 +1,9 @@
-.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-gemini
+.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex
 
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Kept in sync with test/scripts/<harness>/*.json.
 SCENARIOS := short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn
-HARNESSES := codex claude gemini
+HARNESSES := codex claude
 
 help:
 	@echo "harness-wrapper make targets:"
@@ -15,12 +15,12 @@ help:
 	@echo "  make check-versions        offline upstream-version drift check (npm registry)"
 	@echo "  make rebake-corpus HARNESS=<name> SCENARIO=<name>"
 	@echo "                             re-record one scenario via screenbench-record --script"
-	@echo "                               HARNESS in {codex, claude, gemini}"
+	@echo "                               HARNESS in {codex, claude}"
 	@echo "                               SCENARIO in {$(SCENARIOS)}"
 	@echo "  make rebake-corpus-all     refresh entire corpus across all harnesses"
-	@echo "                             (PAID for codex/claude API tokens; gemini free-tier)"
-	@echo "  make schema-canary-gemini  re-record gemini short-reply then re-run the"
-	@echo "                             gemini transcript reader's real-corpus smoke test"
+	@echo "                             (PAID for codex/claude API tokens)"
+	@echo "  make schema-canary-codex   re-record codex short-reply then re-run the"
+	@echo "                             codex transcript reader's real-corpus smoke test"
 
 test:
 	go vet ./...
@@ -55,12 +55,12 @@ check-versions:
 	esac
 
 # rebake-corpus: re-record one scenario via screenbench-record --script.
-# Costs real API tokens for codex/claude (Gemini uses local oauth).
+# Costs real API tokens for codex/claude.
 #
 # Resolves harness binary name (claude-code → claude) and dispatches.
 # The harness name passed to --harness matches the directory under
 # test/corpus/ and test/scripts/; the binary name is one of {codex,
-# claude, gemini}.
+# claude}.
 rebake-corpus:
 ifndef HARNESS
 	$(error HARNESS is required, e.g. HARNESS=codex)
@@ -74,8 +74,7 @@ endif
 	case $(HARNESS) in \
 		claude|claude-code) harness_dir=claude; corpus_dir=claude-code; binary_name=claude ;; \
 		codex)              harness_dir=codex;  corpus_dir=codex;       binary_name=codex ;; \
-		gemini)             harness_dir=gemini; corpus_dir=gemini;      binary_name=gemini ;; \
-		*) echo "✗ unknown harness $(HARNESS); want codex | claude | gemini"; exit 2 ;; \
+		*) echo "✗ unknown harness $(HARNESS); want codex | claude"; exit 2 ;; \
 	esac; \
 	bin=$$(command -v $$binary_name 2>/dev/null); \
 	if [ -z "$$bin" ]; then echo "✗ $$binary_name not found in PATH"; exit 2; fi; \
@@ -94,13 +93,13 @@ endif
 	    --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)" )
 
 # rebake-corpus-all: refresh every canonical scenario across every
-# harness. Spends real API dollars for codex/claude (gemini uses
-# local oauth). After recording, re-runs the adapter test suite to
-# surface any TUI-marker drift — failure means escalate to the
-# upgrade playbook (docs/md/internal/versions-drift.md).
+# harness. Spends real API dollars for codex/claude. After recording,
+# re-runs the adapter test suite to surface any TUI-marker drift —
+# failure means escalate to the upgrade playbook
+# (docs/md/internal/versions-drift.md).
 rebake-corpus-all:
-	@echo "▶ rebake-corpus-all will run 18 live recordings (6 scenarios × 3 harnesses)."
-	@echo "  codex + claude consume API tokens; estimated total ~\$$0.50."
+	@echo "▶ rebake-corpus-all will run 12 live recordings (6 scenarios × 2 harnesses)."
+	@echo "  codex + claude consume API tokens; estimated total ~\$$0.33."
 	@echo "  Ctrl-C now to abort; otherwise resuming in 5 seconds..."
 	@sleep 5
 	@failed=""; \
@@ -126,14 +125,14 @@ rebake-corpus-all:
 	}; \
 	echo "✓ corpus refreshed and adapter tests green."
 
-# schema-canary-gemini: tightest single-harness drift check that
-# exercises the real upstream binary. Records gemini's short-reply
+# schema-canary-codex: tightest single-harness drift check that
+# exercises the real upstream binary. Records codex's short-reply
 # scenario, then re-runs the transcript reader's real-corpus smoke
 # test against whatever new JSONL the live recording produced. A
-# failure here means gemini's session schema shifted in a way the
-# reader's two-shape decoder doesn't yet handle.
-schema-canary-gemini:
-	@$(MAKE) --no-print-directory rebake-corpus HARNESS=gemini SCENARIO=short-reply
+# failure here means codex's session schema shifted in a way the
+# reader's decoder doesn't yet handle.
+schema-canary-codex:
+	@$(MAKE) --no-print-directory rebake-corpus HARNESS=codex SCENARIO=short-reply
 	@echo ""
-	@echo "▶ re-running gemini transcript real-corpus smoke against the fresh on-disk JSONL..."
-	@go test -run TestReadAgainstRealCorpus -v ./pkg/transcript/gemini/...
+	@echo "▶ re-running codex transcript real-corpus smoke against the fresh on-disk JSONL..."
+	@go test -run TestReadAgainstRealCorpus -v ./pkg/transcript/codex/...

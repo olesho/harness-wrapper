@@ -11,10 +11,9 @@ export interface Turn {
   completed_at?: string;
   /**
    * Populated when the wrapper recognized an upstream API error
-   * (Claude `API Error: 529`, Gemini `(Status: 429)`, Codex
-   * `exceeded retry limit, last status: 503`). Zero / omitted for
-   * transport errors (no HTTP code in the harness output) and for
-   * non-api turn errors.
+   * (e.g. Claude `API Error: 529`, Codex `exceeded retry limit, last
+   * status: 503`). Zero / omitted for transport errors (no HTTP code
+   * in the harness output) and for non-api turn errors.
    */
   http_code?: number;
   /**
