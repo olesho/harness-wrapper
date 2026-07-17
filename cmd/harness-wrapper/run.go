@@ -97,43 +97,7 @@ func runOneShot(args []string) int {
 		ExitAfterTurn: true, // stop after the turn (graceful) → clean, bounded run
 	}
 
-	if interactive {
-		// Interactive mode: surface blocking prompts to the human on /dev/tty.
-		//
-		// No InputPolicy: policyOption resolves trust_prompt BEFORE OnInputRequest
-		// is consulted (pkg/chat/input.go), so keeping the trust_prompt policy
-		// entry would silently auto-accept the single most common prompt (folder
-		// trust) and it would never reach the human. A nil InputPolicy makes every
-		// kind fall through to OnInputRequest.
-		//
-		// TurnConfig.Output is intentionally left unset: it carries raw PTY bytes
-		// from the harness's full-screen TUI (alternate screen, cursor
-		// addressing), which would garble the clean plain-text menu selectAnswer
-		// writes to the same /dev/tty. In `run` mode the harness renders on the
-		// chat layer's internal virtual terminal and reaches no real terminal, so
-		// /dev/tty shows only the menu — there is no competing renderer.
-		cfg.OnInputRequest = func(req chat.InputRequest) (chat.InputAnswer, bool) {
-			if ans, ok := interactiveSelect(ctx, req, tty); ok {
-				return ans, true
-			}
-			// EOF / invalid / deadline: fall back to the same three-tier
-			// auto-accept logic so a partial/aborted interaction still resolves
-			// rather than surfacing on Events() and failing the run.
-			return autoAcceptAnswer(req)
-		}
-	} else {
-		// Auto-accept mode (unattended): today's behavior, unchanged. Auto-accept
-		// blocking prompts (e.g. the folder-trust dialog) so a one-shot never
-		// hangs waiting for a human.
-		cfg.InputPolicy = &chat.InputPolicy{
-			ByKind: map[string]chat.Disposition{
-				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-			},
-		}
-		cfg.OnInputRequest = func(req chat.InputRequest) (chat.InputAnswer, bool) {
-			return autoAcceptAnswer(req)
-		}
-	}
+	cfg.InputPolicy, cfg.OnInputRequest = inputHandling(ctx, interactive, tty)
 
 	res, err := harness.RunTurn(ctx, cfg)
 	// ErrTurnErrored carries a populated TurnResult; any other error is fatal.
@@ -252,6 +216,40 @@ func autoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool) {
 		return chat.InputAnswer{OptionID: req.Options[0].ID}, true
 	}
 	return chat.InputAnswer{}, false
+}
+
+// inputHandling builds the InputPolicy + OnInputRequest callback for the chosen
+// mode. Factored out of runOneShot so the two wirings are unit-testable without
+// a real /dev/tty or a live harness.
+//
+//   - interactive: NO InputPolicy (nil) — policyOption resolves trust_prompt
+//     BEFORE OnInputRequest (pkg/chat/input.go), so a trust_prompt policy entry
+//     would silently auto-accept folder trust and it would never reach the
+//     human; nil makes every kind fall through to the callback. The callback
+//     surfaces the prompt on tty via selectAnswer (bounded by ctx), then falls
+//     back to autoAcceptAnswer on EOF/invalid/deadline so a partial interaction
+//     still resolves rather than failing the run with ErrInputPending.
+//     TurnConfig.Output is left unset by the caller: raw PTY bytes would garble
+//     the clean menu on the same tty (see runOneShot).
+//   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
+//     autoAcceptAnswer callback, so an unattended one-shot never hangs.
+func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.InputPolicy, func(chat.InputRequest) (chat.InputAnswer, bool)) {
+	if interactive {
+		return nil, func(req chat.InputRequest) (chat.InputAnswer, bool) {
+			if ans, ok := interactiveSelect(ctx, req, tty); ok {
+				return ans, true
+			}
+			return autoAcceptAnswer(req)
+		}
+	}
+	policy := &chat.InputPolicy{
+		ByKind: map[string]chat.Disposition{
+			"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+		},
+	}
+	return policy, func(req chat.InputRequest) (chat.InputAnswer, bool) {
+		return autoAcceptAnswer(req)
+	}
 }
 
 // resolveInputMode decides how blocking prompts are answered in `run`.
