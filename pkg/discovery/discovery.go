@@ -80,7 +80,7 @@ type Probe interface {
 // defaultProbeTimeout bounds a single `<binary> --version` invocation.
 // It is a safety net for a genuinely hung binary, not a latency target,
 // so it is set generously: the harness CLIs are node-based (claude,
-// codex, gemini) and a cold `--version` can take 1-2s just for node to
+// codex) and a cold `--version` can take 1-2s just for node to
 // start, more on a loaded machine. A tight bound (the original 2s) made
 // detection spuriously fail under heavy parallel load — the probe child
 // was SIGKILLed mid-start ("--version: signal: killed"), reported as an

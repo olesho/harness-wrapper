@@ -86,7 +86,7 @@ type Turn struct {
 
 	// HTTPCode is the upstream API status code carried with a Blocked
 	// transition when the wrapper recognized an api_error event
-	// (claudecode "API Error: 529", Gemini "(Status: 429)", Codex
+	// (claudecode "API Error: 529", Codex
 	// "exceeded retry limit, last status: 503"). Zero for non-api
 	// blocks and for transport-level errors with no numeric code.
 	HTTPCode int

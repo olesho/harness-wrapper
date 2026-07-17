@@ -1,7 +1,0 @@
-{
-  "steps": [
-    {"wait_for": "> "},
-    {"send": "write a 4-paragraph markdown summary of recursion. include a heading, an unordered list of three items, and inline `code` formatting. keep it under 250 words.\n"},
-    {"wait_for": "> "}
-  ]
-}

@@ -196,9 +196,9 @@ func TestLookup_VersionProbeError_DoesNotFlagDrift(t *testing.T) {
 }
 
 func TestLookup_VersionUnpinned_TreatedAsCompatible(t *testing.T) {
-	setShimPath(t, nameContent{"gemini", "#!/bin/sh\necho 0.1.0\n"})
+	setShimPath(t, nameContent{"opencode", "#!/bin/sh\necho 0.1.0\n"})
 
-	got, err := Lookup("gemini")
+	got, err := Lookup("opencode")
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestLookup_VersionUnpinned_TreatedAsCompatible(t *testing.T) {
 		t.Errorf("want DetectedVersion=0.1.0, got %q", got.DetectedVersion)
 	}
 	if got.PinnedVersion != "" {
-		t.Errorf("want PinnedVersion=\"\" (gemini intentionally unpinned), got %q",
+		t.Errorf("want PinnedVersion=\"\" (opencode intentionally unpinned), got %q",
 			got.PinnedVersion)
 	}
 	if !got.VersionMatchesPin {
@@ -222,7 +222,7 @@ func TestDiscover_ReturnsAllHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	want := map[string]bool{"codex": false, "claude-code": false, "gemini": false, "opencode": false, "pi": false}
+	want := map[string]bool{"codex": false, "claude-code": false, "opencode": false, "pi": false}
 	for _, info := range all {
 		if _, ok := want[info.Harness]; !ok {
 			t.Errorf("unexpected harness in Discover: %q", info.Harness)
@@ -241,10 +241,15 @@ func TestDiscover_ReturnsAllHarnesses(t *testing.T) {
 }
 
 func TestInit_ShipsDefaultProbes(t *testing.T) {
-	for _, h := range []string{"codex", "claude-code", "gemini", "opencode", "pi"} {
+	shipped := []string{"codex", "claude-code", "opencode", "pi"}
+	for _, h := range shipped {
 		if _, ok := probeFor(h); !ok {
 			t.Errorf("expected default probe for %q after init()", h)
 		}
+	}
+	// Exactly the shipped set is registered — no removed harnesses linger.
+	if len(probes) != len(shipped) {
+		t.Errorf("probes registry has %d entries, want exactly %d (%v)", len(probes), len(shipped), shipped)
 	}
 }
 

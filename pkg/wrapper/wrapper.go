@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -309,7 +308,6 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	applyDefaults(&cfg)
 	cfg.Args = argsWithHarnessEffort(cfg.Harness, cfg.Args, cfg.Effort)
 	cfg.Args = argsWithHarnessModel(cfg.Harness, cfg.Args, cfg.Model)
-	cfg.Env = envWithHarnessEffort(cfg.Harness, cfg.Env, cfg.Effort)
 	return startSession(ctx, cfg)
 }
 
@@ -331,21 +329,21 @@ func validateConfig(cfg *Config) error {
 			return fmt.Errorf("%w: Effort must be one of low, medium, high, xhigh, max", ErrInvalidConfig)
 		}
 		if !harnessSupportsEffort(cfg.Harness) {
-			return fmt.Errorf("%w: Effort is only supported for claude, codex, and gemini harnesses", ErrInvalidConfig)
+			return fmt.Errorf("%w: Effort is only supported for claude and codex harnesses", ErrInvalidConfig)
 		}
 	}
 	return nil
 }
 
 // normHarness normalizes a harness name for switch matching. The chat layer
-// uses adapter-style names ("claude-code", "gemini-cli") while the CLI/effort
-// code historically switched on short names ("claude", "gemini"); normalizing
-// lets both reach the same per-harness translation. Mirrors classifier.go.
+// uses adapter-style names ("claude-code") while the CLI/effort code
+// historically switched on short names ("claude"); normalizing lets both
+// reach the same per-harness translation. Mirrors classifier.go.
 func normHarness(h string) string { return strings.ToLower(strings.TrimSpace(h)) }
 
 func harnessSupportsEffort(harness string) bool {
 	switch normHarness(harness) {
-	case "claude", "claude-code", "codex", "gemini", "gemini-cli":
+	case "claude", "claude-code", "codex":
 		return true
 	default:
 		return false
@@ -448,86 +446,6 @@ func argsContainConfigKey(args []string, key string) bool {
 func configArgHasKey(arg, key string) bool {
 	arg = strings.TrimSpace(arg)
 	return arg == key || strings.HasPrefix(arg, key+"=")
-}
-
-func envWithHarnessEffort(harness string, env []string, effort string) []string {
-	if effort == "" || (normHarness(harness) != "gemini" && normHarness(harness) != "gemini-cli") || envHasKey(env, "GEMINI_CLI_SYSTEM_SETTINGS_PATH") {
-		return env
-	}
-	settingsPath := writeGeminiEffortSettings(effort)
-	if settingsPath == "" {
-		return env
-	}
-	if env == nil {
-		env = os.Environ()
-	}
-	out := make([]string, 0, len(env)+1)
-	out = append(out, env...)
-	out = append(out, "GEMINI_CLI_SYSTEM_SETTINGS_PATH="+settingsPath)
-	return out
-}
-
-func envHasKey(env []string, key string) bool {
-	prefix := key + "="
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func writeGeminiEffortSettings(effort string) string {
-	budget, ok := geminiThinkingBudget(effort)
-	if !ok {
-		return ""
-	}
-	f, err := os.CreateTemp("", "harness-wrapper-gemini-effort-*.json")
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	settings := fmt.Sprintf(`{
-  "modelConfigs": {
-    "customOverrides": [
-      {
-        "match": {
-          "overrideScope": "core"
-        },
-        "modelConfig": {
-          "generateContentConfig": {
-            "thinkingConfig": {
-              "thinkingBudget": %d
-            }
-          }
-        }
-      }
-    ]
-  }
-}
-`, budget)
-	if _, err := io.WriteString(f, settings); err != nil {
-		_ = os.Remove(f.Name())
-		return ""
-	}
-	return f.Name()
-}
-
-func geminiThinkingBudget(effort string) (int, bool) {
-	switch effort {
-	case "low":
-		return 512, true
-	case "medium":
-		return 2048, true
-	case "high":
-		return 8192, true
-	case "xhigh":
-		return 16384, true
-	case "max":
-		return -1, true
-	default:
-		return 0, false
-	}
 }
 
 func applyDefaults(cfg *Config) {

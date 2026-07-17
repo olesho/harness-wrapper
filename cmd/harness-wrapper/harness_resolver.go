@@ -23,7 +23,6 @@ type harnessSpec struct {
 var supportedHarnesses = map[string]harnessSpec{
 	"codex":    {Bin: "codex"},
 	"claude":   {Bin: "claude"},
-	"gemini":   {Bin: "gemini"},
 	"opencode": {Bin: "opencode"},
 	"pi":       {Bin: "pi"},
 }

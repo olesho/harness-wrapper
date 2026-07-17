@@ -21,11 +21,11 @@
 //     CI-friendly corpus refresh. See script.go for the schema.
 //
 //     screenbench-record \
-//     --harness gemini \
-//     --bin /usr/local/bin/gemini \
-//     --out test/corpus/gemini/short-reply \
+//     --harness codex \
+//     --bin /usr/local/bin/codex \
+//     --out test/corpus/codex/short-reply \
 //     --auto-version \
-//     --script test/scripts/gemini/short-reply.json
+//     --script test/scripts/codex/short-reply.json
 //
 // After the harness exits, populate expected.txt by hand or by copying
 // from the harness's session JSONL.
@@ -86,7 +86,7 @@ func parseFlags(args []string) (recorderConfig, error) {
 	fs := flag.NewFlagSet("screenbench-record", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	c := recorderConfig{}
-	fs.StringVar(&c.Harness, "harness", "", "harness name (e.g. codex, claude-code, gemini); recorded in meta.json")
+	fs.StringVar(&c.Harness, "harness", "", "harness name (e.g. codex, claude-code, opencode, pi); recorded in meta.json")
 	fs.StringVar(&c.Bin, "bin", "", "path to harness binary (required)")
 	fs.StringVar(&c.Out, "out", "", "output scenario directory (required)")
 	fs.IntVar(&c.Cols, "cols", 120, "terminal columns (also passed via COLUMNS env)")
@@ -239,7 +239,7 @@ func run(c recorderConfig) error {
 // captureBinaryVersion shells out `<bin> --version` and returns the
 // first non-empty line of stdout, with trailing whitespace trimmed.
 // Most CLIs print a single-line version banner ("codex 0.130.0",
-// "@google/gemini-cli 0.42.0", "Claude Code 2.1.141"); the first-line
+// "opencode 0.4.2", "Claude Code 2.1.141"); the first-line
 // rule is robust enough for them.
 // versionSemverRE extracts a clean semver from noisy `--version` output like
 // "2.1.185 (Claude Code)" or "codex-cli 0.141.0", so meta.binary_version is a

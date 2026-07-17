@@ -1,6 +1,7 @@
-// Claude Code settings.json hook installer. The two-level merge itself is shared
-// with Gemini (same settings.json format) in pkg/harness; this is the thin
-// Claude-specific entry that supplies the config path + harness name.
+// Claude Code settings.json hook installer. The two-level merge itself is
+// generic (shared by any harness using the same settings.json format) in
+// pkg/harness; this is the thin Claude-specific entry that supplies the
+// config path + harness name.
 package claude
 
 import (
@@ -10,7 +11,7 @@ import (
 )
 
 // EnsureConfig installs loom's hooks into <worktree>/.claude/settings.json via
-// the shared Claude/Gemini settings.json merge: idempotent (same loom path →
+// the shared settings.json merge: idempotent (same loom path →
 // identical output), self-healing (a changed loom path replaces the stale
 // managed entry), preserving the user's own hooks and other settings keys.
 func (h hookProvider) EnsureConfig(worktreePath string, loomArgv []string) error {

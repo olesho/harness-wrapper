@@ -29,7 +29,7 @@ import (
 // Profile is the per-harness entry point. Implementations live in
 // pkg/harness/<name> and self-register via Register in their init().
 type Profile interface {
-	// Name is the wrapper harness key ("claude", "codex", "gemini", ...).
+	// Name is the wrapper harness key ("claude", "codex", ...).
 	Name() string
 
 	// Resolve runs any runtime capability detection for this run and returns
@@ -74,7 +74,7 @@ type ResolvedProfile struct {
 	Stream StreamParser
 	// Hooks drives hook-based acquisition (config ensure + payload parsing).
 	// nil unless hook support is confirmed for this run (statically firm for
-	// Claude/Gemini; runtime-probed for Codex).
+	// Claude; runtime-probed for Codex).
 	Hooks HookProvider
 }
 

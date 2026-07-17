@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Claude and Gemini share the SAME settings.json hook format — a two-level
+// Some harnesses share the SAME settings.json hook format — a two-level
 // grouping of matcher → command entries:
 //
 //	{"hooks": {"<Event>": [{"matcher": "<m>", "hooks": [{"type":"command","command":"..."}]}]}}
@@ -28,7 +28,7 @@ type SettingsHookCmd struct {
 }
 
 // EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
-// Claude/Gemini-style settings.json at settingsPath, rendering each command from
+// settings.json (the shared two-level hook format) at settingsPath, rendering each command from
 // loomArgv via RenderHookCommand (harnessName is the token in the command). It
 // preserves the user's hooks + unknown keys, marks loom's entries (owner), and
 // refreshes the loom path each call (self-healing). flock-guarded + atomic.

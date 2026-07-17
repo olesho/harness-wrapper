@@ -4,7 +4,7 @@ import "github.com/olesho/harness-wrapper/pkg/transcript"
 
 // HookProvider is the capability for hook-driven transcript acquisition. A
 // ResolvedProfile carries a non-nil Hooks only when hook support is confirmed
-// for the run (statically firm for Claude/Gemini; runtime-probed for Codex).
+// for the run (statically firm for Claude; runtime-probed for Codex).
 //
 // The two methods serve the two sides of the hook lifecycle:
 //   - HookSpec() describes WHAT to install (which native events map to which
@@ -71,7 +71,7 @@ type HookContext struct {
 // HookSpec describes the hook entries the orchestrator idempotently + atomically
 // ensures in the harness's hook-config file. Per-harness variation is ONLY the
 // config path + native event names + arg mapping — the shell+stdin-JSON contract
-// is shared across Claude/Codex/Gemini.
+// is shared across Claude/Codex.
 type HookSpec struct {
 	// ConfigPath is the WORKTREE-RELATIVE path to the hook config (e.g.
 	// ".claude/settings.json"); the orchestrator resolves it against the run's

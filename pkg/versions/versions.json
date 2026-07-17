@@ -1,7 +1,6 @@
 {
   "codex":       {"package": "@openai/codex",             "binary": "codex",  "pinned": "0.142.2", "verified_at": "2026-06-26"},
   "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude", "pinned": "2.1.193", "verified_at": "2026-06-26"},
-  "gemini":      {"package": "@google/gemini-cli",        "binary": "gemini", "pinned": "",        "verified_at": ""},
   "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",      "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi", "pinned": "0.76.0", "verified_at": "2026-06-27"}
 }

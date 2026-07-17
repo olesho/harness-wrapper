@@ -72,7 +72,7 @@ func (y *YieldControl) Close() error {
 // HookOutcome is the result of HandleHookEvent. For capture events it is the
 // zero value. For the yield-guard control hook it may direct the caller to BLOCK
 // the tool: print BlockOutput to stdout and exit with a non-zero code the harness
-// interprets as "block" (Claude/Gemini: exit 2).
+// interprets as "block" (Claude: exit 2).
 type HookOutcome struct {
 	Block       bool
 	BlockOutput string
@@ -80,7 +80,7 @@ type HookOutcome struct {
 
 // checkYield inspects the yield file and, if a yield was requested, returns a
 // blocking HookOutcome carrying the harness's block-decision JSON. The protocol
-// (decision:block + exit 2) is the shared Claude/Gemini shell-hook contract.
+// (decision:block + exit 2) is the shared shell-hook contract.
 func checkYield(yieldFile string) HookOutcome {
 	if yieldFile == "" {
 		return HookOutcome{}

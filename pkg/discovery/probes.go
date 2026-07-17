@@ -15,7 +15,7 @@ var semverRe = regexp.MustCompile(`\d+\.\d+\.\d+(?:[-+][\w.]+)?`)
 // semverDashVProbe runs `<binary> --version` and extracts the first
 // semver-shaped substring from the combined output. Suitable for
 // harnesses whose --version line contains a clean X.Y.Z[-suffix] token
-// (codex, claude-code, gemini, opencode, and pi at the time of writing).
+// (codex, claude-code, opencode, and pi at the time of writing).
 type semverDashVProbe struct{}
 
 func (semverDashVProbe) Detect(ctx context.Context, path string) (string, error) {
@@ -35,7 +35,6 @@ func init() {
 	p := semverDashVProbe{}
 	RegisterProbe("codex", p)
 	RegisterProbe("claude-code", p)
-	RegisterProbe("gemini", p)
 	RegisterProbe("opencode", p)
 	RegisterProbe("pi", p)
 }
