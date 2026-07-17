@@ -1,6 +1,6 @@
 # harness-wrapper
 
-A Go toolkit for running CLI agent harnesses (Claude Code, Codex, Gemini, OpenCode, pi, …)
+A Go toolkit for running CLI agent harnesses (Claude Code, Codex, OpenCode, pi, …)
 under supervision and exposing them as programmable chat sessions.
 The repository layers in four steps:
 
@@ -34,7 +34,6 @@ binaries that import `pkg/chat`; this repo ships one such gateway,
    │ pkg/turns         │               │ pkg/transcript      │
    │  +harness/codex   │               │  +codex             │
    │  +harness/cc      │               │  +claudecode        │
-   │  +harness/gemini  │               │  +gemini            │
    │  +harness/opencode│               │  +pi                │
    │  +harness/pi      │               │ (read-only JSONL)   │
    │  +generic         │               └─────────────────────┘
@@ -156,7 +155,6 @@ for the endpoint reference and ready-to-run Python and TypeScript example client
 |-------------|------------------|--------------------------|--------------------------|--------------------------|
 | codex       | ✅                | ✅ `Token usage:` footer   | ✅ `codex resume <uuid>`   | ✅ `~/.codex/sessions/`    |
 | claude-code | ✅                | ✅ `✻ <verb> for Ns` line  | ✅ `claude --resume <uuid>`| ✅ `~/.claude/projects/`   |
-| gemini      | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ✅ `~/.gemini/tmp/<project>/chats/` |
 | opencode    | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ⏳ (on-disk store in flux: JSON → SQLite) |
 | pi          | ✅                | ⏳ idle + `Busy` spinner    | ⏳ headless via `--mode json` | ✅ `~/.pi/agent/sessions/` |
 | generic     | ✅ (fallback)     | ✅ via `waiting_for_input` | —                        | —                        |
@@ -171,7 +169,7 @@ The per-harness detail and "adding a harness" workflow are in the
 - `pkg/wrapper/trace/` — diagnostic event vocabulary
 - `pkg/screen/` — vt100 emulator wrapper (vt10x per [ADR-001](docs/md/internal/decisions/adr-001-vt100.md))
 - `pkg/turns/` — turn-detection interface, `generic` fallback, per-harness adapters under `harness/`
-- `pkg/transcript/` — read-only harness JSONL parsers (codex, claudecode, gemini, pi)
+- `pkg/transcript/` — read-only harness JSONL parsers (codex, claudecode, pi)
 - `pkg/chat/` — Conversation API, Store interface
 - `pkg/chat/memstore/` — in-memory `Store` implementation
 - `pkg/versions/` — read API for the embedded `versions.json` (pinned upstream versions per harness)
@@ -205,7 +203,6 @@ catches drift before users do:
 
 ```sh
 make check-versions        # offline pinned-vs-latest check via the npm registry (~2s, free)
-make schema-canary-gemini  # re-record gemini short-reply + re-parse the fresh JSONL
 make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario
 make rebake-corpus-all     # refresh all 18 scenarios (paid for codex/claude)
 ```

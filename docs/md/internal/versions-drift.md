@@ -14,7 +14,6 @@ against. It is embedded into `pkg/versions` at build time.
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.142.2", "verified_at": "2026-06-26"},
   "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.193", "verified_at": "2026-06-26"},
-  "gemini":      {"package": "@google/gemini-cli",         "binary": "gemini",   "pinned": "",        "verified_at": ""},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "",        "verified_at": ""}
 }
@@ -41,14 +40,13 @@ go red.
 
 ```bash
 make check-versions        # offline: pinned vs npm registry /latest (~2s, free)
-make schema-canary-gemini  # re-record gemini short-reply + re-parse the fresh JSONL
 make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario (paid for codex/claude)
-make rebake-corpus-all     # refresh all 18 (6 scenarios × 3 harnesses), then run adapter tests
+make rebake-corpus-all     # refresh all 12 (6 scenarios × 2 harnesses), then run adapter tests
 ```
 
 The canonical lists live in the `Makefile`:
 `SCENARIOS = short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn`;
-`HARNESSES = codex claude gemini`.
+`HARNESSES = codex claude`.
 
 `make check-versions` runs `internal/cmd/upstream-version-sentry`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
@@ -86,12 +84,13 @@ backwards-compatible.
 5. **Re-run** `go test ./pkg/turns/harness/<harness>/...` — canonical and adversarial must both pass.
 6. Bump the pin and commit.
 
-## When gemini's transcript schema drifts
+## When a transcript schema drifts
 
-`make schema-canary-gemini` ran a live short reply through gemini then re-parsed the fresh JSONL, and
-the reader failed. The reader accepts two line shapes (Gemini-API `role`+`parts[].text` and the
-CLI-internal `type`+`message`); extend `jsonlLine` / `normalizeRole` / `extractText`, add a trimmed
-fixture round-trip test, and re-run the canary.
+If a corpus canary runs a live short reply through a harness, re-parses the fresh JSONL, and the reader
+fails, the harness has changed its on-disk line shape. Where a reader must accept more than one shape
+(e.g. an API-style `role`+`parts[].text` line versus a CLI-internal `type`+`message` line), extend its
+`jsonlLine` / `normalizeRole` / `extractText` helpers, add a trimmed fixture round-trip test, and
+re-run the canary.
 
 ## Recording gotchas
 

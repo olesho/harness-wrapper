@@ -9,7 +9,6 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 |---|:--:|---|:--:|---|:--:|
 | **codex** | ✅ | ✅ `Token usage:` footer | ✅ | ✅ `~/.codex/sessions/` | ✅ startup interstitials |
 | **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass |
-| **gemini** | ✅ | ⏳ via `waiting_for_input` | ❌ | ✅ `~/.gemini/tmp/<project>/chats/` | — |
 | **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — |
 | **pi** | ✅ | ⏳ idle + `Busy` | ⏳ headless | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` |
 | **generic** | ✅ | — maps wrapper status | — | — | — |
@@ -18,7 +17,7 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 to the wrapper's `waiting_for_input` signal) · ❌ not yet / deferred · — not applicable.
 
 Pinned & verified upstream versions live in [`versions.json`](../internal/versions-drift.md): codex
-`0.142.2`, claude-code `2.1.193` (verified 2026-06-26). gemini / opencode / pi are unpinned pending
+`0.142.2`, claude-code `2.1.193` (verified 2026-06-26). opencode / pi are unpinned pending
 corpus capture.
 
 ## codex
@@ -46,16 +45,13 @@ The most fully-featured adapter.
 - **Interactive input**: folder-trust prompt and `--dangerously-skip-permissions` bypass-acceptance,
   with a numbered-menu parser (`proceed` / `deny` aliases). **Graceful quit** via the `/quit` command.
 
-## gemini, opencode, pi
+## opencode, pi
 
 These adapters detect **status** (via the wrapper's cost/quota/prompt/API patterns) and, where the
 on-disk format is stable, **read transcripts** — but they do not yet have a confirmed on-screen
 turn-completion marker, so turn boundaries currently fall back to the wrapper's `waiting_for_input`
 signal (lower fidelity: no intermediate work detection).
 
-- **gemini** — transcript reader implemented (dual-shape JSONL under `~/.gemini/tmp/<project>/chats/`);
-  session-ID extraction is a stub (Gemini uses user-chosen `/chat save <tag>` rather than a visible
-  UUID).
 - **opencode** — transcript reading is **deferred**: the on-disk store is migrating from per-message
   JSON files to SQLite, and shipping a reader that silently breaks across that migration is worse than
   none.

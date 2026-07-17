@@ -5,7 +5,7 @@ each is defined in full.
 
 ## Supervision
 
-- **Harness** — a CLI agent tool harness-wrapper supervises: Claude Code, Codex, Gemini, OpenCode, pi.
+- **Harness** — a CLI agent tool harness-wrapper supervises: Claude Code, Codex, OpenCode, pi.
   Interactive TUIs, not batch commands.
 - **PTY** — pseudoterminal. Each harness runs under one (`creack/pty`) so it behaves as if attached to
   a real terminal. The PTY byte stream is the canonical source for output capture and state detection.

@@ -19,7 +19,7 @@ fires an event; `History` reads the harness's own transcript.
 ```go
 ctx := context.Background()
 conv, err := chat.Open(ctx, chat.Options{
-	Harness:    "codex", // "claude-code" | "gemini" | "opencode" | "pi" | "generic"
+	Harness:    "codex", // "claude-code" | "opencode" | "pi" | "generic"
 	BinaryPath: "/usr/local/bin/codex",
 	WorkingDir: "/path/to/project",
 	Store:      memstore.New(),
@@ -47,7 +47,7 @@ history, _ := conv.History(ctx)
 
 ```go
 type Options struct {
-	Harness     string   // "codex" | "claude-code" | "gemini" | "opencode" | "pi" | "generic"  (required)
+	Harness     string   // "codex" | "claude-code" | "opencode" | "pi" | "generic"  (required)
 	BinaryPath  string   // harness executable                                                  (required)
 	Args        []string // passed verbatim to the harness
 	WorkingDir  string

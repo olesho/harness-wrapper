@@ -35,7 +35,7 @@ Usually the harness is blocked on something the normal flow can't satisfy:
 
 The harness paused at an interactive prompt. This is a **non-terminal** advisory: the harness is still
 alive. Answer the prompt (interactive input channel) and it resumes. For harnesses without a turn
-marker yet (gemini / opencode / pi), `waiting_for_input` is *also* how the [adapter](adapters.md)
+marker yet (opencode / pi), `waiting_for_input` is *also* how the [adapter](adapters.md)
 infers turn completion — so a quiet prompt is the expected "turn done" signal there.
 
 ## `blocked_by_cost` vs `retry_later` vs `api_error`
@@ -72,7 +72,7 @@ Turn boundaries are screen-scraped, so they track the harness's TUI:
 |---|---|---|
 | `ErrNoControl` | `Send`/`Answer` without the token. | `AcquireControl` first (FIFO; it may queue). |
 | `ErrTurnInFlight` | A prior assistant turn is still pending/streaming. | Wait for its `complete`/`errored` event. |
-| `ErrUnknownHarness` | `Options.Harness` isn't registered. | Use `codex` / `claude-code` / `gemini` / `opencode` / `pi` / `generic`. |
+| `ErrUnknownHarness` | `Options.Harness` isn't registered. | Use `codex` / `claude-code` / `opencode` / `pi` / `generic`. |
 | `ErrClosed` | Method called after `Close`. | Open a new `Conversation`. |
 
 Over HTTP these map to status codes (e.g. `ErrNoControl`/`ErrInputPending` → 409, `ErrUnknownHarness`

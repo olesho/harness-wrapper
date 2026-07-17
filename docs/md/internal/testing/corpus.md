@@ -16,7 +16,7 @@ test/corpus/
     transcript.jsonl   optional  copy of the harness's own session log, for reference
 ```
 
-`<harness>` is `codex`, `claude-code`, `gemini`, …; `<scenario>` is a short kebab-case name. Every
+`<harness>` is `codex`, `claude-code`, `pi`, …; `<scenario>` is a short kebab-case name. Every
 `meta.json` records the binary version it was taken against — so a **mixed-version corpus is fine**:
 the adapter tests assert version-independent structure, not text.
 

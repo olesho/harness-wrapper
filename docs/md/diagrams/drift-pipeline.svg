@@ -81,6 +81,6 @@
   <path class="warnl" marker-end="url(#d-wn)" d="M490,196 C530,212 540,228 547,248"/>
   <text class="ts" x="528" y="210" text-anchor="start">re-bake</text>
 
-  <text class="ts" x="30" y="356">Offline, developer-on-demand. check-versions is free (~2s); rebake-corpus spends real API tokens for codex/claude (gemini uses local oauth).</text>
+  <text class="ts" x="30" y="356">Offline, developer-on-demand. check-versions is free (~2s); rebake-corpus spends real API tokens for codex/claude.</text>
   <text class="ts" x="30" y="372">Layer-4 conformance runs the same drift check nightly against installed binaries; a mixed-version corpus is fine — every meta.json records its version.</text>
 </svg>

@@ -56,7 +56,7 @@
   <!-- Harness process under PTY -->
   <rect class="accent" x="190" y="430" width="374" height="48" rx="9"/>
   <text class="tb" x="377" y="453" text-anchor="middle">harness process</text>
-  <text class="ts" x="377" y="470" text-anchor="middle">claude · codex · gemini · opencode · pi — under a creack/pty PTY</text>
+  <text class="ts" x="377" y="470" text-anchor="middle">claude · codex · opencode · pi — under a creack/pty PTY</text>
 
   <!-- Support lane (right) -->
   <rect class="lane" x="600" y="206" width="144" height="202" rx="10"/>

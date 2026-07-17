@@ -19,12 +19,11 @@ to the metadata `Store`.
 |---|---|---|---|
 | **claude-code** | `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl` | tool-aware Claude JSONL | ✅ |
 | **codex** | `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl` | response-item roles | ✅ |
-| **gemini** | `~/.gemini/tmp/<project>/chats/session-<ts>-<short-id>.jsonl` | dual-shape (parts / type+message) | ✅ |
 | **pi** | `~/.pi/agent/sessions/--<cwd-slug>--/<ts>_<uuid>.jsonl` | JSONL v3, typed content blocks | ✅ |
 | **opencode** | — | per-message JSON → SQLite (migrating) | ❌ deferred |
 
 Locating the file is harness-specific: claude-code encodes the working directory into the path; codex
-walks the `YYYY/MM/DD` tree for the uuid suffix; gemini and pi do a slug lookup with a directory-walk
+walks the `YYYY/MM/DD` tree for the uuid suffix; pi does a slug lookup with a directory-walk
 fallback and confirm the match by an in-file ID header (guarding against shared-prefix false
 positives). **opencode** is deliberately omitted — its store is mid-migration from per-message JSON
 files to SQLite, and a reader that silently breaks across that change is worse than none.
@@ -40,7 +39,7 @@ for the full attribution; the upstream is MIT-licensed (reproduced in `LICENSE.u
 
 ## Drift
 
-A harness can change its on-disk schema between releases just as it changes its TUI. The gemini reader
-already tolerates two line shapes; `make schema-canary-gemini` re-records a short reply through the
-live CLI and re-parses the fresh JSONL to catch schema drift early — see
-[Versions & Drift](versions-drift.md).
+A harness can change its on-disk schema between releases just as it changes its TUI. Readers are
+written to tolerate more than one line shape where a harness ships variants; the corpus canary
+re-records a short reply through the live CLI and re-parses the fresh JSONL to catch schema drift
+early — see [Versions & Drift](versions-drift.md).

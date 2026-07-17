@@ -8,7 +8,7 @@
 go install github.com/olesho/harness-wrapper/cmd/harness-wrapper@latest
 ```
 
-Supported harness names today: `codex`, `claude`, `gemini`.
+Supported harness names today: `codex`, `claude`, `opencode`, `pi`.
 
 ## Transparent passthrough
 

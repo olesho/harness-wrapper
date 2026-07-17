@@ -7,7 +7,7 @@ harness-wrapper is a Go toolkit. You can consume it three ways, in increasing or
 3. **Over HTTP** — run `harness-chatd` and drive conversations from any language.
 
 > **You need a harness binary on PATH.** harness-wrapper supervises *other* tools — install at least
-> one of `claude`, `codex`, or `gemini` first, and make sure it is authenticated (run it once by hand).
+> one of `claude`, `codex`, `opencode`, or `pi` first, and make sure it is authenticated (run it once by hand).
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ func main() {
 	ctx := context.Background()
 
 	conv, err := chat.Open(ctx, chat.Options{
-		Harness:    "codex", // or "claude-code", "gemini", "opencode", "pi", "generic"
+		Harness:    "codex", // or "claude-code", "opencode", "pi", "generic"
 		BinaryPath: "/usr/local/bin/codex",
 		WorkingDir: "/path/to/project",
 		Store:      memstore.New(),
