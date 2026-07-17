@@ -204,7 +204,8 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 	}
 
 	var lines []string
-	lines = append(lines,
+	lines = append(
+		lines,
 		"version: 1",
 		"filesystem_policy:",
 		"  include_workdir: false",
@@ -236,7 +237,8 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 		for j, b := range e.Binaries {
 			bins[j] = fmt.Sprintf("{ path: %s }", b)
 		}
-		lines = append(lines,
+		lines = append(
+			lines,
 			fmt.Sprintf("  scrape_%d:", i),
 			fmt.Sprintf("    endpoints: [{ host: %s, port: %d }]", e.Host, port),
 			fmt.Sprintf("    binaries: [%s]", strings.Join(bins, ", ")),
@@ -341,7 +343,8 @@ func (c *OpenShellContainment) Layer(policy env.PolicySpec) env.ContainmentLayer
 		// interface has no error return, so surface a layer that fails every call
 		// loudly rather than silently addressing a nameless sandbox.
 		return errorLayer{err: fmt.Errorf(
-			"openshell.Layer: no sandbox name — use Acquire (production path) or pass policy.Extra[\"sandboxName\"] (unit-test seam)")}
+			"openshell.Layer: no sandbox name — use Acquire (production path) or pass policy.Extra[\"sandboxName\"] (unit-test seam)",
+		)}
 	}
 	return buildLayer(name, c.guestPath, c.driver)
 }

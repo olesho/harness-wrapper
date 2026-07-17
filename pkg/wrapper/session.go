@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
 )
 

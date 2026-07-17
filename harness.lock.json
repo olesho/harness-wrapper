@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "layout": "single",
+  "capabilities": {
+    "agents": [
+      "claude"
+    ],
+    "gitHooks": true,
+    "ci": true,
+    "agentDocs": true,
+    "skills": true
+  },
+  "projects": [
+    {
+      "name": "harness-wrapper",
+      "language": "go",
+      "modulePath": "github.com/olesho/harness-wrapper",
+      "features": {
+        "lint": true,
+        "test": true,
+        "markdown": true,
+        "diagrams": true,
+        "gofumpt": true,
+        "gci": true,
+        "modTidy": true,
+        "coverage": true
+      },
+      "coverageMin": 50
+    }
+  ]
+}

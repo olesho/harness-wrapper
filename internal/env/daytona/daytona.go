@@ -256,7 +256,7 @@ func (w *daytonaWorkspace) uploadDir(ctx context.Context, hostPath, guestPath st
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(hostTmp)
+	defer func() { _ = os.RemoveAll(hostTmp) }()
 	tarPath := filepath.Join(hostTmp, "up.tar")
 	if err := exec.CommandContext(ctx, "tar", "-C", hostPath, "-cf", tarPath, ".").Run(); err != nil {
 		return err
@@ -335,7 +335,7 @@ func (w *daytonaWorkspace) downloadDir(ctx context.Context, guestPath, hostPath 
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(hostTmp)
+	defer func() { _ = os.RemoveAll(hostTmp) }()
 	tarPath := filepath.Join(hostTmp, "down.tar")
 	if err := os.WriteFile(tarPath, buf, 0o644); err != nil {
 		return err

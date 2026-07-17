@@ -128,7 +128,7 @@ func TestRunTurn_CanKeepConversationAlive(t *testing.T) {
 	if res.ProcessStoppedAfterTurn {
 		t.Fatal("ProcessStoppedAfterTurn = true, want false for kept conversation")
 	}
-	defer res.Conversation.Close(context.Background())
+	defer func() { _ = res.Conversation.Close(context.Background()) }()
 
 	release, err := res.Conversation.AcquireControl(ctx)
 	if err != nil {
@@ -235,7 +235,7 @@ func TestRunTurn_RealClaudeDogfoodKeepAlive(t *testing.T) {
 	if res.Conversation == nil {
 		t.Fatal("Conversation is nil when ExitAfterTurn is false")
 	}
-	defer res.Conversation.Close(context.Background())
+	defer func() { _ = res.Conversation.Close(context.Background()) }()
 	if res.ProcessStoppedAfterTurn {
 		t.Fatal("ProcessStoppedAfterTurn = true, want false")
 	}

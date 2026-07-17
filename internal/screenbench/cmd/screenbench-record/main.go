@@ -143,7 +143,8 @@ func run(c recorderConfig) error {
 		defer capCancel()
 	}
 
-	env := append(os.Environ(),
+	env := append(
+		os.Environ(),
 		fmt.Sprintf("COLUMNS=%d", c.Cols),
 		fmt.Sprintf("LINES=%d", c.Rows),
 	)

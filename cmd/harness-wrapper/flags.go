@@ -68,7 +68,8 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 	if fs.NArg() != 1 {
 		return harnessWrapperArgs{}, fmt.Errorf(
 			"harness-wrapper: expected exactly one harness name before --, got %d args (%v); wrapper flags like --trace-file must come BEFORE the harness name",
-			fs.NArg(), fs.Args())
+			fs.NArg(), fs.Args(),
+		)
 	}
 	args.HarnessName = fs.Arg(0)
 	args.HarnessArgs = harnessArgs

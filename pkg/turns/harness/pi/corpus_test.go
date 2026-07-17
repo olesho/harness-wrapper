@@ -36,7 +36,7 @@ func TestCorpusReplay_TUI(t *testing.T) {
 		if end > len(raw) {
 			end = len(raw)
 		}
-		scr.Write(raw[off:end])
+		_, _ = scr.Write(raw[off:end])
 		if a.Busy(scr.Snapshot()) {
 			everBusy = true
 		}

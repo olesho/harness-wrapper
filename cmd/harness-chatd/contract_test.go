@@ -19,12 +19,23 @@ import (
 // wireTypes is every JSON DTO on the chatd wire. Add new wire types here.
 func wireTypes() []any {
 	return []any{
-		runTurnRequest{}, runTurnResponse{}, sessionDTO{},
-		openRequest{}, openResponse{}, conversationSummary{},
-		controlResponse{}, screenResponse{},
-		sendRequest{}, sendResponse{}, answerRequest{},
-		inputOptionDTO{}, inputRequestDTO{},
-		eventDTO{}, turnDTO{}, turnEventDTO{}, historyResponse{},
+		runTurnRequest{},
+		runTurnResponse{},
+		sessionDTO{},
+		openRequest{},
+		openResponse{},
+		conversationSummary{},
+		controlResponse{},
+		screenResponse{},
+		sendRequest{},
+		sendResponse{},
+		answerRequest{},
+		inputOptionDTO{},
+		inputRequestDTO{},
+		eventDTO{},
+		turnDTO{},
+		turnEventDTO{},
+		historyResponse{},
 		errorResponse{},
 	}
 }

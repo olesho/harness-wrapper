@@ -31,7 +31,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	contain := cfg.Contain
 	spec := cfg.Spec
 	injectors := cfg.Injectors
-	var redactor Redactor = cfg.Redactor
+	redactor := cfg.Redactor
 	if redactor == nil {
 		redactor = noopRedactor{}
 	}

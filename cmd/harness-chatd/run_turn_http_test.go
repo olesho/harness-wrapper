@@ -42,7 +42,7 @@ func TestRunTurnEndpoint_ClaudeStyleOneShot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /v1/turns: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status = %d, body = %s", resp.StatusCode, raw)

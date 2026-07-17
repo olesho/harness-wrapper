@@ -146,7 +146,9 @@ func TestSandboxName_Basic(t *testing.T) {
 
 func TestSandboxName_Deterministic(t *testing.T) {
 	id := "some-agent-id-42"
-	if SandboxName(id) != SandboxName(id) {
+	a := SandboxName(id)
+	b := SandboxName(id)
+	if a != b {
 		t.Fatal("SandboxName is not deterministic")
 	}
 }

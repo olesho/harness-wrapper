@@ -135,7 +135,8 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// Spawn the parent. The harness ("claude") is the mock running in
 	// stuck mode so the session stays alive long enough to observe.
-	spawn := exec.Command(hwBin,
+	spawn := exec.Command(
+		hwBin,
 		"--tmux-session", sessionName,
 		"--trace-file", tracePath,
 		"claude", "--", "--mode", "stuck",
@@ -206,7 +207,8 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 		_ = cmd.Run()
 	})
 
-	spawn := exec.Command(hwBin,
+	spawn := exec.Command(
+		hwBin,
 		"--tmux-session", sessionName,
 		"--trace-file", tracePath,
 		"claude", "--",

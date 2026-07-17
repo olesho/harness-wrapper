@@ -34,7 +34,7 @@ func runTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "failed to make temp dir: %v\n", err)
 		return 1
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	// The SSE api-error test now drives the scriptable fake harness (built lazily
 	// via fakeharness.BuildOnce); clean its binary up too. The mock is still built
 	// here for the other chatd tests (screen, sse_input).
@@ -101,7 +101,7 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	defer streamResp.Body.Close()
+	defer func() { _ = streamResp.Body.Close() }()
 
 	// pkg/chat only emits a TurnEvent when there is a current
 	// assistant turn — the wrapper's mid-run StatusAPIError flows into

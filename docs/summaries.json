@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "modules": {
+    "github.com/olesho/harness-wrapper/cmd/fakeharness": {
+      "summaryHash": "9d530d6e7f83e2c172e8685298603ca5d5a38d2d7137c36d5ac5036d3cb7151c",
+      "summary": "Scriptable stand-in binary for an interactive coding harness, driven over a PTY by the chat package's integration tests (not a product binary)."
+    },
+    "github.com/olesho/harness-wrapper/cmd/harness-chatd": {
+      "summaryHash": "cfcbedb07c15c60f13e47012259899d067736eedefb2a620294ddc8522eecd5e",
+      "summary": "HTTP + SSE daemon exposing pkg/chat so non-Go clients can drive multi-turn harness conversations across a process boundary (localhost, no auth in v1)."
+    },
+    "github.com/olesho/harness-wrapper/cmd/harness-wrapper": {
+      "summaryHash": "54345e5e97d607771722a09b2609775347708292eed1df5fb40717cf9188c020",
+      "summary": "Thin CLI front-end for pkg/wrapper.Run that supervises an external agent harness under a pseudoterminal and forwards the user's terminal to it."
+    },
+    "github.com/olesho/harness-wrapper/docs/gen": {
+      "summaryHash": "79fa2dd93da913e524688cf3d56bc700105fd177413465be160baaf0826cedc4",
+      "summary": "Static site generator for the harness-wrapper docs: renders canonical markdown with chroma highlighting, theme-aware inlined SVG diagrams, and a shared layout."
+    },
+    "github.com/olesho/harness-wrapper/internal/cmd/upstream-version-sentry": {
+      "summaryHash": "2f0a90e08c59a3dffe55bef2b1ebf44571335c15de50bacae8b976a3f5037fd9",
+      "summary": "CLI that compares versions.json upstream-version pins against the npm registry's latest published version for each harness (run via make check-versions)."
+    },
+    "github.com/olesho/harness-wrapper/internal/env": {
+      "summaryHash": "126f87cddfead3bb46813b3588ea11db746421a131a5443731e80c3d12bb5b93",
+      "summary": "Clean-room Go re-implementation of the meta-harness environment-layer core: Provisioner (where) x Containment (what) meeting at the Workspace exec/file-transfer contract.",
+      "interfaces": {
+        "Acquirer": {
+          "descHash": "068a2c09cd8a395507ca8b74e870bfc93f87fd4e5b2730e9ba3beb991ef244a4",
+          "description": "Optional, structurally-probed acquire hook of a Containment: acquires containment resources and returns a layer closed over them, cleaning up its own half-created resources on failure."
+        },
+        "AliasMapper": {
+          "descHash": "07f53a8c176f5ff0b47da67e00c12310512c75495c32fa7fca07b3eeaa0f7d46",
+          "description": "Optional, structurally-probed host-URL rewrite of a ContainmentLayer, folded over the inner's for a two-hop alias."
+        },
+        "Containment": {
+          "descHash": "f5d0eeb8915fa35c764cbe3b662777be1ef93b5a56afd71573e64880c9a0365a",
+          "description": "Decides WHAT the agent may touch by contributing a ContainmentLayer of primitives that the core Compose combinator decorates a Workspace with."
+        },
+        "ContainmentLayer": {
+          "descHash": "4644980364591455ab51ef82fc0cee1249da50758ccebb3df31010316f262eee",
+          "description": "The set of primitives (exec wrap, path map, cross upload/download, teardown) a Containment contributes to the Compose combinator."
+        },
+        "CredentialInjector": {
+          "descHash": "4850dc38033527d8446e2b7bc3f69ed3586520995532a3c944a501181990f355",
+          "description": "Applies secrets to a workspace, declares required capabilities and redactions, and cleans them up idempotently on destroy."
+        },
+        "Provisioner": {
+          "descHash": "cbe4503cb10e7c298eab38d94d359860a9930161a119a9ca2e40e64a8d1c3e2c",
+          "description": "Decides WHERE the machine comes from: host-side preflight plus Create returning a Workspace for a WorkspaceSpec."
+        },
+        "Redactor": {
+          "descHash": "9d1ddabdec9e89b7c2051182221127ab3568ce135daf8754fc7d90ec000a4879",
+          "description": "Sink for secret strings to scrub from logs; the core registers every injector's redactions here before any Apply."
+        },
+        "Workspace": {
+          "descHash": "4386fce1ea1ac46178a2be1c7e3a0cc3d0d134f009bfdb14354abf661054ffdb",
+          "description": "An exec + file-transfer transport onto a machine: Exec, Upload/Download, path conventions, host-alias rewrite, and retention-honoring Destroy."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/env/daytona": {
+      "summaryHash": "586bced7fd50728c8846e8807549ed0e1bca5ab248c0937256eae6bda4b69788",
+      "summary": "The Daytona provisioner: clean-room Go driver for elastically provisioned remote sandboxes, depending only on injectable SDK interfaces so it is unit-testable without the real SDK.",
+      "interfaces": {
+        "DaytonaSandbox": {
+          "descHash": "f56e228697b8306e6539bc0984cb198a167921d7ae7f797d81385b190ee8f8ee",
+          "description": "The subset of the real @daytonaio/sdk Sandbox surface this driver depends on: execute command, upload/download file, labels, id, and delete."
+        },
+        "DaytonaSdkClient": {
+          "descHash": "4a8704751655eaecae00d3c9dd7b5034f95f48465eec62c30719d0bf1a7d4444",
+          "description": "The subset of the real @daytonaio/sdk Daytona client surface this driver depends on: Create a sandbox and List sandboxes matching a query."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/env/openshell": {
+      "summaryHash": "6f5425c768bdf31e6e56015fda26d0b2d0a98bae436b498ef183fac653da723e",
+      "summary": "The OpenShell containment driver: clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming."
+    },
+    "github.com/olesho/harness-wrapper/internal/fakeharness": {
+      "summaryHash": "373bd38e934f71708fbdecd5ba752e9414b20b63c32b6ee238cd2c49c2276cf1",
+      "summary": "Scriptable fake interactive harness (script format + fluent Builder) that cmd/fakeharness compiles and chat.Open spawns over a real PTY to exercise timing-sensitive completion logic."
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench": {
+      "summaryHash": "2b1c6ee76982e8de0a374b9fe2f52cb813d01a76b40f0f76c04a195476afa7a7",
+      "summary": "CLI that replays recorded PTY byte streams through each registered vt100 emulator candidate and reports fidelity, stability, and throughput against ground-truth text."
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-record": {
+      "summaryHash": "8aef4ffb70564fe9499f7b76e99d7785e3745ba81eb906e15fa041f9531049e3",
+      "summary": "CLI that runs an interactive harness under wrapper supervision (interactive or scripted) while capturing the raw PTY byte stream into a corpus scenario directory."
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-synth": {
+      "summaryHash": "bf4a55cb1a419925aa4827ea7e4de9c247444b2b8de48b88527b738dea857ba0",
+      "summary": "CLI that generates a synthetic bake-off corpus exercising common TUI byte-stream primitives (SGR, cursor moves, alt-screen, box drawing) to validate bench plumbing."
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/emulator": {
+      "summaryHash": "57f61f75ee95c16f2718c7cce90d37331512c8101ad951226862bf657a8d71fa",
+      "summary": "Thin adapter interface around candidate vt100 emulator libraries so the bake-off harness can compare them on equal footing (feed bytes, read a text snapshot).",
+      "interfaces": {
+        "Emulator": {
+          "descHash": "c9ae9e5c7fa82f2b7f8b57a96598649d7ee3c04208911bb3554c4db0dcc5e104",
+          "description": "Minimal bake-off surface over a vt100 emulator: Write raw PTY bytes, Snapshot the visible screen text, and report cursor position, size, and name."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/metrics": {
+      "summaryHash": "c5a5f9d995d7689d9f0410070dd3f622b5cca6f00abbc017cb07f3d1c43d3c9c",
+      "summary": "Comparison utilities for the screen-emulator bake-off: normalize, strip ANSI, exact match, and Levenshtein/normalized edit distance against ground-truth text."
+    },
+    "github.com/olesho/harness-wrapper/internal/screenbench/scenario": {
+      "summaryHash": "d5d24634b14733b2277f6bb07b9690a54142abd0dd27ef8bf54980821af6d67f",
+      "summary": "Loads recorded bake-off scenarios from disk (bytes.raw + meta.json, optional expected.txt/transcript.jsonl) via Discover, Load, and WriteMeta."
+    },
+    "github.com/olesho/harness-wrapper/pkg/chat": {
+      "summaryHash": "bc18348708b0016e378cbc58b1c56dd0aa9ae601f3a77b10e5c119edb75ccaf9",
+      "summary": "Go-level chat-conversation API over harness-wrapper: a Conversation owns one PTY-supervised harness process and exposes control acquisition, send, and turn-state events.",
+      "interfaces": {
+        "Store": {
+          "descHash": "8f5f04fb51704d9596a718485e60f52d4459c5ab201d3ae2d13cc87e7d5eb649",
+          "description": "Persists chat-level session metadata and turn records (not transcript bodies); create/get/update sessions and append/update/list turns, safe for concurrent use."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/chat/memstore": {
+      "summaryHash": "167bdfd343623ac6b933bdadaabc0d26ae28477475b0feff0a0d312798b29c44",
+      "summary": "In-memory chat.Store implementation shipped with v1: holds sessions and turns in process memory, lost on restart; suitable for tests and single-process gateways."
+    },
+    "github.com/olesho/harness-wrapper/pkg/discovery": {
+      "summaryHash": "d5e377fbb9d6bd2dc77131a806cef51160820285f8c714b3d1ee54853b41b7f3",
+      "summary": "Read-only single source of truth for harness CLI availability and version on PATH for every harness in versions.json, with an in-memory detection cache.",
+      "interfaces": {
+        "Probe": {
+          "descHash": "ba8102c731608329f409964abb695e1cd38a58e1a011fed6b91b3bd0127ce485",
+          "description": "Parses a harness binary's version from its --version (or equivalent) output; cheap, one subprocess call, treating parse failures as errors."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/env": {
+      "summaryHash": "61189a2f7055f731d887c7acf5100d6bee3c14d280dfd02f002ed7046df41e35",
+      "summary": "Host-side structured-turn client: RunStructuredTurn drives one turn over a B1 Workspace (upload prompt, exec guest structured-run, parse last JSON line, optional transcript download)."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness": {
+      "summaryHash": "977a8966b71aeddb84f18cbf71b7dbb14be9324d3ffaf999b986d14a8e118ff6",
+      "summary": "Per-harness orchestration + capability layer above pkg/wrapper: resolves a Profile to a run-specific ResolvedProfile and dispatches on confirmed resume/transcript capabilities.",
+      "interfaces": {
+        "HookProvider": {
+          "descHash": "393fe94aa42831c14818a736d4006200987b801cfe3fe7661b597ba02bf94929",
+          "description": "Capability for hook-driven transcript acquisition: describes which native events to install and parses fired-hook stdin payloads into canonical events."
+        },
+        "Profile": {
+          "descHash": "6e8e2a40548d39bf121374f1e6b8305f82e5f2ec0312cda5fd0b8744754f1347",
+          "description": "Per-harness entry point that self-registers in init(): names the harness and Resolve()s runtime capability detection into a ResolvedProfile."
+        },
+        "Resumer": {
+          "descHash": "8efb321b1d16f902bd4ed6b5d9d69786884ad736321356c2751f78ff35761ff8",
+          "description": "Produces the resume-specific CLI argument prefix (e.g. --resume \u003cid\u003e) for a given session id; returns nil for an empty id."
+        },
+        "SessionIDExtractor": {
+          "descHash": "534b25eda9eb70240d6d63fd3c27b1861799aaaeac771e0f3475bfcf23455cf7",
+          "description": "Recovers the harness-assigned session UUID from a single line of the harness's headless stream output; stateless and idempotent per line."
+        },
+        "StaticHookProfile": {
+          "descHash": "4315d24ce5ca99cc2f48b46645fdca234bed270967e814a704aa5c4decf47e1b",
+          "description": "Optional Profile interface exposing the harness's static HookProvider so a fired-hook subprocess can obtain the payload parser without running Resolve."
+        },
+        "StreamParser": {
+          "descHash": "8d74dd270765a3dd76b80ff7303a796e895b512cd8f90a3c3f43eff30d7ded74",
+          "description": "Parses a single line of the harness's headless stream output into zero or more canonical events; stateless, idempotent, and tolerant of non-event lines."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/all": {
+      "summaryHash": "d9a5d371aafc779f6b02199c1f45457b82b4d37d7c4c5356c870dc1e83544445",
+      "summary": "Blank-import aggregator that registers every built-in harness profile so harness.For(name) resolves them; import for side effects."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/claude": {
+      "summaryHash": "667f4d18f9cbb36eda06ba5a59a61d60f612aea556355be0b7c168021d507f50",
+      "summary": "harness.Profile for the Claude Code CLI: session-id extraction, --resume prefix, settings.json hook installation, hook-payload parsing, and live stream-json parsing."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/codex": {
+      "summaryHash": "b08cb2c29cbf1c8822bf6852ff840be7389226d45fd5a1011a4ea0d58411142b",
+      "summary": "harness.Profile for the OpenAI Codex CLI: resume-only, since Codex's stream/hook/export contracts are under-documented and deliberately not implemented on a guess."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/gemini": {
+      "summaryHash": "415c7b8074973ab9ec6ff06d79f941e34243a6a8b137320e655fd50b526fd869",
+      "summary": "harness.Profile for the Gemini CLI: resume-by-id plus shell hooks in a Claude-shaped settings.json; hooks-only, with no stream parser until the schema is confirmed."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/opencode": {
+      "summaryHash": "d2cc56da99a9c3533711461e0114c6cc76336f520f8b51bad9d6556ae7a8208c",
+      "summary": "harness.Profile for the OpenCode CLI: resume + session-id only; no shell hooks (in-process plugins) and stream/export deferred until validatable."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harness/pi": {
+      "summaryHash": "3626f1f3286744d6dc6df81250c4bb71934b43e726e8f3b182767ca3aa8b2b45",
+      "summary": "harness.Profile for the pi coding agent: session-id, resume (--session), and a live --mode json stream parser validated against pi 0.76.0; no hooks (no shell-hook contract)."
+    },
+    "github.com/olesho/harness-wrapper/pkg/screen": {
+      "summaryHash": "9423955480dbc5196317f22636b24ea2a6e30d099ce3e7fe128e6fb4d067e6d0",
+      "summary": "Concurrent-safe wrapper around a vt10x vt100 emulator: feed raw PTY bytes via Write, read coherent Snapshots, and Subscribe to coalesced change notifications."
+    },
+    "github.com/olesho/harness-wrapper/pkg/transcript": {
+      "summaryHash": "cb33e67cb6e389b33d34b0141f9b04a9a00522b3e3d0385657f823ba64c31c62",
+      "summary": "Read-only view of harness-owned conversation logs: a leaf package defining the canonical Event/Turn model and the Reader interface per-harness parsers implement.",
+      "interfaces": {
+        "Reader": {
+          "descHash": "57f609de91e47e25e5f98d5342990e0d728971f8269549435a72fc401167052c",
+          "description": "Reads a harness's persisted transcript for one session (by harness session UUID + working dir) into the canonical Event stream; safe for concurrent use."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/transcript/claudecode": {
+      "summaryHash": "91bccf3b578f18a6d006d337ff293e99c38abb6a5d9a3b980098faf9313a1349",
+      "summary": "Reads Claude Code session transcripts (~/.claude/projects/\u003cencoded-cwd\u003e/\u003cuuid\u003e.jsonl) into the canonical, tool-aware transcript.Event stream."
+    },
+    "github.com/olesho/harness-wrapper/pkg/transcript/codex": {
+      "summaryHash": "a346f12547d23ea651863f7f7bb9e5bd233c39607200365b7feda4704ef4cf48",
+      "summary": "Reads Codex CLI rollout session transcripts (~/.codex/sessions/.../rollout-*.jsonl) into the canonical, tool-aware transcript.Event stream."
+    },
+    "github.com/olesho/harness-wrapper/pkg/transcript/gemini": {
+      "summaryHash": "bdd2fc36e67fa703b72e329059767d25f094cf6aef62d9da43320268213a2df4",
+      "summary": "Reads Gemini CLI session transcripts (~/.gemini/tmp/\u003cproject\u003e/chats/session-*.jsonl), accepting either observed line shape, into the canonical Event stream."
+    },
+    "github.com/olesho/harness-wrapper/pkg/transcript/pi": {
+      "summaryHash": "b65acb345f1e343eea5ca1bb9d20c80fff498c0b5264e631d02b33095feb73a5",
+      "summary": "Reads pi coding-agent session transcripts (\u003cconfig\u003e/sessions/--\u003ccwd-slug\u003e--/*.jsonl, format v3) into the canonical transcript.Event stream."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turnproto": {
+      "summaryHash": "5b427bffa53f07fbeca5a6e72a2c4f8475f4d4ee6daa6eb4b104af5985878bbb",
+      "summary": "The single source of truth for the neutral structured-turn protocol: exit codes, deadline anchor, and the frozen StructuredTurnResult schema shared by guest producer and host client."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns": {
+      "summaryHash": "c866c92fdb8276e5e2c80e1738c35a60be899662b674ba180a6f1b5268b6d6f9",
+      "summary": "Translates low-level harness signals (emulated screen changes + wrapper status) into a small vocabulary of chat turn events; Watcher composes session, screen, and Adapter.",
+      "interfaces": {
+        "Adapter": {
+          "descHash": "1c4a121feab95584469c6ba8364ceb04a0dfb5ae80497ff8ba5117f8d0bf765e",
+          "description": "Per-harness contract translating screen state and wrapper status into turn events; OnScreen/OnWrapperStatus must be safe for concurrent calls."
+        },
+        "BusyDetector": {
+          "descHash": "2ac9b082d0abb821da9b9b7d3171da5b7b429a7e64345399a30287c77d6afad3",
+          "description": "Optional adapter capability reporting from the rendered screen whether the harness is still working on the current turn versus idle at the prompt."
+        },
+        "MessageExtractor": {
+          "descHash": "aeec5f99bad4aec23867604f361c57a7c1bff45098668b7ab1907fb122b2ff52",
+          "description": "Optional adapter capability that recovers the assistant's reply text from the rendered screen, stripped of TUI chrome."
+        },
+        "Quitter": {
+          "descHash": "a33b7f1318edd19495319792c8a98120d953920f68611b4a83a1987bad070583",
+          "description": "Optional adapter capability surfacing the key sequence that makes the interactive harness exit gracefully instead of being SIGTERM'd."
+        },
+        "RawSessionIDExtractor": {
+          "descHash": "696c3fdf08feb9f9d13ada77f0a14849a12031f7621f62525e30490a438b940c",
+          "description": "Optional adapter capability surfacing the harness's session ID from a single raw PTY output line rather than the rendered screen."
+        },
+        "SessionIDExtractor": {
+          "descHash": "f91d79b233afb47664d2ae4a0db351ece2ded609830e47bae0f50c4eb2c0cbb1",
+          "description": "Optional adapter capability surfacing the harness's session ID by scraping the rendered screen snapshot."
+        },
+        "SessionIDLocator": {
+          "descHash": "14209aca451a016fe3627091d7c7042a2418180cf085c9e11f4a7ea8f92d861a",
+          "description": "Optional adapter capability recovering the harness session ID from on-disk state keyed on the working directory, as a fallback at turn completion."
+        },
+        "TranscriptReader": {
+          "descHash": "5f4a94aff3176df5d383412f9da0460068485b1bd2b155c68b8bc85acd146574",
+          "description": "Optional adapter capability providing access to the harness's persisted conversation log to hydrate Conversation.History()."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/generic": {
+      "summaryHash": "997ed70314e4669e38a02ec62ac03cdabbd2ec9969560506c528e6e8c89cd908",
+      "summary": "Fallback turn-detection adapter that maps wrapper.Status transitions directly to turn events without reading screen contents; a safety net when no per-harness adapter exists."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode": {
+      "summaryHash": "c2cd817b179e5f3fa981ad234f7e3aa4f133968a26af9588474463f3ea368e2a",
+      "summary": "Turn-detection adapter for the Claude Code CLI keying on the '✻ \u003cverb\u003e for Ns' thinking-summary line and interrupt marker; embeds generic.Adapter for wrapper status events."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/harness/codex": {
+      "summaryHash": "629e3e8aece7e1f29062e4857ccacf5a543d0d73fa5e12492935f7d2ca6a3e47",
+      "summary": "Turn-detection adapter for the Codex CLI (legacy Token-usage footer marker; 0.142+ relies on chat idle-completion) embedding generic.Adapter for wrapper status events."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/harness/gemini": {
+      "summaryHash": "837a0df41011f6cea935c769eb44c017c369cfe5e9b8208ac689cea4461cbd9e",
+      "summary": "Turn-detection adapter for the Gemini CLI: end-of-turn/session-id markers not yet identified, so it embeds generic.Adapter until a corpus recording exists."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/harness/opencode": {
+      "summaryHash": "70c4ec924a351b96f574eb04cd6af7ec2b05d6db58d4854278c9cf8f227537f4",
+      "summary": "Turn-detection adapter for the OpenCode CLI: screen markers and transcript reading not yet identified, so it embeds generic.Adapter until a corpus recording exists."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/harness/pi": {
+      "summaryHash": "8bdb9cf747f232e7bcea2e94cf5011231f031f5aa861b5f731c5fe23d28a13dd",
+      "summary": "Turn-detection adapter for the pi coding agent: transcript reading and graceful /quit implemented; end-of-turn screen marker awaits a corpus, embedding generic.Adapter."
+    },
+    "github.com/olesho/harness-wrapper/pkg/versions": {
+      "summaryHash": "9ac44b2c106367c6a17e5830f2e7770897bb02c12c54ad11028d5ee97b30aae5",
+      "summary": "Reads the repo-root versions.json pinning each supported harness CLI to an upstream package version, the source of truth tying adapters and corpus tests to a release."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper": {
+      "summaryHash": "9fa70dfa1487f82af2e09f83529212481b52d090aefa4003b2a91a5c85d280af",
+      "summary": "Supervises an external CLI agent harness under a pseudoterminal, observing its output and lifecycle and returning a normalized Status; callers own persistence.",
+      "interfaces": {
+        "Classifier": {
+          "descHash": "94a349597e3f5f5a07b9f1ede9521a35b0d5ccaa7949d98fb9d22186577a1a6b",
+          "description": "Inspects recent harness output and reports actionable status classifications; stateless (input rebuilt each poll) and safe for concurrent use."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/detector": {
+      "summaryHash": "122631bdb348cbd8789c1445488928d75b6568223c7082f305be22d57ca0b928",
+      "summary": "Generic pattern primitives for harness classifiers (substring/prompt-suffix matching, retry-after and reset-time parsing) over ANSI-stripped recent output; stateless."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/claude": {
+      "summaryHash": "85c74cc9f7f8729f3a239951bf7bd7612bf264d32203f0956d205becd6911910",
+      "summary": "Classifier patterns for the Claude Code CLI harness, including conservative API-error and session-limit matchers over ANSI-stripped output."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex": {
+      "summaryHash": "a89bf6da04a9d27907575176f2a6caf6b2444ba036081dc7f414747be29d09c5",
+      "summary": "Classifier patterns for the OpenAI Codex CLI harness, including an API-error matcher keyed on inner phrases across both TUI and exec display paths."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/cursor": {
+      "summaryHash": "2728d397db936ff892e5eaa0e0152a3f994e9db3fef7c575df2464ec53fe6c11",
+      "summary": "Classifier patterns for the Cursor CLI harness: conservative idle-gated Cost/Retry/Prompt fingerprints only (an anchored API-error matcher is a deliberate follow-up)."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini": {
+      "summaryHash": "4c0a85287cfb4e99912f57171ab4745f5b19ddd1ecb6caef085ac45fd90ca257",
+      "summary": "Classifier patterns for Google's Gemini CLI, seeded from observed API-error surfaces and Ink-TUI prompt shapes, including a 429-inferring API-error matcher."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/opencode": {
+      "summaryHash": "269d213a664f1838bf6b69afce50068ca91564be28b73e376a11dcb9d72b3b45",
+      "summary": "Classifier patterns for the provider-agnostic OpenCode CLI: conservative cross-provider Cost/Retry fingerprints with no single anchored API-error format (APIError left nil)."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/pi": {
+      "summaryHash": "046d777d9c08c897b77d80cc7446ce73b625af9fce3b984712be658eb2a93a20",
+      "summary": "Classifier patterns for the provider-agnostic pi coding agent: conservative cross-provider Cost/Retry fingerprints with no single anchored API-error format (APIError left nil)."
+    },
+    "github.com/olesho/harness-wrapper/pkg/wrapper/trace": {
+      "summaryHash": "eef4a241c3d8e04529c10615c6cc0ef3600c911b3f3da3da822d12c060fc8007",
+      "summary": "Diagnostic event vocabulary for the harness wrapper: Emitter implementations route lifecycle events to writers or slog; observability only, not part of the API stability surface.",
+      "interfaces": {
+        "Emitter": {
+          "descHash": "67ee512318da6e02caaefdf3c0cc2cb6fb54b235b3ac391570485407b1cc2d1e",
+          "description": "Receives wrapper diagnostic events; implementations (writer, slog) must be safe for concurrent use."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/test/fakeharness/mock": {
+      "summaryHash": "38b27e5b6a5ef4d8b0d1e999686c99e5b8d4600a5e108eb7c73750bb11af7615",
+      "summary": "Standalone mock interactive-agent CLI for pkg/wrapper tests: prints a banner and runs a --mode-selected behavior (completed, failed, stuck, needs-input, cost-limited, api-error)."
+    }
+  }
+}

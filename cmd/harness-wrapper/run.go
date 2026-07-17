@@ -10,10 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/term"
-
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"golang.org/x/term"
 )
 
 // runOneShot is the "proper substitution for `claude -p`": it drives ONE turn
@@ -77,7 +76,7 @@ func runOneShot(args []string) int {
 	// opened) is owned by this function for the whole run and closed on return.
 	tty, interactive := resolveInputMode(parsed.AutoAccept)
 	if tty != nil {
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 	}
 
 	wd, _ := os.Getwd()
@@ -107,9 +106,9 @@ func runOneShot(args []string) int {
 	}
 
 	text := cleanReply(res)
-	fmt.Fprint(os.Stdout, text)
+	_, _ = fmt.Fprint(os.Stdout, text)
 	if !strings.HasSuffix(text, "\n") {
-		fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout)
 	}
 
 	if errors.Is(err, harness.ErrTurnErrored) {
@@ -326,8 +325,8 @@ func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.Inpu
 	r := bufio.NewReader(in)
 
 	if len(req.Options) == 0 {
-		fmt.Fprintln(out, req.Prompt)
-		fmt.Fprint(out, "Enter response: ")
+		_, _ = fmt.Fprintln(out, req.Prompt)
+		_, _ = fmt.Fprint(out, "Enter response: ")
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
 			return chat.InputAnswer{}, false
@@ -336,16 +335,16 @@ func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.Inpu
 	}
 
 	for attempt := 0; attempt < selectInputMaxAttempts; attempt++ {
-		fmt.Fprintln(out, req.Prompt)
+		_, _ = fmt.Fprintln(out, req.Prompt)
 		for i := range req.Options {
 			o := &req.Options[i]
 			if o.Alias != "" {
-				fmt.Fprintf(out, "  %d) %s (%s)\n", i+1, o.Label, o.Alias)
+				_, _ = fmt.Fprintf(out, "  %d) %s (%s)\n", i+1, o.Label, o.Alias)
 			} else {
-				fmt.Fprintf(out, "  %d) %s\n", i+1, o.Label)
+				_, _ = fmt.Fprintf(out, "  %d) %s\n", i+1, o.Label)
 			}
 		}
-		fmt.Fprintf(out, "Select [1-%d]: ", len(req.Options))
+		_, _ = fmt.Fprintf(out, "Select [1-%d]: ", len(req.Options))
 
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
@@ -355,7 +354,7 @@ func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.Inpu
 		if n, perr := parseIndex(choice, len(req.Options)); perr == nil {
 			return chat.InputAnswer{OptionID: req.Options[n].ID}, true
 		}
-		fmt.Fprintf(out, "Invalid choice %q.\n", choice)
+		_, _ = fmt.Fprintf(out, "Invalid choice %q.\n", choice)
 		if err != nil {
 			// Reader is exhausted (EOF after a partial line): stop rather than
 			// spin re-prompting a closed reader.

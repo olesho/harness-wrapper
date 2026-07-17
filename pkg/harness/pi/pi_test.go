@@ -20,10 +20,10 @@ func TestParseStreamLine_RealCorpus(t *testing.T) {
 	if err != nil {
 		t.Skipf("corpus not present: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	p := streamParser{}
-	var byType = map[string]int{}
+	byType := map[string]int{}
 	var sawReadToolUse, sawLinkedResult, sawUserPrompt bool
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)

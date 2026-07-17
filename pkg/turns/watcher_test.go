@@ -5,39 +5,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
-	"github.com/olesho/harness-wrapper/pkg/turns"
-	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
-
-// recordingAdapter captures every call from the Watcher so tests can
-// assert what arrived and in what order. Screen events also emit a
-// synthetic turns.Event so we exercise the screen pump path.
-type recordingAdapter struct {
-	emitScreenEvent bool
-	gotScreen       chan screen.Snapshot
-	gotStatus       chan wrapper.Status
-}
-
-func (recordingAdapter) Name() string { return "recording" }
-
-func (a recordingAdapter) OnScreen(snap screen.Snapshot) []turns.Event {
-	select {
-	case a.gotScreen <- snap:
-	default:
-	}
-	if !a.emitScreenEvent {
-		return nil
-	}
-	return []turns.Event{{Kind: turns.TurnComplete, Reason: "screen"}}
-}
-
-func (a recordingAdapter) OnWrapperStatus(status wrapper.Status, reason string) []turns.Event {
-	select {
-	case a.gotStatus <- status:
-	default:
-	}
-	return []turns.Event{{Kind: turns.TurnComplete, Reason: reason}}
-}
 
 // TestWatcherScreenPump exercises only the screen pump path. We pass a
 // nil session and rely on Watch tolerating the nil-source behavior...
@@ -54,7 +22,7 @@ func TestScreenWriteSnapshotPath(t *testing.T) {
 	ch, unsub := scr.Subscribe()
 	defer unsub()
 
-	scr.Write([]byte("\x1b[2J\x1b[Hready"))
+	_, _ = scr.Write([]byte("\x1b[2J\x1b[Hready"))
 	select {
 	case <-ch:
 		// ok

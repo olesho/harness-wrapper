@@ -24,7 +24,7 @@ func openConversation(t *testing.T, ts *httptest.Server, req openRequest) string
 	if err != nil {
 		t.Fatalf("POST /v1/conversations: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("open status = %d, body = %s", resp.StatusCode, raw)
@@ -84,7 +84,7 @@ func TestSSE_TrustDialogSurfacedAndAnswered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	defer streamResp.Body.Close()
+	defer func() { _ = streamResp.Body.Close() }()
 
 	// 1. The trust dialog surfaces as an input_request with parsed options.
 	var reqID string
@@ -161,7 +161,7 @@ func TestSSE_TrustDialogAutoAnsweredByPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	defer streamResp.Body.Close()
+	defer func() { _ = streamResp.Body.Close() }()
 
 	// Acquire control and send — Send waits through the policy auto-answer
 	// (which clears the dialog) and then submits the prompt.

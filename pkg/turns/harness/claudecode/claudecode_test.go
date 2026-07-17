@@ -27,7 +27,7 @@ func TestClaudeCodeAdapterFiresOnMultiTurn(t *testing.T) {
 	bytes := corpusBytes(t, "multi-turn")
 
 	scr := screen.New(120, 40)
-	scr.Write(bytes)
+	_, _ = scr.Write(bytes)
 	snap := scr.Snapshot()
 
 	a := New()
@@ -44,7 +44,7 @@ func TestClaudeCodeAdapterDetectsInterrupt(t *testing.T) {
 	bytes := corpusBytes(t, "interrupted-mid-reply")
 
 	scr := screen.New(120, 40)
-	scr.Write(bytes)
+	_, _ = scr.Write(bytes)
 	snap := scr.Snapshot()
 
 	a := New()
@@ -65,7 +65,7 @@ func TestClaudeCodeAdapterRefiresAcrossTurns(t *testing.T) {
 	scr := screen.New(120, 40)
 	a := New()
 
-	scr.Write([]byte("⏺ first reply\r\n✻ Baked for 5s\r\n"))
+	_, _ = scr.Write([]byte("⏺ first reply\r\n✻ Baked for 5s\r\n"))
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("turn 1: expected 1 event, got %d", len(evs))
 	}
@@ -76,13 +76,13 @@ func TestClaudeCodeAdapterRefiresAcrossTurns(t *testing.T) {
 	}
 
 	// New thinking summary → fire again.
-	scr.Write([]byte("⏺ second reply\r\n✻ Brewed for 8s\r\n"))
+	_, _ = scr.Write([]byte("⏺ second reply\r\n✻ Brewed for 8s\r\n"))
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("turn 2: expected 1 event, got %d", len(evs))
 	}
 
 	// Claude Code can use accented verbs in the thinking summary.
-	scr.Write([]byte("⏺ third reply\r\n✻ Sautéed for 4s\r\n"))
+	_, _ = scr.Write([]byte("⏺ third reply\r\n✻ Sautéed for 4s\r\n"))
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("turn 3: expected 1 event for accented verb, got %d", len(evs))
 	}
@@ -105,7 +105,7 @@ func TestClaudeCodeAdapterFiresOnMinuteDurations(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			scr := screen.New(120, 40)
 			a := New()
-			scr.Write([]byte("⏺ reply\r\n" + tc.summary + "\r\n"))
+			_, _ = scr.Write([]byte("⏺ reply\r\n" + tc.summary + "\r\n"))
 			evs := a.OnScreen(scr.Snapshot())
 			if len(evs) != 1 || evs[0].Kind != turns.TurnComplete {
 				t.Fatalf("%q: expected exactly 1 TurnComplete, got %+v", tc.summary, evs)
@@ -123,7 +123,7 @@ func TestClaudeCodeAdapterFiresOnMinuteDurations(t *testing.T) {
 func TestClaudeCodeAdapter_TrailingContentNoFire(t *testing.T) {
 	scr := screen.New(120, 40)
 	a := New()
-	scr.Write([]byte("⏺ working\r\n✻ Cooked for 1m 22s · ↑ 3.1k tokens · esc to interrupt\r\n"))
+	_, _ = scr.Write([]byte("⏺ working\r\n✻ Cooked for 1m 22s · ↑ 3.1k tokens · esc to interrupt\r\n"))
 	for _, ev := range a.OnScreen(scr.Snapshot()) {
 		if ev.Kind == turns.TurnComplete {
 			t.Errorf("trailing-content duration line mis-fired TurnComplete: %+v", ev)
@@ -146,7 +146,7 @@ func TestClaudeCodeAdapter_AdversarialNoFire(t *testing.T) {
 	bytes := corpusBytes(t, "adversarial/thinking-line-mid-reply")
 
 	scr := screen.New(120, 40)
-	scr.Write(bytes)
+	_, _ = scr.Write(bytes)
 	snap := scr.Snapshot()
 
 	a := New()

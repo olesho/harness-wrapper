@@ -140,7 +140,7 @@ func readTraceEvents(t *testing.T, path string) []map[string]any {
 	if err != nil {
 		t.Fatalf("open trace: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var events []map[string]any
 	scanner := bufio.NewScanner(f)

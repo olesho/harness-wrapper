@@ -354,7 +354,7 @@ func readLastTraceEvent(path string) (map[string]any, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Stream the file and remember the last non-empty line. Trace files
 	// stay small in practice (kilobytes per run); a fancier tail seek is

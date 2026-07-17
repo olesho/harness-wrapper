@@ -248,7 +248,7 @@ func TestResolveInputMode_AutoAcceptWins(t *testing.T) {
 		t.Fatalf("interactive = true with --auto-accept, want false")
 	}
 	if tty != nil {
-		tty.Close()
+		_ = tty.Close()
 		t.Fatalf("tty non-nil with --auto-accept, want nil")
 	}
 }
@@ -260,7 +260,7 @@ func TestResolveInputMode_AutoAcceptWins(t *testing.T) {
 func TestResolveInputMode_NonInteractiveFallback(t *testing.T) {
 	tty, interactive := resolveInputMode(false)
 	if tty != nil {
-		defer tty.Close()
+		defer func() { _ = tty.Close() }()
 	}
 	// interactive is environment-dependent; the invariant is the tty/flag
 	// agreement: interactive iff a tty handle was returned.
