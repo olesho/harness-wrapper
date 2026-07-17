@@ -21,7 +21,12 @@ type harnessWrapperArgs struct {
 	// only by the parent invocation. When non-empty the wrapper behaves
 	// like a normal in-process run, but trace events carry the session
 	// name so consumers can correlate.
-	TmuxChild   string
+	TmuxChild string
+	// AutoAccept forces `run` to auto-answer blocking prompts (the affirmative
+	// option) even when a controlling terminal is attached, restoring the fully
+	// unattended behavior. Only runOneShot reads it; the default passthrough
+	// ignores it (the harness TUI asks the human directly).
+	AutoAccept  bool
 	HarnessName string
 	HarnessArgs []string
 }
@@ -82,5 +87,6 @@ func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
 	fs.StringVar(&a.Model, "model", "", "model id for supported harnesses (claude --model, codex -c model)")
 	fs.StringVar(&a.TmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
 	fs.StringVar(&a.TmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
+	fs.BoolVar(&a.AutoAccept, "auto-accept", false, "run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human")
 	return fs
 }
