@@ -1,3 +1,4 @@
+--auto-accept <*flag.boolValue> = "false" : run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human
 --effort <*flag.stringValue> = "" : reasoning effort for supported harnesses (low, medium, high, xhigh, max)
 --model <*flag.stringValue> = "" : model id for supported harnesses (claude --model, codex -c model)
 --tmux-child <*flag.stringValue> = "" : internal: in-pane re-exec marker; do not set manually

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
@@ -30,6 +33,15 @@ import (
 // text is the adapter's clean message extract (TUI chrome stripped), or the
 // harness transcript when one is available. `--timeout` via the
 // HARNESS_WRAPPER_RUN_TIMEOUT env var (default 15m).
+//
+// Interactive vs. unattended. `run` reads the prompt from os.Stdin (a pipe), so
+// os.Stdin can never be an interactive menu source. When a controlling terminal
+// is genuinely attached (a developer running `harness-wrapper run claude <<<
+// "prompt"` from a shell), a blocking trust/permission prompt is surfaced to the
+// human via a freshly opened /dev/tty, bounded by the run deadline. When no
+// /dev/tty is attached (CI, pipes, nohup) — or --auto-accept is set — the run
+// stays fully unattended and auto-answers the affirmative option so it never
+// hangs. See resolveInputMode / selectAnswer / autoAcceptAnswer.
 func runOneShot(args []string) int {
 	parsed, err := parseHarnessWrapperArgs(args)
 	if err != nil {
@@ -61,8 +73,15 @@ func runOneShot(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// Resolve interactive vs. auto-accept ONCE, up front. A /dev/tty handle (if
+	// opened) is owned by this function for the whole run and closed on return.
+	tty, interactive := resolveInputMode(parsed.AutoAccept)
+	if tty != nil {
+		defer tty.Close()
+	}
+
 	wd, _ := os.Getwd()
-	res, err := harness.RunTurn(ctx, harness.TurnConfig{
+	cfg := harness.TurnConfig{
 		Harness:    parsed.HarnessName,
 		BinaryPath: binPath,
 		Args:       parsed.HarnessArgs,
@@ -76,23 +95,11 @@ func runOneShot(args []string) int {
 		Env:           cleanedEnv(),
 		Prompt:        string(prompt),
 		ExitAfterTurn: true, // stop after the turn (graceful) → clean, bounded run
-		// Auto-accept blocking prompts (e.g. the folder-trust dialog) so an
-		// unattended one-shot never hangs waiting for a human.
-		InputPolicy: &chat.InputPolicy{
-			ByKind: map[string]chat.Disposition{
-				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-			},
-		},
-		OnInputRequest: func(req chat.InputRequest) (chat.InputAnswer, bool) {
-			if opt := affirmativeOption(req); opt != nil {
-				return chat.InputAnswer{OptionID: opt.ID}, true
-			}
-			if len(req.Options) > 0 {
-				return chat.InputAnswer{OptionID: req.Options[0].ID}, true
-			}
-			return chat.InputAnswer{}, false
-		},
-	})
+	}
+
+	cfg.InputPolicy, cfg.OnInputRequest = inputHandling(ctx, interactive, tty)
+
+	res, err := harness.RunTurn(ctx, cfg)
 	// ErrTurnErrored carries a populated TurnResult; any other error is fatal.
 	if err != nil && !errors.Is(err, harness.ErrTurnErrored) {
 		fmt.Fprintln(os.Stderr, "harness-wrapper run:", err)
@@ -192,4 +199,187 @@ func affirmativeOption(req chat.InputRequest) *chat.InputOption {
 		}
 	}
 	return nil
+}
+
+// autoAcceptAnswer is the shared three-tier unattended fallback: pick the
+// affirmative option, else the first option, else decline (false). A false
+// return surfaces the request on Events(); in runOneShot nothing consumes that,
+// so falling through to the first option (rather than false) for a
+// has-options-but-no-affirmative prompt is what keeps the run from failing with
+// chat.ErrInputPending. Both the auto-accept-mode callback and the
+// interactive-mode fallback route through this single function.
+func autoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool) {
+	if opt := affirmativeOption(req); opt != nil {
+		return chat.InputAnswer{OptionID: opt.ID}, true
+	}
+	if len(req.Options) > 0 {
+		return chat.InputAnswer{OptionID: req.Options[0].ID}, true
+	}
+	return chat.InputAnswer{}, false
+}
+
+// inputHandling builds the InputPolicy + OnInputRequest callback for the chosen
+// mode. Factored out of runOneShot so the two wirings are unit-testable without
+// a real /dev/tty or a live harness.
+//
+//   - interactive: NO InputPolicy (nil) — policyOption resolves trust_prompt
+//     BEFORE OnInputRequest (pkg/chat/input.go), so a trust_prompt policy entry
+//     would silently auto-accept folder trust and it would never reach the
+//     human; nil makes every kind fall through to the callback. The callback
+//     surfaces the prompt on tty via selectAnswer (bounded by ctx), then falls
+//     back to autoAcceptAnswer on EOF/invalid/deadline so a partial interaction
+//     still resolves rather than failing the run with ErrInputPending.
+//     TurnConfig.Output is left unset by the caller: raw PTY bytes would garble
+//     the clean menu on the same tty (see runOneShot).
+//   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
+//     autoAcceptAnswer callback, so an unattended one-shot never hangs.
+func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.InputPolicy, func(chat.InputRequest) (chat.InputAnswer, bool)) {
+	if interactive {
+		return nil, func(req chat.InputRequest) (chat.InputAnswer, bool) {
+			if ans, ok := interactiveSelect(ctx, req, tty); ok {
+				return ans, true
+			}
+			return autoAcceptAnswer(req)
+		}
+	}
+	policy := &chat.InputPolicy{
+		ByKind: map[string]chat.Disposition{
+			"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+		},
+	}
+	return policy, func(req chat.InputRequest) (chat.InputAnswer, bool) {
+		return autoAcceptAnswer(req)
+	}
+}
+
+// resolveInputMode decides how blocking prompts are answered in `run`.
+//   - --auto-accept always wins → auto-accept mode (nil tty, false).
+//   - else /dev/tty must be openable AND a terminal → interactive mode
+//     (returns the open *os.File; caller owns Close).
+//   - else (no controlling terminal: CI, pipes, nohup) → auto-accept mode.
+//
+// Gating on /dev/tty rather than os.Stdin is deliberate: runOneShot has already
+// drained os.Stdin (the prompt pipe) with io.ReadAll, so os.Stdin is never a
+// usable menu source.
+func resolveInputMode(autoAccept bool) (*os.File, bool) {
+	if autoAccept {
+		return nil, false
+	}
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return nil, false
+	}
+	if !term.IsTerminal(int(tty.Fd())) {
+		_ = tty.Close()
+		return nil, false
+	}
+	return tty, true
+}
+
+// interactiveSelect runs selectAnswer against the terminal but bounds the
+// blocking read by ctx: OnInputRequest is invoked synchronously on the chat
+// watcher pump goroutine (pkg/chat/input.go handleInputRequested), so a read
+// that outlived the run deadline would stall the pump. The read runs in a
+// short-lived goroutine spawned PER callback invocation (the pump is
+// synchronous, so at most one is live at a time); we select on it vs ctx.Done.
+//
+// On ctx cancellation the read goroutine is left blocked on tty and leaks until
+// the process exits — acceptable for a one-shot `run` that exits right after the
+// turn. Do NOT close tty here to unblock it: tty is owned by runOneShot for the
+// whole run and closed by its deferred Close; racing that close is worse than
+// the leak.
+func interactiveSelect(ctx context.Context, req chat.InputRequest, tty *os.File) (chat.InputAnswer, bool) {
+	type result struct {
+		ans chat.InputAnswer
+		ok  bool
+	}
+	ch := make(chan result, 1)
+	go func() {
+		ans, ok := selectAnswer(req, tty, tty)
+		ch <- result{ans, ok}
+	}()
+	select {
+	case <-ctx.Done():
+		return chat.InputAnswer{}, false
+	case r := <-ch:
+		return r.ans, r.ok
+	}
+}
+
+// selectInputMaxAttempts bounds the invalid-choice re-prompt loop so a stream of
+// garbage input can never spin selectAnswer forever.
+const selectInputMaxAttempts = 5
+
+// selectAnswer renders req to out and reads the human's choice from in. It is a
+// pure helper (no os.Stdin / tty globals) so it can be unit-tested with plain
+// readers/writers.
+//
+//   - Numbered options: prints the prompt + a 1-based numbered list (Label, with
+//     "(Alias)" when present) and reads a line; a valid 1-based index returns
+//     that option's ID. Invalid choices re-prompt, bounded by
+//     selectInputMaxAttempts.
+//   - Free-text (no options): prints the prompt + "Enter response:" and returns
+//     the line as InputAnswer.Text.
+//   - EOF / closed reader / exhausted attempts return (_, false) — the caller's
+//     signal to fall back to autoAcceptAnswer. Never hangs, never panics.
+func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.InputAnswer, bool) {
+	r := bufio.NewReader(in)
+
+	if len(req.Options) == 0 {
+		fmt.Fprintln(out, req.Prompt)
+		fmt.Fprint(out, "Enter response: ")
+		line, err := r.ReadString('\n')
+		if err != nil && line == "" {
+			return chat.InputAnswer{}, false
+		}
+		return chat.InputAnswer{Text: strings.TrimRight(line, "\r\n")}, true
+	}
+
+	for attempt := 0; attempt < selectInputMaxAttempts; attempt++ {
+		fmt.Fprintln(out, req.Prompt)
+		for i := range req.Options {
+			o := &req.Options[i]
+			if o.Alias != "" {
+				fmt.Fprintf(out, "  %d) %s (%s)\n", i+1, o.Label, o.Alias)
+			} else {
+				fmt.Fprintf(out, "  %d) %s\n", i+1, o.Label)
+			}
+		}
+		fmt.Fprintf(out, "Select [1-%d]: ", len(req.Options))
+
+		line, err := r.ReadString('\n')
+		if err != nil && line == "" {
+			return chat.InputAnswer{}, false
+		}
+		choice := strings.TrimSpace(line)
+		if n, perr := parseIndex(choice, len(req.Options)); perr == nil {
+			return chat.InputAnswer{OptionID: req.Options[n].ID}, true
+		}
+		fmt.Fprintf(out, "Invalid choice %q.\n", choice)
+		if err != nil {
+			// Reader is exhausted (EOF after a partial line): stop rather than
+			// spin re-prompting a closed reader.
+			break
+		}
+	}
+	return chat.InputAnswer{}, false
+}
+
+// parseIndex parses a 1-based menu selection into a 0-based slice index in
+// [0,n). It rejects empty, non-numeric, and out-of-range input.
+func parseIndex(s string, n int) (int, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty")
+	}
+	v := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("not a number")
+		}
+		v = v*10 + int(c-'0')
+	}
+	if v < 1 || v > n {
+		return 0, fmt.Errorf("out of range")
+	}
+	return v - 1, nil
 }
