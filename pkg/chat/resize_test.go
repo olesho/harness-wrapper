@@ -1,3 +1,5 @@
+//go:build !windows
+
 package chat
 
 import (
@@ -110,6 +112,56 @@ func TestConversationConcurrentResizeKeepsPTYAndScreenTogether(t *testing.T) {
 	}
 }
 
+func TestConversationConcurrentResizeAndClose(t *testing.T) {
+	conv, _ := openResizeTestConversation(t)
+
+	const workers = 32
+	start := make(chan struct{})
+	resizeErrs := make(chan error, workers)
+	closeErr := make(chan error, 1)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		cols := uint16(80 + i)
+		rows := uint16(24 + i)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resizeErrs <- conv.Resize(cols, rows)
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		closeErr <- conv.Close(context.Background())
+	}()
+
+	close(start)
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent Resize and Close did not complete")
+	}
+	close(resizeErrs)
+	for err := range resizeErrs {
+		if err != nil && !errors.Is(err, ErrClosed) && !errors.Is(err, wrapper.ErrSessionTerminated) {
+			t.Fatalf("concurrent Resize error = %v", err)
+		}
+	}
+	if err := <-closeErr; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := conv.Resize(100, 30); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Resize after concurrent Close = %v, want ErrClosed", err)
+	}
+}
+
 func TestConversationResizeAfterCloseLeavesScreenUnchanged(t *testing.T) {
 	conv, _ := openResizeTestConversation(t)
 	before := conv.screen.Snapshot()
@@ -135,14 +187,20 @@ func TestConversationResizeAfterPTYExitLeavesScreenUnchanged(t *testing.T) {
 	if _, err := conv.Wrapper().Wait(); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
+	if _, err := conv.screen.Write([]byte("\x1b[2J\x1b[Htop-left\x1b[24;73Hbottom")); err != nil {
+		t.Fatalf("seed screen: %v", err)
+	}
 	before := conv.screen.Snapshot()
+	if !strings.Contains(before.Text, "bottom") {
+		t.Fatalf("test setup did not place content in the rows to be cropped: %q", before.Text)
+	}
 
-	if err := conv.Resize(200, 70); !errors.Is(err, wrapper.ErrSessionTerminated) {
+	if err := conv.Resize(20, 5); !errors.Is(err, wrapper.ErrSessionTerminated) {
 		t.Fatalf("Resize after PTY exit = %v, want ErrSessionTerminated", err)
 	}
 	after := conv.screen.Snapshot()
-	if after.Cols != before.Cols || after.Rows != before.Rows {
-		t.Fatalf("screen changed after failed PTY resize: before=%dx%d after=%dx%d", before.Cols, before.Rows, after.Cols, after.Rows)
+	if after != before {
+		t.Fatalf("failed PTY shrink changed screen:\nbefore: %#v\n after: %#v", before, after)
 	}
 }
 

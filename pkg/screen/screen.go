@@ -1,8 +1,9 @@
 // Package screen wraps a vt100 terminal emulator (vt10x, per ADR-001)
 // behind a small concurrent-safe surface. Callers feed raw PTY bytes
 // via Write and read coherent screen snapshots via Snapshot. Subscribe
-// returns a coalesced notification channel that fires after every Write
-// so observers (turn detectors, gateways) can react without polling.
+// returns a coalesced notification channel that fires after every successful
+// Write or size change so observers (turn detectors, gateways) can react
+// without polling.
 //
 // The Screen is the substrate the turn-detection layer reads from. It
 // intentionally exposes only what that layer needs: the rendered text,
@@ -31,8 +32,8 @@ type Snapshot struct {
 	// CursorCol, CursorRow are the 0-indexed cursor position.
 	CursorCol, CursorRow int
 
-	// Generation increments on each successful Write. Compare against
-	// the previous snapshot's Generation to skip no-op redraws.
+	// Generation increments on each successful Write or resize. Compare
+	// against the previous snapshot's Generation to skip no-op redraws.
 	Generation uint64
 }
 
@@ -102,8 +103,8 @@ func (s *Screen) Snapshot() Snapshot {
 	}
 }
 
-// Generation returns the current write counter without rendering a
-// snapshot. Useful for cheap "has anything changed?" checks.
+// Generation returns the current change counter without rendering a snapshot.
+// Useful for cheap "has anything changed?" checks.
 func (s *Screen) Generation() uint64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -113,20 +114,51 @@ func (s *Screen) Generation() uint64 {
 // Resize changes the terminal dimensions. Existing screen content is
 // preserved as best the emulator allows.
 func (s *Screen) Resize(cols, rows int) {
+	_ = s.ResizeWithPeer(cols, rows, nil)
+}
+
+// ResizeWithPeer changes the terminal dimensions while synchronizing with a
+// fallible resize of a peer terminal, such as the PTY that feeds this screen.
+//
+// The screen write lock is held while resizePeer runs. This prevents Write,
+// Snapshot, and Generation from observing output produced for the peer's new
+// dimensions before the emulator has been resized to match. The peer is
+// resized first; only when that succeeds is the emulator changed. A peer
+// failure therefore leaves the screen's contents, cursor, dimensions, and
+// generation untouched and sends no subscriber notification.
+//
+// resizePeer must not call back into this Screen. A nil callback performs an
+// ordinary screen-only resize. Non-positive dimensions are no-ops. For
+// unchanged dimensions resizePeer is still invoked so a divergent peer can be
+// healed, but the screen generation and subscribers remain untouched.
+func (s *Screen) ResizeWithPeer(cols, rows int, resizePeer func() error) error {
 	if cols <= 0 || rows <= 0 {
-		return
+		return nil
 	}
+
 	s.mu.Lock()
+	unchanged := s.cols == cols && s.rows == rows
+	if resizePeer != nil {
+		if err := resizePeer(); err != nil {
+			s.mu.Unlock()
+			return err
+		}
+	}
+	if unchanged {
+		s.mu.Unlock()
+		return nil
+	}
 	s.cols, s.rows = cols, rows
 	s.term.Resize(cols, rows)
 	s.gen++
 	s.mu.Unlock()
 	s.notify()
+	return nil
 }
 
 // Subscribe returns a notification channel that signals (non-blocking,
-// coalesced into a buffer of 1) after every successful Write. Callers
-// should drain it and then call Snapshot to read current state.
+// coalesced into a buffer of 1) after every successful Write or size change.
+// Callers should drain it and then call Snapshot to read current state.
 //
 // Returns an unsubscribe function that removes the channel and closes it.
 func (s *Screen) Subscribe() (<-chan struct{}, func()) {
