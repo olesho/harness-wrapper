@@ -16,7 +16,7 @@ func TestResolveHarness_UnknownName(t *testing.T) {
 	if !strings.Contains(err.Error(), "unsupported harness") {
 		t.Errorf("error %q should mention 'unsupported harness'", err)
 	}
-	for _, want := range []string{"codex", "claude", "gemini", "opencode", "pi"} {
+	for _, want := range []string{"codex", "claude", "opencode", "pi"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q should list supported name %q", err, want)
 		}
@@ -57,7 +57,7 @@ func TestResolveHarness_KnownInPath(t *testing.T) {
 
 func TestSupportedHarnessNamesIsStable(t *testing.T) {
 	got := supportedHarnessNames()
-	if got != "claude, codex, gemini, opencode, pi" {
-		t.Errorf("supportedHarnessNames() = %q, want sorted %q", got, "claude, codex, gemini, opencode, pi")
+	if got != "claude, codex, opencode, pi" {
+		t.Errorf("supportedHarnessNames() = %q, want sorted %q", got, "claude, codex, opencode, pi")
 	}
 }

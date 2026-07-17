@@ -1,7 +1,0 @@
-{
-  "steps": [
-    {"wait_for": "> "},
-    {"send": "show me a python implementation of fizzbuzz in a fenced code block. include at least 30 lines: imports, the function, a main guard, doctests, and comments.\n"},
-    {"wait_for": "> "}
-  ]
-}

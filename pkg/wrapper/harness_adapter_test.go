@@ -7,7 +7,6 @@ import (
 
 	claudeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/claude"
 	codexharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex"
-	geminiharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini"
 )
 
 // TestHarnessAdapter_Classify covers the classifier-level matrix from
@@ -16,7 +15,6 @@ import (
 // Cost/Retry/Prompt paths.
 func TestHarnessAdapter_Classify(t *testing.T) {
 	claude := harnessAdapter{patterns: claudeharness.Patterns}
-	gemini := harnessAdapter{patterns: geminiharness.Patterns}
 	codex := harnessAdapter{patterns: codexharness.Patterns}
 
 	cases := []struct {
@@ -51,13 +49,6 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 			wantStatus: StatusAPIError,
 			wantCode:   0,
 			reasonHas:  "socket connection was closed",
-		},
-		{
-			name:       "A3: gemini bracket form with (Status: 429)",
-			adapter:    gemini,
-			input:      ClassifierInput{RecentOutput: "[API Error: rate limit (Status: 429)]"},
-			wantStatus: StatusAPIError,
-			wantCode:   429,
 		},
 		{
 			name:       "A4: codex exceeded retry limit with explicit 503",
@@ -95,12 +86,6 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 			name:       "A9: false-positive guard — mid-line API Error in prose",
 			adapter:    claude,
 			input:      ClassifierInput{RecentOutput: "chitchat about API Error: 500 mid-line", Idle: true},
-			wantStatus: "",
-		},
-		{
-			name:       "A10: gemini benign output stays unclassified",
-			adapter:    gemini,
-			input:      ClassifierInput{RecentOutput: "regular tool output without brackets", Idle: true},
 			wantStatus: "",
 		},
 		{

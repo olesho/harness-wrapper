@@ -10,7 +10,7 @@ import (
 
 // TestClassifyOutput_Transport verifies that connection-refused / transport
 // failures classify as StatusRetryLater through the public one-shot, for both
-// the per-harness adapters (claude/codex/gemini) and the generic default that
+// the per-harness adapters (claude/codex) and the generic default that
 // backs unknown harnesses (e.g. cursor, opencode). This is the bare-transport
 // case both classifiers previously missed.
 func TestClassifyOutput_Transport(t *testing.T) {
@@ -21,7 +21,6 @@ func TestClassifyOutput_Transport(t *testing.T) {
 	}{
 		{"claude/connection refused", "claude", "Mock Agent CLI\nError: connection refused"},
 		{"codex/ECONNREFUSED", "codex", "request failed: connect ECONNREFUSED 127.0.0.1:443"},
-		{"gemini/fetch failed", "gemini", "fetch failed: read ECONNRESET"},
 		{"unknown/connection refused", "", "node:internal/net: connection refused"},
 		{"cursor/socket hang up", "cursor", "Error: socket hang up"},
 	}

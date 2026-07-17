@@ -31,7 +31,7 @@ func TestSubmitKeyForHarness(t *testing.T) {
 		// the prompt unsent. Regression guard for the live-verified 0.76.0 fix.
 		{"pi composer", "pi", "0.0%/131k (auto)  gpt-oss-120b • medium", "\r"},
 		// Unknown harnesses keep the plain newline.
-		{"unknown", "gemini", "anything", "\n"},
+		{"unknown", "someharness", "anything", "\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

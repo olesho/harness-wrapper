@@ -11,7 +11,7 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("All: %v", err)
 	}
-	for _, want := range []string{"codex", "claude-code", "gemini", "opencode", "pi"} {
+	for _, want := range []string{"codex", "claude-code", "opencode", "pi"} {
 		entry, ok := all[want]
 		if !ok {
 			t.Errorf("expected entry for %q in versions.json", want)
@@ -27,11 +27,14 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if _, ok := Pinned("nonexistent"); ok {
 		t.Error("expected Pinned to return false for unknown harness")
 	}
-	// Gemini is intentionally unpinned in the initial versions.json.
-	if got, ok := Pinned("gemini"); ok {
-		t.Errorf("expected gemini to be unpinned, got %q", got)
+	// The gemini harness has been removed; it must not appear in versions.json.
+	if _, ok := all["gemini"]; ok {
+		t.Error("expected no gemini entry in versions.json")
 	}
-	// OpenCode is likewise unpinned until a corpus pins its version.
+	if _, ok := Pinned("gemini"); ok {
+		t.Error("expected Pinned to return false for removed gemini harness")
+	}
+	// OpenCode is unpinned until a corpus pins its version.
 	if got, ok := Pinned("opencode"); ok {
 		t.Errorf("expected opencode to be unpinned, got %q", got)
 	}

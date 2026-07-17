@@ -1,7 +1,0 @@
-{
-  "steps": [
-    {"wait_for": "> "},
-    {"send": "list entries in the current directory and tell me how many .go files there are\n"},
-    {"wait_for": "> "}
-  ]
-}

@@ -238,7 +238,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --auto-accept           run: auto-answer blocking prompts (affirmative)")
 	fmt.Fprintln(w, "                          even with a terminal attached, instead of asking")
 	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "supported harness names: codex, claude, gemini")
+	fmt.Fprintln(w, "supported harness names: claude, codex, opencode, pi")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "By default trace events are dropped, since stderr would corrupt an")
 	fmt.Fprintln(w, "interactive harness TUI. Pass --trace-file or --trace-stderr to enable.")

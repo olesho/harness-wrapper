@@ -11,7 +11,6 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
-	"github.com/olesho/harness-wrapper/pkg/turns/harness/gemini"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
@@ -20,7 +19,7 @@ import (
 // Options configures a single Conversation.
 type Options struct {
 	// Harness names the per-harness adapter ("codex", "claude-code",
-	// "gemini", "opencode", "pi", "generic"). Required.
+	// "opencode", "pi", "generic"). Required.
 	Harness string
 
 	// BinaryPath is the harness executable. Required.
@@ -577,7 +576,7 @@ func (c *Conversation) maybeIdleComplete() {
 		// marker (claude-code today).
 		turn.Reason = c.opts.Harness + ": end-of-turn marker confirmed at a settled prompt"
 	} else {
-		// The fallback path is harness-agnostic (pi, gemini, …); name the harness
+		// The fallback path is harness-agnostic (pi, opencode, …); name the harness
 		// that actually completed rather than hardcoding claude-code.
 		turn.Reason = c.opts.Harness + ": idle-completion fallback (end-of-turn marker not observed)"
 	}
@@ -773,8 +772,6 @@ func resolveAdapter(name string) (turns.Adapter, error) {
 		return codex.New(), nil
 	case "claude-code":
 		return claudecode.New(), nil
-	case "gemini":
-		return gemini.New(), nil
 	case "opencode":
 		return opencode.New(), nil
 	case "pi":

@@ -7,7 +7,6 @@ import (
 	claudeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/claude"
 	codexharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/codex"
 	cursorharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/cursor"
-	geminiharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/gemini"
 	opencodeharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/opencode"
 	piharness "github.com/olesho/harness-wrapper/pkg/wrapper/internal/harness/pi"
 )
@@ -129,8 +128,6 @@ func resolveClassifier(cfg Config) Classifier {
 		return harnessAdapter{patterns: claudeharness.Patterns}
 	case "codex":
 		return harnessAdapter{patterns: codexharness.Patterns}
-	case "gemini":
-		return harnessAdapter{patterns: geminiharness.Patterns}
 	case "cursor":
 		return harnessAdapter{patterns: cursorharness.Patterns}
 	case "opencode":
