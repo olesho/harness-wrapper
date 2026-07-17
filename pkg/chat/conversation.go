@@ -140,6 +140,8 @@ type Conversation struct {
 	// exists so the input-resolution path is testable without a live session.
 	writeStdin func([]byte) (int, error)
 
+	resizeMu sync.Mutex
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -286,6 +288,9 @@ func (c *Conversation) AcquireControl(ctx context.Context) (release func(), err 
 // multiple times.
 func (c *Conversation) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
+		c.resizeMu.Lock()
+		defer c.resizeMu.Unlock()
+
 		close(c.closed)
 		c.queue.Close()
 		if c.releaseWriter != nil {
@@ -298,6 +303,39 @@ func (c *Conversation) Close(ctx context.Context) error {
 			_ = c.watcher.Close()
 		}
 	})
+	return nil
+}
+
+// Resize updates both the harness PTY and the private terminal emulator.
+// Calls are serialized so concurrent resizes cannot leave the two at
+// different final dimensions. The emulator is updated before the PTY so a
+// redraw triggered immediately by SIGWINCH is interpreted at the new size. If
+// the PTY resize fails, the emulator is rolled back. Zero dimensions are
+// ignored, matching wrapper.Session.Resize.
+func (c *Conversation) Resize(cols, rows uint16) error {
+	if cols == 0 || rows == 0 {
+		return nil
+	}
+
+	c.resizeMu.Lock()
+	defer c.resizeMu.Unlock()
+
+	select {
+	case <-c.closed:
+		return ErrClosed
+	default:
+	}
+
+	previous := c.screen.Snapshot()
+	if previous.Cols == int(cols) && previous.Rows == int(rows) {
+		return nil
+	}
+
+	c.screen.Resize(int(cols), int(rows))
+	if err := c.sess.Resize(cols, rows); err != nil {
+		c.screen.Resize(previous.Cols, previous.Rows)
+		return err
+	}
 	return nil
 }
 
