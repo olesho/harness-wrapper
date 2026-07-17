@@ -338,7 +338,7 @@ func (c *Conversation) Resize(cols, rows uint16) error {
 }
 
 // consumeWatcher pumps turns.Event from the watcher into Conversation
-// state and emits TurnEvent on c.eventCh.
+// state and emits ConversationEvent on c.eventCh.
 func (c *Conversation) consumeWatcher() {
 	defer close(c.eventCh)
 	for ev := range c.watcher.Events() {

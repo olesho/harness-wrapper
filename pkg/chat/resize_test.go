@@ -204,10 +204,18 @@ func TestConversationResizeAfterPTYExitLeavesScreenUnchanged(t *testing.T) {
 	}
 }
 
-func TestConversationSameSizeResizeIsNoOp(t *testing.T) {
-	conv, _ := openResizeTestConversation(t)
+func TestConversationSameSizeResizeRepairsDivergentPTYWithoutChangingScreen(t *testing.T) {
+	conv, output := openResizeTestConversation(t)
 	if err := conv.Resize(132, 57); err != nil {
 		t.Fatalf("initial Resize: %v", err)
+	}
+	if err := conv.Wrapper().Resize(90, 30); err != nil {
+		t.Fatalf("direct peer Resize: %v", err)
+	}
+	writeResizeQuery(t, conv, "divergent-peer")
+	cols, rows := waitForReportedSize(t, output, "divergent-peer")
+	if cols != 90 || rows != 30 {
+		t.Fatalf("divergent child PTY size = %dx%d, want 90x30", cols, rows)
 	}
 	before := conv.screen.Snapshot()
 
@@ -215,8 +223,13 @@ func TestConversationSameSizeResizeIsNoOp(t *testing.T) {
 		t.Fatalf("same-size Resize: %v", err)
 	}
 	after := conv.screen.Snapshot()
-	if after.Generation != before.Generation {
-		t.Fatalf("same-size resize changed screen generation: before=%d after=%d", before.Generation, after.Generation)
+	if after != before {
+		t.Fatalf("same-size repair changed screen:\nbefore: %#v\n after: %#v", before, after)
+	}
+	writeResizeQuery(t, conv, "repaired-peer")
+	cols, rows = waitForReportedSize(t, output, "repaired-peer")
+	if cols != 132 || rows != 57 {
+		t.Fatalf("repaired child PTY size = %dx%d, want 132x57", cols, rows)
 	}
 }
 
