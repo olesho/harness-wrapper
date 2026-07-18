@@ -85,25 +85,33 @@ func TestParseLastJSONLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := ParseLastJSONLine([]byte(tt.in))
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
-			}
-			if !tt.wantOK {
-				if got != nil {
-					t.Fatalf("got = %+v, want nil", got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatal("got nil result with ok=true")
-			}
-			if got.Status != tt.wantStatus {
-				t.Errorf("Status = %q, want %q", got.Status, tt.wantStatus)
-			}
-			if got.Reply != tt.wantReply {
-				t.Errorf("Reply = %q, want %q", got.Reply, tt.wantReply)
-			}
+			checkParsedResult(t, got, ok, tt.wantOK, tt.wantStatus, tt.wantReply)
 		})
+	}
+}
+
+// checkParsedResult asserts a ParseLastJSONLine result against expectations:
+// the ok flag, a nil result when parsing was expected to fail, and the
+// recovered status/reply otherwise.
+func checkParsedResult(t *testing.T, got *StructuredTurnResult, ok, wantOK bool, wantStatus TurnStatus, wantReply string) {
+	t.Helper()
+	if ok != wantOK {
+		t.Fatalf("ok = %v, want %v", ok, wantOK)
+	}
+	if !wantOK {
+		if got != nil {
+			t.Fatalf("got = %+v, want nil", got)
+		}
+		return
+	}
+	if got == nil {
+		t.Fatal("got nil result with ok=true")
+	}
+	if got.Status != wantStatus {
+		t.Errorf("Status = %q, want %q", got.Status, wantStatus)
+	}
+	if got.Reply != wantReply {
+		t.Errorf("Reply = %q, want %q", got.Reply, wantReply)
 	}
 }
 

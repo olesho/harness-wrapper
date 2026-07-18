@@ -86,7 +86,9 @@ func enterRawMode() func() {
 			return func() { _ = term.Restore(int(os.Stdin.Fd()), old) }
 		}
 	}
-	return func() {}
+	return func() {
+		// Not a terminal (or MakeRaw failed): nothing to restore.
+	}
 }
 
 // runStep executes one timeline step. It returns done=true when the step ends

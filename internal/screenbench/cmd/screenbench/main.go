@@ -229,6 +229,15 @@ func emitMarkdown(w io.Writer, rs []result, dumpSnap bool) {
 	fmt.Fprintln(w, "# screenbench results")
 	fmt.Fprintf(w, "\nGenerated: %s\n\n", time.Now().UTC().Format(time.RFC3339))
 
+	keys, groups := groupByScenario(rs)
+	for _, k := range keys {
+		emitMarkdownGroup(w, k, groups[k], dumpSnap)
+	}
+}
+
+// groupByScenario buckets results by scenario, returning the scenario names
+// in sorted order alongside the lookup map.
+func groupByScenario(rs []result) ([]string, map[string][]result) {
 	groups := map[string][]result{}
 	keys := []string{}
 	for _, r := range rs {
@@ -238,39 +247,47 @@ func emitMarkdown(w io.Writer, rs []result, dumpSnap bool) {
 		groups[r.Scenario] = append(groups[r.Scenario], r)
 	}
 	sort.Strings(keys)
+	return keys, groups
+}
 
-	for _, k := range keys {
-		fmt.Fprintf(w, "## %s\n\n", k)
-		g := groups[k]
-		if len(g) > 0 {
-			fmt.Fprintf(w, "Harness: `%s` | Bytes: %d\n\n", g[0].Harness, g[0].Bytes)
-		}
-		fmt.Fprintln(w, "| Emulator | Exact | Distance | NDist | Extract runes | Expect runes | Time | MB/s | Alloc (MB) |")
-		fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
+// emitMarkdownGroup writes one scenario's heading, metrics table, and
+// (optionally) the extracted-snapshot dumps for each emulator.
+func emitMarkdownGroup(w io.Writer, scenario string, g []result, dumpSnap bool) {
+	fmt.Fprintf(w, "## %s\n\n", scenario)
+	if len(g) > 0 {
+		fmt.Fprintf(w, "Harness: `%s` | Bytes: %d\n\n", g[0].Harness, g[0].Bytes)
+	}
+	fmt.Fprintln(w, "| Emulator | Exact | Distance | NDist | Extract runes | Expect runes | Time | MB/s | Alloc (MB) |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
+	for _, r := range g {
+		emitMarkdownRow(w, r)
+	}
+	fmt.Fprintln(w)
+	if dumpSnap {
 		for _, r := range g {
-			dist, ndist, exact := "-", "-", "n/a"
-			if r.HasExpected {
-				dist = fmt.Sprintf("%d", r.Distance)
-				ndist = fmt.Sprintf("%.3f", r.NormDistance)
-				exact = fmt.Sprintf("%v", r.Exact)
-			}
-			errStr := ""
-			if r.Err != nil {
-				errStr = " ⚠ " + r.Err.Error()
-			}
-			fmt.Fprintf(w, "| %s%s | %s | %s | %s | %d | %d | %s | %.2f | %.2f |\n",
-				r.Emulator, errStr, exact, dist, ndist,
-				r.ExtractRunes, r.ExpectRunes,
-				r.Duration.Round(time.Microsecond),
-				r.Throughput/(1024*1024), r.AllocMB)
-		}
-		fmt.Fprintln(w)
-		if dumpSnap {
-			for _, r := range g {
-				fmt.Fprintf(w, "### %s — extracted snapshot\n\n```\n%s\n```\n\n", r.Emulator, metrics.Normalize(r.Snapshot))
-			}
+			fmt.Fprintf(w, "### %s — extracted snapshot\n\n```\n%s\n```\n\n", r.Emulator, metrics.Normalize(r.Snapshot))
 		}
 	}
+}
+
+// emitMarkdownRow writes a single emulator's metrics row, rendering the
+// distance columns as "-"/"n/a" when there is no ground-truth expectation.
+func emitMarkdownRow(w io.Writer, r result) {
+	dist, ndist, exact := "-", "-", "n/a"
+	if r.HasExpected {
+		dist = fmt.Sprintf("%d", r.Distance)
+		ndist = fmt.Sprintf("%.3f", r.NormDistance)
+		exact = fmt.Sprintf("%v", r.Exact)
+	}
+	errStr := ""
+	if r.Err != nil {
+		errStr = " ⚠ " + r.Err.Error()
+	}
+	fmt.Fprintf(w, "| %s%s | %s | %s | %s | %d | %d | %s | %.2f | %.2f |\n",
+		r.Emulator, errStr, exact, dist, ndist,
+		r.ExtractRunes, r.ExpectRunes,
+		r.Duration.Round(time.Microsecond),
+		r.Throughput/(1024*1024), r.AllocMB)
 }
 
 func emitJSON(w io.Writer, rs []result) {
