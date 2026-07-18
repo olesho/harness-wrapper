@@ -42,6 +42,9 @@ type CliRunner func(argv []string) CliResult
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// flagNoTTY disables openshell's pseudo-terminal for non-interactive exec.
+const flagNoTTY = "--no-tty"
+
 // stripAnsi strips ANSI SGR color escapes from CLI output.
 func stripAnsi(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
@@ -403,7 +406,7 @@ func (c *OpenShellContainment) Acquire(ctx context.Context, ws env.Workspace, po
 	if policyPath != "" {
 		createArgv = append(createArgv, "--policy", policyPath)
 	}
-	createArgv = append(createArgv, "--no-tty", "--", "true")
+	createArgv = append(createArgv, flagNoTTY, "--", "true")
 	created, err := ws.Exec(ctx, createArgv, nil)
 	if err != nil {
 		return nil, err
@@ -417,7 +420,7 @@ func (c *OpenShellContainment) Acquire(ctx context.Context, ws env.Workspace, po
 	// guaranteed. One multi-arg mkdir: fully succeeds or fully fails, no partial
 	// case.
 	prep, err := ws.Exec(ctx, []string{
-		"openshell", "sandbox", "exec", "-n", name, "--no-tty", "--",
+		"openshell", "sandbox", "exec", "-n", name, flagNoTTY, "--",
 		"mkdir", "-p", c.guestPath, "/sandbox/.home",
 	}, nil)
 	if err != nil {
@@ -479,7 +482,7 @@ func (l *openShellLayer) ExecWrap(argv []string, opts env.ExecOpts) ([]string, e
 		cwd = l.guestRepo
 	}
 	wrapped := []string{
-		"openshell", "sandbox", "exec", "-n", l.name, "--no-tty", "--workdir", cwd, "--",
+		"openshell", "sandbox", "exec", "-n", l.name, flagNoTTY, "--workdir", cwd, "--",
 	}
 	// openshell exec has no --env: cross env as an in-guest `env K=V` prefix,
 	// omitted entirely when empty (a bare `env` would swallow argv[0]).
@@ -531,7 +534,7 @@ func (l *openShellLayer) CrossUpload(stagingPath, guestPath string) []string {
 		"sh", "-c",
 		env.ArgvToShell([]string{"openshell", "sandbox", "upload", "--no-git-ignore", l.name, stagingPath, "/tmp"}) +
 			" && " +
-			env.ArgvToShell([]string{"openshell", "sandbox", "exec", "-n", l.name, "--no-tty", "--", "sh", "-c", move}),
+			env.ArgvToShell([]string{"openshell", "sandbox", "exec", "-n", l.name, flagNoTTY, "--", "sh", "-c", move}),
 	}
 }
 

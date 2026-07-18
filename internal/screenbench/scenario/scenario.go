@@ -26,6 +26,9 @@ import (
 )
 
 // Meta is the parsed contents of meta.json.
+// metaFilename is the per-scenario metadata file name.
+const metaFilename = "meta.json"
+
 type Meta struct {
 	Harness       string    `json:"harness"`        // e.g. "codex", "claude-code"
 	BinaryVersion string    `json:"binary_version"` // e.g. "codex 0.42.1"
@@ -46,7 +49,7 @@ type Scenario struct {
 
 // Load loads a single scenario directory.
 func Load(dir string) (*Scenario, error) {
-	metaBytes, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	metaBytes, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, fmt.Errorf("read meta.json: %w", err)
 	}
@@ -91,7 +94,7 @@ func Discover(root string) ([]*Scenario, error) {
 		if !d.IsDir() {
 			return nil
 		}
-		if _, err := os.Stat(filepath.Join(path, "meta.json")); err != nil {
+		if _, err := os.Stat(filepath.Join(path, metaFilename)); err != nil {
 			return nil
 		}
 		s, err := Load(path)
@@ -122,5 +125,5 @@ func WriteMeta(dir string, m Meta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "meta.json"), b, 0o644)
+	return os.WriteFile(filepath.Join(dir, metaFilename), b, 0o644)
 }

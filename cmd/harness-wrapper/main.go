@@ -197,12 +197,7 @@ func exitCodeFor(res wrapper.Result) int {
 	switch res.Status {
 	case wrapper.StatusIdle:
 		return res.ExitCode
-	case wrapper.StatusFailed:
-		if res.ExitCode > 0 {
-			return res.ExitCode
-		}
-		return 1
-	case wrapper.StatusBlockedByCost:
+	case wrapper.StatusFailed, wrapper.StatusBlockedByCost:
 		if res.ExitCode > 0 {
 			return res.ExitCode
 		}

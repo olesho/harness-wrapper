@@ -15,6 +15,9 @@ import (
 	"golang.org/x/term"
 )
 
+// runErrPrefix labels fatal one-shot errors on stderr.
+const runErrPrefix = "harness-wrapper run:"
+
 // runOneShot is the "proper substitution for `claude -p`": it drives ONE turn
 // through the real interactive harness via harness.RunTurn (PTY + turn
 // detection), prints the assistant's clean final reply to stdout, and exits —
@@ -44,12 +47,12 @@ import (
 func runOneShot(args []string) int {
 	parsed, err := parseHarnessWrapperArgs(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper run:", err)
+		fmt.Fprintln(os.Stderr, runErrPrefix, err)
 		return 2
 	}
 	binPath, err := resolveHarness(parsed.HarnessName)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper run:", err)
+		fmt.Fprintln(os.Stderr, runErrPrefix, err)
 		return 2
 	}
 
@@ -101,7 +104,7 @@ func runOneShot(args []string) int {
 	res, err := harness.RunTurn(ctx, cfg)
 	// ErrTurnErrored carries a populated TurnResult; any other error is fatal.
 	if err != nil && !errors.Is(err, harness.ErrTurnErrored) {
-		fmt.Fprintln(os.Stderr, "harness-wrapper run:", err)
+		fmt.Fprintln(os.Stderr, runErrPrefix, err)
 		return 1
 	}
 
@@ -116,7 +119,7 @@ func runOneShot(args []string) int {
 		if reason == "" {
 			reason = "turn errored"
 		}
-		fmt.Fprintln(os.Stderr, "harness-wrapper run:", reason)
+		fmt.Fprintln(os.Stderr, runErrPrefix, reason)
 		return 1
 	}
 	return 0

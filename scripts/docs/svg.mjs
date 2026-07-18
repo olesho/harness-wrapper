@@ -28,7 +28,7 @@ export function inlineDiagrams(html, diagramsDir) {
     }
     const altMatch = altRe.exec(imgTag)
     altRe.lastIndex = 0
-    const caption = altMatch && altMatch[1] ? `<figcaption>${altMatch[1]}</figcaption>` : ""
+    const caption = altMatch?.[1] ? `<figcaption>${altMatch[1]}</figcaption>` : ""
     return `<figure class="diagram">${svg}${caption}</figure>`
   })
 }

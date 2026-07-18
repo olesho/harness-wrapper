@@ -74,6 +74,9 @@ var resumeRE = regexp.MustCompile(`claude --resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4
 // then "Interrupted · ...". The NBSP is easy to miss — match it exactly.
 const interruptMarker = "⎿  Interrupted · What should Claude do instead?"
 
+// reasonPrefix labels the source harness on emitted turn-event reasons.
+const reasonPrefix = "claude-code: "
+
 // Blocking-dialog anchors. These full-screen prompts gate progress at
 // startup and cannot be satisfied by the normal Send flow; they are
 // answered out-of-band via the turns InputRequested/InputResolved channel.
@@ -127,7 +130,7 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	// Interrupt detection — transition not-seen → seen.
 	interruptNow := strings.Contains(snap.Text, interruptMarker)
 	if interruptNow && !a.lastInterruptSeen {
-		out = append(out, turns.Event{Kind: turns.Errored, Reason: "claude-code: " + interruptMarker})
+		out = append(out, turns.Event{Kind: turns.Errored, Reason: reasonPrefix + interruptMarker})
 	}
 	a.lastInterruptSeen = interruptNow
 
@@ -148,7 +151,7 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 		latest := matches[len(matches)-1][1]
 		if latest != a.lastFingerprint {
 			a.lastFingerprint = latest
-			out = append(out, turns.Event{Kind: turns.TurnComplete, Reason: "claude-code: " + latest})
+			out = append(out, turns.Event{Kind: turns.TurnComplete, Reason: reasonPrefix + latest})
 		}
 	}
 
@@ -160,7 +163,7 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 		if req.ID != a.lastInputID {
 			a.lastInputID = req.ID
 			a.lastInput = req
-			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: "claude-code: " + req.Prompt, Input: req})
+			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: reasonPrefix + req.Prompt, Input: req})
 		}
 	} else if a.lastInputID != "" {
 		resolved := a.lastInput
