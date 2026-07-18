@@ -92,7 +92,7 @@ func readSessionMeta(path string) (sessionMetaPayload, bool) {
 	if err != nil {
 		return sessionMetaPayload{}, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sc := bufio.NewScanner(f)
 	// session_meta carries the full base_instructions blob, so the first line

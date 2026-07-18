@@ -20,7 +20,7 @@ func TestPiAdapterName(t *testing.T) {
 // is an intentional change, not a regression.
 func TestPiAdapterNoScreenEventsByDefault(t *testing.T) {
 	scr := screen.New(120, 40)
-	scr.Write([]byte("any old content\r\n"))
+	_, _ = scr.Write([]byte("any old content\r\n"))
 	if evs := New().OnScreen(scr.Snapshot()); len(evs) != 0 {
 		t.Errorf("expected 0 OnScreen events from generic delegate, got %d: %+v", len(evs), evs)
 	}
@@ -72,7 +72,7 @@ const (
 func snap(t *testing.T, text string) screen.Snapshot {
 	t.Helper()
 	scr := screen.New(120, 40)
-	scr.Write([]byte(text))
+	_, _ = scr.Write([]byte(text))
 	return scr.Snapshot()
 }
 

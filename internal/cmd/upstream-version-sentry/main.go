@@ -123,7 +123,7 @@ func fetchLatest(client *http.Client, registry, pkg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
@@ -142,8 +142,8 @@ func fetchLatest(client *http.Client, registry, pkg string) (string, error) {
 
 // writeTable emits a 4-column Markdown table.
 func writeTable(w io.Writer, rows []Row) {
-	fmt.Fprintln(w, "| harness | package | pinned | latest | status |")
-	fmt.Fprintln(w, "|---|---|---|---|---|")
+	_, _ = fmt.Fprintln(w, "| harness | package | pinned | latest | status |")
+	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|")
 	for _, r := range rows {
 		latest := r.Latest
 		if latest == "" {
@@ -153,6 +153,6 @@ func writeTable(w io.Writer, rows []Row) {
 		if pinned == "" {
 			pinned = "—"
 		}
-		fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status)
+		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status)
 	}
 }

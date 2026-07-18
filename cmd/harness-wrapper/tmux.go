@@ -19,6 +19,9 @@ import (
 // interfering with sessions a user created by hand.
 const tmuxSessionPrefix = "hw-"
 
+// tmuxErrPrefix labels tmux-mode errors on stderr.
+const tmuxErrPrefix = "harness-wrapper:"
+
 // envTraceFile is set on every tmux session via `tmux set-environment`
 // so that `attach`/`status`/`kill` can recover the trace-file path from
 // the session itself without a separate registry file.
@@ -38,7 +41,7 @@ const envTraceFile = "HW_TRACE_FILE"
 func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 	_ = binPath
 	if err := requireTmux(); err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	if !validSessionName(args.TmuxSession) {
@@ -49,7 +52,7 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 
 	tracePath, err := resolveTracePath(args.TraceFile, args.TmuxSession)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	if err := os.MkdirAll(filepath.Dir(tracePath), 0o755); err != nil {
@@ -187,7 +190,7 @@ func runTmuxAttach(args []string) int {
 		return code
 	}
 	if err := requireTmux(); err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	tmuxName := tmuxSessionPrefix + name
@@ -197,7 +200,7 @@ func runTmuxAttach(args []string) int {
 	// right primitive here.
 	tmuxBin, err := exec.LookPath("tmux")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	if err := syscall.Exec(tmuxBin, []string{"tmux", "attach", "-t", tmuxName}, os.Environ()); err != nil {
@@ -213,7 +216,7 @@ func runTmuxKill(args []string) int {
 		return code
 	}
 	if err := requireTmux(); err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	tmuxName := tmuxSessionPrefix + name
@@ -232,7 +235,7 @@ func runTmuxList(args []string) int {
 		return 2
 	}
 	if err := requireTmux(); err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 	names, err := listHWSessions()
@@ -282,7 +285,7 @@ func runTmuxStatus(args []string) int {
 
 	tracePath, err := lookupTraceFile(name)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		fmt.Fprintln(os.Stderr, tmuxErrPrefix, err)
 		return 1
 	}
 
@@ -354,7 +357,7 @@ func readLastTraceEvent(path string) (map[string]any, error) {
 		}
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Stream the file and remember the last non-empty line. Trace files
 	// stay small in practice (kilobytes per run); a fancier tail seek is

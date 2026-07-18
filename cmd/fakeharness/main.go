@@ -17,9 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/term"
-
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"golang.org/x/term"
 )
 
 func main() {

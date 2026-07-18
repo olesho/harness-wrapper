@@ -16,7 +16,7 @@ import (
 func TestExtractSessionID_ScrapesResumeHint(t *testing.T) {
 	const uuid = "019f0263-cdb9-7013-a43a-4eb1f65d94f1"
 	scr := screen.New(120, 40)
-	scr.Write([]byte("\x1b[H\x1b[2JTo continue this session, run codex resume " + uuid + "\r\n"))
+	_, _ = scr.Write([]byte("\x1b[H\x1b[2JTo continue this session, run codex resume " + uuid + "\r\n"))
 
 	id, ok := New().ExtractSessionID(scr.Snapshot())
 	if !ok || id != uuid {
@@ -38,7 +38,7 @@ func TestExtractSessionID_GapOn0142Screen(t *testing.T) {
 		"› Summarize recent commits\r\n" +
 		"gpt-5.5 default · 1.2M tokens left\r\n"
 	scr := screen.New(120, 40)
-	scr.Write([]byte("\x1b[H\x1b[2J" + post0142))
+	_, _ = scr.Write([]byte("\x1b[H\x1b[2J" + post0142))
 
 	if id, ok := New().ExtractSessionID(scr.Snapshot()); ok {
 		t.Fatalf("ExtractSessionID unexpectedly scraped %q from a 0.142 screen with no resume hint; "+

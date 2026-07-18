@@ -42,6 +42,9 @@ type CliRunner func(argv []string) CliResult
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// flagNoTTY disables openshell's pseudo-terminal for non-interactive exec.
+const flagNoTTY = "--no-tty"
+
 // stripAnsi strips ANSI SGR color escapes from CLI output.
 func stripAnsi(s string) string {
 	return ansiRE.ReplaceAllString(s, "")
@@ -204,7 +207,8 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 	}
 
 	var lines []string
-	lines = append(lines,
+	lines = append(
+		lines,
 		"version: 1",
 		"filesystem_policy:",
 		"  include_workdir: false",
@@ -236,7 +240,8 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 		for j, b := range e.Binaries {
 			bins[j] = fmt.Sprintf("{ path: %s }", b)
 		}
-		lines = append(lines,
+		lines = append(
+			lines,
 			fmt.Sprintf("  scrape_%d:", i),
 			fmt.Sprintf("    endpoints: [{ host: %s, port: %d }]", e.Host, port),
 			fmt.Sprintf("    binaries: [%s]", strings.Join(bins, ", ")),
@@ -341,7 +346,8 @@ func (c *OpenShellContainment) Layer(policy env.PolicySpec) env.ContainmentLayer
 		// interface has no error return, so surface a layer that fails every call
 		// loudly rather than silently addressing a nameless sandbox.
 		return errorLayer{err: fmt.Errorf(
-			"openshell.Layer: no sandbox name — use Acquire (production path) or pass policy.Extra[\"sandboxName\"] (unit-test seam)")}
+			"openshell.Layer: no sandbox name — use Acquire (production path) or pass policy.Extra[\"sandboxName\"] (unit-test seam)",
+		)}
 	}
 	return buildLayer(name, c.guestPath, c.driver)
 }
@@ -400,7 +406,7 @@ func (c *OpenShellContainment) Acquire(ctx context.Context, ws env.Workspace, po
 	if policyPath != "" {
 		createArgv = append(createArgv, "--policy", policyPath)
 	}
-	createArgv = append(createArgv, "--no-tty", "--", "true")
+	createArgv = append(createArgv, flagNoTTY, "--", "true")
 	created, err := ws.Exec(ctx, createArgv, nil)
 	if err != nil {
 		return nil, err
@@ -414,7 +420,7 @@ func (c *OpenShellContainment) Acquire(ctx context.Context, ws env.Workspace, po
 	// guaranteed. One multi-arg mkdir: fully succeeds or fully fails, no partial
 	// case.
 	prep, err := ws.Exec(ctx, []string{
-		"openshell", "sandbox", "exec", "-n", name, "--no-tty", "--",
+		"openshell", "sandbox", "exec", "-n", name, flagNoTTY, "--",
 		"mkdir", "-p", c.guestPath, "/sandbox/.home",
 	}, nil)
 	if err != nil {
@@ -476,7 +482,7 @@ func (l *openShellLayer) ExecWrap(argv []string, opts env.ExecOpts) ([]string, e
 		cwd = l.guestRepo
 	}
 	wrapped := []string{
-		"openshell", "sandbox", "exec", "-n", l.name, "--no-tty", "--workdir", cwd, "--",
+		"openshell", "sandbox", "exec", "-n", l.name, flagNoTTY, "--workdir", cwd, "--",
 	}
 	// openshell exec has no --env: cross env as an in-guest `env K=V` prefix,
 	// omitted entirely when empty (a bare `env` would swallow argv[0]).
@@ -528,7 +534,7 @@ func (l *openShellLayer) CrossUpload(stagingPath, guestPath string) []string {
 		"sh", "-c",
 		env.ArgvToShell([]string{"openshell", "sandbox", "upload", "--no-git-ignore", l.name, stagingPath, "/tmp"}) +
 			" && " +
-			env.ArgvToShell([]string{"openshell", "sandbox", "exec", "-n", l.name, "--no-tty", "--", "sh", "-c", move}),
+			env.ArgvToShell([]string{"openshell", "sandbox", "exec", "-n", l.name, flagNoTTY, "--", "sh", "-c", move}),
 	}
 }
 

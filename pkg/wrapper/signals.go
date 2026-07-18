@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"golang.org/x/term"
-
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
+	"golang.org/x/term"
 )
 
 // terminalState bundles per-Run terminal control state when both stdin

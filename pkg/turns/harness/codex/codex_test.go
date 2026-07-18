@@ -41,7 +41,7 @@ func TestCodexAdapter_NoFireOnRealRecording(t *testing.T) {
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			scr := screen.New(120, 40)
-			scr.Write(corpusBytes(t, scenario))
+			_, _ = scr.Write(corpusBytes(t, scenario))
 			for _, ev := range New().OnScreen(scr.Snapshot()) {
 				if ev.Kind == turns.TurnComplete {
 					t.Errorf("codex 0.142 recording %q unexpectedly fired TurnComplete "+
@@ -64,7 +64,7 @@ func TestCodexAdapterRefiresWhenFingerprintChanges(t *testing.T) {
 	scr := screen.New(120, 40)
 	a := New()
 
-	scr.Write([]byte("\x1b[H\x1b[2JToken usage: total=100 input=80 (+ 50 cached) output=20\r\n"))
+	_, _ = scr.Write([]byte("\x1b[H\x1b[2JToken usage: total=100 input=80 (+ 50 cached) output=20\r\n"))
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("first turn: expected 1 event, got %d", len(evs))
 	}
@@ -75,7 +75,7 @@ func TestCodexAdapterRefiresWhenFingerprintChanges(t *testing.T) {
 	}
 
 	// New fingerprint → fire again.
-	scr.Write([]byte("\r\nToken usage: total=200 input=150 (+ 100 cached) output=50\r\n"))
+	_, _ = scr.Write([]byte("\r\nToken usage: total=200 input=150 (+ 100 cached) output=50\r\n"))
 	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 1 {
 		t.Fatalf("second turn: expected 1 event, got %d", len(evs))
 	}
@@ -102,7 +102,7 @@ func TestCodexAdapter_AdversarialNoFire(t *testing.T) {
 			bytes := corpusBytes(t, scenario)
 
 			scr := screen.New(120, 40)
-			scr.Write(bytes)
+			_, _ = scr.Write(bytes)
 			snap := scr.Snapshot()
 
 			a := New()

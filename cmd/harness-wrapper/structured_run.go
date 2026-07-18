@@ -260,11 +260,11 @@ func emitStructured(res turnproto.StructuredTurnResult) {
 	if err != nil {
 		// Marshaling a fixed-shape struct cannot realistically fail; fall back to
 		// a minimal hand-rolled object so the host still sees a parseable line.
-		fmt.Fprintf(os.Stdout, `{"status":"startup_error","reply":"","harnessSessionID":"","transcript_entries":[],"working_dir":%q,"reason":%q}`+"\n",
+		_, _ = fmt.Fprintf(os.Stdout, `{"status":"startup_error","reply":"","harnessSessionID":"","transcript_entries":[],"working_dir":%q,"reason":%q}`+"\n",
 			res.WorkingDir, err.Error())
 		return
 	}
-	fmt.Fprintln(os.Stdout, string(data))
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
 }
 
 // emitStartupError emits a startup_error result line and returns the exit code

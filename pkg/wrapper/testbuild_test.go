@@ -22,7 +22,7 @@ func runTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
 		return 1
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	mockHarnessBin = filepath.Join(tmpDir, "mock")
 	cmd := exec.Command("go", "build", "-o", mockHarnessBin, "github.com/olesho/harness-wrapper/test/fakeharness/mock")

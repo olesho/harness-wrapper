@@ -53,7 +53,7 @@ func (f *fileInjector) Apply(ctx context.Context, ws env.Workspace) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(hostTmp)
+	defer func() { _ = os.RemoveAll(hostTmp) }()
 
 	hostFile := filepath.Join(hostTmp, "token")
 	if err := os.WriteFile(hostFile, []byte(f.config.Token), f.mode()); err != nil {

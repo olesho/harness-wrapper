@@ -84,7 +84,8 @@ func TestSession_APIError_KeepAlive(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 529 Overloaded.",
 	))
@@ -118,7 +119,8 @@ func TestSession_APIError_TransportVariant(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "  ⎿  API Error: The socket connection was closed unexpectedly.",
 	))
@@ -141,7 +143,8 @@ func TestSession_APIError_RetryAfter(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 429 Too Many Requests. Retry after 30 seconds.",
 	))
@@ -165,7 +168,8 @@ func TestSession_APIError_DeDuplicates(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 529 Overloaded.",
 		"--api-error-repeat", "3",
@@ -193,7 +197,8 @@ func TestSession_APIError_RecoveryExitsIdle(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 529 Overloaded.",
 		"--api-error-recover", "true",
@@ -223,7 +228,8 @@ func TestSession_APIError_StopOverridesTerminalStatus(t *testing.T) {
 	w, drain := captureStdout(t)
 	defer drain()
 
-	sess, err := wrapper.Start(context.Background(), apiErrorConfig(w,
+	sess, err := wrapper.Start(context.Background(), apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 529 Overloaded.",
 	))
@@ -259,7 +265,8 @@ func TestSession_APIError_TraceEmission(t *testing.T) {
 	defer drain()
 
 	rec := &recordingEmitter{}
-	cfg := apiErrorConfig(w,
+	cfg := apiErrorConfig(
+		w,
 		"--mode", "api-error",
 		"--api-error-msg", "API Error: 529 Overloaded.",
 	)

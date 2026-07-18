@@ -159,7 +159,7 @@ func confirmHeader(path, sessionID string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1*1024*1024)
 	if !sc.Scan() {
@@ -198,7 +198,7 @@ func parseJSONL(path string) ([]transcript.Turn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pi transcript: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	out := make([]transcript.Turn, 0, 32)
 	sc := bufio.NewScanner(f)

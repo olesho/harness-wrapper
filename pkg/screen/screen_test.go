@@ -9,7 +9,7 @@ import (
 
 func TestWriteAndSnapshot(t *testing.T) {
 	s := New(40, 10)
-	s.Write([]byte("\x1b[2J\x1b[Hhello \x1b[1mworld\x1b[0m"))
+	_, _ = s.Write([]byte("\x1b[2J\x1b[Hhello \x1b[1mworld\x1b[0m"))
 	snap := s.Snapshot()
 	if !strings.Contains(snap.Text, "hello world") {
 		t.Fatalf("expected snapshot to contain 'hello world', got: %q", snap.Text)
@@ -27,7 +27,7 @@ func TestSubscribeSignalsOnWrite(t *testing.T) {
 	ch, unsub := s.Subscribe()
 	defer unsub()
 
-	s.Write([]byte("hi"))
+	_, _ = s.Write([]byte("hi"))
 
 	select {
 	case <-ch:
@@ -43,7 +43,7 @@ func TestSubscribeCoalesces(t *testing.T) {
 	defer unsub()
 
 	for i := 0; i < 100; i++ {
-		s.Write([]byte("x"))
+		_, _ = s.Write([]byte("x"))
 	}
 	// Drain: there should be exactly one pending signal regardless of write count.
 	<-ch
@@ -60,7 +60,7 @@ func TestUnsubscribeStopsDelivery(t *testing.T) {
 	ch, unsub := s.Subscribe()
 	unsub()
 
-	s.Write([]byte("x"))
+	_, _ = s.Write([]byte("x"))
 	select {
 	case _, ok := <-ch:
 		if ok {
@@ -80,7 +80,7 @@ func TestConcurrentWritesAreSafe(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				s.Write([]byte("abcdefghij"))
+				_, _ = s.Write([]byte("abcdefghij"))
 				_ = s.Snapshot()
 			}
 		}()

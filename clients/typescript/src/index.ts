@@ -46,7 +46,7 @@ export class HarnessChatError extends Error {
 }
 
 export class Client {
-  constructor(private baseUrl: string) {
+  constructor(private readonly baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 

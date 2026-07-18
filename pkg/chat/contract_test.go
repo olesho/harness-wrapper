@@ -69,11 +69,19 @@ func TestContract_GoAPI(t *testing.T) {
 		name string
 		val  any
 	}{
-		{"RoleUser", RoleUser}, {"RoleAssistant", RoleAssistant}, {"RoleSystem", RoleSystem},
-		{"TurnStatePending", TurnStatePending}, {"TurnStateStreaming", TurnStateStreaming},
-		{"TurnStateComplete", TurnStateComplete}, {"TurnStateErrored", TurnStateErrored},
-		{"EventTurn", EventTurn}, {"EventInputRequest", EventInputRequest}, {"EventInputResolved", EventInputResolved},
-		{"DispositionAsk", DispositionAsk}, {"DispositionAnswer", DispositionAnswer}, {"DispositionDeny", DispositionDeny},
+		{"RoleUser", RoleUser},
+		{"RoleAssistant", RoleAssistant},
+		{"RoleSystem", RoleSystem},
+		{"TurnStatePending", TurnStatePending},
+		{"TurnStateStreaming", TurnStateStreaming},
+		{"TurnStateComplete", TurnStateComplete},
+		{"TurnStateErrored", TurnStateErrored},
+		{"EventTurn", EventTurn},
+		{"EventInputRequest", EventInputRequest},
+		{"EventInputResolved", EventInputResolved},
+		{"DispositionAsk", DispositionAsk},
+		{"DispositionAnswer", DispositionAnswer},
+		{"DispositionDeny", DispositionDeny},
 	} {
 		fmt.Fprintf(&b, "%s %s = %q\n", c.name, reflect.TypeOf(c.val).Name(), fmt.Sprint(c.val))
 	}
@@ -83,10 +91,15 @@ func TestContract_GoAPI(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"ErrInvalidOptions", ErrInvalidOptions}, {"ErrUnknownHarness", ErrUnknownHarness},
-		{"ErrNoControl", ErrNoControl}, {"ErrTurnInFlight", ErrTurnInFlight}, {"ErrClosed", ErrClosed},
-		{"ErrInputPending", ErrInputPending}, {"ErrNoInputPending", ErrNoInputPending},
-		{"ErrStaleInputRequest", ErrStaleInputRequest}, {"ErrUnknownOption", ErrUnknownOption},
+		{"ErrInvalidOptions", ErrInvalidOptions},
+		{"ErrUnknownHarness", ErrUnknownHarness},
+		{"ErrNoControl", ErrNoControl},
+		{"ErrTurnInFlight", ErrTurnInFlight},
+		{"ErrClosed", ErrClosed},
+		{"ErrInputPending", ErrInputPending},
+		{"ErrNoInputPending", ErrNoInputPending},
+		{"ErrStaleInputRequest", ErrStaleInputRequest},
+		{"ErrUnknownOption", ErrUnknownOption},
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
 	} {
 		fmt.Fprintf(&b, "%s = %q\n", e.name, e.err.Error())

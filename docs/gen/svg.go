@@ -17,8 +17,10 @@ import (
 // diagramRe matches an <img> whose src points at diagrams/<name>.svg, capturing
 // the bare <name> (depth-independent: ../diagrams/x.svg and ../../diagrams/x.svg
 // both match).
-var diagramRe = regexp.MustCompile(`<img\s+[^>]*src="[^"]*diagrams/([\w-]+)\.svg"[^>]*>`)
-var altRe = regexp.MustCompile(`alt="([^"]*)"`)
+var (
+	diagramRe = regexp.MustCompile(`<img\s+[^>]*src="[^"]*diagrams/([\w-]+)\.svg"[^>]*>`)
+	altRe     = regexp.MustCompile(`alt="([^"]*)"`)
+)
 
 // inlineDiagrams replaces every diagram <img> in html with the inlined SVG from
 // diagramsDir. The alt text (if any) becomes a <figcaption>.

@@ -20,6 +20,7 @@ func (p *scriptedProvisioner) Preflight(context.Context) error {
 	*p.log = append(*p.log, "provision.preflight")
 	return p.preflightErr
 }
+
 func (p *scriptedProvisioner) Create(context.Context, WorkspaceSpec) (Workspace, error) {
 	*p.log = append(*p.log, "provision.create")
 	if p.createErr != nil {
@@ -38,6 +39,7 @@ func (c *scriptedContainment) Preflight(context.Context, Workspace) error {
 	*c.log = append(*c.log, "contain.preflight")
 	return c.preflightErr
 }
+
 func (c *scriptedContainment) Layer(PolicySpec) ContainmentLayer {
 	*c.log = append(*c.log, "contain.layer")
 	return fakeLayer{}
@@ -56,6 +58,7 @@ func (i *scriptedInjector) Apply(context.Context, Workspace) error {
 	*i.log = append(*i.log, "apply:"+i.name)
 	return i.applyErr
 }
+
 func (i *scriptedInjector) Cleanup(context.Context, Workspace) error {
 	*i.log = append(*i.log, "cleanup:"+i.name)
 	return nil

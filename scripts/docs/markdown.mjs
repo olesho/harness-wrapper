@@ -136,7 +136,7 @@ function collectHeadings(markdown, slugifyFn) {
     const id = token.attrGet("id")
     if (!id) continue
     const inline = tokens[i + 1]
-    const text = inline && inline.type === "inline" ? extractPlainText(inline) : ""
+    const text = inline?.type === "inline" ? extractPlainText(inline) : ""
     headings.push({ level: Number(token.tag.slice(1)), id, text })
   }
   return headings

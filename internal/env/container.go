@@ -140,7 +140,8 @@ func CreateContainerWorkspace(ctx context.Context, spec WorkspaceSpec) (*Contain
 		image = "node:latest"
 	}
 
-	out, err := exec.CommandContext(ctx, runtime,
+	out, err := exec.CommandContext(
+		ctx, runtime,
 		"run", "-d", "-i", "--name", name, "--rm", image,
 		"tail", "-f", "/dev/null",
 	).Output()

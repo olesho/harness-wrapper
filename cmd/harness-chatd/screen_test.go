@@ -67,7 +67,7 @@ func getScreen(t *testing.T, ts *httptest.Server, id string, wantStatus int) scr
 	if err != nil {
 		t.Fatalf("GET /screen: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != wantStatus {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("screen status = %d, want %d, body = %s", resp.StatusCode, wantStatus, raw)

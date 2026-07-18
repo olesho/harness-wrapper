@@ -54,7 +54,8 @@ func TestParseHarnessWrapperArgs(t *testing.T) {
 		},
 	}
 
-	tests = append(tests,
+	tests = append(
+		tests,
 		struct {
 			name        string
 			in          []string
