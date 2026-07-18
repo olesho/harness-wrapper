@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -43,6 +44,36 @@ func TestConversationResizeHelperProcess(t *testing.T) {
 		fmt.Fprintf(os.Stdout, "SIZE %s %d %d\n", token, cols, rows)
 	}
 	os.Exit(0)
+}
+
+func TestConversationOpenRejectsDimensionsLargerThanPTY(t *testing.T) {
+	tests := []struct {
+		name string
+		cols int
+		rows int
+	}{
+		{name: "columns", cols: math.MaxUint16 + 1, rows: 24},
+		{name: "rows", cols: 80, rows: math.MaxUint16 + 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conv, err := Open(context.Background(), Options{
+				Harness:    "generic",
+				BinaryPath: os.Args[0],
+				Cols:       tt.cols,
+				Rows:       tt.rows,
+				Store:      newFakeStore(),
+			})
+			if conv != nil {
+				_ = conv.Close(context.Background())
+				t.Fatal("Open returned a conversation for dimensions larger than the PTY can represent")
+			}
+			if !errors.Is(err, ErrInvalidOptions) {
+				t.Fatalf("Open error = %v, want ErrInvalidOptions", err)
+			}
+		})
+	}
 }
 
 func TestConversationResizeSynchronizesPTYAndScreen(t *testing.T) {

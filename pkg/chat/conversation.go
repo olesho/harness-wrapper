@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -160,6 +161,9 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	}
 	if opts.Rows <= 0 {
 		opts.Rows = 40
+	}
+	if opts.Cols > math.MaxUint16 || opts.Rows > math.MaxUint16 {
+		return nil, fmt.Errorf("%w: Cols and Rows must not exceed %d", ErrInvalidOptions, math.MaxUint16)
 	}
 	if opts.EventBuffer <= 0 {
 		opts.EventBuffer = 32
