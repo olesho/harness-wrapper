@@ -454,7 +454,7 @@ surface this driver depends on.
 
 ## Module: openshell (`internal/env/openshell`)
 
-The OpenShell containment driver: clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming.
+The OpenShell containment driver: a clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming.
 
 > Package openshell is the OpenShell containment driver (design §3, §5).
 

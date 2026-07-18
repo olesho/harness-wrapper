@@ -25,10 +25,10 @@ import (
 	"time"
 )
 
-// Meta is the parsed contents of meta.json.
 // metaFilename is the per-scenario metadata file name.
 const metaFilename = "meta.json"
 
+// Meta is the parsed contents of meta.json.
 type Meta struct {
 	Harness       string    `json:"harness"`        // e.g. "codex", "claude-code"
 	BinaryVersion string    `json:"binary_version"` // e.g. "codex 0.42.1"

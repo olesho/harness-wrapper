@@ -74,8 +74,8 @@
       }
     },
     "github.com/olesho/harness-wrapper/internal/env/openshell": {
-      "summaryHash": "6f5425c768bdf31e6e56015fda26d0b2d0a98bae436b498ef183fac653da723e",
-      "summary": "The OpenShell containment driver: clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming."
+      "summaryHash": "3422a482ab3107157ceb087296176612a89cbc663858e4f7c9edeca7becf54ac",
+      "summary": "The OpenShell containment driver: a clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming."
     },
     "github.com/olesho/harness-wrapper/internal/fakeharness": {
       "summaryHash": "373bd38e934f71708fbdecd5ba752e9414b20b63c32b6ee238cd2c49c2276cf1",
@@ -108,7 +108,7 @@
       "summary": "Comparison utilities for the screen-emulator bake-off: normalize, strip ANSI, exact match, and Levenshtein/normalized edit distance against ground-truth text."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/scenario": {
-      "summaryHash": "d5d24634b14733b2277f6bb07b9690a54142abd0dd27ef8bf54980821af6d67f",
+      "summaryHash": "d8130b37ad0b926aa4c45f1e1e586abce72d407e343b5a5988aa1059c47f77d5",
       "summary": "Loads recorded bake-off scenarios from disk (bytes.raw + meta.json, optional expected.txt/transcript.jsonl) via Discover, Load, and WriteMeta."
     },
     "github.com/olesho/harness-wrapper/pkg/chat": {
@@ -270,7 +270,7 @@
       "summary": "Fallback turn-detection adapter that maps wrapper.Status transitions directly to turn events without reading screen contents; a safety net when no per-harness adapter exists."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode": {
-      "summaryHash": "c2cd817b179e5f3fa981ad234f7e3aa4f133968a26af9588474463f3ea368e2a",
+      "summaryHash": "bd813f65d7a7d5a65a7961745aaf19e325c7547d8f28703dfd15a47825b5db4f",
       "summary": "Turn-detection adapter for the Claude Code CLI keying on the '✻ \u003cverb\u003e for Ns' thinking-summary line and interrupt marker; embeds generic.Adapter for wrapper status events."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/codex": {
