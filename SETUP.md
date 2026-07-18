@@ -37,12 +37,3 @@ harness never provisions it. The scan reads:
 If Docker is missing, the server is unreachable, or no token is found, the scan
 **soft-skips with a warning and passes** — a fresh machine without SonarQube is
 never blocked. Run `harness doctor` to see whether a scan will run.
-
-## Semgrep SAST (optional)
-
-Enabling the `semgrep` feature (`harness edit <name> --confirm <name> --semgrep on`)
-runs a Semgrep SAST scan (`--config auto`) on `pre-push` and in `harness ci`, via
-the official `semgrep/semgrep` Docker image — nothing is added to your project's
-dependencies. Like the sonar scan it **soft-skips with a warning and passes** when
-Docker is not on `PATH`, so a machine without Docker is never blocked. Findings from
-a scan that does run fail the gate. `harness doctor` reports Docker availability.
