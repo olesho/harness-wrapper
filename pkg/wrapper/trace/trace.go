@@ -34,7 +34,9 @@ var Discard Emitter = discardEmitter{}
 
 type discardEmitter struct{}
 
-func (discardEmitter) Emit(Event) {}
+func (discardEmitter) Emit(Event) {
+	// No-op: Discard intentionally drops every event.
+}
 
 // NewWriterEmitter returns an Emitter that writes one JSON-encoded event
 // per line to w. Encoding errors are silently dropped — trace failures

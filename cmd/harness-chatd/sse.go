@@ -52,7 +52,9 @@ func (f *fanout) subscribe() (<-chan chat.ConversationEvent, func()) {
 	if f.closed {
 		f.mu.Unlock()
 		close(ch)
-		return ch, func() {}
+		return ch, func() {
+			// Already closed: nothing to unsubscribe.
+		}
 	}
 	id := newToken()
 	f.subscribers[id] = ch

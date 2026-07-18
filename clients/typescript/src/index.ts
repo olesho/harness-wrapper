@@ -3,8 +3,8 @@
 export interface Turn {
   id: string;
   session_id: string;
-  role: "user" | "assistant" | "system" | string;
-  state: "pending" | "streaming" | "complete" | "errored" | string;
+  role: "user" | "assistant" | "system" | (string & {});
+  state: "pending" | "streaming" | "complete" | "errored" | (string & {});
   text?: string;
   reason?: string;
   started_at?: string;

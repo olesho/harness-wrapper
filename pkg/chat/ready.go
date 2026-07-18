@@ -61,9 +61,12 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	}
 }
 
+// chatClaudeCode is the adapter-style name for the Claude Code harness.
+const chatClaudeCode = "claude-code"
+
 func requiresPromptReadiness(harness string) bool {
 	switch harness {
-	case "claude-code", "codex", "pi":
+	case chatClaudeCode, "codex", "pi":
 		return true
 	default:
 		return false
@@ -72,7 +75,7 @@ func requiresPromptReadiness(harness string) bool {
 
 func readyForInput(harness, text string) bool {
 	switch harness {
-	case "claude-code":
+	case chatClaudeCode:
 		// A blocking dialog (folder-trust, bypass acceptance) renders its own
 		// "❯" selector and the "Claude Code" header, which would otherwise
 		// look ready. Treat the dialog as not-ready so Send waits for it to
@@ -107,7 +110,7 @@ func readyForInput(harness, text string) bool {
 
 func submitKeyForHarness(harness, screenText string) []byte {
 	switch harness {
-	case "claude-code":
+	case chatClaudeCode:
 		// Claude Code enables enhanced keyboard handling in its TUI and does
 		// not submit the input box when a synthetic PTY writer sends plain
 		// CR/LF — it only inserts a newline and the turn never runs. CSI 13 u

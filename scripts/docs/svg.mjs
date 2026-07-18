@@ -10,19 +10,25 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 
-// diagramRe matches an <img> whose src points at diagrams/<name>.svg,
-// capturing the bare <name> (depth-independent: ../diagrams/x.svg and
-// ../../diagrams/x.svg both match).
-const diagramRe = /<img\s+[^>]*src="[^"]*diagrams\/([\w-]+)\.svg"[^>]*>/g
+// imgTagRe matches a whole <img …> tag with a single linear [^>]* scan (no
+// nested quantifiers, so no super-linear backtracking). srcDiagramRe then pulls
+// the diagram <name> out of the matched tag, depth-independently (../diagrams/x.svg
+// and ../../diagrams/x.svg both match). Splitting the two avoids the ReDoS-prone
+// [^>]*…[^>]* form of a single combined pattern.
+const imgTagRe = /<img\s[^>]*>/g
+const srcDiagramRe = /src="[^"]*diagrams\/([\w-]+)\.svg"/
 const altRe = /alt="([^"]*)"/
 
 // inlineDiagrams replaces every diagram <img> in html with the inlined SVG
-// from diagramsDir. The alt text (if any) becomes a <figcaption>.
+// from diagramsDir. The alt text (if any) becomes a <figcaption>. Non-diagram
+// <img> tags are returned unchanged.
 export function inlineDiagrams(html, diagramsDir) {
-  return html.replace(diagramRe, (imgTag, name) => {
+  return html.replace(imgTagRe, (imgTag) => {
+    const srcMatch = srcDiagramRe.exec(imgTag)
+    if (!srcMatch) return imgTag // not a diagram image
     let svg
     try {
-      svg = readFileSync(join(diagramsDir, `${name}.svg`), "utf8").trim()
+      svg = readFileSync(join(diagramsDir, `${srcMatch[1]}.svg`), "utf8").trim()
     } catch {
       return imgTag // leave the img if the asset is missing
     }

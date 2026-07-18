@@ -101,6 +101,7 @@ func (s *outputSink) run() {
 			// Drain the queue silently after a write error; the
 			// caller will eventually unregister the sink.
 			for range s.q {
+				// Drain remaining buffers so producers don't block.
 			}
 			return
 		}
@@ -133,7 +134,9 @@ func (s *outputSink) close() {
 // Attach clients are responsible for keeping up.
 func (s *Session) AttachOutput(w io.Writer) func() {
 	if w == nil {
-		return func() {}
+		return func() {
+			// No sink registered: detaching a nil writer is a no-op.
+		}
 	}
 	return s.fanout.add(w)
 }
@@ -185,7 +188,9 @@ func (s *Session) AcquireWriter() (release func(), ok bool) {
 	s.writerMu.Lock()
 	defer s.writerMu.Unlock()
 	if s.writerHeld {
-		return func() {}, false
+		return func() {
+			// Not the active writer: release is a no-op.
+		}, false
 	}
 	s.writerHeld = true
 	released := false

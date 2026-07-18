@@ -341,9 +341,12 @@ func validateConfig(cfg *Config) error {
 // reach the same per-harness translation. Mirrors classifier.go.
 func normHarness(h string) string { return strings.ToLower(strings.TrimSpace(h)) }
 
+// harnessClaudeCode is the adapter-style name for the Claude Code harness.
+const harnessClaudeCode = "claude-code"
+
 func harnessSupportsEffort(harness string) bool {
 	switch normHarness(harness) {
-	case "claude", "claude-code", "codex":
+	case "claude", harnessClaudeCode, "codex":
 		return true
 	default:
 		return false
@@ -364,7 +367,7 @@ func argsWithHarnessEffort(harness string, args []string, effort string) []strin
 		return args
 	}
 	switch normHarness(harness) {
-	case "claude", "claude-code":
+	case "claude", harnessClaudeCode:
 		if argsContainFlag(args, "--effort") {
 			return args
 		}
@@ -394,7 +397,7 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 		return args
 	}
 	switch normHarness(harness) {
-	case "claude", "claude-code":
+	case "claude", harnessClaudeCode:
 		if argsContainFlag(args, "--model") {
 			return args
 		}

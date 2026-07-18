@@ -21,7 +21,9 @@ import "context"
 // Redaction is still SEQUENCED correctly (before apply); it just goes nowhere.
 type noopRedactor struct{}
 
-func (noopRedactor) Register(string) {}
+func (noopRedactor) Register(string) {
+	// No-op: the default redactor drops every secret (see type doc).
+}
 
 // Env acquires an Environment per the canonical lifecycle. Any failure in steps
 // 1–5 unwinds all acquired layers in reverse order, best-effort, errors
