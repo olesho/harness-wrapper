@@ -250,20 +250,28 @@ func TestRunTurn_RealClaudeDogfoodKeepAlive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Send second real Claude turn: %v\noutput:\n%s", err, out.String())
 	}
+	awaitRealClaudeSentinel(ctx, t, res.Conversation, turnID, "HARNESS_WRAPPER_RUNTURN_KEEP_2", &out)
+}
+
+// awaitRealClaudeSentinel waits for turnID to complete and asserts the sentinel
+// round-tripped, failing the test on timeout or early conversation close.
+func awaitRealClaudeSentinel(ctx context.Context, t *testing.T, conv *chat.Conversation, turnID, sentinel string, out *bytes.Buffer) {
+	t.Helper()
 	for {
 		select {
 		case <-ctx.Done():
 			t.Fatalf("second real Claude turn timed out: %v\noutput:\n%s", ctx.Err(), out.String())
-		case ev, ok := <-res.Conversation.Events():
+		case ev, ok := <-conv.Events():
 			if !ok {
 				t.Fatalf("conversation closed before second real Claude turn completed\noutput:\n%s", out.String())
 			}
-			if ev.Turn.ID == turnID && ev.Turn.State == chat.TurnStateComplete {
-				if !strings.Contains(ev.Turn.Text, "HARNESS_WRAPPER_RUNTURN_KEEP_2") && !strings.Contains(out.String(), "HARNESS_WRAPPER_RUNTURN_KEEP_2") {
-					t.Fatalf("second real Claude output missing sentinel\nturn text:\n%s\noutput:\n%s", ev.Turn.Text, out.String())
-				}
-				return
+			if ev.Turn.ID != turnID || ev.Turn.State != chat.TurnStateComplete {
+				continue
 			}
+			if !strings.Contains(ev.Turn.Text, sentinel) && !strings.Contains(out.String(), sentinel) {
+				t.Fatalf("second real Claude output missing sentinel\nturn text:\n%s\noutput:\n%s", ev.Turn.Text, out.String())
+			}
+			return
 		}
 	}
 }

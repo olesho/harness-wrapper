@@ -44,26 +44,32 @@ func TestParsedEventsDurableRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip count: got %d, want %d", len(out), len(in))
 	}
 	for i := range in {
-		a, b := in[i], out[i]
-		if a.HarnessSessionID != b.HarnessSessionID || a.ParentSessionID != b.ParentSessionID {
-			t.Errorf("event %d session tags differ: %+v vs %+v", i, a, b)
-		}
-		// The internal fields are the whole point of the durable form.
-		if b.Event.Source != a.Event.Source {
-			t.Errorf("event %d Source lost: got %q want %q", i, b.Event.Source, a.Event.Source)
-		}
-		if b.Event.NativeID != a.Event.NativeID {
-			t.Errorf("event %d NativeID lost: got %q want %q", i, b.Event.NativeID, a.Event.NativeID)
-		}
-		if b.Event.SchemaVersion != a.Event.SchemaVersion {
-			t.Errorf("event %d SchemaVersion lost: got %d want %d", i, b.Event.SchemaVersion, a.Event.SchemaVersion)
-		}
-		if b.Event.Type != a.Event.Type || b.Event.ToolUseID != a.Event.ToolUseID || b.Event.Output != a.Event.Output {
-			t.Errorf("event %d body differs: %+v vs %+v", i, a.Event, b.Event)
-		}
-		if string(b.Event.ToolInput) != string(a.Event.ToolInput) {
-			t.Errorf("event %d ToolInput differs: %q vs %q", i, a.Event.ToolInput, b.Event.ToolInput)
-		}
+		assertDurableRoundTrip(t, i, in[i], out[i])
+	}
+}
+
+// assertDurableRoundTrip checks that a single ParsedEvent survived the durable
+// round-trip with its session tags and internal Event fields intact.
+func assertDurableRoundTrip(t *testing.T, i int, a, b ParsedEvent) {
+	t.Helper()
+	if a.HarnessSessionID != b.HarnessSessionID || a.ParentSessionID != b.ParentSessionID {
+		t.Errorf("event %d session tags differ: %+v vs %+v", i, a, b)
+	}
+	// The internal fields are the whole point of the durable form.
+	if b.Event.Source != a.Event.Source {
+		t.Errorf("event %d Source lost: got %q want %q", i, b.Event.Source, a.Event.Source)
+	}
+	if b.Event.NativeID != a.Event.NativeID {
+		t.Errorf("event %d NativeID lost: got %q want %q", i, b.Event.NativeID, a.Event.NativeID)
+	}
+	if b.Event.SchemaVersion != a.Event.SchemaVersion {
+		t.Errorf("event %d SchemaVersion lost: got %d want %d", i, b.Event.SchemaVersion, a.Event.SchemaVersion)
+	}
+	if b.Event.Type != a.Event.Type || b.Event.ToolUseID != a.Event.ToolUseID || b.Event.Output != a.Event.Output {
+		t.Errorf("event %d body differs: %+v vs %+v", i, a.Event, b.Event)
+	}
+	if string(b.Event.ToolInput) != string(a.Event.ToolInput) {
+		t.Errorf("event %d ToolInput differs: %q vs %q", i, a.Event.ToolInput, b.Event.ToolInput)
 	}
 }
 

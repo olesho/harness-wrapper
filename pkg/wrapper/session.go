@@ -273,69 +273,14 @@ func (s *Session) supervise(ctx context.Context) {
 		copyPTYOutput(s.ptmx, s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
 	}()
 
-	var stdinDone chan struct{}
-	if s.cfg.Stdin != nil {
-		stdinDone = make(chan struct{})
-		go func() {
-			defer close(stdinDone)
-			_, _ = io.Copy(s.ptmx, s.cfg.Stdin)
-			// PTYs don't propagate the underlying io.Reader's EOF to the
-			// slave automatically. For headless callers (Stdin is not
-			// an os.File TTY), send EOT (Ctrl+D, 0x04) twice: the first
-			// submits any pending unterminated line to the harness, the
-			// second is interpreted by the PTY's canonical-mode line
-			// discipline as end-of-file (at start of line, ^D returns
-			// 0 bytes from read()). Skip when Stdin is a real TTY so
-			// interactive sessions where the user keeps typing aren't
-			// corrupted.
-			if _, isTTYFile := s.cfg.Stdin.(*os.File); !isTTYFile {
-				_, _ = s.ptmx.Write([]byte{0x04, 0x04})
-			}
-		}()
-	}
+	stdinDone := s.startStdinCopy()
 
 	waitCh := make(chan waitResult, 1)
 	go func() {
 		waitCh <- waitResult{err: s.cmd.Wait(), endedAt: time.Now()}
 	}()
 
-	var (
-		waitErr           error
-		endedAt           time.Time
-		terminalClassDone *classification
-		stopRequested     bool
-		// lastErrClass is the most recent non-ErrNone class observed during
-		// the run (terminal or not). It lets Result.Class inherit a mid-run
-		// error class — e.g. a non-terminal API error — when the harness then
-		// exits Failed without a terminal classification.
-		lastErrClass ErrorClass
-	)
-
-waitLoop:
-	for {
-		select {
-		case wr := <-waitCh:
-			waitErr = wr.err
-			endedAt = wr.endedAt
-			break waitLoop
-		case c := <-s.classifierCh:
-			if c.class != ErrNone {
-				lastErrClass = c.class
-			}
-			if !c.terminal {
-				s.recordStatusChange(c, false)
-				continue
-			}
-			terminalClassDone = &c
-			s.recordStatusChange(c, false)
-			endedAt, waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
-			break waitLoop
-		case <-s.stopRequest:
-			stopRequested = true
-			endedAt, waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
-			break waitLoop
-		}
-	}
+	out := s.awaitTermination(waitCh)
 
 	close(s.classifierOn)
 	_ = s.ptmx.Close()
@@ -356,44 +301,15 @@ waitLoop:
 	res := Result{
 		PID:       s.pid,
 		StartedAt: s.startedAt,
-		EndedAt:   endedAt,
+		EndedAt:   out.endedAt,
 	}
 	if last := s.lastOutput.Load(); last > 0 {
 		res.LastOutputAt = time.Unix(0, last)
 	}
 
-	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.cmd.ProcessState, waitErr, ctx.Err())
+	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.cmd.ProcessState, out.waitErr, ctx.Err())
 
-	// actionable is the classification whose structured fields (HTTPCode,
-	// RetryAfter, ResumeAt) flow into the terminal event. It is the mid-run
-	// terminal classification when one fired; otherwise, for a plain failed
-	// exit that was not a stop request, a final one-shot pass over recent
-	// output so fast-failing transport/API errors — which exit before the
-	// idle classifier ever polls — still upgrade StatusFailed into an
-	// actionable, retryable status.
-	actionable := terminalClassDone
-	if actionable == nil && !stopRequested && res.Status == StatusFailed {
-		actionable = s.classifyOnExit()
-	}
-	if actionable != nil {
-		res.Status = actionable.status
-		res.Reason = actionable.reason
-	}
-	// Error class: prefer the actionable classification's class; otherwise,
-	// for a plain Failed exit, inherit the last meaningful class seen mid-run
-	// (e.g. a non-terminal API error). Clean/idle/interrupted stay ErrNone.
-	switch {
-	case actionable != nil && actionable.class != ErrNone:
-		res.Class = actionable.class
-	case res.Status == StatusFailed:
-		res.Class = lastErrClass
-	}
-	if stopRequested && terminalClassDone == nil {
-		res.Status = StatusInterrupted
-		if res.Reason == "" {
-			res.Reason = "stop requested"
-		}
-	}
+	actionable := s.resolveActionable(&res, out)
 
 	s.cfg.Trace.Emit(trace.Event{
 		At:   time.Now(),
@@ -429,6 +345,115 @@ waitLoop:
 		final.ResumeAt = actionable.resumeAt
 	}
 	s.emitEvent(final)
+}
+
+// superviseOutcome captures how a supervised run terminated: the exit
+// error and time, an optional terminal classification, whether a Stop
+// was requested, and the last non-ErrNone class seen mid-run.
+type superviseOutcome struct {
+	waitErr           error
+	endedAt           time.Time
+	terminalClassDone *classification
+	stopRequested     bool
+	// lastErrClass is the most recent non-ErrNone class observed during
+	// the run (terminal or not). It lets Result.Class inherit a mid-run
+	// error class — e.g. a non-terminal API error — when the harness then
+	// exits Failed without a terminal classification.
+	lastErrClass ErrorClass
+}
+
+// startStdinCopy pipes cfg.Stdin into the PTY. It returns nil when no
+// Stdin is configured, otherwise a channel closed when the copy is done.
+func (s *Session) startStdinCopy() chan struct{} {
+	if s.cfg.Stdin == nil {
+		return nil
+	}
+	stdinDone := make(chan struct{})
+	go func() {
+		defer close(stdinDone)
+		_, _ = io.Copy(s.ptmx, s.cfg.Stdin)
+		// PTYs don't propagate the underlying io.Reader's EOF to the
+		// slave automatically. For headless callers (Stdin is not
+		// an os.File TTY), send EOT (Ctrl+D, 0x04) twice: the first
+		// submits any pending unterminated line to the harness, the
+		// second is interpreted by the PTY's canonical-mode line
+		// discipline as end-of-file (at start of line, ^D returns
+		// 0 bytes from read()). Skip when Stdin is a real TTY so
+		// interactive sessions where the user keeps typing aren't
+		// corrupted.
+		if _, isTTYFile := s.cfg.Stdin.(*os.File); !isTTYFile {
+			_, _ = s.ptmx.Write([]byte{0x04, 0x04})
+		}
+	}()
+	return stdinDone
+}
+
+// awaitTermination blocks until the harness exits, a terminal
+// classification fires, or a Stop is requested, returning how the run
+// ended. Non-terminal classifications are recorded as they arrive.
+func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
+	var out superviseOutcome
+	for {
+		select {
+		case wr := <-waitCh:
+			out.waitErr = wr.err
+			out.endedAt = wr.endedAt
+			return out
+		case c := <-s.classifierCh:
+			if c.class != ErrNone {
+				out.lastErrClass = c.class
+			}
+			if !c.terminal {
+				s.recordStatusChange(c, false)
+				continue
+			}
+			cc := c
+			out.terminalClassDone = &cc
+			s.recordStatusChange(c, false)
+			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			return out
+		case <-s.stopRequest:
+			out.stopRequested = true
+			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			return out
+		}
+	}
+}
+
+// resolveActionable finalizes res.Status/Reason/Class from the run
+// outcome and returns the actionable classification (if any) whose
+// structured fields flow into the terminal event.
+//
+// actionable is the mid-run terminal classification when one fired;
+// otherwise, for a plain failed exit that was not a stop request, a
+// final one-shot pass over recent output so fast-failing transport/API
+// errors — which exit before the idle classifier ever polls — still
+// upgrade StatusFailed into an actionable, retryable status.
+func (s *Session) resolveActionable(res *Result, out superviseOutcome) *classification {
+	actionable := out.terminalClassDone
+	if actionable == nil && !out.stopRequested && res.Status == StatusFailed {
+		actionable = s.classifyOnExit()
+	}
+	if actionable != nil {
+		res.Status = actionable.status
+		res.Reason = actionable.reason
+	}
+	// Error class: prefer the actionable classification's class; otherwise,
+	// for a plain Failed exit, inherit the last meaningful class seen mid-run
+	// (e.g. a non-terminal API error). Clean/idle/interrupted stay ErrNone.
+	switch {
+	case actionable != nil && actionable.class != ErrNone:
+		res.Class = actionable.class
+	case res.Status == StatusFailed:
+		res.Class = out.lastErrClass
+	}
+	if out.stopRequested && out.terminalClassDone == nil {
+		res.Status = StatusInterrupted
+		if res.Reason == "" {
+			res.Reason = "stop requested"
+		}
+	}
+	return actionable
 }
 
 // recordStatusChange updates Snapshot and emits a non-terminal event.
@@ -493,14 +518,7 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 
-	var (
-		lastSeen        int64 = -1
-		quietEmitted    bool
-		classifyEmitted bool
-		staleEmitted    bool
-		dispatched      bool
-	)
-	staleEnabled := cfg.StaleThreshold > 0
+	st := classifierState{lastSeen: -1, staleEnabled: cfg.StaleThreshold > 0}
 
 	for {
 		select {
@@ -509,89 +527,121 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 		case <-s.classifierOn:
 			return
 		case <-ticker.C:
-			last := s.lastOutput.Load()
-			if last == 0 {
-				continue
-			}
-			outputChanged := last != lastSeen
-			if outputChanged {
-				lastSeen = last
-				quietEmitted = false
-				classifyEmitted = false
-				staleEmitted = false
-				// Fall through so high-confidence classifiers
-				// (api_error) can fire even while output is still
-				// streaming. Cost/Retry/Prompt are gated on
-				// Quiet/Idle below, which won't be true here, so
-				// they stay silent until the output settles.
-			}
-			sinceLast := time.Since(time.Unix(0, last))
-			quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
-			idle := !outputChanged && sinceLast >= cfg.IdleClassify
-			stale := !outputChanged && staleEnabled && sinceLast >= cfg.StaleThreshold
-
-			if quiet && !quietEmitted {
-				cfg.Trace.Emit(trace.Event{
-					At:   time.Now(),
-					Kind: "output_quiet",
-					Fields: map[string]any{
-						"since_last_output_ms": sinceLast.Milliseconds(),
-						"threshold_ms":         cfg.IdleQuiet.Milliseconds(),
-					},
-				})
-				quietEmitted = true
-			}
-			if idle && !classifyEmitted {
-				cfg.Trace.Emit(trace.Event{
-					At:   time.Now(),
-					Kind: "output_classify_threshold",
-					Fields: map[string]any{
-						"since_last_output_ms": sinceLast.Milliseconds(),
-						"threshold_ms":         cfg.IdleClassify.Milliseconds(),
-					},
-				})
-				classifyEmitted = true
-			}
-			if stale && !staleEmitted {
-				cfg.Trace.Emit(trace.Event{
-					At:   time.Now(),
-					Kind: "harness_stale",
-					Fields: map[string]any{
-						"since_last_output_ms": sinceLast.Milliseconds(),
-						"threshold_ms":         cfg.StaleThreshold.Milliseconds(),
-					},
-				})
-				s.recordStatusChange(classification{
-					status:   StatusStale,
-					reason:   fmt.Sprintf("no output for %s", sinceLast.Round(time.Second)),
-					terminal: false,
-				}, false)
-				staleEmitted = true
-			}
-
-			if dispatched {
-				continue
-			}
-
-			classification := s.classifier.Classify(ClassifierInput{
-				RecentOutput:    s.recentOutput.String(),
-				SinceLastOutput: sinceLast,
-				Quiet:           quiet,
-				Idle:            idle,
-			})
-			if classification.Status == "" {
-				continue
-			}
-
-			emitClassifierTrace(cfg, classification)
-			select {
-			case s.classifierCh <- toInternalClassification(classification):
-				if classification.Terminal {
-					dispatched = true
-				}
-			default:
-			}
+			st.onTick(s, cfg)
 		}
+	}
+}
+
+// classifierState carries the per-run bookkeeping the polling classifier
+// needs across ticks: the last-seen output timestamp, one-shot trace
+// emission latches, and whether a terminal classification has been
+// dispatched.
+type classifierState struct {
+	lastSeen        int64
+	quietEmitted    bool
+	classifyEmitted bool
+	staleEmitted    bool
+	dispatched      bool
+	staleEnabled    bool
+}
+
+// onTick evaluates the activity counters once and, when the output has
+// settled, emits threshold traces and dispatches a classification.
+func (st *classifierState) onTick(s *Session, cfg Config) {
+	last := s.lastOutput.Load()
+	if last == 0 {
+		return
+	}
+	outputChanged := last != st.lastSeen
+	if outputChanged {
+		st.lastSeen = last
+		st.quietEmitted = false
+		st.classifyEmitted = false
+		st.staleEmitted = false
+		// Fall through so high-confidence classifiers
+		// (api_error) can fire even while output is still
+		// streaming. Cost/Retry/Prompt are gated on
+		// Quiet/Idle below, which won't be true here, so
+		// they stay silent until the output settles.
+	}
+	sinceLast := time.Since(time.Unix(0, last))
+	quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
+	idle := !outputChanged && sinceLast >= cfg.IdleClassify
+	stale := !outputChanged && st.staleEnabled && sinceLast >= cfg.StaleThreshold
+
+	st.emitThresholdTraces(s, cfg, sinceLast, quiet, idle, stale)
+
+	if st.dispatched {
+		return
+	}
+	st.dispatchClassification(s, cfg, sinceLast, quiet, idle)
+}
+
+// emitThresholdTraces emits the output_quiet / output_classify_threshold /
+// harness_stale trace events (and the stale status change) at most once
+// per settle window.
+func (st *classifierState) emitThresholdTraces(s *Session, cfg Config, sinceLast time.Duration, quiet, idle, stale bool) {
+	if quiet && !st.quietEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "output_quiet",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.IdleQuiet.Milliseconds(),
+			},
+		})
+		st.quietEmitted = true
+	}
+	if idle && !st.classifyEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "output_classify_threshold",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.IdleClassify.Milliseconds(),
+			},
+		})
+		st.classifyEmitted = true
+	}
+	if stale && !st.staleEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "harness_stale",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.StaleThreshold.Milliseconds(),
+			},
+		})
+		s.recordStatusChange(classification{
+			status:   StatusStale,
+			reason:   fmt.Sprintf("no output for %s", sinceLast.Round(time.Second)),
+			terminal: false,
+		}, false)
+		st.staleEmitted = true
+	}
+}
+
+// dispatchClassification runs the configured Classifier and forwards a
+// non-empty result to the supervisor, latching dispatched on a terminal
+// classification.
+func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceLast time.Duration, quiet, idle bool) {
+	classification := s.classifier.Classify(ClassifierInput{
+		RecentOutput:    s.recentOutput.String(),
+		SinceLastOutput: sinceLast,
+		Quiet:           quiet,
+		Idle:            idle,
+	})
+	if classification.Status == "" {
+		return
+	}
+
+	emitClassifierTrace(cfg, classification)
+	select {
+	case s.classifierCh <- toInternalClassification(classification):
+		if classification.Terminal {
+			st.dispatched = true
+		}
+	default:
 	}
 }
 

@@ -94,23 +94,7 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 	lower := strings.ToLower(stripped)
 
 	if input.Idle {
-		if hit := detector.MatchAny(lower, h.patterns.Cost); hit != "" {
-			return Classification{
-				Status:   StatusBlockedByCost,
-				Class:    costClass(hit),
-				Reason:   hit,
-				Terminal: true,
-			}
-		}
-		if hit := detector.MatchAny(lower, h.patterns.Retry); hit != "" {
-			return Classification{
-				Status:   StatusRetryLater,
-				Class:    retryClass(hit),
-				Reason:   hit,
-				Terminal: true,
-			}
-		}
-		if c, ok := matchTransportRetry(lower); ok {
+		if c, ok := h.classifyIdle(lower); ok {
 			return c
 		}
 	}
@@ -126,6 +110,32 @@ func (h harnessAdapter) Classify(input ClassifierInput) Classification {
 	}
 
 	return Classification{}
+}
+
+// classifyIdle runs the idle-gated Cost / Retry / transport-retry
+// matchers against already-lowercased stripped output. The bool is false
+// when none matched.
+func (h harnessAdapter) classifyIdle(lower string) (Classification, bool) {
+	if hit := detector.MatchAny(lower, h.patterns.Cost); hit != "" {
+		return Classification{
+			Status:   StatusBlockedByCost,
+			Class:    costClass(hit),
+			Reason:   hit,
+			Terminal: true,
+		}, true
+	}
+	if hit := detector.MatchAny(lower, h.patterns.Retry); hit != "" {
+		return Classification{
+			Status:   StatusRetryLater,
+			Class:    retryClass(hit),
+			Reason:   hit,
+			Terminal: true,
+		}, true
+	}
+	if c, ok := matchTransportRetry(lower); ok {
+		return c, true
+	}
+	return Classification{}, false
 }
 
 func formatAPIErrorReason(hit detector.APIErrorHit) string {

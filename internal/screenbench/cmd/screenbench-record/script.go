@@ -105,21 +105,30 @@ func loadScript(path string) (*script, error) {
 		return nil, fmt.Errorf("script %s has no steps", path)
 	}
 	for i, step := range s.Steps {
-		if _, err := step.kind(); err != nil {
+		if err := validateStep(step); err != nil {
 			return nil, fmt.Errorf("script %s step %d: %w", path, i, err)
-		}
-		if step.WaitFor != "" {
-			if _, err := regexp.Compile(step.WaitFor); err != nil {
-				return nil, fmt.Errorf("script %s step %d: invalid wait_for regex: %w", path, i, err)
-			}
-		}
-		if step.Sleep != "" {
-			if _, err := time.ParseDuration(step.Sleep); err != nil {
-				return nil, fmt.Errorf("script %s step %d: invalid sleep duration: %w", path, i, err)
-			}
 		}
 	}
 	return &s, nil
+}
+
+// validateStep checks that a step populates exactly one field and that any
+// wait_for regex and sleep duration parse.
+func validateStep(step scriptStep) error {
+	if _, err := step.kind(); err != nil {
+		return err
+	}
+	if step.WaitFor != "" {
+		if _, err := regexp.Compile(step.WaitFor); err != nil {
+			return fmt.Errorf("invalid wait_for regex: %w", err)
+		}
+	}
+	if step.Sleep != "" {
+		if _, err := time.ParseDuration(step.Sleep); err != nil {
+			return fmt.Errorf("invalid sleep duration: %w", err)
+		}
+	}
+	return nil
 }
 
 // scriptDriver pumps a parsed script against a wrapper.Session. It

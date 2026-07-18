@@ -18,6 +18,18 @@ import (
 // runErrPrefix labels fatal one-shot errors on stderr.
 const runErrPrefix = "harness-wrapper run:"
 
+// resolveRunTimeout returns the per-turn deadline, defaulting to 15m and
+// honoring a valid HARNESS_WRAPPER_RUN_TIMEOUT duration override.
+func resolveRunTimeout() time.Duration {
+	timeout := 15 * time.Minute
+	if v := os.Getenv("HARNESS_WRAPPER_RUN_TIMEOUT"); v != "" {
+		if d, derr := time.ParseDuration(v); derr == nil {
+			timeout = d
+		}
+	}
+	return timeout
+}
+
 // runOneShot is the "proper substitution for `claude -p`": it drives ONE turn
 // through the real interactive harness via harness.RunTurn (PTY + turn
 // detection), prints the assistant's clean final reply to stdout, and exits —
@@ -66,13 +78,7 @@ func runOneShot(args []string) int {
 		return 2
 	}
 
-	timeout := 15 * time.Minute
-	if v := os.Getenv("HARNESS_WRAPPER_RUN_TIMEOUT"); v != "" {
-		if d, derr := time.ParseDuration(v); derr == nil {
-			timeout = d
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), resolveRunTimeout())
 	defer cancel()
 
 	// Resolve interactive vs. auto-accept ONCE, up front. A /dev/tty handle (if
@@ -326,28 +332,12 @@ const selectInputMaxAttempts = 5
 //     signal to fall back to autoAcceptAnswer. Never hangs, never panics.
 func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.InputAnswer, bool) {
 	r := bufio.NewReader(in)
-
 	if len(req.Options) == 0 {
-		_, _ = fmt.Fprintln(out, req.Prompt)
-		_, _ = fmt.Fprint(out, "Enter response: ")
-		line, err := r.ReadString('\n')
-		if err != nil && line == "" {
-			return chat.InputAnswer{}, false
-		}
-		return chat.InputAnswer{Text: strings.TrimRight(line, "\r\n")}, true
+		return freeTextAnswer(r, req, out)
 	}
 
 	for attempt := 0; attempt < selectInputMaxAttempts; attempt++ {
-		_, _ = fmt.Fprintln(out, req.Prompt)
-		for i := range req.Options {
-			o := &req.Options[i]
-			if o.Alias != "" {
-				_, _ = fmt.Fprintf(out, "  %d) %s (%s)\n", i+1, o.Label, o.Alias)
-			} else {
-				_, _ = fmt.Fprintf(out, "  %d) %s\n", i+1, o.Label)
-			}
-		}
-		_, _ = fmt.Fprintf(out, "Select [1-%d]: ", len(req.Options))
+		renderOptions(req, out)
 
 		line, err := r.ReadString('\n')
 		if err != nil && line == "" {
@@ -365,6 +355,33 @@ func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.Inpu
 		}
 	}
 	return chat.InputAnswer{}, false
+}
+
+// freeTextAnswer handles the no-options case: print the prompt, read one line,
+// and return it as InputAnswer.Text. An EOF with no data returns (_, false).
+func freeTextAnswer(r *bufio.Reader, req chat.InputRequest, out io.Writer) (chat.InputAnswer, bool) {
+	_, _ = fmt.Fprintln(out, req.Prompt)
+	_, _ = fmt.Fprint(out, "Enter response: ")
+	line, err := r.ReadString('\n')
+	if err != nil && line == "" {
+		return chat.InputAnswer{}, false
+	}
+	return chat.InputAnswer{Text: strings.TrimRight(line, "\r\n")}, true
+}
+
+// renderOptions prints the prompt, a 1-based numbered list of options (with
+// "(Alias)" when present), and the "Select [1-N]:" trailer.
+func renderOptions(req chat.InputRequest, out io.Writer) {
+	_, _ = fmt.Fprintln(out, req.Prompt)
+	for i := range req.Options {
+		o := &req.Options[i]
+		if o.Alias != "" {
+			_, _ = fmt.Fprintf(out, "  %d) %s (%s)\n", i+1, o.Label, o.Alias)
+		} else {
+			_, _ = fmt.Fprintf(out, "  %d) %s\n", i+1, o.Label)
+		}
+	}
+	_, _ = fmt.Fprintf(out, "Select [1-%d]: ", len(req.Options))
 }
 
 // parseIndex parses a 1-based menu selection into a 0-based slice index in

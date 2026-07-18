@@ -49,11 +49,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	var teardownWs Workspace
 
 	fail := func(setupErr error) (*Environment, error) {
-		reversed := make([]func() error, len(unwind))
-		for i, f := range unwind {
-			reversed[len(unwind)-1-i] = f
-		}
-		teardownErrs := runAll(reversed)
+		teardownErrs := runAll(reverseThunks(unwind))
 		if len(teardownErrs) > 0 {
 			// Surface the ORIGINAL cause first, with teardown failures attached —
 			// the setup error is why we are unwinding at all.
@@ -101,9 +97,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	//    never emit an unredacted secret. Apply against the COMPOSED workspace so
 	//    a file-injected token lands INSIDE the containment boundary.
 	for _, inj := range injectors {
-		for _, secret := range inj.Redactions() {
-			redactor.Register(secret)
-		}
+		registerRedactions(redactor, inj)
 		injCopy := inj
 		// Push cleanup before apply — it must run even if this apply half-fails.
 		unwind = append(unwind, func() error { return injCopy.Cleanup(ctx, composed) })
@@ -116,19 +110,44 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	//      unwinds in reverse (injector cleanup → containment teardown → inner).
 	return &Environment{
 		Workspace: composed,
-		Destroy: func(dctx context.Context, outcome Outcome) error {
-			thunks := make([]func() error, 0, len(injectors)+1)
-			// Reverse acquisition: last-applied injector cleans up first.
-			for i := len(injectors) - 1; i >= 0; i-- {
-				inj := injectors[i]
-				thunks = append(thunks, func() error { return inj.Cleanup(dctx, composed) })
-			}
-			thunks = append(thunks, func() error { return composed.Destroy(dctx, outcome) })
-			errs := runAll(thunks)
-			if len(errs) > 0 {
-				return &TeardownError{Errors: errs, Context: "env.destroy"}
-			}
-			return nil
-		},
+		Destroy:   composedDestroy(injectors, composed),
 	}, nil
+}
+
+// reverseThunks returns a new slice with unwind's thunks in reverse order, so
+// setup-failure teardown runs last-acquired first.
+func reverseThunks(unwind []func() error) []func() error {
+	reversed := make([]func() error, len(unwind))
+	for i, f := range unwind {
+		reversed[len(unwind)-1-i] = f
+	}
+	return reversed
+}
+
+// registerRedactions registers every one of an injector's secrets with the
+// redactor before any Apply (§4).
+func registerRedactions(redactor Redactor, inj CredentialInjector) {
+	for _, secret := range inj.Redactions() {
+		redactor.Register(secret)
+	}
+}
+
+// composedDestroy builds the retention-honoring destroy for the composed
+// environment: injector cleanups in reverse acquisition order, then the
+// composed workspace teardown, with all errors aggregated.
+func composedDestroy(injectors []CredentialInjector, composed Workspace) func(context.Context, Outcome) error {
+	return func(dctx context.Context, outcome Outcome) error {
+		thunks := make([]func() error, 0, len(injectors)+1)
+		// Reverse acquisition: last-applied injector cleans up first.
+		for i := len(injectors) - 1; i >= 0; i-- {
+			inj := injectors[i]
+			thunks = append(thunks, func() error { return inj.Cleanup(dctx, composed) })
+		}
+		thunks = append(thunks, func() error { return composed.Destroy(dctx, outcome) })
+		errs := runAll(thunks)
+		if len(errs) > 0 {
+			return &TeardownError{Errors: errs, Context: "env.destroy"}
+		}
+		return nil
+	}
 }

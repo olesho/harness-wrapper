@@ -307,45 +307,74 @@ func (*Adapter) ExtractMessage(snap screen.Snapshot) (string, bool) {
 	// is the lower bound. The final assistant message is the last "⏺" block
 	// ABOVE that footer. Bounding this way ignores stale messages from earlier
 	// turns/resumed sessions still on screen, and the empty input box below.
+	start := lastBulletStart(lines, lastThinkingFooter(lines))
+	if start < 0 {
+		return "", false
+	}
+
+	msg := assembleMessage(collectBlock(lines, start))
+	if strings.TrimSpace(msg) == "" {
+		return "", false
+	}
+	return msg, true
+}
+
+// lastThinkingFooter returns the index of the LAST "✻ <verb> for Ns" thinking
+// footer, or len(lines) when none is present.
+func lastThinkingFooter(lines []string) int {
 	limit := len(lines)
 	for i, ln := range lines {
 		if thinkingRE.MatchString(ln) {
 			limit = i // keep the LAST footer's index
 		}
 	}
+	return limit
+}
 
+// lastBulletStart returns the index of the last "⏺" bullet before limit. When
+// there is no bullet before the footer (or no footer), it falls back to the last
+// bullet anywhere on screen. Returns -1 when no bullet is present.
+func lastBulletStart(lines []string, limit int) int {
 	start := -1
 	for i := 0; i < limit; i++ {
 		if bulletRE.MatchString(lines[i]) {
 			start = i
 		}
 	}
-	if start < 0 {
-		// No bullet before the footer (or no footer): fall back to the last
-		// bullet anywhere on screen.
-		for i, ln := range lines {
-			if bulletRE.MatchString(ln) {
-				start = i
-			}
+	if start >= 0 {
+		return start
+	}
+	for i, ln := range lines {
+		if bulletRE.MatchString(ln) {
+			start = i
 		}
 	}
-	if start < 0 {
-		return "", false
-	}
+	return start
+}
 
+// isBlockBoundary reports whether ln terminates the current assistant message
+// block: the next bullet, a tool-result line, a box/rule, the thinking footer,
+// or the "❯" input prompt. A blank line is deliberately NOT a boundary.
+func isBlockBoundary(ln string) bool {
+	if bulletRE.MatchString(ln) || toolResultRE.MatchString(ln) || boxOrRuleRE.MatchString(ln) {
+		return true
+	}
+	if thinkingRE.MatchString(ln) {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimLeft(ln, " "), "❯")
+}
+
+// collectBlock gathers the bullet line at start plus its indented continuation
+// lines, stopping at the first boundary, then drops trailing blank lines.
+func collectBlock(lines []string, start int) []string {
 	m := bulletRE.FindStringSubmatch(lines[start])
 	block := []string{strings.TrimRight(m[1], " ")}
 
 	// Consume indented continuation lines until a boundary.
 	for i := start + 1; i < len(lines); i++ {
 		ln := lines[i]
-		if bulletRE.MatchString(ln) || toolResultRE.MatchString(ln) || boxOrRuleRE.MatchString(ln) {
-			break
-		}
-		if thinkingRE.MatchString(ln) {
-			break
-		}
-		if strings.HasPrefix(strings.TrimLeft(ln, " "), "❯") {
+		if isBlockBoundary(ln) {
 			break
 		}
 		if strings.TrimSpace(ln) == "" {
@@ -363,21 +392,22 @@ func (*Adapter) ExtractMessage(snap screen.Snapshot) (string, bool) {
 	for len(block) > 1 && strings.TrimSpace(block[len(block)-1]) == "" {
 		block = block[:len(block)-1]
 	}
+	return block
+}
 
-	// block[0] is already flush (the regex consumed the "⏺ " prefix). The
-	// continuation lines are indented to align under that text, so dedent them
-	// on their own before rejoining — otherwise the flush first line pins the
-	// common indent at 0 and the continuations keep their alignment padding.
+// assembleMessage flattens a collected block into the final message. block[0] is
+// already flush (the regex consumed the "⏺ " prefix). The continuation lines are
+// indented to align under that text, so dedent them on their own before
+// rejoining — otherwise the flush first line pins the common indent at 0 and the
+// continuations keep their alignment padding.
+func assembleMessage(block []string) string {
 	msg := block[0]
 	if len(block) > 1 {
 		if tail := dedent(block[1:]); tail != "" {
 			msg += "\n" + tail
 		}
 	}
-	if strings.TrimSpace(msg) == "" {
-		return "", false
-	}
-	return msg, true
+	return msg
 }
 
 // dedent removes the longest common run of leading spaces shared by all

@@ -74,28 +74,34 @@ func TestConformance_VersionDrift(t *testing.T) {
 		}
 		probed++
 		t.Run(name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			out, err := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
-			if err != nil {
-				t.Fatalf("%s --version: %v\n%s", bin, err, out)
-			}
-			got := semverRE.FindString(string(out))
-			if got == "" {
-				t.Fatalf("could not parse a version from %q --version output: %q", bin, string(out))
-			}
-			if got != e.Pinned {
-				t.Errorf("VERSION DRIFT: %s installed=%s pinned=%s (verified %s). "+
-					"Re-verify the adapter against %s and re-bake the corpus, then bump versions.json.",
-					name, got, e.Pinned, e.VerifiedAt, got)
-			} else {
-				t.Logf("%s: installed=%s matches pin", name, got)
-			}
+			checkVersionDrift(t, name, bin, e.Pinned, e.VerifiedAt)
 		})
 	}
 	if probed == 0 {
 		t.Skip("no pinned harness binaries installed — nothing to check")
 	}
+}
+
+// checkVersionDrift probes bin's reported version and compares it against the
+// pinned value, erroring on drift.
+func checkVersionDrift(t *testing.T, name, bin, pinned, verifiedAt string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s --version: %v\n%s", bin, err, out)
+	}
+	got := semverRE.FindString(string(out))
+	if got == "" {
+		t.Fatalf("could not parse a version from %q --version output: %q", bin, string(out))
+	}
+	if got != pinned {
+		t.Errorf("VERSION DRIFT: %s installed=%s pinned=%s (verified %s). "+
+			"Re-verify the adapter against %s and re-bake the corpus, then bump versions.json.",
+			name, got, pinned, verifiedAt, got)
+		return
+	}
+	t.Logf("%s: installed=%s matches pin", name, got)
 }
 
 // TestConformance_SentinelRoundTrip drives one real turn through each installed
@@ -124,34 +130,40 @@ func TestConformance_SentinelRoundTrip(t *testing.T) {
 		}
 		ran++
 		t.Run(h.wrapper, func(t *testing.T) {
-			sentinel := fmt.Sprintf("CONFORMANCE-%d", time.Now().UnixNano())
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			defer cancel()
-
-			var out bytes.Buffer
-			res, err := harness.RunTurn(ctx, harness.TurnConfig{
-				Harness:       h.wrapper,
-				BinaryPath:    bin,
-				Args:          h.args,
-				Prompt:        "Reply with exactly: " + sentinel,
-				ExitAfterTurn: true,
-				Output:        &out,
-			})
-			if err != nil {
-				t.Fatalf("RunTurn(%s): %v\noutput:\n%s", h.wrapper, err, out.String())
-			}
-			if res.Turn.State != chat.TurnStateComplete {
-				t.Fatalf("%s: turn state = %q (reason %q), want complete\noutput:\n%s",
-					h.wrapper, res.Turn.State, res.Turn.Reason, out.String())
-			}
-			if !strings.Contains(res.Turn.Text, sentinel) && !strings.Contains(out.String(), sentinel) {
-				t.Fatalf("%s: sentinel %q did not round-trip (turn truncated or extraction drifted)\nturn text:\n%s\noutput:\n%s",
-					h.wrapper, sentinel, res.Turn.Text, out.String())
-			}
-			t.Logf("%s: sentinel round-trip OK", h.wrapper)
+			checkSentinelRoundTrip(t, h, bin)
 		})
 	}
 	if ran == 0 {
 		t.Skip("no conformance harness binaries installed — nothing to run")
 	}
+}
+
+// checkSentinelRoundTrip drives one real turn through bin and asserts a unique
+// sentinel survives verbatim into the captured reply.
+func checkSentinelRoundTrip(t *testing.T, h conformanceHarness, bin string) {
+	sentinel := fmt.Sprintf("CONFORMANCE-%d", time.Now().UnixNano())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	var out bytes.Buffer
+	res, err := harness.RunTurn(ctx, harness.TurnConfig{
+		Harness:       h.wrapper,
+		BinaryPath:    bin,
+		Args:          h.args,
+		Prompt:        "Reply with exactly: " + sentinel,
+		ExitAfterTurn: true,
+		Output:        &out,
+	})
+	if err != nil {
+		t.Fatalf("RunTurn(%s): %v\noutput:\n%s", h.wrapper, err, out.String())
+	}
+	if res.Turn.State != chat.TurnStateComplete {
+		t.Fatalf("%s: turn state = %q (reason %q), want complete\noutput:\n%s",
+			h.wrapper, res.Turn.State, res.Turn.Reason, out.String())
+	}
+	if !strings.Contains(res.Turn.Text, sentinel) && !strings.Contains(out.String(), sentinel) {
+		t.Fatalf("%s: sentinel %q did not round-trip (turn truncated or extraction drifted)\nturn text:\n%s\noutput:\n%s",
+			h.wrapper, sentinel, res.Turn.Text, out.String())
+	}
+	t.Logf("%s: sentinel round-trip OK", h.wrapper)
 }

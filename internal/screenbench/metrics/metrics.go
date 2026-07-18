@@ -68,27 +68,35 @@ func Levenshtein(a, b string) int {
 		prev[i] = i
 	}
 	for j := 1; j <= len(br); j++ {
-		curr[0] = j
-		for i := 1; i <= len(ar); i++ {
-			cost := 1
-			if ar[i-1] == br[j-1] {
-				cost = 0
-			}
-			ins := curr[i-1] + 1
-			del := prev[i] + 1
-			sub := prev[i-1] + cost
-			m := ins
-			if del < m {
-				m = del
-			}
-			if sub < m {
-				m = sub
-			}
-			curr[i] = m
-		}
+		levenshteinRow(ar, br, prev, curr, j)
 		prev, curr = curr, prev
 	}
 	return prev[len(ar)]
+}
+
+// levenshteinRow fills curr as the DP row for column j given the previous
+// row prev, using ar as the row axis and br[j-1] as the current column rune.
+func levenshteinRow(ar, br []rune, prev, curr []int, j int) {
+	curr[0] = j
+	for i := 1; i <= len(ar); i++ {
+		cost := 1
+		if ar[i-1] == br[j-1] {
+			cost = 0
+		}
+		curr[i] = min3(curr[i-1]+1, prev[i]+1, prev[i-1]+cost)
+	}
+}
+
+// min3 returns the smallest of three ints.
+func min3(a, b, c int) int {
+	m := a
+	if b < m {
+		m = b
+	}
+	if c < m {
+		m = c
+	}
+	return m
 }
 
 // NormalizedDistance returns Levenshtein(a,b) / max(runes(a), runes(b)),

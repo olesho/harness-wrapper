@@ -210,37 +210,50 @@ func parseJSONL(path string) ([]transcript.Turn, error) {
 		if len(raw) == 0 {
 			continue
 		}
-		var ln jsonlLine
-		if err := json.Unmarshal(raw, &ln); err != nil {
-			return nil, fmt.Errorf("pi transcript: parse line %d in %s: %w", lineNo, path, err)
+		turn, ok, err := parseSessionLine(raw, lineNo, path)
+		if err != nil {
+			return nil, err
 		}
-		// Only message lines carry conversation content; skip the
-		// session header and all control/metadata entry types.
-		if ln.Type != "message" || ln.Message == nil {
-			continue
+		if ok {
+			out = append(out, turn)
 		}
-		role := normalizeRole(ln.Message.Role)
-		if role == "" {
-			continue
-		}
-		text := extractText(ln.Message.Content)
-		if text == "" {
-			continue
-		}
-		var ts time.Time
-		if ln.Timestamp != "" {
-			ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
-		}
-		out = append(out, transcript.Turn{
-			Role:      role,
-			Text:      text,
-			Timestamp: ts,
-		})
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("pi transcript: scan %s: %w", path, err)
 	}
 	return out, nil
+}
+
+// parseSessionLine parses one JSONL session line. It returns ok=false (with a
+// nil error) for non-message lines and messages with no usable role or text,
+// which the caller skips. lineNo and path are used only for error context.
+func parseSessionLine(raw []byte, lineNo int, path string) (transcript.Turn, bool, error) {
+	var ln jsonlLine
+	if err := json.Unmarshal(raw, &ln); err != nil {
+		return transcript.Turn{}, false, fmt.Errorf("pi transcript: parse line %d in %s: %w", lineNo, path, err)
+	}
+	// Only message lines carry conversation content; skip the
+	// session header and all control/metadata entry types.
+	if ln.Type != "message" || ln.Message == nil {
+		return transcript.Turn{}, false, nil
+	}
+	role := normalizeRole(ln.Message.Role)
+	if role == "" {
+		return transcript.Turn{}, false, nil
+	}
+	text := extractText(ln.Message.Content)
+	if text == "" {
+		return transcript.Turn{}, false, nil
+	}
+	var ts time.Time
+	if ln.Timestamp != "" {
+		ts, _ = time.Parse(time.RFC3339, ln.Timestamp)
+	}
+	return transcript.Turn{
+		Role:      role,
+		Text:      text,
+		Timestamp: ts,
+	}, true, nil
 }
 
 // normalizeRole maps pi's roles to the transcript vocabulary. Tool

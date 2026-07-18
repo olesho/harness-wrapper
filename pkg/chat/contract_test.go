@@ -114,36 +114,48 @@ func dumpType(b *strings.Builder, name string, rt reflect.Type) {
 	fmt.Fprintf(b, "type %s %s\n", name, rt.Kind())
 
 	if rt.Kind() == reflect.Struct {
-		for i := 0; i < rt.NumField(); i++ {
-			f := rt.Field(i)
-			if !f.IsExported() {
-				continue
-			}
-			if tag := f.Tag.Get("json"); tag != "" {
-				fmt.Fprintf(b, "\tfield %s %s `json:%q`\n", f.Name, f.Type.String(), tag)
-			} else {
-				fmt.Fprintf(b, "\tfield %s %s\n", f.Name, f.Type.String())
-			}
-		}
+		dumpFields(b, rt)
 	}
 
+	methods := methodSet(rt)
+	sort.Strings(methods)
+	for _, m := range methods {
+		fmt.Fprintln(b, m)
+	}
+}
+
+// dumpFields writes the exported fields (with json tags) of a struct type.
+func dumpFields(b *strings.Builder, rt reflect.Type) {
+	for i := 0; i < rt.NumField(); i++ {
+		f := rt.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		if tag := f.Tag.Get("json"); tag != "" {
+			fmt.Fprintf(b, "\tfield %s %s `json:%q`\n", f.Name, f.Type.String(), tag)
+		} else {
+			fmt.Fprintf(b, "\tfield %s %s\n", f.Name, f.Type.String())
+		}
+	}
+}
+
+// methodSet renders the exported method set of rt: interface methods directly,
+// concrete-type methods via the pointer receiver (dropping the receiver arg).
+func methodSet(rt reflect.Type) []string {
 	var methods []string
 	if rt.Kind() == reflect.Interface {
 		for i := 0; i < rt.NumMethod(); i++ {
 			m := rt.Method(i)
 			methods = append(methods, "\tmethod "+m.Name+methodSig(m.Type, false))
 		}
-	} else {
-		pt := reflect.PointerTo(rt)
-		for i := 0; i < pt.NumMethod(); i++ {
-			m := pt.Method(i)
-			methods = append(methods, "\tmethod "+m.Name+methodSig(m.Type, true))
-		}
+		return methods
 	}
-	sort.Strings(methods)
-	for _, m := range methods {
-		fmt.Fprintln(b, m)
+	pt := reflect.PointerTo(rt)
+	for i := 0; i < pt.NumMethod(); i++ {
+		m := pt.Method(i)
+		methods = append(methods, "\tmethod "+m.Name+methodSig(m.Type, true))
 	}
+	return methods
 }
 
 // methodSig renders a func type as "(in, ...) (out, out)". skipRecv drops the

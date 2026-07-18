@@ -39,6 +39,27 @@ func loomOwned(m harness.SettingsHookMatcher) bool {
 	return false
 }
 
+// scanPreToolUse inspects the PreToolUse matchers, asserting every command is
+// owner-marked and reporting whether the Task pre-task and all-matcher
+// yield-guard hooks are present.
+func scanPreToolUse(t *testing.T, matchers []harness.SettingsHookMatcher) (sawTask, sawYieldAll bool) {
+	t.Helper()
+	for _, m := range matchers {
+		for _, e := range m.Hooks {
+			if m.Matcher == "Task" && strings.Contains(e.Command, "pre-task") {
+				sawTask = true
+			}
+			if m.Matcher == "" && strings.Contains(e.Command, "yield-guard") {
+				sawYieldAll = true
+			}
+			if !harness.IsManagedHookCommand(e.Command) {
+				t.Errorf("PreToolUse command not owner-marked: %s", e.Command)
+			}
+		}
+	}
+	return sawTask, sawYieldAll
+}
+
 func TestEnsureConfigFreshInstall(t *testing.T) {
 	wt := t.TempDir()
 	if err := (hookProvider{}).EnsureConfig(wt, []string{"/abs/loom", "hooks"}); err != nil {
@@ -54,20 +75,7 @@ func TestEnsureConfigFreshInstall(t *testing.T) {
 	}
 	// PreToolUse carries BOTH the Task-matched pre-task hook AND the all-matcher
 	// yield-guard — the double-matcher case.
-	var sawTask, sawYieldAll bool
-	for _, m := range hooks["PreToolUse"] {
-		for _, e := range m.Hooks {
-			if m.Matcher == "Task" && strings.Contains(e.Command, "pre-task") {
-				sawTask = true
-			}
-			if m.Matcher == "" && strings.Contains(e.Command, "yield-guard") {
-				sawYieldAll = true
-			}
-			if !harness.IsManagedHookCommand(e.Command) {
-				t.Errorf("PreToolUse command not owner-marked: %s", e.Command)
-			}
-		}
-	}
+	sawTask, sawYieldAll := scanPreToolUse(t, hooks["PreToolUse"])
 	if !sawTask || !sawYieldAll {
 		t.Errorf("PreToolUse must have both pre-task(Task) and yield-guard(all): task=%v yield=%v", sawTask, sawYieldAll)
 	}

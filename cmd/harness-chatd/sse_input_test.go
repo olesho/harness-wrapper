@@ -62,6 +62,27 @@ func readEventsUntil(t *testing.T, body io.Reader, deadline time.Time, fn func(e
 	return false
 }
 
+// matchTrustInputRequest reports whether ev is the trust-prompt input_request,
+// validating its parsed options and returning the request id when it is.
+func matchTrustInputRequest(t *testing.T, ev eventDTO) (string, bool) {
+	t.Helper()
+	if ev.Type != "input_request" || ev.Input == nil {
+		return "", false
+	}
+	if ev.Input.Kind != "trust_prompt" {
+		t.Errorf("input kind = %q, want trust_prompt", ev.Input.Kind)
+	}
+	if len(ev.Input.Options) != 2 {
+		t.Errorf("options = %+v, want 2", ev.Input.Options)
+	}
+	for _, o := range ev.Input.Options {
+		if len(o.Label) == 0 {
+			t.Errorf("option missing label: %+v", o)
+		}
+	}
+	return ev.Input.ID, true
+}
+
 // TestSSE_TrustDialogSurfacedAndAnswered exercises the full client interface:
 // the trust dialog is surfaced as an input_request SSE frame, the client
 // answers via POST /input, and the prompt resolves so a normal turn completes.
@@ -89,22 +110,11 @@ func TestSSE_TrustDialogSurfacedAndAnswered(t *testing.T) {
 	// 1. The trust dialog surfaces as an input_request with parsed options.
 	var reqID string
 	ok := readEventsUntil(t, streamResp.Body, time.Now().Add(6*time.Second), func(ev eventDTO) bool {
-		if ev.Type == "input_request" && ev.Input != nil {
-			reqID = ev.Input.ID
-			if ev.Input.Kind != "trust_prompt" {
-				t.Errorf("input kind = %q, want trust_prompt", ev.Input.Kind)
-			}
-			if len(ev.Input.Options) != 2 {
-				t.Errorf("options = %+v, want 2", ev.Input.Options)
-			}
-			for _, o := range ev.Input.Options {
-				if len(o.Label) == 0 {
-					t.Errorf("option missing label: %+v", o)
-				}
-			}
-			return true
+		id, matched := matchTrustInputRequest(t, ev)
+		if matched {
+			reqID = id
 		}
-		return false
+		return matched
 	})
 	if !ok {
 		t.Fatal("never saw an input_request frame for the trust dialog")

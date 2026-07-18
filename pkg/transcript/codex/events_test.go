@@ -31,7 +31,14 @@ func TestEventsToolAware(t *testing.T) {
 	if evs[1].Text != "sure" || evs[2].Text != "running" {
 		t.Errorf("assistant blocks should be SEPARATE events: %q, %q", evs[1].Text, evs[2].Text)
 	}
-	tu := evs[3]
+	assertToolUse(t, evs[3])
+	assertToolResult(t, evs[4])
+	assertAllSourceFile(t, evs)
+}
+
+// assertToolUse checks a function_call → tool_use event.
+func assertToolUse(t *testing.T, tu transcript.Event) {
+	t.Helper()
 	if tu.Type != transcript.EventToolUse || tu.ToolName != "shell" || tu.ToolUseID != "call_1" {
 		t.Errorf("function_call → tool_use wrong: %+v", tu)
 	}
@@ -41,13 +48,22 @@ func TestEventsToolAware(t *testing.T) {
 	if tu.ID() != "tool-use:call_1" {
 		t.Errorf("tool_use ID() = %q, want tool-use:call_1", tu.ID())
 	}
-	tr := evs[4]
+}
+
+// assertToolResult checks a function_call_output → tool_result event.
+func assertToolResult(t *testing.T, tr transcript.Event) {
+	t.Helper()
 	if tr.Type != transcript.EventToolResult || tr.ToolUseID != "call_1" || tr.Output != "file.go" {
 		t.Errorf("function_call_output → tool_result wrong: %+v", tr)
 	}
 	if tr.ID() != "tool-result:call_1" {
 		t.Errorf("tool_result ID() = %q, want tool-result:call_1", tr.ID())
 	}
+}
+
+// assertAllSourceFile checks every event was tagged with the file source.
+func assertAllSourceFile(t *testing.T, evs []transcript.Event) {
+	t.Helper()
 	for i, e := range evs {
 		if e.Source != transcript.SourceFile {
 			t.Errorf("event %d Source = %q, want file", i, e.Source)

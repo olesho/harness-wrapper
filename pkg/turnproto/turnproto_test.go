@@ -85,56 +85,71 @@ func TestParseLastJSONLine(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := ParseLastJSONLine([]byte(tt.in))
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
-			}
-			if !tt.wantOK {
-				if got != nil {
-					t.Fatalf("got = %+v, want nil", got)
-				}
-				return
-			}
-			if got == nil {
-				t.Fatal("got nil result with ok=true")
-			}
-			if got.Status != tt.wantStatus {
-				t.Errorf("Status = %q, want %q", got.Status, tt.wantStatus)
-			}
-			if got.Reply != tt.wantReply {
-				t.Errorf("Reply = %q, want %q", got.Reply, tt.wantReply)
-			}
+			checkParsedResult(t, got, ok, tt.wantOK, tt.wantStatus, tt.wantReply)
 		})
+	}
+}
+
+// checkParsedResult asserts a ParseLastJSONLine result against expectations:
+// the ok flag, a nil result when parsing was expected to fail, and the
+// recovered status/reply otherwise.
+func checkParsedResult(t *testing.T, got *StructuredTurnResult, ok, wantOK bool, wantStatus TurnStatus, wantReply string) {
+	t.Helper()
+	if ok != wantOK {
+		t.Fatalf("ok = %v, want %v", ok, wantOK)
+	}
+	if !wantOK {
+		if got != nil {
+			t.Fatalf("got = %+v, want nil", got)
+		}
+		return
+	}
+	if got == nil {
+		t.Fatal("got nil result with ok=true")
+	}
+	if got.Status != wantStatus {
+		t.Errorf("Status = %q, want %q", got.Status, wantStatus)
+	}
+	if got.Reply != wantReply {
+		t.Errorf("Reply = %q, want %q", got.Reply, wantReply)
 	}
 }
 
 func TestStructuredTurnResultRoundTrip(t *testing.T) {
 	for _, status := range []TurnStatus{StatusCompleted, StatusErrored, StatusDeadline, StatusStartupError} {
 		t.Run(string(status), func(t *testing.T) {
-			in := StructuredTurnResult{
-				Status:            status,
-				Reply:             "r",
-				HarnessSessionID:  "sess",
-				TranscriptEntries: []transcript.Event{{Seq: 1, Role: transcript.RoleUser, Type: transcript.EventText, Text: "hi"}},
-				WorkingDir:        "/work",
-			}
-			data, err := json.Marshal(in)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			got, ok := ParseLastJSONLine(data)
-			if !ok || got == nil {
-				t.Fatalf("ParseLastJSONLine failed to round-trip %q", status)
-			}
-			if got.Status != status {
-				t.Errorf("Status = %q, want %q", got.Status, status)
-			}
-			if got.WorkingDir != "/work" || got.HarnessSessionID != "sess" || got.Reply != "r" {
-				t.Errorf("round-trip mismatch: %+v", got)
-			}
-			if len(got.TranscriptEntries) != 1 || got.TranscriptEntries[0].Seq != 1 {
-				t.Errorf("transcript entries not preserved: %+v", got.TranscriptEntries)
-			}
+			checkRoundTrip(t, status)
 		})
+	}
+}
+
+// checkRoundTrip marshals a fully-populated StructuredTurnResult and asserts that
+// ParseLastJSONLine recovers every field for the given status.
+func checkRoundTrip(t *testing.T, status TurnStatus) {
+	t.Helper()
+	in := StructuredTurnResult{
+		Status:            status,
+		Reply:             "r",
+		HarnessSessionID:  "sess",
+		TranscriptEntries: []transcript.Event{{Seq: 1, Role: transcript.RoleUser, Type: transcript.EventText, Text: "hi"}},
+		WorkingDir:        "/work",
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got, ok := ParseLastJSONLine(data)
+	if !ok || got == nil {
+		t.Fatalf("ParseLastJSONLine failed to round-trip %q", status)
+	}
+	if got.Status != status {
+		t.Errorf("Status = %q, want %q", got.Status, status)
+	}
+	if got.WorkingDir != "/work" || got.HarnessSessionID != "sess" || got.Reply != "r" {
+		t.Errorf("round-trip mismatch: %+v", got)
+	}
+	if len(got.TranscriptEntries) != 1 || got.TranscriptEntries[0].Seq != 1 {
+		t.Errorf("transcript entries not preserved: %+v", got.TranscriptEntries)
 	}
 }
 

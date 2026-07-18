@@ -6,15 +6,18 @@ import (
 	"time"
 )
 
+// apiErrorCase is one row of the MatchAPIError table test.
+type apiErrorCase struct {
+	name        string
+	in          string
+	wantOK      bool
+	wantCode    int
+	wantRetry   time.Duration
+	msgContains string
+}
+
 func TestMatchAPIError(t *testing.T) {
-	cases := []struct {
-		name        string
-		in          string
-		wantOK      bool
-		wantCode    int
-		wantRetry   time.Duration
-		msgContains string
-	}{
+	cases := []apiErrorCase{
 		{
 			name:        "Cl1: golden 529 from user's transcript",
 			in:          "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
@@ -134,23 +137,29 @@ func TestMatchAPIError(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			hit, ok := MatchAPIError(tc.in)
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v, want %v (hit=%+v)", ok, tc.wantOK, hit)
-			}
-			if !ok {
-				return
-			}
-			if hit.Code != tc.wantCode {
-				t.Errorf("Code = %d, want %d", hit.Code, tc.wantCode)
-			}
-			if hit.RetryAfter != tc.wantRetry {
-				t.Errorf("RetryAfter = %v, want %v", hit.RetryAfter, tc.wantRetry)
-			}
-			if tc.msgContains != "" && !strings.Contains(hit.Message, tc.msgContains) {
-				t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
-			}
+			checkAPIErrorCase(t, tc)
 		})
+	}
+}
+
+// checkAPIErrorCase runs MatchAPIError for one case and asserts the result.
+func checkAPIErrorCase(t *testing.T, tc apiErrorCase) {
+	t.Helper()
+	hit, ok := MatchAPIError(tc.in)
+	if ok != tc.wantOK {
+		t.Fatalf("ok = %v, want %v (hit=%+v)", ok, tc.wantOK, hit)
+	}
+	if !ok {
+		return
+	}
+	if hit.Code != tc.wantCode {
+		t.Errorf("Code = %d, want %d", hit.Code, tc.wantCode)
+	}
+	if hit.RetryAfter != tc.wantRetry {
+		t.Errorf("RetryAfter = %v, want %v", hit.RetryAfter, tc.wantRetry)
+	}
+	if tc.msgContains != "" && !strings.Contains(hit.Message, tc.msgContains) {
+		t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
 	}
 }
 
@@ -161,14 +170,7 @@ func TestMatchSessionLimit(t *testing.T) {
 	}
 	now := time.Date(2026, 5, 20, 14, 0, 0, 0, warsaw)
 
-	cases := []struct {
-		name         string
-		in           string
-		wantOK       bool
-		wantResume   time.Time
-		msgContains  string
-		resumeIsZero bool
-	}{
+	cases := []sessionLimitCase{
 		{
 			// Golden case from the user's transcript: a tool-result
 			// frame ("⎿") wrapping the banner, followed by the
@@ -226,25 +228,42 @@ func TestMatchSessionLimit(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			hit, ok := MatchSessionLimit(tc.in, now)
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v, want %v (hit=%+v)", ok, tc.wantOK, hit)
-			}
-			if !ok {
-				return
-			}
-			if tc.msgContains != "" && !strings.Contains(strings.ToLower(hit.Message), tc.msgContains) {
-				t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
-			}
-			if tc.resumeIsZero {
-				if !hit.ResumeAt.IsZero() {
-					t.Errorf("ResumeAt = %s, want zero", hit.ResumeAt)
-				}
-				return
-			}
-			if !hit.ResumeAt.Equal(tc.wantResume) {
-				t.Errorf("ResumeAt = %s, want %s", hit.ResumeAt, tc.wantResume)
-			}
+			checkSessionLimitCase(t, tc, now)
 		})
+	}
+}
+
+// sessionLimitCase is one row of the MatchSessionLimit table test.
+type sessionLimitCase struct {
+	name         string
+	in           string
+	wantOK       bool
+	wantResume   time.Time
+	msgContains  string
+	resumeIsZero bool
+}
+
+// checkSessionLimitCase runs MatchSessionLimit for one case and asserts
+// the result against the `now` clock.
+func checkSessionLimitCase(t *testing.T, tc sessionLimitCase, now time.Time) {
+	t.Helper()
+	hit, ok := MatchSessionLimit(tc.in, now)
+	if ok != tc.wantOK {
+		t.Fatalf("ok = %v, want %v (hit=%+v)", ok, tc.wantOK, hit)
+	}
+	if !ok {
+		return
+	}
+	if tc.msgContains != "" && !strings.Contains(strings.ToLower(hit.Message), tc.msgContains) {
+		t.Errorf("Message = %q, want substring %q", hit.Message, tc.msgContains)
+	}
+	if tc.resumeIsZero {
+		if !hit.ResumeAt.IsZero() {
+			t.Errorf("ResumeAt = %s, want zero", hit.ResumeAt)
+		}
+		return
+	}
+	if !hit.ResumeAt.Equal(tc.wantResume) {
+		t.Errorf("ResumeAt = %s, want %s", hit.ResumeAt, tc.wantResume)
 	}
 }

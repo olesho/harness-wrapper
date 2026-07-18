@@ -206,38 +206,49 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 	}
 
 	if cfg.ExitAfterTurn {
-		result.ProcessStoppedAfterTurn = true
-		// Ask the harness to exit gracefully first (so it can flush/persist).
-		// The graceful exit prints the harness session id, which the durable
-		// line tap captures into the stored Session — so after the quit we
-		// refresh result.Session (now carrying HarnessSessionID) and re-read
-		// History, which is transcript-backed once that id is known. conv.Close
-		// below still guarantees termination if the harness ignores the quit.
-		if gracefulQuit(conv) {
-			if s, serr := store.GetSession(context.Background(), conv.SessionID()); serr == nil && s != nil {
-				result.Session = *s
-			}
-			if h, src, herr := conv.HistoryWithSource(context.Background()); herr == nil && len(h) > 0 {
-				result.History = h
-				result.HistorySource = src
-			}
-		}
-		if err := conv.Close(context.Background()); err != nil {
-			if detach != nil {
-				detach()
-			}
-			return result, err
-		}
-		wres, werr := conv.Wrapper().Wait()
-		if detach != nil {
-			detach()
-		}
-		result.WrapperResult = wres
-		return result, werr
+		return stopHarnessAfterTurn(conv, store, result, detach)
 	}
 
 	result.Conversation = conv
 	return result, nil
+}
+
+// stopHarnessAfterTurn handles the ExitAfterTurn path: refresh the result from a
+// graceful quit, then stop the process and capture its raw wrapper outcome.
+func stopHarnessAfterTurn(conv *chat.Conversation, store chat.Store, result TurnResult, detach func()) (TurnResult, error) {
+	result.ProcessStoppedAfterTurn = true
+	refreshResultAfterQuit(conv, store, &result)
+	if err := conv.Close(context.Background()); err != nil {
+		if detach != nil {
+			detach()
+		}
+		return result, err
+	}
+	wres, werr := conv.Wrapper().Wait()
+	if detach != nil {
+		detach()
+	}
+	result.WrapperResult = wres
+	return result, werr
+}
+
+// refreshResultAfterQuit asks the harness to exit gracefully first (so it can
+// flush/persist). The graceful exit prints the harness session id, which the
+// durable line tap captures into the stored Session — so after the quit we
+// refresh result.Session (now carrying HarnessSessionID) and re-read History,
+// which is transcript-backed once that id is known. conv.Close still guarantees
+// termination if the harness ignores the quit.
+func refreshResultAfterQuit(conv *chat.Conversation, store chat.Store, result *TurnResult) {
+	if !gracefulQuit(conv) {
+		return
+	}
+	if s, serr := store.GetSession(context.Background(), conv.SessionID()); serr == nil && s != nil {
+		result.Session = *s
+	}
+	if h, src, herr := conv.HistoryWithSource(context.Background()); herr == nil && len(h) > 0 {
+		result.History = h
+		result.HistorySource = src
+	}
 }
 
 func runConversationTurn(ctx context.Context, conv *chat.Conversation, store chat.Store, prompt string) (TurnResult, error) {
