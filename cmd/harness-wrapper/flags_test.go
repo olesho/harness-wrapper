@@ -73,25 +73,33 @@ func TestParseHarnessWrapperArgs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			parsed, err := parseHarnessWrapperArgs(tc.in)
-			if tc.wantErrSubs != "" {
-				if err == nil {
-					t.Fatalf("expected error containing %q, got nil", tc.wantErrSubs)
-				}
-				if !strings.Contains(err.Error(), tc.wantErrSubs) {
-					t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErrSubs)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if parsed.HarnessName != tc.wantName {
-				t.Errorf("HarnessName = %q, want %q", parsed.HarnessName, tc.wantName)
-			}
-			if !reflect.DeepEqual(parsed.HarnessArgs, tc.wantHArgs) {
-				t.Errorf("HarnessArgs = %v, want %v", parsed.HarnessArgs, tc.wantHArgs)
-			}
+			assertParsedArgs(t, tc.wantErrSubs, tc.wantName, tc.wantHArgs, parsed.HarnessName, parsed.HarnessArgs, err)
 		})
+	}
+}
+
+// assertParsedArgs checks a parseHarnessWrapperArgs outcome: when wantErrSubs is
+// set it asserts the error contains it, otherwise it asserts a nil error and the
+// expected harness name/args.
+func assertParsedArgs(t *testing.T, wantErrSubs, wantName string, wantHArgs []string, gotName string, gotHArgs []string, err error) {
+	t.Helper()
+	if wantErrSubs != "" {
+		if err == nil {
+			t.Fatalf("expected error containing %q, got nil", wantErrSubs)
+		}
+		if !strings.Contains(err.Error(), wantErrSubs) {
+			t.Fatalf("error %q does not contain %q", err.Error(), wantErrSubs)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotName != wantName {
+		t.Errorf("HarnessName = %q, want %q", gotName, wantName)
+	}
+	if !reflect.DeepEqual(gotHArgs, wantHArgs) {
+		t.Errorf("HarnessArgs = %v, want %v", gotHArgs, wantHArgs)
 	}
 }
 

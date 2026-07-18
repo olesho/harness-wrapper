@@ -41,60 +41,67 @@ func TestLocalExec(t *testing.T) {
 	_, ws, _ := newLocalWorkspace(t, WorkspaceSpec{Name: "run-exec"})
 	ctx := context.Background()
 
-	t.Run("stdout and exit code", func(t *testing.T) {
-		res, err := ws.Exec(ctx, []string{"sh", "-c", "echo hello; exit 0"}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Code != 0 || res.Stdout != "hello\n" {
-			t.Fatalf("unexpected result: %+v", res)
-		}
-	})
+	t.Run("stdout and exit code", func(t *testing.T) { execStdoutAndExitCode(t, ws, ctx) })
+	t.Run("non-zero exit resolves with code", func(t *testing.T) { execNonZeroExit(t, ws, ctx) })
+	t.Run("empty argv errors", func(t *testing.T) { execEmptyArgv(t, ws, ctx) })
+	t.Run("env overlay crosses", func(t *testing.T) { execEnvOverlay(t, ws, ctx) })
+	t.Run("stdin is delivered", func(t *testing.T) { execStdinDelivered(t, ws, ctx) })
+	t.Run("cancelled context errors", func(t *testing.T) { execCancelledContext(t, ws, ctx) })
+}
 
-	t.Run("non-zero exit resolves with code", func(t *testing.T) {
-		res, err := ws.Exec(ctx, []string{"sh", "-c", "exit 3"}, nil)
-		if err != nil {
-			t.Fatalf("non-zero exit should not error: %v", err)
-		}
-		if res.Code != 3 {
-			t.Fatalf("code = %d, want 3", res.Code)
-		}
-	})
+func execStdoutAndExitCode(t *testing.T, ws Workspace, ctx context.Context) {
+	res, err := ws.Exec(ctx, []string{"sh", "-c", "echo hello; exit 0"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Code != 0 || res.Stdout != "hello\n" {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+}
 
-	t.Run("empty argv errors", func(t *testing.T) {
-		if _, err := ws.Exec(ctx, nil, nil); err == nil {
-			t.Fatal("expected error on empty argv")
-		}
-	})
+func execNonZeroExit(t *testing.T, ws Workspace, ctx context.Context) {
+	res, err := ws.Exec(ctx, []string{"sh", "-c", "exit 3"}, nil)
+	if err != nil {
+		t.Fatalf("non-zero exit should not error: %v", err)
+	}
+	if res.Code != 3 {
+		t.Fatalf("code = %d, want 3", res.Code)
+	}
+}
 
-	t.Run("env overlay crosses", func(t *testing.T) {
-		res, err := ws.Exec(ctx, []string{"sh", "-c", "echo $FOO"}, &ExecOpts{Env: map[string]string{"FOO": "bar"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Stdout != "bar\n" {
-			t.Fatalf("env not crossed: %q", res.Stdout)
-		}
-	})
+func execEmptyArgv(t *testing.T, ws Workspace, ctx context.Context) {
+	if _, err := ws.Exec(ctx, nil, nil); err == nil {
+		t.Fatal("expected error on empty argv")
+	}
+}
 
-	t.Run("stdin is delivered", func(t *testing.T) {
-		in := "piped-input"
-		res, err := ws.Exec(ctx, []string{"cat"}, &ExecOpts{Stdin: &in})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Stdout != in {
-			t.Fatalf("stdin not delivered: %q", res.Stdout)
-		}
-	})
+func execEnvOverlay(t *testing.T, ws Workspace, ctx context.Context) {
+	res, err := ws.Exec(ctx, []string{"sh", "-c", "echo $FOO"}, &ExecOpts{Env: map[string]string{"FOO": "bar"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Stdout != "bar\n" {
+		t.Fatalf("env not crossed: %q", res.Stdout)
+	}
+}
 
-	t.Run("cancelled context errors", func(t *testing.T) {
-		cctx, cancel := context.WithCancel(ctx)
-		cancel()
-		if _, err := ws.Exec(cctx, []string{"sh", "-c", "sleep 5"}, nil); err == nil {
-			t.Fatal("expected error from cancelled context")
-		}
-	})
+func execStdinDelivered(t *testing.T, ws Workspace, ctx context.Context) {
+	in := "piped-input"
+	res, err := ws.Exec(ctx, []string{"cat"}, &ExecOpts{Stdin: &in})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Stdout != in {
+		t.Fatalf("stdin not delivered: %q", res.Stdout)
+	}
+}
+
+func execCancelledContext(t *testing.T, ws Workspace, ctx context.Context) {
+	cctx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := ws.Exec(cctx, []string{"sh", "-c", "sleep 5"}, nil); err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
 }
 
 func TestLocalUploadDownload(t *testing.T) {

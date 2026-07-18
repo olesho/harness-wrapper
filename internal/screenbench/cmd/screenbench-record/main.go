@@ -118,13 +118,9 @@ func run(c recorderConfig) error {
 	}
 	defer rawFile.Close()
 
-	binaryVersion := c.BinaryVersion
-	if c.AutoVersion {
-		v, err := captureBinaryVersion(c.Bin)
-		if err != nil {
-			return fmt.Errorf("auto-version: %w", err)
-		}
-		binaryVersion = v
+	binaryVersion, err := resolveBinaryVersion(c)
+	if err != nil {
+		return err
 	}
 
 	var scr *script
@@ -135,13 +131,8 @@ func run(c recorderConfig) error {
 		}
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, cancel := recordingContext(c)
 	defer cancel()
-	if c.MaxDuration > 0 {
-		var capCancel context.CancelFunc
-		ctx, capCancel = context.WithTimeout(ctx, c.MaxDuration)
-		defer capCancel()
-	}
 
 	env := append(
 		os.Environ(),
@@ -149,17 +140,7 @@ func run(c recorderConfig) error {
 		fmt.Sprintf("LINES=%d", c.Rows),
 	)
 
-	stdout := c.Stdout
-	if stdout == nil {
-		if scr == nil {
-			stdout = os.Stdout
-		} else {
-			// Scripted mode: discard live PTY output so a CI run isn't
-			// flooded with ANSI escape codes. bytes.raw still captures
-			// everything via the AttachOutput fan-out below.
-			stdout = io.Discard
-		}
-	}
+	stdout := resolveStdout(c, scr != nil)
 	wcfg := wrapper.Config{
 		BinaryPath: c.Bin,
 		Args:       c.HarnessArgs,
@@ -187,33 +168,94 @@ func run(c recorderConfig) error {
 	detachRaw := sess.AttachOutput(rawFile)
 	defer detachRaw()
 
-	var (
-		driverErr  error
-		driverDone chan struct{}
-	)
+	var driver *driverHandle
 	if scr != nil {
-		driver := newScriptDriver(sess, c.IdleTimeout, 0)
-		driver.submitKey = submitKeyForHarness(c.Harness)
-		detachDriver := sess.AttachOutput(driver)
+		var detachDriver func()
+		driver, detachDriver = launchDriver(ctx, sess, c, scr)
 		defer detachDriver()
-
-		driverDone = make(chan struct{})
-		go func() {
-			defer close(driverDone)
-			driverErr = driver.Run(ctx, scr)
-			// Script finished — give the harness a grace window to
-			// emit any final output, then trigger shutdown.
-			time.Sleep(c.IdleTimeout)
-			_ = sess.Stop(context.Background())
-		}()
 	}
 
 	res, _ := sess.Wait()
-	if driverDone != nil {
+	var driverErr error
+	if driver != nil {
 		// Synchronize driverErr write with our read.
-		<-driverDone
+		<-driver.done
+		driverErr = driver.err
 	}
 
+	return finalize(c, rawPath, binaryVersion, res, scr != nil, driverErr)
+}
+
+// resolveBinaryVersion returns the meta.binary_version string: the flag value,
+// or the shelled-out `<bin> --version` when --auto-version is set.
+func resolveBinaryVersion(c recorderConfig) (string, error) {
+	if !c.AutoVersion {
+		return c.BinaryVersion, nil
+	}
+	v, err := captureBinaryVersion(c.Bin)
+	if err != nil {
+		return "", fmt.Errorf("auto-version: %w", err)
+	}
+	return v, nil
+}
+
+// recordingContext builds the session context: interrupt/SIGTERM cancellation
+// plus an optional hard max-duration cap. The returned func unwinds both.
+func recordingContext(c recorderConfig) (context.Context, context.CancelFunc) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	if c.MaxDuration <= 0 {
+		return ctx, cancel
+	}
+	ctx, capCancel := context.WithTimeout(ctx, c.MaxDuration)
+	return ctx, func() {
+		capCancel()
+		cancel()
+	}
+}
+
+// resolveStdout picks the live PTY output destination: the test override if set,
+// os.Stdout in interactive mode, or io.Discard in scripted mode (so a CI run
+// isn't flooded with ANSI escape codes; bytes.raw still captures everything).
+func resolveStdout(c recorderConfig, scripted bool) io.Writer {
+	if c.Stdout != nil {
+		return c.Stdout
+	}
+	if !scripted {
+		return os.Stdout
+	}
+	return io.Discard
+}
+
+// driverHandle tracks a running script driver goroutine: done closes when the
+// goroutine exits, at which point err holds its Run result.
+type driverHandle struct {
+	done chan struct{}
+	err  error
+}
+
+// launchDriver attaches a script driver to the session's output and runs the
+// script in a goroutine. The returned detach func must be called to stop the
+// output fan-out (mirrors the previous deferred detach in run).
+func launchDriver(ctx context.Context, sess *wrapper.Session, c recorderConfig, scr *script) (*driverHandle, func()) {
+	driver := newScriptDriver(sess, c.IdleTimeout, 0)
+	driver.submitKey = submitKeyForHarness(c.Harness)
+	detach := sess.AttachOutput(driver)
+
+	h := &driverHandle{done: make(chan struct{})}
+	go func() {
+		defer close(h.done)
+		h.err = driver.Run(ctx, scr)
+		// Script finished — give the harness a grace window to
+		// emit any final output, then trigger shutdown.
+		time.Sleep(c.IdleTimeout)
+		_ = sess.Stop(context.Background())
+	}()
+	return h, detach
+}
+
+// finalize writes meta.json, prints the capture summary, and surfaces a
+// non-cancellation script-driver error.
+func finalize(c recorderConfig, rawPath, binaryVersion string, res wrapper.Result, scripted bool, driverErr error) error {
 	if err := scenario.WriteMeta(c.Out, scenario.Meta{
 		Harness:       c.Harness,
 		BinaryVersion: binaryVersion,
@@ -227,7 +269,7 @@ func run(c recorderConfig) error {
 
 	fmt.Fprintf(os.Stderr, "\n[screenbench-record] captured %d bytes to %s (status=%s, exit=%d)\n",
 		fileSize(rawPath), rawPath, res.Status, res.ExitCode)
-	if scr == nil {
+	if !scripted {
 		fmt.Fprintf(os.Stderr, "[screenbench-record] populate %s with the ground-truth final assistant text\n",
 			filepath.Join(c.Out, "expected.txt"))
 	}

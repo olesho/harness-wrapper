@@ -17,34 +17,7 @@ import (
 // ParseFromBytes parses transcript content from a byte slice.
 // Uses bufio.Reader to handle arbitrarily long lines. Malformed lines skipped.
 func ParseFromBytes(content []byte) ([]Line, error) {
-	var lines []Line
-	reader := bufio.NewReader(bytes.NewReader(content))
-
-	for {
-		lineBytes, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("failed to read transcript: %w", err)
-		}
-
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
-
-		var line Line
-		if err := json.Unmarshal(lineBytes, &line); err == nil {
-			normalizeLineType(&line)
-			lines = append(lines, line)
-		}
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return lines, nil
+	return parseTranscriptLines(bufio.NewReader(bytes.NewReader(content)), 0)
 }
 
 // ParseFromFileAtLine reads and parses a transcript file starting from a
@@ -56,9 +29,14 @@ func ParseFromFileAtLine(path string, startLine int) ([]Line, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	var lines []Line
-	reader := bufio.NewReader(file)
+	return parseTranscriptLines(bufio.NewReader(file), startLine)
+}
 
+// parseTranscriptLines reads newline-delimited JSON from reader, skipping lines
+// before startLine (0-indexed) and any malformed lines, returning the parsed
+// Lines. It handles arbitrarily long lines and empty lines.
+func parseTranscriptLines(reader *bufio.Reader, startLine int) ([]Line, error) {
+	var lines []Line
 	totalLines := 0
 	for {
 		lineBytes, err := reader.ReadBytes('\n')
@@ -66,21 +44,12 @@ func ParseFromFileAtLine(path string, startLine int) ([]Line, error) {
 			return nil, fmt.Errorf("failed to read transcript: %w", err)
 		}
 
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
+		if len(lineBytes) > 0 {
+			if totalLines >= startLine {
+				lines = appendParsedLine(lines, lineBytes)
 			}
-			continue
+			totalLines++
 		}
-
-		if totalLines >= startLine {
-			var line Line
-			if err := json.Unmarshal(lineBytes, &line); err == nil {
-				normalizeLineType(&line)
-				lines = append(lines, line)
-			}
-		}
-		totalLines++
 
 		if err == io.EOF {
 			break
@@ -88,6 +57,17 @@ func ParseFromFileAtLine(path string, startLine int) ([]Line, error) {
 	}
 
 	return lines, nil
+}
+
+// appendParsedLine unmarshals lineBytes into a Line and appends it to lines.
+// Malformed lines are skipped, returning lines unchanged.
+func appendParsedLine(lines []Line, lineBytes []byte) []Line {
+	var line Line
+	if err := json.Unmarshal(lineBytes, &line); err != nil {
+		return lines
+	}
+	normalizeLineType(&line)
+	return append(lines, line)
 }
 
 // normalizeLineType ensures line.Type is populated for all transcript formats.
@@ -141,20 +121,26 @@ func ExtractUserContent(message json.RawMessage) string {
 	}
 
 	if arr, ok := msg.Content.([]interface{}); ok {
-		var texts []string
-		for _, item := range arr {
-			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == ContentTypeText {
-					if text, ok := m["text"].(string); ok {
-						texts = append(texts, text)
-					}
-				}
-			}
-		}
-		if len(texts) > 0 {
+		if texts := collectContentTexts(arr); len(texts) > 0 {
 			return StripIDEContextTags(strings.Join(texts, "\n\n"))
 		}
 	}
 
 	return ""
+}
+
+// collectContentTexts gathers the "text" fields of text-typed content blocks
+// from an array-format message content value.
+func collectContentTexts(arr []interface{}) []string {
+	var texts []string
+	for _, item := range arr {
+		m, ok := item.(map[string]interface{})
+		if !ok || m["type"] != ContentTypeText {
+			continue
+		}
+		if text, ok := m["text"].(string); ok {
+			texts = append(texts, text)
+		}
+	}
+	return texts
 }

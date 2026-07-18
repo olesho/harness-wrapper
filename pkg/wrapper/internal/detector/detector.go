@@ -159,29 +159,57 @@ func ParseResetTime(text string, now time.Time) (time.Time, bool) {
 	if m == nil {
 		return time.Time{}, false
 	}
+	hour, minute, ok := parseResetClock(m)
+	if !ok {
+		return time.Time{}, false
+	}
+	loc := resetLocation(m[4], now.Location())
+	nowInLoc := now.In(loc)
+	resume := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), hour, minute, 0, 0, loc)
+	if !resume.After(now) {
+		resume = resume.Add(24 * time.Hour)
+	}
+	return resume, true
+}
+
+// parseResetClock extracts and validates the hour/minute from a
+// resetTimeRE match (groups: 1=hour, 2=minute, 3=am/pm). The bool is
+// false when the components are out of range or fail the am/pm rules.
+func parseResetClock(m []string) (int, int, bool) {
 	hour, err := strconv.Atoi(m[1])
 	if err != nil || hour < 0 || hour > 23 {
-		return time.Time{}, false
+		return 0, 0, false
 	}
 	minute := 0
 	if m[2] != "" {
 		minute, err = strconv.Atoi(m[2])
 		if err != nil || minute < 0 || minute > 59 {
-			return time.Time{}, false
+			return 0, 0, false
 		}
 	}
-	ampm := strings.ToLower(m[3])
+	hour, ok := applyMeridiem(hour, strings.ToLower(m[3]), m[2])
+	if !ok {
+		return 0, 0, false
+	}
+	return hour, minute, true
+}
+
+// applyMeridiem converts a 12-hour clock hour to 24-hour form per the
+// am/pm marker, or validates the bare 24-hour form when no marker is
+// present. minuteGroup is the raw minute submatch (empty when the banner
+// had no ":MM"). The bool is false when the hour is invalid for the form.
+func applyMeridiem(hour int, ampm, minuteGroup string) (int, bool) {
 	switch ampm {
 	case "am":
 		if hour < 1 || hour > 12 {
-			return time.Time{}, false
+			return 0, false
 		}
 		if hour == 12 {
 			hour = 0
 		}
 	case "pm":
 		if hour < 1 || hour > 12 {
-			return time.Time{}, false
+			return 0, false
 		}
 		if hour != 12 {
 			hour += 12
@@ -190,25 +218,26 @@ func ParseResetTime(text string, now time.Time) (time.Time, bool) {
 		// 24-hour form (no am/pm). Reject single-digit hours without a
 		// minute component — "resets 6" is more likely a false positive
 		// than a 6:00 wall-clock.
-		if m[2] == "" {
-			return time.Time{}, false
+		if minuteGroup == "" {
+			return 0, false
 		}
 		if hour > 23 {
-			return time.Time{}, false
+			return 0, false
 		}
 	}
-	loc := now.Location()
-	if tz := strings.TrimSpace(m[4]); tz != "" {
+	return hour, true
+}
+
+// resetLocation resolves the optional IANA timezone captured from a
+// session-limit banner, falling back to fallback when the banner named
+// no zone or the zone is unrecognized.
+func resetLocation(tzGroup string, fallback *time.Location) *time.Location {
+	if tz := strings.TrimSpace(tzGroup); tz != "" {
 		if parsed, err := time.LoadLocation(tz); err == nil {
-			loc = parsed
+			return parsed
 		}
 	}
-	nowInLoc := now.In(loc)
-	resume := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), hour, minute, 0, 0, loc)
-	if !resume.After(now) {
-		resume = resume.Add(24 * time.Hour)
-	}
-	return resume, true
+	return fallback
 }
 
 // MatchAny returns the first pattern in patterns that appears as a

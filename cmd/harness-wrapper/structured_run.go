@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
@@ -59,13 +58,7 @@ func runStructuredRun(args []string) int {
 		return emitStartupError(wd, errors.New("empty prompt"))
 	}
 
-	timeout := 15 * time.Minute
-	if v := os.Getenv("HARNESS_WRAPPER_RUN_TIMEOUT"); v != "" {
-		if d, derr := time.ParseDuration(v); derr == nil {
-			timeout = d
-		}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), resolveRunTimeout())
 	defer cancel()
 
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
@@ -85,15 +78,7 @@ func runStructuredRun(args []string) int {
 				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 			},
 		},
-		OnInputRequest: func(req chat.InputRequest) (chat.InputAnswer, bool) {
-			if opt := affirmativeOption(req); opt != nil {
-				return chat.InputAnswer{OptionID: opt.ID}, true
-			}
-			if len(req.Options) > 0 {
-				return chat.InputAnswer{OptionID: req.Options[0].ID}, true
-			}
-			return chat.InputAnswer{}, false
-		},
+		OnInputRequest: autoAcceptAnswer,
 	})
 
 	status, reason, exit := classifyStructuredResult(res, err)

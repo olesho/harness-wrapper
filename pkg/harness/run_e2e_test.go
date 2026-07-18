@@ -95,6 +95,13 @@ func TestRunStreamParseEndToEnd(t *testing.T) {
 		t.Errorf("HarnessSessionID = %q, want e2e-sess-9 (captured from system:init)", res.HarnessSessionID)
 	}
 
+	assertStreamParseEvents(t, got)
+}
+
+// assertStreamParseEvents checks the three parsed envelopes carry the expected
+// run/harness/session stamps and per-event content.
+func assertStreamParseEvents(t *testing.T, got []transcript.EventEnvelope) {
+	t.Helper()
 	if len(got) != 3 {
 		t.Fatalf("got %d events, want 3 (text + tool_use + tool_result):\n%+v", len(got), got)
 	}

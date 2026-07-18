@@ -171,21 +171,39 @@ export class Conversation {
         const { value, done } = await reader.read();
         if (done) return;
         buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n\n")) >= 0) {
-          const block = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          const dataLines: string[] = [];
-          for (const line of block.split("\n")) {
-            if (line.startsWith(":")) continue;
-            if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^\s/, ""));
-          }
-          if (dataLines.length === 0) continue;
-          yield JSON.parse(dataLines.join("\n")) as TurnEvent;
-        }
+        buf = yield* drainSSEFrames(buf);
       }
     } finally {
       reader.cancel().catch(() => {});
     }
   }
+}
+
+/**
+ * Collect the `data:` payload of one SSE block (frame text between blank
+ * lines). Comment lines (`:`) are skipped; multiple data lines are joined
+ * with newlines. Returns null when the block carries no data lines.
+ */
+function parseSSEBlock(block: string): string | null {
+  const dataLines: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith(":")) continue;
+    if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^\s/, ""));
+  }
+  return dataLines.length === 0 ? null : dataLines.join("\n");
+}
+
+/**
+ * Yield a TurnEvent for every complete `\n\n`-delimited frame in `buf`,
+ * returning the leftover (incomplete) tail for the next read.
+ */
+function* drainSSEFrames(buf: string): Generator<TurnEvent, string> {
+  let idx: number;
+  while ((idx = buf.indexOf("\n\n")) >= 0) {
+    const block = buf.slice(0, idx);
+    buf = buf.slice(idx + 2);
+    const data = parseSSEBlock(block);
+    if (data !== null) yield JSON.parse(data) as TurnEvent;
+  }
+  return buf;
 }

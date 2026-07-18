@@ -380,26 +380,32 @@ func TestCanonicalScriptsLoad(t *testing.T) {
 	for _, harness := range []string{"codex", "claude"} {
 		harness := harness
 		t.Run(harness, func(t *testing.T) {
-			dir := filepath.Join(root, harness)
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				t.Fatalf("read %s: %v", dir, err)
-			}
-			seen := 0
-			for _, e := range entries {
-				if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-					continue
-				}
-				path := filepath.Join(dir, e.Name())
-				if _, err := loadScript(path); err != nil {
-					t.Errorf("loadScript(%s): %v", path, err)
-				}
-				seen++
-			}
-			if seen < 6 {
-				t.Errorf("%s: expected ≥6 scenario scripts, found %d", harness, seen)
-			}
+			checkScriptsDir(t, harness, filepath.Join(root, harness))
 		})
+	}
+}
+
+// checkScriptsDir loads every .json script in dir, asserting they all parse and
+// that at least 6 scenario scripts are present for the harness.
+func checkScriptsDir(t *testing.T, harness, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	seen := 0
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if _, err := loadScript(path); err != nil {
+			t.Errorf("loadScript(%s): %v", path, err)
+		}
+		seen++
+	}
+	if seen < 6 {
+		t.Errorf("%s: expected ≥6 scenario scripts, found %d", harness, seen)
 	}
 }
 

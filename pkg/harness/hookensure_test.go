@@ -43,34 +43,40 @@ func TestRenderHookCommandStructure(t *testing.T) {
 func TestRenderHookCommandBehavior(t *testing.T) {
 	for _, dirName := range []string{"loomdir", "loom dir with space"} {
 		t.Run(dirName, func(t *testing.T) {
-			base := filepath.Join(t.TempDir(), dirName)
-			if err := os.MkdirAll(base, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			out := filepath.Join(base, "invoked.txt")
-			loom := filepath.Join(base, "loom")
-			// Fake loom: record its args so we can assert exec reached it correctly.
-			script := "#!/bin/sh\nprintf '%s' \"$*\" > " + posixQ(out) + "\n"
-			if err := os.WriteFile(loom, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture executable
-				t.Fatal(err)
-			}
-			cmd := harness.RenderHookCommand([]string{loom, "hooks"}, "claude", "stop", "loom")
-
-			// (a) No spool → guard exits 0, loom NOT invoked.
-			runSh(t, cmd, nil)
-			if _, err := os.Stat(out); !os.IsNotExist(err) {
-				t.Fatal("guard failed: loom was invoked without HW_EVENT_SPOOL")
-			}
-			// (b)+(c) With spool → loom invoked with "hooks claude stop".
-			runSh(t, cmd, []string{"HW_EVENT_SPOOL=/tmp/whatever"})
-			got, err := os.ReadFile(out) //nolint:gosec // test temp path
-			if err != nil {
-				t.Fatalf("loom was not invoked with HW_EVENT_SPOOL set: %v", err)
-			}
-			if string(got) != "hooks claude stop" {
-				t.Errorf("loom args = %q, want %q", got, "hooks claude stop")
-			}
+			checkRenderedHookBehavior(t, dirName)
 		})
+	}
+}
+
+// checkRenderedHookBehavior runs a rendered hook command through a shell and
+// asserts the env guard, exec target, and quoting all behave.
+func checkRenderedHookBehavior(t *testing.T, dirName string) {
+	base := filepath.Join(t.TempDir(), dirName)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(base, "invoked.txt")
+	loom := filepath.Join(base, "loom")
+	// Fake loom: record its args so we can assert exec reached it correctly.
+	script := "#!/bin/sh\nprintf '%s' \"$*\" > " + posixQ(out) + "\n"
+	if err := os.WriteFile(loom, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture executable
+		t.Fatal(err)
+	}
+	cmd := harness.RenderHookCommand([]string{loom, "hooks"}, "claude", "stop", "loom")
+
+	// (a) No spool → guard exits 0, loom NOT invoked.
+	runSh(t, cmd, nil)
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatal("guard failed: loom was invoked without HW_EVENT_SPOOL")
+	}
+	// (b)+(c) With spool → loom invoked with "hooks claude stop".
+	runSh(t, cmd, []string{"HW_EVENT_SPOOL=/tmp/whatever"})
+	got, err := os.ReadFile(out) //nolint:gosec // test temp path
+	if err != nil {
+		t.Fatalf("loom was not invoked with HW_EVENT_SPOOL set: %v", err)
+	}
+	if string(got) != "hooks claude stop" {
+		t.Errorf("loom args = %q, want %q", got, "hooks claude stop")
 	}
 }
 

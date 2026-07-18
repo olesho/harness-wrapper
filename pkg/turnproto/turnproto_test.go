@@ -110,31 +110,38 @@ func TestParseLastJSONLine(t *testing.T) {
 func TestStructuredTurnResultRoundTrip(t *testing.T) {
 	for _, status := range []TurnStatus{StatusCompleted, StatusErrored, StatusDeadline, StatusStartupError} {
 		t.Run(string(status), func(t *testing.T) {
-			in := StructuredTurnResult{
-				Status:            status,
-				Reply:             "r",
-				HarnessSessionID:  "sess",
-				TranscriptEntries: []transcript.Event{{Seq: 1, Role: transcript.RoleUser, Type: transcript.EventText, Text: "hi"}},
-				WorkingDir:        "/work",
-			}
-			data, err := json.Marshal(in)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			got, ok := ParseLastJSONLine(data)
-			if !ok || got == nil {
-				t.Fatalf("ParseLastJSONLine failed to round-trip %q", status)
-			}
-			if got.Status != status {
-				t.Errorf("Status = %q, want %q", got.Status, status)
-			}
-			if got.WorkingDir != "/work" || got.HarnessSessionID != "sess" || got.Reply != "r" {
-				t.Errorf("round-trip mismatch: %+v", got)
-			}
-			if len(got.TranscriptEntries) != 1 || got.TranscriptEntries[0].Seq != 1 {
-				t.Errorf("transcript entries not preserved: %+v", got.TranscriptEntries)
-			}
+			checkRoundTrip(t, status)
 		})
+	}
+}
+
+// checkRoundTrip marshals a fully-populated StructuredTurnResult and asserts that
+// ParseLastJSONLine recovers every field for the given status.
+func checkRoundTrip(t *testing.T, status TurnStatus) {
+	t.Helper()
+	in := StructuredTurnResult{
+		Status:            status,
+		Reply:             "r",
+		HarnessSessionID:  "sess",
+		TranscriptEntries: []transcript.Event{{Seq: 1, Role: transcript.RoleUser, Type: transcript.EventText, Text: "hi"}},
+		WorkingDir:        "/work",
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got, ok := ParseLastJSONLine(data)
+	if !ok || got == nil {
+		t.Fatalf("ParseLastJSONLine failed to round-trip %q", status)
+	}
+	if got.Status != status {
+		t.Errorf("Status = %q, want %q", got.Status, status)
+	}
+	if got.WorkingDir != "/work" || got.HarnessSessionID != "sess" || got.Reply != "r" {
+		t.Errorf("round-trip mismatch: %+v", got)
+	}
+	if len(got.TranscriptEntries) != 1 || got.TranscriptEntries[0].Seq != 1 {
+		t.Errorf("transcript entries not preserved: %+v", got.TranscriptEntries)
 	}
 }
 

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "modules": {
     "github.com/olesho/harness-wrapper/cmd/fakeharness": {
-      "summaryHash": "9d530d6e7f83e2c172e8685298603ca5d5a38d2d7137c36d5ac5036d3cb7151c",
+      "summaryHash": "a0c2979424210b71fbd174d8af9d1a8726fe931289534f466c8ae78fcd9acb4c",
       "summary": "Scriptable stand-in binary for an interactive coding harness, driven over a PTY by the chat package's integration tests (not a product binary)."
     },
     "github.com/olesho/harness-wrapper/cmd/harness-chatd": {
@@ -82,7 +82,7 @@
       "summary": "Scriptable fake interactive harness (script format + fluent Builder) that cmd/fakeharness compiles and chat.Open spawns over a real PTY to exercise timing-sensitive completion logic."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench": {
-      "summaryHash": "2b1c6ee76982e8de0a374b9fe2f52cb813d01a76b40f0f76c04a195476afa7a7",
+      "summaryHash": "e1fc431fc2909873722d09c9170ac6938a3051fc5d5e87b6ad032184444cf6f4",
       "summary": "CLI that replays recorded PTY byte streams through each registered vt100 emulator candidate and reports fidelity, stability, and throughput against ground-truth text."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-record": {
@@ -104,7 +104,7 @@
       }
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/metrics": {
-      "summaryHash": "c5a5f9d995d7689d9f0410070dd3f622b5cca6f00abbc017cb07f3d1c43d3c9c",
+      "summaryHash": "6a4bdf761cc6696c7ed899c7ec80106443f715283407ee74052bf19cf96cee88",
       "summary": "Comparison utilities for the screen-emulator bake-off: normalize, strip ANSI, exact match, and Levenshtein/normalized edit distance against ground-truth text."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/scenario": {
@@ -198,7 +198,7 @@
       "summary": "Concurrent-safe wrapper around a vt10x vt100 emulator: feed raw PTY bytes via Write, read coherent Snapshots, and Subscribe to coalesced change notifications."
     },
     "github.com/olesho/harness-wrapper/pkg/transcript": {
-      "summaryHash": "cb33e67cb6e389b33d34b0141f9b04a9a00522b3e3d0385657f823ba64c31c62",
+      "summaryHash": "b6f3c99582037a9d845674e1828a8c6129448727685ff64f92bbb968e46c491b",
       "summary": "Read-only view of harness-owned conversation logs: a leaf package defining the canonical Event/Turn model and the Reader interface per-harness parsers implement.",
       "interfaces": {
         "Reader": {
@@ -228,7 +228,7 @@
       "summary": "The single source of truth for the neutral structured-turn protocol: exit codes, deadline anchor, and the frozen StructuredTurnResult schema shared by guest producer and host client."
     },
     "github.com/olesho/harness-wrapper/pkg/turns": {
-      "summaryHash": "c866c92fdb8276e5e2c80e1738c35a60be899662b674ba180a6f1b5268b6d6f9",
+      "summaryHash": "6067e6a1aa8468a9e3255d94b8a146c08cdeecf28b93a0d0d85abdf377325017",
       "summary": "Translates low-level harness signals (emulated screen changes + wrapper status) into a small vocabulary of chat turn events; Watcher composes session, screen, and Adapter.",
       "interfaces": {
         "Adapter": {
@@ -270,7 +270,7 @@
       "summary": "Fallback turn-detection adapter that maps wrapper.Status transitions directly to turn events without reading screen contents; a safety net when no per-harness adapter exists."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode": {
-      "summaryHash": "bd813f65d7a7d5a65a7961745aaf19e325c7547d8f28703dfd15a47825b5db4f",
+      "summaryHash": "58f064f47b5174ef54d6635b2afc855fbe140fb311761897abad33a4e83a8687",
       "summary": "Turn-detection adapter for the Claude Code CLI keying on the '✻ \u003cverb\u003e for Ns' thinking-summary line and interrupt marker; embeds generic.Adapter for wrapper status events."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/codex": {

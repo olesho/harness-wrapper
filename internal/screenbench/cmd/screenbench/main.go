@@ -67,38 +67,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	emus := emulator.Names()
-	if *emuFilter != "" {
-		emus = []string{*emuFilter}
-		if _, ok := emulator.Registry[*emuFilter]; !ok {
-			fmt.Fprintf(os.Stderr, "screenbench: unknown emulator %q (have: %s)\n", *emuFilter, strings.Join(emulator.Names(), ", "))
-			os.Exit(2)
-		}
-	}
+	emus := resolveEmulators(*emuFilter)
 
 	if *writeExpected && *emuFilter == "" {
 		fmt.Fprintln(os.Stderr, "screenbench: --write-expected requires --emulator to pick a source")
 		os.Exit(2)
 	}
 
-	var results []result
-	for _, sc := range scenarios {
-		if *scenFilter != "" && !strings.Contains(sc.Path, *scenFilter) && !strings.Contains(sc.Name, *scenFilter) {
-			continue
-		}
-		for _, name := range emus {
-			r := runOne(sc, name, *writeWait)
-			if *writeExpected && r.Err == nil {
-				p := filepath.Join(sc.Path, "expected.txt")
-				if err := os.WriteFile(p, []byte(metrics.Normalize(r.Snapshot)+"\n"), 0o644); err != nil {
-					fmt.Fprintf(os.Stderr, "screenbench: write %s: %v\n", p, err)
-				} else {
-					fmt.Fprintf(os.Stderr, "wrote %s (%d bytes, from %s)\n", p, len(metrics.Normalize(r.Snapshot)), name)
-				}
-			}
-			results = append(results, r)
-		}
-	}
+	results := collectResults(scenarios, emus, *scenFilter, *writeWait, *writeExpected)
 
 	switch *format {
 	case "markdown":
@@ -108,6 +84,49 @@ func main() {
 	default:
 		emitTable(os.Stdout, results)
 	}
+}
+
+// resolveEmulators returns the emulator names to run: all registered
+// emulators, or just emuFilter (exiting if it names an unknown emulator).
+func resolveEmulators(emuFilter string) []string {
+	if emuFilter == "" {
+		return emulator.Names()
+	}
+	if _, ok := emulator.Registry[emuFilter]; !ok {
+		fmt.Fprintf(os.Stderr, "screenbench: unknown emulator %q (have: %s)\n", emuFilter, strings.Join(emulator.Names(), ", "))
+		os.Exit(2)
+	}
+	return []string{emuFilter}
+}
+
+// collectResults runs every selected emulator against every matching scenario,
+// optionally bootstrapping expected.txt when writeExpected is set.
+func collectResults(scenarios []*scenario.Scenario, emus []string, scenFilter string, writeWait time.Duration, writeExpected bool) []result {
+	var results []result
+	for _, sc := range scenarios {
+		if scenFilter != "" && !strings.Contains(sc.Path, scenFilter) && !strings.Contains(sc.Name, scenFilter) {
+			continue
+		}
+		for _, name := range emus {
+			r := runOne(sc, name, writeWait)
+			if writeExpected && r.Err == nil {
+				writeExpectedFile(sc, name, r)
+			}
+			results = append(results, r)
+		}
+	}
+	return results
+}
+
+// writeExpectedFile bootstraps a scenario's expected.txt from a result's
+// normalized snapshot.
+func writeExpectedFile(sc *scenario.Scenario, name string, r result) {
+	p := filepath.Join(sc.Path, "expected.txt")
+	if err := os.WriteFile(p, []byte(metrics.Normalize(r.Snapshot)+"\n"), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "screenbench: write %s: %v\n", p, err)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "wrote %s (%d bytes, from %s)\n", p, len(metrics.Normalize(r.Snapshot)), name)
 }
 
 func runOne(sc *scenario.Scenario, emuName string, settle time.Duration) (r result) {

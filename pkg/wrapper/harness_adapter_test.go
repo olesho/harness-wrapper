@@ -13,20 +13,24 @@ import (
 // the plan: fast api_error detection (regardless of idle/quiet state),
 // structured field propagation, and regression coverage for existing
 // Cost/Retry/Prompt paths.
+// classifyCase is one row of the classifier-level matrix exercised by
+// TestHarnessAdapter_Classify.
+type classifyCase struct {
+	name           string
+	adapter        harnessAdapter
+	input          ClassifierInput
+	wantStatus     Status
+	wantCode       int
+	wantRetry      time.Duration
+	reasonHas      string
+	wantResumeAtOK bool // verify Classification.ResumeAt is non-zero
+}
+
 func TestHarnessAdapter_Classify(t *testing.T) {
 	claude := harnessAdapter{patterns: claudeharness.Patterns}
 	codex := harnessAdapter{patterns: codexharness.Patterns}
 
-	cases := []struct {
-		name           string
-		adapter        harnessAdapter
-		input          ClassifierInput
-		wantStatus     Status
-		wantCode       int
-		wantRetry      time.Duration
-		reasonHas      string
-		wantResumeAtOK bool // verify Classification.ResumeAt is non-zero
-	}{
+	cases := []classifyCase{
 		{
 			name:       "A1: claude api_error 529 fires without idle gate",
 			adapter:    claude,
@@ -105,36 +109,42 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.adapter.Classify(tc.input)
-			if got.Status != tc.wantStatus {
-				t.Fatalf("Status = %q, want %q (got %+v)", got.Status, tc.wantStatus, got)
-			}
-			if tc.wantStatus == "" {
-				return
-			}
-			if got.HTTPCode != tc.wantCode {
-				t.Errorf("HTTPCode = %d, want %d", got.HTTPCode, tc.wantCode)
-			}
-			if got.RetryAfter != tc.wantRetry {
-				t.Errorf("RetryAfter = %v, want %v", got.RetryAfter, tc.wantRetry)
-			}
-			// Only api_error classifications are non-terminal at this
-			// matcher entry point. Cost/Retry are terminal; prompts
-			// are non-terminal but go through a different code path.
-			wantTerminal := tc.wantStatus == StatusBlockedByCost || tc.wantStatus == StatusRetryLater
-			if got.Terminal != wantTerminal {
-				t.Errorf("Terminal = %v, want %v", got.Terminal, wantTerminal)
-			}
-			if tc.reasonHas != "" && !strings.Contains(got.Reason, tc.reasonHas) {
-				t.Errorf("Reason = %q, want substring %q", got.Reason, tc.reasonHas)
-			}
-			if tc.wantResumeAtOK {
-				if got.ResumeAt.IsZero() {
-					t.Errorf("ResumeAt is zero, want non-zero")
-				} else if !got.ResumeAt.After(time.Now()) {
-					t.Errorf("ResumeAt = %s, want in the future", got.ResumeAt)
-				}
-			}
+			checkClassifyCase(t, tc, tc.adapter.Classify(tc.input))
 		})
+	}
+}
+
+// checkClassifyCase asserts a single classifier result against its
+// expectations.
+func checkClassifyCase(t *testing.T, tc classifyCase, got Classification) {
+	t.Helper()
+	if got.Status != tc.wantStatus {
+		t.Fatalf("Status = %q, want %q (got %+v)", got.Status, tc.wantStatus, got)
+	}
+	if tc.wantStatus == "" {
+		return
+	}
+	if got.HTTPCode != tc.wantCode {
+		t.Errorf("HTTPCode = %d, want %d", got.HTTPCode, tc.wantCode)
+	}
+	if got.RetryAfter != tc.wantRetry {
+		t.Errorf("RetryAfter = %v, want %v", got.RetryAfter, tc.wantRetry)
+	}
+	// Only api_error classifications are non-terminal at this
+	// matcher entry point. Cost/Retry are terminal; prompts
+	// are non-terminal but go through a different code path.
+	wantTerminal := tc.wantStatus == StatusBlockedByCost || tc.wantStatus == StatusRetryLater
+	if got.Terminal != wantTerminal {
+		t.Errorf("Terminal = %v, want %v", got.Terminal, wantTerminal)
+	}
+	if tc.reasonHas != "" && !strings.Contains(got.Reason, tc.reasonHas) {
+		t.Errorf("Reason = %q, want substring %q", got.Reason, tc.reasonHas)
+	}
+	if tc.wantResumeAtOK {
+		if got.ResumeAt.IsZero() {
+			t.Errorf("ResumeAt is zero, want non-zero")
+		} else if !got.ResumeAt.After(time.Now()) {
+			t.Errorf("ResumeAt = %s, want in the future", got.ResumeAt)
+		}
 	}
 }

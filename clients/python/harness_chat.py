@@ -78,6 +78,12 @@ class TurnEvent:
         return cls(turn=Turn.from_json(d.get("turn", {})), error=d.get("error", ""))
 
 
+def _parse_sse_block(lines: list[str]) -> str | None:
+    """Join the ``data:`` payloads of one SSE block; None when it has none."""
+    data = "\n".join(s[5:].lstrip() for s in lines if s.startswith("data:"))
+    return data or None
+
+
 class Client:
     def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
@@ -192,11 +198,10 @@ class Conversation:
             for raw in resp:
                 line = raw.decode("utf-8", "replace").rstrip("\n").rstrip("\r")
                 if line == "":
-                    if buf:
-                        data = "\n".join(s[5:].lstrip() if s.startswith("data:") else s for s in buf if s.startswith("data:"))
-                        buf.clear()
-                        if data:
-                            yield TurnEvent.from_json(json.loads(data))
+                    data = _parse_sse_block(buf)
+                    buf.clear()
+                    if data is not None:
+                        yield TurnEvent.from_json(json.loads(data))
                     continue
                 if line.startswith(":"):  # comment / heartbeat
                     continue

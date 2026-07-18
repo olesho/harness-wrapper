@@ -23,40 +23,49 @@ func TestParseStreamLine_RealCorpus(t *testing.T) {
 	defer func() { _ = f.Close() }()
 
 	p := streamParser{}
-	byType := map[string]int{}
-	var sawReadToolUse, sawLinkedResult, sawUserPrompt bool
+	obs := corpusObservations{byType: map[string]int{}}
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	for sc.Scan() {
 		for _, pe := range p.ParseStreamLine(sc.Text()) {
-			e := pe.Event
-			byType[e.Type]++
-			if e.Type == transcript.EventToolUse && e.ToolName == "read" {
-				sawReadToolUse = true
-			}
-			if e.Type == transcript.EventToolResult && e.ToolUseID != "" {
-				sawLinkedResult = true
-			}
-			if e.Type == transcript.EventText && e.Role == transcript.RoleUser {
-				sawUserPrompt = true
-			}
+			obs.observe(pe.Event)
 		}
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	t.Logf("events by type: %v", byType)
-	if !sawUserPrompt {
+	t.Logf("events by type: %v", obs.byType)
+	if !obs.sawUserPrompt {
 		t.Error("expected a user text event (the prompt)")
 	}
-	if !sawReadToolUse {
+	if !obs.sawReadToolUse {
 		t.Error("expected a tool_use event for the read tool")
 	}
-	if !sawLinkedResult {
+	if !obs.sawLinkedResult {
 		t.Error("expected a tool_result event carrying its toolCallId linkage")
 	}
-	if byType[transcript.EventText] < 2 {
-		t.Errorf("expected ≥2 text events (user prompt + assistant reply), got %d", byType[transcript.EventText])
+	if obs.byType[transcript.EventText] < 2 {
+		t.Errorf("expected ≥2 text events (user prompt + assistant reply), got %d", obs.byType[transcript.EventText])
+	}
+}
+
+// corpusObservations accumulates the event-shape signals
+// TestParseStreamLine_RealCorpus checks while replaying the recorded pi capture.
+type corpusObservations struct {
+	byType                                         map[string]int
+	sawReadToolUse, sawLinkedResult, sawUserPrompt bool
+}
+
+func (o *corpusObservations) observe(e transcript.Event) {
+	o.byType[e.Type]++
+	if e.Type == transcript.EventToolUse && e.ToolName == "read" {
+		o.sawReadToolUse = true
+	}
+	if e.Type == transcript.EventToolResult && e.ToolUseID != "" {
+		o.sawLinkedResult = true
+	}
+	if e.Type == transcript.EventText && e.Role == transcript.RoleUser {
+		o.sawUserPrompt = true
 	}
 }
 
@@ -152,89 +161,98 @@ func TestResolvePopulatesCapabilities(t *testing.T) {
 // mapping, using line shapes captured live from pi 0.76.0.
 func TestParseStreamLine(t *testing.T) {
 	p := streamParser{}
-
-	t.Run("non-message_end lines are skipped", func(t *testing.T) {
-		for _, line := range []string{
-			`{"type":"session","version":3,"id":"019efabc-d24b-78b7-ad3b-bb56ff658f11"}`,
-			`{"type":"agent_start"}`,
-			`{"type":"turn_start"}`,
-			`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
-			`{"type":"message_update","message":{"role":"assistant","content":[]},"assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`,
-			// turn_end carries a copy of the final message_end — skipping it is the de-dup rule.
-			`{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]},"toolResults":[]}`,
-			`{"type":"tool_execution_end","toolCallId":"d06ea0da5","toolName":"read","isError":false,"result":{}}`,
-			`{"type":"agent_end","messages":[]}`,
-			"\x1b[2m> ANSI noise\x1b[0m",
-			"",
-		} {
-			if got := p.ParseStreamLine(line); got != nil {
-				t.Errorf("ParseStreamLine(%q) = %+v, want nil", line, got)
-			}
-		}
-	})
-
-	t.Run("user message_end → one user text event", func(t *testing.T) {
-		evs := p.ParseStreamLine(`{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Read the file go.mod"}]}}`)
-		if len(evs) != 1 {
-			t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
-		}
-		e := evs[0].Event
-		if e.Role != transcript.RoleUser || e.Type != transcript.EventText || e.Text != "Read the file go.mod" {
-			t.Fatalf("unexpected event: %+v", e)
-		}
-		if e.Source != transcript.SourceLive {
-			t.Errorf("Source = %q, want %q", e.Source, transcript.SourceLive)
-		}
-	})
-
+	t.Run("non-message_end lines are skipped", func(t *testing.T) { checkSkippedLines(t, p) })
+	t.Run("user message_end → one user text event", func(t *testing.T) { checkUserTextEvent(t, p) })
 	t.Run("assistant thinking+toolCall → one tool_use event (thinking dropped)", func(t *testing.T) {
-		line := `{"type":"message_end","message":{"role":"assistant","content":[` +
-			`{"type":"thinking","thinking":"reason","thinkingSignature":"reasoning"},` +
-			`{"type":"toolCall","id":"d06ea0da5","name":"read","arguments":{"path":"go.mod"}}]}}`
-		evs := p.ParseStreamLine(line)
-		if len(evs) != 1 {
-			t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
-		}
-		e := evs[0].Event
-		if e.Type != transcript.EventToolUse || e.ToolName != "read" || e.ToolUseID != "d06ea0da5" {
-			t.Fatalf("unexpected tool_use event: %+v", e)
-		}
-		if string(e.ToolInput) != `{"path":"go.mod"}` {
-			t.Errorf("ToolInput = %s, want {\"path\":\"go.mod\"}", e.ToolInput)
-		}
-		if e.ID() != "tool-use:d06ea0da5" {
-			t.Errorf("ID() = %q, want tool-use:d06ea0da5", e.ID())
-		}
+		checkAssistantToolUseEvent(t, p)
 	})
-
-	t.Run("assistant text → one assistant text event", func(t *testing.T) {
-		evs := p.ParseStreamLine(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello there friend"}]}}`)
-		if len(evs) != 1 || evs[0].Event.Role != transcript.RoleAssistant || evs[0].Event.Text != "hello there friend" {
-			t.Fatalf("unexpected: %+v", evs)
-		}
-	})
-
+	t.Run("assistant text → one assistant text event", func(t *testing.T) { checkAssistantTextEvent(t, p) })
 	t.Run("toolResult message → one tool_result event linked by toolCallId", func(t *testing.T) {
-		line := `{"type":"message_end","message":{"role":"toolResult","toolCallId":"d06ea0da5","toolName":"read","content":[{"type":"text","text":"module github.com/olesho/harness-wrapper\n"}]}}`
-		evs := p.ParseStreamLine(line)
-		if len(evs) != 1 {
-			t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
-		}
-		e := evs[0].Event
-		if e.Role != transcript.RoleTool || e.Type != transcript.EventToolResult {
-			t.Fatalf("unexpected role/type: %+v", e)
-		}
-		if e.ToolUseID != "d06ea0da5" || e.ToolName != "read" {
-			t.Errorf("linkage = (%q,%q), want (d06ea0da5,read)", e.ToolUseID, e.ToolName)
-		}
-		if e.Output != "module github.com/olesho/harness-wrapper\n" {
-			t.Errorf("Output = %q", e.Output)
-		}
-		// tool_use and tool_result for the same call must not collapse to one id.
-		if e.ID() != "tool-result:d06ea0da5" {
-			t.Errorf("ID() = %q, want tool-result:d06ea0da5", e.ID())
-		}
+		checkToolResultEvent(t, p)
 	})
+}
+
+func checkSkippedLines(t *testing.T, p streamParser) {
+	for _, line := range []string{
+		`{"type":"session","version":3,"id":"019efabc-d24b-78b7-ad3b-bb56ff658f11"}`,
+		`{"type":"agent_start"}`,
+		`{"type":"turn_start"}`,
+		`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
+		`{"type":"message_update","message":{"role":"assistant","content":[]},"assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`,
+		// turn_end carries a copy of the final message_end — skipping it is the de-dup rule.
+		`{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]},"toolResults":[]}`,
+		`{"type":"tool_execution_end","toolCallId":"d06ea0da5","toolName":"read","isError":false,"result":{}}`,
+		`{"type":"agent_end","messages":[]}`,
+		"\x1b[2m> ANSI noise\x1b[0m",
+		"",
+	} {
+		if got := p.ParseStreamLine(line); got != nil {
+			t.Errorf("ParseStreamLine(%q) = %+v, want nil", line, got)
+		}
+	}
+}
+
+func checkUserTextEvent(t *testing.T, p streamParser) {
+	evs := p.ParseStreamLine(`{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"Read the file go.mod"}]}}`)
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
+	}
+	e := evs[0].Event
+	if e.Role != transcript.RoleUser || e.Type != transcript.EventText || e.Text != "Read the file go.mod" {
+		t.Fatalf("unexpected event: %+v", e)
+	}
+	if e.Source != transcript.SourceLive {
+		t.Errorf("Source = %q, want %q", e.Source, transcript.SourceLive)
+	}
+}
+
+func checkAssistantToolUseEvent(t *testing.T, p streamParser) {
+	line := `{"type":"message_end","message":{"role":"assistant","content":[` +
+		`{"type":"thinking","thinking":"reason","thinkingSignature":"reasoning"},` +
+		`{"type":"toolCall","id":"d06ea0da5","name":"read","arguments":{"path":"go.mod"}}]}}`
+	evs := p.ParseStreamLine(line)
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
+	}
+	e := evs[0].Event
+	if e.Type != transcript.EventToolUse || e.ToolName != "read" || e.ToolUseID != "d06ea0da5" {
+		t.Fatalf("unexpected tool_use event: %+v", e)
+	}
+	if string(e.ToolInput) != `{"path":"go.mod"}` {
+		t.Errorf("ToolInput = %s, want {\"path\":\"go.mod\"}", e.ToolInput)
+	}
+	if e.ID() != "tool-use:d06ea0da5" {
+		t.Errorf("ID() = %q, want tool-use:d06ea0da5", e.ID())
+	}
+}
+
+func checkAssistantTextEvent(t *testing.T, p streamParser) {
+	evs := p.ParseStreamLine(`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello there friend"}]}}`)
+	if len(evs) != 1 || evs[0].Event.Role != transcript.RoleAssistant || evs[0].Event.Text != "hello there friend" {
+		t.Fatalf("unexpected: %+v", evs)
+	}
+}
+
+func checkToolResultEvent(t *testing.T, p streamParser) {
+	line := `{"type":"message_end","message":{"role":"toolResult","toolCallId":"d06ea0da5","toolName":"read","content":[{"type":"text","text":"module github.com/olesho/harness-wrapper\n"}]}}`
+	evs := p.ParseStreamLine(line)
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want 1: %+v", len(evs), evs)
+	}
+	e := evs[0].Event
+	if e.Role != transcript.RoleTool || e.Type != transcript.EventToolResult {
+		t.Fatalf("unexpected role/type: %+v", e)
+	}
+	if e.ToolUseID != "d06ea0da5" || e.ToolName != "read" {
+		t.Errorf("linkage = (%q,%q), want (d06ea0da5,read)", e.ToolUseID, e.ToolName)
+	}
+	if e.Output != "module github.com/olesho/harness-wrapper\n" {
+		t.Errorf("Output = %q", e.Output)
+	}
+	// tool_use and tool_result for the same call must not collapse to one id.
+	if e.ID() != "tool-result:d06ea0da5" {
+		t.Errorf("ID() = %q, want tool-result:d06ea0da5", e.ID())
+	}
 }
 
 func TestRegisteredViaInit(t *testing.T) {

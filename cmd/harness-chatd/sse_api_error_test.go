@@ -130,10 +130,18 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	}
 	_ = sendResp.Body.Close()
 
-	// Read SSE frames until we see one with http_code populated.
-	scanner := bufio.NewScanner(streamResp.Body)
+	// Read SSE frames until we see one with http_code populated, then assert it.
+	matched := scanForErroredTurn(t, streamResp.Body, time.Now().Add(15*time.Second))
+	assertAPIError(t, matched)
+}
+
+// scanForErroredTurn reads SSE frames from body until one carries an http_code
+// or retry_after, returning that event (or the zero value if the deadline
+// passes first).
+func scanForErroredTurn(t *testing.T, body io.Reader, deadline time.Time) turnEventDTO {
+	t.Helper()
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	deadline := time.Now().Add(15 * time.Second)
 	var matched turnEventDTO
 	for time.Now().Before(deadline) && scanner.Scan() {
 		line := scanner.Text()
@@ -154,7 +162,12 @@ func TestSSE_APIErrorPropagates(t *testing.T) {
 	if scanner.Err() != nil {
 		t.Logf("scanner err (likely deadline): %v", scanner.Err())
 	}
+	return matched
+}
 
+// assertAPIError checks the api_error turn carries the expected 429 details.
+func assertAPIError(t *testing.T, matched turnEventDTO) {
+	t.Helper()
 	if matched.Turn.HTTPCode != 429 {
 		t.Errorf("turn.http_code = %d, want 429 (full event: %+v)", matched.Turn.HTTPCode, matched)
 	}
