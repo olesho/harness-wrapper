@@ -33,6 +33,11 @@ const (
 	rows = 24
 )
 
+const (
+	ansiClearHome = "\x1b[2J\x1b[H"     // clear screen, cursor home
+	ansiPrompt    = "\x1b[1m> \x1b[22m" // bold "> " prompt
+)
+
 type synth struct {
 	name     string
 	notes    string
@@ -88,7 +93,7 @@ func fail(format string, args ...any) {
 // shortReply: a minimal two-turn exchange with simple SGR styling.
 func shortReply() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")              // clear screen, cursor home
+	b.WriteString(ansiClearHome)                // clear screen, cursor home
 	b.WriteString("\x1b[1m> \x1b[22mhello\r\n") // bold prompt, user text
 	b.WriteString("\x1b[32mHi there!\x1b[0m ")  // green assistant
 	b.WriteString("How can I help today?\r\n")
@@ -104,7 +109,7 @@ func shortReply() synth {
 // longMarkdown: a multi-paragraph reply with headings, bold, and bullets.
 func longMarkdown() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")
+	b.WriteString(ansiClearHome)
 	b.WriteString("\x1b[1m> \x1b[22msummarize the plan\r\n")
 	b.WriteString("\x1b[1;4mOverview\x1b[0m\r\n") // bold+underline heading
 	b.WriteString("The plan has \x1b[1mthree phases\x1b[22m. Each phase is\r\n")
@@ -116,7 +121,7 @@ func longMarkdown() synth {
 	b.WriteString("  \x1b[33m•\x1b[0m \x1b[1mLibrary\x1b[22m — pkg/chat\r\n")
 	b.WriteString("\r\n")
 	b.WriteString("\x1b[2mEnd of summary.\x1b[0m\r\n")
-	b.WriteString("\x1b[1m> \x1b[22m")
+	b.WriteString(ansiPrompt)
 	exp := strings.Join([]string{
 		"> summarize the plan",
 		"Overview",
@@ -144,7 +149,7 @@ func longMarkdown() synth {
 // preserves layout.
 func codeBlock() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")
+	b.WriteString(ansiClearHome)
 	b.WriteString("\x1b[1m> \x1b[22mshow a hello world\r\n")
 	b.WriteString("\x1b[36m```go\x1b[0m\r\n")
 	lines := []string{
@@ -167,7 +172,7 @@ func codeBlock() synth {
 		b.WriteString("\r\n")
 	}
 	b.WriteString("\x1b[36m```\x1b[0m\r\n")
-	b.WriteString("\x1b[1m> \x1b[22m")
+	b.WriteString(ansiPrompt)
 	var exp strings.Builder
 	exp.WriteString("> show a hello world\n```go\n")
 	for i, ln := range lines {
@@ -187,13 +192,13 @@ func codeBlock() synth {
 // This pattern is common in chat TUIs when the user hits Ctrl-C.
 func interruptMidStream() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")
+	b.WriteString(ansiClearHome)
 	b.WriteString("\x1b[1m> \x1b[22mwrite a long story\r\n")
 	b.WriteString("Once upon a time, in a land far away, there lived a curious")
 	// User interrupts: \r + EL (erase to end of line) replaces the line.
 	b.WriteString("\r\x1b[2K")
 	b.WriteString("\x1b[31m⚠ interrupted by user\x1b[0m\r\n")
-	b.WriteString("\x1b[1m> \x1b[22m")
+	b.WriteString(ansiPrompt)
 	exp := strings.Join([]string{
 		"> write a long story",
 		"⚠ interrupted by user",
@@ -212,7 +217,7 @@ func interruptMidStream() synth {
 // content should NOT appear in the final main-screen extraction.
 func altScreenToggle() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")
+	b.WriteString(ansiClearHome)
 	b.WriteString("\x1b[1m> \x1b[22mlist files\r\n")
 	// Enter alt screen, draw spinner frame.
 	b.WriteString("\x1b[?1049h\x1b[2J\x1b[H")
@@ -220,7 +225,7 @@ func altScreenToggle() synth {
 	// Leave alt screen — main-screen content should be restored.
 	b.WriteString("\x1b[?1049l")
 	b.WriteString("README.md  go.mod  pkg/\r\n")
-	b.WriteString("\x1b[1m> \x1b[22m")
+	b.WriteString(ansiPrompt)
 	exp := strings.Join([]string{
 		"> list files",
 		"README.md  go.mod  pkg/",
@@ -240,12 +245,12 @@ func altScreenToggle() synth {
 // numbered list on a 24-row terminal.
 func scrollbackOverflow() synth {
 	var b strings.Builder
-	b.WriteString("\x1b[2J\x1b[H")
+	b.WriteString(ansiClearHome)
 	b.WriteString("\x1b[1m> \x1b[22mcount to 30\r\n")
 	for i := 1; i <= 30; i++ {
 		b.WriteString(fmt.Sprintf("line %d\r\n", i))
 	}
-	b.WriteString("\x1b[1m> \x1b[22m")
+	b.WriteString(ansiPrompt)
 
 	// rows = 24. The screen holds 24 lines. After all writes the screen's
 	// visible window is the *last 24 lines*. Compute what they are.

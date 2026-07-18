@@ -385,14 +385,12 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.HTTPCode = ev.HTTPCode
 		turn.RetryAfter = ev.RetryAfter
 	case turns.ToolCall:
-		// ToolCall is informational mid-turn; restore the current-turn
-		// pointer so the next event can complete the turn.
-		c.mu.Lock()
-		c.currentTurn = turn
-		c.mu.Unlock()
-		return
+		// ToolCall is informational mid-turn; fall through to the shared
+		// restore-pointer path so the next event can complete the turn.
+		fallthrough
 	default:
-		// Unknown kind — leave turn as-is, restore pointer.
+		// ToolCall (mid-turn) or an unknown kind: leave turn as-is and restore
+		// the current-turn pointer so the next event can complete it.
 		c.mu.Lock()
 		c.currentTurn = turn
 		c.mu.Unlock()

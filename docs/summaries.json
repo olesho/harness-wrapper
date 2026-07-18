@@ -6,7 +6,7 @@
       "summary": "Scriptable stand-in binary for an interactive coding harness, driven over a PTY by the chat package's integration tests (not a product binary)."
     },
     "github.com/olesho/harness-wrapper/cmd/harness-chatd": {
-      "summaryHash": "cfcbedb07c15c60f13e47012259899d067736eedefb2a620294ddc8522eecd5e",
+      "summaryHash": "4c858bf13df4abb3fd6e5123086aa1c89d261ff6646232523e13a69f413e47d0",
       "summary": "HTTP + SSE daemon exposing pkg/chat so non-Go clients can drive multi-turn harness conversations across a process boundary (localhost, no auth in v1)."
     },
     "github.com/olesho/harness-wrapper/cmd/harness-wrapper": {
@@ -90,7 +90,7 @@
       "summary": "CLI that runs an interactive harness under wrapper supervision (interactive or scripted) while capturing the raw PTY byte stream into a corpus scenario directory."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-synth": {
-      "summaryHash": "bf4a55cb1a419925aa4827ea7e4de9c247444b2b8de48b88527b738dea857ba0",
+      "summaryHash": "0b521f0ae78be0c63f51c633f332151a0c208749087399a9812d8fa39a17d65e",
       "summary": "CLI that generates a synthetic bake-off corpus exercising common TUI byte-stream primitives (SGR, cursor moves, alt-screen, box drawing) to validate bench plumbing."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/emulator": {
@@ -332,7 +332,7 @@
       "summary": "Classifier patterns for the provider-agnostic pi coding agent: conservative cross-provider Cost/Retry fingerprints with no single anchored API-error format (APIError left nil)."
     },
     "github.com/olesho/harness-wrapper/pkg/wrapper/trace": {
-      "summaryHash": "eef4a241c3d8e04529c10615c6cc0ef3600c911b3f3da3da822d12c060fc8007",
+      "summaryHash": "447fa23b376c6d82bdace857d396b9cc93eeea4edd80984e963f29488c807853",
       "summary": "Diagnostic event vocabulary for the harness wrapper: Emitter implementations route lifecycle events to writers or slog; observability only, not part of the API stability surface.",
       "interfaces": {
         "Emitter": {

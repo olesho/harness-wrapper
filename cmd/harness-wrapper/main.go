@@ -175,18 +175,24 @@ func emitCLIExitTrace(emitter trace.Emitter, res wrapper.Result, runErr error) {
 // Opt-in: --trace-file PATH or --trace-stderr.
 //
 // The returned closer is always non-nil.
+// noCleanup is a trace-emitter cleanup that releases nothing (stderr/discard
+// emitters own no closable resource; the error path has nothing to undo).
+func noCleanup() {
+	// Nothing to close.
+}
+
 func openTraceEmitter(args harnessWrapperArgs) (trace.Emitter, func(), error) {
 	switch {
 	case args.TraceFile != "":
 		f, err := os.OpenFile(args.TraceFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
-			return nil, func() {}, fmt.Errorf("open trace file %q: %w", args.TraceFile, err)
+			return nil, noCleanup, fmt.Errorf("open trace file %q: %w", args.TraceFile, err)
 		}
 		return trace.NewWriterEmitter(f), func() { _ = f.Close() }, nil
 	case args.TraceStderr:
-		return trace.NewWriterEmitter(os.Stderr), func() {}, nil
+		return trace.NewWriterEmitter(os.Stderr), noCleanup, nil
 	default:
-		return trace.Discard, func() {}, nil
+		return trace.Discard, noCleanup, nil
 	}
 }
 
