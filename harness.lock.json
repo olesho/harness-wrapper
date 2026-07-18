@@ -23,7 +23,8 @@
         "gofumpt": true,
         "gci": true,
         "modTidy": true,
-        "coverage": true
+        "coverage": true,
+        "sonar": true
       },
       "coverageMin": 50
     }
