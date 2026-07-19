@@ -43,6 +43,13 @@ type Snapshot struct {
 type Screen struct {
 	cols, rows int
 
+	// resizeMu serializes ResizeWithPeer/Resize calls so a fallible peer
+	// resize and the matching emulator commit happen as one operation, without
+	// interleaving. It is distinct from mu on purpose: Write, Snapshot, and
+	// Generation take only mu, so they stay live while a (possibly
+	// kernel-blocking) peer resize runs under resizeMu.
+	resizeMu sync.Mutex
+
 	mu   sync.RWMutex
 	term vt10x.Terminal
 	gen  uint64
@@ -120,12 +127,21 @@ func (s *Screen) Resize(cols, rows int) {
 // ResizeWithPeer changes the terminal dimensions while synchronizing with a
 // fallible resize of a peer terminal, such as the PTY that feeds this screen.
 //
-// The screen write lock is held while resizePeer runs. This prevents Write,
-// Snapshot, and Generation from observing output produced for the peer's new
-// dimensions before the emulator has been resized to match. The peer is
-// resized first; only when that succeeds is the emulator changed. A peer
-// failure therefore leaves the screen's contents, cursor, dimensions, and
-// generation untouched and sends no subscriber notification.
+// The peer is resized FIRST, without holding the screen read/write lock (mu);
+// only when it succeeds is the emulator committed to the new dimensions under a
+// brief mu critical section. The screen lock is deliberately NOT held across
+// resizePeer: a PTY window-size ioctl can block in the kernel behind an
+// in-flight stdin write, and holding mu across it would freeze Write, Snapshot,
+// and Generation — and, for callers that resize while holding their own locks
+// (e.g. chat.Conversation), deadlock. The cost is a brief, self-correcting
+// transient: output produced for the peer's new dimensions may render in the
+// not-yet-committed emulator until the commit below, after which the next
+// Write/Snapshot reflects the correct size.
+//
+// A peer failure leaves the screen's contents, cursor, dimensions, and
+// generation untouched and sends no subscriber notification. Concurrent
+// resizes are serialized by resizeMu so the peer resize and its commit never
+// interleave.
 //
 // resizePeer must not call back into this Screen. A nil callback performs an
 // ordinary screen-only resize. Non-positive dimensions are no-ops. For
@@ -136,15 +152,17 @@ func (s *Screen) ResizeWithPeer(cols, rows int, resizePeer func() error) error {
 		return nil
 	}
 
-	s.mu.Lock()
-	unchanged := s.cols == cols && s.rows == rows
+	s.resizeMu.Lock()
+	defer s.resizeMu.Unlock()
+
 	if resizePeer != nil {
 		if err := resizePeer(); err != nil {
-			s.mu.Unlock()
 			return err
 		}
 	}
-	if unchanged {
+
+	s.mu.Lock()
+	if s.cols == cols && s.rows == rows {
 		s.mu.Unlock()
 		return nil
 	}
