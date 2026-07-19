@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -68,6 +70,49 @@ func assertAllSourceFile(t *testing.T, evs []transcript.Event) {
 		if e.Source != transcript.SourceFile {
 			t.Errorf("event %d Source = %q, want file", i, e.Source)
 		}
+	}
+}
+
+// TestEventsCustomToolCall covers codex-cli >= 0.144's freeform tool schema:
+// custom_tool_call → tool_use (input is a JSON value, used verbatim), and
+// custom_tool_call_output → tool_result (array of {text} content blocks
+// flattened into readable output).
+func TestEventsCustomToolCall(t *testing.T) {
+	body := `{"timestamp":"2026-07-14T12:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"call_9","input":"const r = await tools.exec_command({cmd:[\"bash\",\"-lc\",\"ls\"]});"}}
+{"timestamp":"2026-07-14T12:00:01Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_9","output":[{"type":"input_text","text":"Script completed\n"},{"type":"input_text","text":"file.go\n"}]}}
+`
+	evs, err := Events([]byte(body))
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("got %d events, want 2: %+v", len(evs), evs)
+	}
+
+	tu := evs[0]
+	if tu.Type != transcript.EventToolUse || tu.ToolName != "exec" || tu.ToolUseID != "call_9" {
+		t.Errorf("custom_tool_call → tool_use wrong: %+v", tu)
+	}
+	if !json.Valid(tu.ToolInput) {
+		t.Errorf("ToolInput is not valid JSON: %s", tu.ToolInput)
+	}
+	var script string
+	if err := json.Unmarshal(tu.ToolInput, &script); err != nil || !strings.Contains(script, "tools.exec_command") {
+		t.Errorf("ToolInput should round-trip to the script: %s (%v)", tu.ToolInput, err)
+	}
+	if tu.ID() != "tool-use:call_9" {
+		t.Errorf("tool_use ID() = %q, want tool-use:call_9", tu.ID())
+	}
+
+	tr := evs[1]
+	if tr.Type != transcript.EventToolResult || tr.ToolUseID != "call_9" {
+		t.Errorf("custom_tool_call_output → tool_result wrong: %+v", tr)
+	}
+	if tr.Output != "Script completed\nfile.go\n" {
+		t.Errorf("flattened output = %q, want %q", tr.Output, "Script completed\nfile.go\n")
+	}
+	if tr.ID() != "tool-result:call_9" {
+		t.Errorf("tool_result ID() = %q, want tool-result:call_9", tr.ID())
 	}
 }
 
