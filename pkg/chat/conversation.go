@@ -418,10 +418,31 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		if ev.Snap != nil {
 			turn.Text = c.assistantText(*ev.Snap)
 		}
-	case turns.Blocked, turns.Errored:
+	case turns.Blocked:
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
+		turn.HTTPCode = ev.HTTPCode
+		turn.RetryAfter = ev.RetryAfter
+	case turns.Errored:
+		turn.State = TurnStateErrored
+		turn.CompletedAt = ev.At
+		// A terminal error whose screen shows a logged-out / re-auth banner is not
+		// a task failure — the harness CLI is logged out. Prefer the canonical,
+		// machine-matchable auth reason over the generic one (e.g. "harness
+		// exited"). A status-derived Errored event carries no snapshot (the
+		// wrapper-status watcher pump stamps none), so fall back to the live
+		// screen, which still shows the banner after the harness exits.
+		turn.Reason = ev.Reason
+		screenText := ""
+		if ev.Snap != nil {
+			screenText = ev.Snap.Text
+		} else if c.screen != nil {
+			screenText = c.screen.Snapshot().Text
+		}
+		if authRequired(c.opts.Harness, screenText) {
+			turn.Reason = ReasonAuthRequired
+		}
 		turn.HTTPCode = ev.HTTPCode
 		turn.RetryAfter = ev.RetryAfter
 	case turns.ToolCall:
