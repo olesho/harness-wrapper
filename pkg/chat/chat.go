@@ -73,6 +73,16 @@ const (
 	TurnStateErrored TurnState = "errored"
 )
 
+// ReasonAuthRequired is the canonical Turn.Reason recorded when a turn ended in
+// failure because the harness CLI is logged out / its login has expired
+// (claude-code "Not logged in · Please run /login"; codex "401 Unauthorized" /
+// "Not logged in"). The stable "auth_required:" prefix is a machine token
+// consumers match to tell "renew the harness login" apart from a genuine task
+// failure — instead of re-scraping the rendered screen themselves. Set only when
+// a turn errored AND the terminal screen showed a logout banner (see
+// Conversation.handleTurnsEvent); it explains a failure, it never completes one.
+const ReasonAuthRequired = "auth_required: harness login expired or re-authentication required — renew the harness login"
+
 // Turn is one message in the conversation.
 type Turn struct {
 	ID          string

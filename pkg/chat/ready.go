@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -105,6 +106,57 @@ func readyForInput(harness, text string) bool {
 		return pi.PromptReady(text)
 	default:
 		return true
+	}
+}
+
+// Logged-out / re-authentication banners, per harness. A harness whose CLI login
+// has expired or was never established produces NO assistant output for the turn.
+// The anchors are grounded in real observed CLI output, not invented:
+//   - claude-code: "Not logged in · Please run /login" (printed then exit); the
+//     "run /login" family of re-auth banners.
+//   - codex:       the turn fails with "401 Unauthorized: missing bearer or basic
+//     authentication" on screen; a logged-out TUI / `codex login status` say "Not
+//     logged in"; codex's own remediation is "run `codex login`".
+//
+// These are matched ONLY at a turn's terminal point, and only once the turn has
+// already ended in failure (see Conversation.handleTurnsEvent) — they EXPLAIN a
+// failed turn, they never complete one. That gating is what keeps a genuine reply
+// mentioning logins, or a benign "your login expires in N days" WARNING on a
+// still-valid session, from being scanned and mislabeled.
+var (
+	claudeAuthRE = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\brun /login\b`),
+		regexp.MustCompile(`(?i)\bnot logged in\b`),
+	}
+	codexAuthRE = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b401 unauthorized\b`),
+		regexp.MustCompile(`(?i)missing bearer or basic authentication`),
+		regexp.MustCompile(`(?i)\bnot logged in\b`),
+		regexp.MustCompile(`(?i)\bcodex(?: mcp)? login\b`),
+	}
+)
+
+func anyMatch(res []*regexp.Regexp, text string) bool {
+	for _, re := range res {
+		if re.MatchString(text) {
+			return true
+		}
+	}
+	return false
+}
+
+// authRequired reports whether the rendered screen shows a harness login-expiry /
+// logged-out banner. Callers MUST gate this on a turn that has already ended in
+// failure — it is a failure EXPLANATION, not a turn-completion signal. Returns
+// false for any harness without a known banner set.
+func authRequired(harness, text string) bool {
+	switch harness {
+	case chatClaudeCode:
+		return anyMatch(claudeAuthRE, text)
+	case "codex":
+		return anyMatch(codexAuthRE, text)
+	default:
+		return false
 	}
 }
 

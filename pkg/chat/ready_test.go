@@ -72,3 +72,36 @@ func TestReadyForInputPi(t *testing.T) {
 		})
 	}
 }
+
+// TestAuthRequired pins the per-harness logged-out / re-auth banner detection.
+// Anchors are grounded in real observed CLI output (see ready.go).
+func TestAuthRequired(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		harness string
+		text    string
+		want    bool
+	}{
+		// claude-code — real: `claude -p` on a logged-out box prints this verbatim.
+		{"claude not-logged-in", chatClaudeCode, "Not logged in · Please run /login", true},
+		{"claude login-expiry banner", chatClaudeCode, "  ⚠ Your login expires in 1 day · run /login to renew\n❯ ", true},
+		// codex — real: `codex exec` turn failure / `codex login status` / remediation.
+		{"codex 401", "codex", "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header", true},
+		{"codex not-logged-in", "codex", "Not logged in", true},
+		{"codex login remediation", "codex", "ChatGPT account ID not available, please re-run `codex login`", true},
+		// No false positives on ordinary screen text.
+		{"claude ordinary reply", chatClaudeCode, "⏺ I refactored the auth module.", false},
+		{"codex ordinary reply", "codex", "› ready\nthinking about the task", false},
+		// Anchors do not cross harnesses.
+		{"claude does not fire on codex 401", chatClaudeCode, "HTTP 401 Unauthorized from the API", false},
+		{"codex does not fire on claude /login", "codex", "please run /login", false},
+		// Unknown harness never fires.
+		{"unknown harness", "some-other-harness", "Not logged in", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := authRequired(tc.harness, tc.text); got != tc.want {
+				t.Errorf("authRequired(%q, %q) = %v, want %v", tc.harness, tc.text, got, tc.want)
+			}
+		})
+	}
+}
