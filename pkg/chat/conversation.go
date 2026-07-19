@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -139,6 +140,8 @@ type Conversation struct {
 	// exists so the input-resolution path is testable without a live session.
 	writeStdin func([]byte) (int, error)
 
+	resizeMu sync.Mutex
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -157,6 +160,9 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	}
 	if opts.Rows <= 0 {
 		opts.Rows = 40
+	}
+	if opts.Cols > math.MaxUint16 || opts.Rows > math.MaxUint16 {
+		return nil, fmt.Errorf("%w: Cols and Rows must not exceed %d", ErrInvalidOptions, math.MaxUint16)
 	}
 	if opts.EventBuffer <= 0 {
 		opts.EventBuffer = 32
@@ -229,7 +235,13 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 
 	// Match the PTY size to the virtual screen size so the harness's
 	// re-renders target the same dimensions our emulator is tracking.
-	_ = sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
+	if err := scr.ResizeWithPeer(opts.Cols, opts.Rows, func() error {
+		return sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
+	}); err != nil {
+		releaseWriter()
+		_ = sess.Stop(context.Background())
+		return nil, fmt.Errorf("chat: initial resize: %w", err)
+	}
 
 	// Persist the session record. Pass a copy: the PTY read loop is already
 	// live, so the tap may touch c.session (under c.mu) concurrently — the
@@ -285,6 +297,9 @@ func (c *Conversation) AcquireControl(ctx context.Context) (release func(), err 
 // multiple times.
 func (c *Conversation) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
+		c.resizeMu.Lock()
+		defer c.resizeMu.Unlock()
+
 		close(c.closed)
 		c.queue.Close()
 		if c.releaseWriter != nil {
@@ -300,8 +315,33 @@ func (c *Conversation) Close(ctx context.Context) error {
 	return nil
 }
 
+// Resize updates both the harness PTY and the private terminal emulator.
+// Calls are serialized so concurrent resizes cannot leave the two at
+// different final dimensions. Screen reads and writes are paused while the PTY
+// is resized, then the emulator is updated before queued output can be
+// interpreted. If the PTY resize fails, the screen remains untouched. Zero
+// dimensions are ignored, matching wrapper.Session.Resize.
+func (c *Conversation) Resize(cols, rows uint16) error {
+	if cols == 0 || rows == 0 {
+		return nil
+	}
+
+	c.resizeMu.Lock()
+	defer c.resizeMu.Unlock()
+
+	select {
+	case <-c.closed:
+		return ErrClosed
+	default:
+	}
+
+	return c.screen.ResizeWithPeer(int(cols), int(rows), func() error {
+		return c.sess.Resize(cols, rows)
+	})
+}
+
 // consumeWatcher pumps turns.Event from the watcher into Conversation
-// state and emits TurnEvent on c.eventCh.
+// state and emits ConversationEvent on c.eventCh.
 func (c *Conversation) consumeWatcher() {
 	defer close(c.eventCh)
 	for ev := range c.watcher.Events() {

@@ -100,9 +100,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 }
 
 // Wrapper returns the underlying wrapper.Session for callers that need
-// to reach past the chat API — e.g. to Resize, AttachOutput, or read
-// the raw RecentOutput buffer. Use with care: writing directly to
-// stdin bypasses the control-token guard.
+// to reach past the chat API — e.g. to AttachOutput or read the raw
+// RecentOutput buffer. Use Conversation.Resize instead of resizing the
+// wrapper directly so the private terminal emulator stays synchronized.
+// Use with care: writing directly to stdin bypasses the control-token guard.
 func (c *Conversation) Wrapper() *wrapper.Session { return c.sess }
 
 // Quit asks the harness to exit gracefully by sending its adapter-defined quit

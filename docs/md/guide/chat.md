@@ -241,13 +241,17 @@ Postgres, …).
 ## Escape hatches
 
 ```go
-func (c *Conversation) Wrapper() *wrapper.Session  // Resize, AttachOutput, RecentOutput, WriteStdin
+func (c *Conversation) Resize(cols, rows uint16) error // resize the PTY and private screen together
+func (c *Conversation) Wrapper() *wrapper.Session  // AttachOutput, RecentOutput, WriteStdin
 func (c *Conversation) SessionID() string          // harness session id, once extracted
 func (c *Conversation) Adapter() turns.Adapter     // the resolved per-harness adapter
 func (c *Conversation) ScreenSnapshot() screen.Snapshot // current rendered screen
 ```
 
-`Wrapper()` bypasses the control-token guard — use with care.
+Always use `Conversation.Resize` for terminal size changes. Calling
+`Conversation.Wrapper().Resize` directly updates only the PTY and leaves the
+private screen emulator at the old dimensions. `Wrapper()` also bypasses the
+control-token guard — use it with care.
 
 ## Sentinel errors
 

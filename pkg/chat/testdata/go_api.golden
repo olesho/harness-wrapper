@@ -22,6 +22,7 @@ type Conversation struct
 	method History(context.Context) ([]chat.Turn, error)
 	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
 	method Quit(context.Context) error
+	method Resize(uint16, uint16) error
 	method ScreenSnapshot() screen.Snapshot
 	method Send(context.Context, string) (string, error)
 	method SessionID() string
