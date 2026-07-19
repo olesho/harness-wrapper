@@ -38,10 +38,10 @@ func TestConversationResizeHelperProcess(t *testing.T) {
 		}
 		cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "SIZE_ERROR %s %v\n", token, err)
+			_, _ = fmt.Fprintf(os.Stdout, "SIZE_ERROR %s %v\n", token, err)
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stdout, "SIZE %s %d %d\n", token, cols, rows)
+		_, _ = fmt.Fprintf(os.Stdout, "SIZE %s %d %d\n", token, cols, rows)
 	}
 	os.Exit(0)
 }
