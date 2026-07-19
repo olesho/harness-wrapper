@@ -178,7 +178,12 @@ func TestResizeWithPeerSameSizeInvokesPeerWithoutChangingScreen(t *testing.T) {
 	}
 }
 
-func TestResizeWithPeerBlocksWritesAndSnapshotsUntilCommit(t *testing.T) {
+// TestResizeWithPeerDoesNotBlockWritesOrSnapshots pins the Option 1 contract:
+// the screen lock is NOT held across a (possibly slow / kernel-blocking) peer
+// resize, so Write and Snapshot stay live while it runs. The emulator is
+// committed to the new dimensions only after the peer succeeds, and that commit
+// is atomic.
+func TestResizeWithPeerDoesNotBlockWritesOrSnapshots(t *testing.T) {
 	s := New(40, 10)
 	if _, err := s.Write([]byte("before")); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -201,33 +206,33 @@ func TestResizeWithPeerBlocksWritesAndSnapshotsUntilCommit(t *testing.T) {
 		t.Fatal("peer resize did not start")
 	}
 
-	snapshotStarted := make(chan struct{})
+	// While the peer resize is still running, Snapshot must NOT block. The
+	// emulator is not yet committed, so it still reports the pre-resize size.
 	snapshotDone := make(chan Snapshot, 1)
-	go func() {
-		close(snapshotStarted)
-		snapshotDone <- s.Snapshot()
-	}()
-	writeStarted := make(chan struct{})
-	writeDone := make(chan error, 1)
-	go func() {
-		close(writeStarted)
-		_, err := s.Write([]byte("\x1b[Hafter"))
-		writeDone <- err
-	}()
-	<-snapshotStarted
-	<-writeStarted
-
+	go func() { snapshotDone <- s.Snapshot() }()
 	select {
 	case snap := <-snapshotDone:
-		t.Fatalf("Snapshot completed during peer resize: %#v", snap)
-	case <-time.After(20 * time.Millisecond):
-	}
-	select {
-	case err := <-writeDone:
-		t.Fatalf("Write completed during peer resize: %v", err)
-	case <-time.After(20 * time.Millisecond):
+		if snap.Cols != before.Cols || snap.Rows != before.Rows {
+			t.Fatalf("Snapshot during peer resize = %dx%d, want pre-commit %dx%d",
+				snap.Cols, snap.Rows, before.Cols, before.Rows)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Snapshot blocked during peer resize — screen lock held across peer op")
 	}
 
+	// Write must not block either.
+	writeDone := make(chan error, 1)
+	go func() { _, err := s.Write([]byte("\x1b[Hafter")); writeDone <- err }()
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("Write during peer resize: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Write blocked during peer resize — screen lock held across peer op")
+	}
+
+	// Let the peer finish; the emulator commits to the new dimensions.
 	close(allowPeer)
 	select {
 	case err := <-resizeDone:
@@ -238,31 +243,15 @@ func TestResizeWithPeerBlocksWritesAndSnapshotsUntilCommit(t *testing.T) {
 		t.Fatal("resize did not complete")
 	}
 
-	var concurrentSnap Snapshot
-	select {
-	case concurrentSnap = <-snapshotDone:
-	case <-time.After(time.Second):
-		t.Fatal("blocked Snapshot did not complete")
-	}
-	if concurrentSnap.Cols != 20 || concurrentSnap.Rows != 5 {
-		t.Fatalf("concurrent Snapshot saw %dx%d, want committed 20x5", concurrentSnap.Cols, concurrentSnap.Rows)
-	}
-	select {
-	case err := <-writeDone:
-		if err != nil {
-			t.Fatalf("blocked Write: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("blocked Write did not complete")
-	}
-
 	after := s.Snapshot()
 	if after.Cols != 20 || after.Rows != 5 {
 		t.Fatalf("final size = %dx%d, want 20x5", after.Cols, after.Rows)
 	}
 	if !strings.Contains(after.Text, "after") {
-		t.Fatalf("final screen does not contain queued output: %q", after.Text)
+		t.Fatalf("final screen does not contain the write issued during resize: %q", after.Text)
 	}
+	// "before" write (gen+1), the "after" write during the resize (gen+1), and
+	// the resize commit (gen+1).
 	if after.Generation != before.Generation+2 {
 		t.Fatalf("final generation = %d, want %d", after.Generation, before.Generation+2)
 	}
