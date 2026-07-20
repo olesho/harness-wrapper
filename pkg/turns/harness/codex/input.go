@@ -43,6 +43,18 @@ const (
 	KindNotice         = "codex_notice"
 )
 
+// signinWallRE identifies Codex's logged-out onboarding / sign-in screens.
+// They render "Press enter to continue" too, but they are an AUTH WALL — a
+// first-run sign-in wizard, not a dismissable interstitial. The chat layer's
+// auth-required path (onboardingWall / authRequired in ready.go) already holds
+// them as not-ready and short-circuits Send with ReasonAuthRequired. If
+// DetectInput also classified them as a codex_notice, the adapter would surface
+// a spurious input_request AND (once notices are safely blind-Entered below) a
+// bare Enter could pick the highlighted "Sign in with ChatGPT" row and kick off
+// a real sign-in. So DetectInput excludes them entirely. Anchors mirror
+// codexOnboardingRE in ready.go (kept in sync via test/corpus/auth).
+var signinWallRE = regexp.MustCompile(`(?i)sign in with chatgpt|finish signing in via your browser`)
+
 // menuRE matches a Codex numbered menu row: an optional "›" highlight marker,
 // then "N. Label", anchored to its own screen line. The label runs to the
 // end of the line (trailing emulator padding is trimmed by cleanLabel).
@@ -64,6 +76,12 @@ var promptRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›`)
 // share it as the single source of truth for what counts as a blocking
 // codex interstitial.
 func DetectInput(text string) (*turns.InputRequest, bool) {
+	// The logged-out sign-in wall renders "Press enter to continue" but is an
+	// auth wall handled by the auth-required path — never a dismissable
+	// interstitial (see signinWallRE).
+	if signinWallRE.MatchString(text) {
+		return nil, false
+	}
 	switch {
 	case strings.Contains(text, updateAnchor):
 		opts := parseMenuOptions(text)
@@ -85,11 +103,13 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 		return req, true
 
 	case strings.Contains(text, continueAnchor):
-		// A bare "Press enter to continue" screen. If it carries a numbered
-		// menu we do not recognize, attach the parsed options and let
-		// AutoDismissKeys refuse blind-Enter (a future menu could default to a
-		// destructive choice like the update menu's "Update now"); a menu-less
-		// notice is safely dismissed with Enter.
+		// A bare "Press enter to continue" screen. The one actionable menu that
+		// renders this anchor — the logged-out sign-in wall — is excluded above
+		// (signinWallRE), so what reaches here is an informational notice, and
+		// AutoDismissKeys blind-Enters it. Any numbered rows are attached as
+		// options for a surfacing client, but they do not change the dismissal:
+		// a menu-less notice and an informational multi-row notice both clear
+		// with Enter.
 		opts := parseMenuOptions(text)
 		if len(opts) == 0 {
 			opts = continueOption()
@@ -128,13 +148,15 @@ func AutoDismissKeys(req *turns.InputRequest) ([]byte, bool) {
 		// highlighted "Update now".
 		return nil, false
 	case KindNotice:
-		// Only blind-Enter a menu-less notice. If a numbered menu is present we
-		// do not know which row the highlight defaults to, so refuse and let
-		// the request surface for a client/policy to answer.
-		if len(req.Options) == 1 && req.Options[0].Alias == "continue" {
-			return []byte("\r"), true
-		}
-		return nil, false
+		// A KindNotice is a "Press enter to continue" screen with no recognized
+		// action tokens. The one real Codex screen that IS an actionable menu —
+		// the logged-out sign-in wall — is excluded upstream in DetectInput, so
+		// what remains is an informational notice (e.g. the "What's new" /
+		// changelog screen) whose advertised continuation is Enter. Clear it with
+		// a bare CR regardless of how many informational rows parseMenuOptions
+		// extracted, matching the TS port and keeping a multi-line notice from
+		// wedging an unattended run.
+		return []byte("\r"), true
 	case KindModelMigration:
 		return []byte("\r"), true
 	default:

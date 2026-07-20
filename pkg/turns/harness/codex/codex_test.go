@@ -81,6 +81,48 @@ func TestCodexAdapterRefiresWhenFingerprintChanges(t *testing.T) {
 	}
 }
 
+// TestCodexAdapter_InterstitialTransitionResolvesPrev locks in the fix for a
+// dropped resolve: when one interstitial gives way DIRECTLY to a different one
+// (no intervening dialog-free frame), the adapter must emit InputResolved for
+// the first BEFORE InputRequested for the second. Without it the first
+// request's identity/kind is lost — a client subscribed from the start sees
+// the replacement's kind on the eventual resolve (observed live as an update
+// notice resolving as codex_notice).
+func TestCodexAdapter_InterstitialTransitionResolvesPrev(t *testing.T) {
+	scr := screen.New(120, 40)
+	a := New()
+
+	// Frame 1: the "Update available!" menu → InputRequested(codex_update_notice).
+	updateScreen := "\x1b[H\x1b[2J" +
+		"  Update available! 0.144.5 -> 0.144.6\r\n" +
+		"› 1. Update now (runs `npm install -g @openai/codex`)\r\n" +
+		"  2. Skip\r\n" +
+		"  3. Skip until next version\r\n" +
+		"  Press enter to continue\r\n"
+	_, _ = scr.Write([]byte(updateScreen))
+	evs := a.OnScreen(scr.Snapshot())
+	if len(evs) != 1 || evs[0].Kind != turns.InputRequested || evs[0].Input == nil || evs[0].Input.Kind != KindUpdateNotice {
+		t.Fatalf("frame 1: want 1 InputRequested(codex_update_notice), got %+v", evs)
+	}
+
+	// Frame 2: the model-migration screen replaces it directly (no clear frame
+	// between). Expect InputResolved(update) THEN InputRequested(migration).
+	migrationScreen := "\x1b[H\x1b[2J" +
+		"  Choose how you'd like Codex to proceed\r\n" +
+		"  Press enter to continue\r\n"
+	_, _ = scr.Write([]byte(migrationScreen))
+	evs = a.OnScreen(scr.Snapshot())
+	if len(evs) != 2 {
+		t.Fatalf("frame 2: want 2 events (resolve prev, request new), got %d: %+v", len(evs), evs)
+	}
+	if evs[0].Kind != turns.InputResolved || evs[0].Input == nil || evs[0].Input.Kind != KindUpdateNotice {
+		t.Errorf("frame 2 event[0] = %+v, want InputResolved(codex_update_notice)", evs[0])
+	}
+	if evs[1].Kind != turns.InputRequested || evs[1].Input == nil || evs[1].Input.Kind != KindModelMigration {
+		t.Errorf("frame 2 event[1] = %+v, want InputRequested(codex_model_migration)", evs[1])
+	}
+}
+
 func TestCodexAdapterName(t *testing.T) {
 	if n := New().Name(); n != "codex" {
 		t.Errorf("expected Name()=codex, got %q", n)

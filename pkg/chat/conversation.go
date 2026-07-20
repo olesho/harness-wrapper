@@ -62,15 +62,27 @@ type Options struct {
 	InputPolicy *InputPolicy
 
 	// DisableCodexAutoDismiss turns off the built-in auto-dismissal of Codex's
-	// blocking startup interstitials (the "Update available!" menu, the
-	// model-migration screen). The zero value keeps auto-dismiss ENABLED: by
-	// default the chat layer clears those interstitials (selecting "Skip" on
-	// the update menu, never "Update now") so a stale Codex does not wedge the
-	// conversation. Set true to instead surface them on Events() for the
-	// client/InputPolicy to answer. This governs only those startup
-	// interstitial kinds — Codex's real approval prompts are never
-	// auto-dismissed regardless of this flag.
+	// blocking startup interstitials that carry no user choice — the
+	// model-migration screen and menu-less "Press enter to continue" notices.
+	// The zero value keeps their auto-dismiss ENABLED so a stale Codex does not
+	// wedge the conversation; set true to instead surface them on Events() for
+	// the client/InputPolicy to answer. The "Update available!" menu is NOT
+	// governed by this flag — it surfaces by default and is controlled by
+	// AutoSkipCodexUpdateNotice. This governs only those startup interstitial
+	// kinds — Codex's real approval prompts are never auto-dismissed regardless.
 	DisableCodexAutoDismiss bool
+
+	// AutoSkipCodexUpdateNotice re-enables the built-in auto-Skip of Codex's
+	// "Update available!" startup menu. The zero value SURFACES that menu on
+	// Events() (as a codex_update_notice InputRequest) so a client can choose
+	// Update / Skip; set true to instead have the chat layer transparently
+	// select "Skip" (never "Update now") without surfacing it — the safe
+	// default for headless/no-client callers (the one-shot run CLI, structured
+	// runner) that would otherwise wedge on the pending menu. Ignored when
+	// DisableCodexAutoDismiss is set (that surfaces every interstitial). An
+	// InputPolicy entry for codex_update_notice still takes precedence over
+	// this flag, as it is consulted first.
+	AutoSkipCodexUpdateNotice bool
 
 	// OnInputRequest is an in-process resolver consulted when InputPolicy
 	// did not auto-answer. Returning ok=true answers the prompt with the

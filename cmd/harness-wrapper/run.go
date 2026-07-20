@@ -106,6 +106,10 @@ func runOneShot(args []string) int {
 	}
 
 	cfg.InputPolicy, cfg.OnInputRequest = inputHandling(ctx, interactive, tty)
+	// In interactive mode the OnInputRequest callback drives a TTY chooser, so
+	// surface Codex's update menu and let the human pick. Unattended, there is
+	// no one to answer it, so auto-Skip it rather than wedge the run.
+	cfg.AutoSkipCodexUpdateNotice = !interactive
 
 	res, err := harness.RunTurn(ctx, cfg)
 	// ErrTurnErrored carries a populated TurnResult; any other error is fatal.

@@ -106,6 +106,21 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	// never auto-confirmed.
 	if req, ok := DetectInput(snap.Text); ok {
 		if req.ID != a.lastInputID {
+			// A different interstitial replaced the one we were tracking without
+			// an intervening dialog-free frame (e.g. the update notice giving way
+			// to a model-migration or notice screen). Resolve the previous one
+			// first so every InputRequested is balanced by an InputResolved and
+			// the chat layer's currentInput is not silently overwritten — which
+			// would drop the prior request's identity/kind (a client subscribed
+			// from the start would otherwise see the replacement's kind on the
+			// eventual resolve).
+			if a.lastInputID != "" {
+				prev := a.lastInput
+				if prev == nil {
+					prev = &turns.InputRequest{ID: a.lastInputID}
+				}
+				out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "codex: input resolved", Input: prev})
+			}
 			a.lastInputID = req.ID
 			a.lastInput = req
 			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: "codex: " + req.Prompt, Input: req})

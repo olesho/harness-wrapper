@@ -56,8 +56,13 @@ type openRequest struct {
 	Effort string `json:"effort,omitempty"`
 	Model  string `json:"model,omitempty"`
 	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
-	// blocking startup interstitials. Omitted/false keeps auto-dismiss on.
+	// choice-free startup interstitials (model migration, menu-less notices).
+	// Omitted/false keeps auto-dismiss on.
 	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
+	// AutoSkipCodexUpdateNotice auto-Skips Codex's "Update available!" menu
+	// instead of surfacing it as an input_request. Omitted/false surfaces the
+	// menu so a remote client can choose Update / Skip.
+	AutoSkipCodexUpdateNotice bool `json:"auto_skip_codex_update_notice,omitempty"`
 }
 
 type openResponse struct {

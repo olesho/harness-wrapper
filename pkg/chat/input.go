@@ -195,6 +195,13 @@ func (c *Conversation) tryAutoDismissCodex(req *turns.InputRequest) bool {
 	if c.opts.Harness != "codex" || c.opts.DisableCodexAutoDismiss {
 		return false
 	}
+	// The update menu is surfaced to the client by default so it can choose
+	// Update / Skip; only auto-Skip it when the caller opted in. The other
+	// interstitials (model migration, menu-less notice) have no user choice and
+	// stay auto-dismissed.
+	if req.Kind == codex.KindUpdateNotice && !c.opts.AutoSkipCodexUpdateNotice {
+		return false
+	}
 	keys, ok := codex.AutoDismissKeys(req)
 	if !ok {
 		return false
