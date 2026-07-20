@@ -73,6 +73,9 @@ func runStructuredRun(args []string) int {
 		Env:           cleanedEnv(),
 		Prompt:        prompt,
 		ExitAfterTurn: true,
+		// Unattended structured run: no client to answer Codex's update menu, so
+		// auto-Skip it rather than wedge the run on the pending prompt.
+		AutoSkipCodexUpdateNotice: true,
 		InputPolicy: &chat.InputPolicy{
 			ByKind: map[string]chat.Disposition{
 				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},

@@ -131,27 +131,62 @@ func TestDetectInput_ModelMigration(t *testing.T) {
 	}
 }
 
-func TestAutoDismiss_RefusesUnknownMenu(t *testing.T) {
-	// A "Press enter to continue" screen carrying an unrecognized numbered menu
-	// must NOT be blind-Entered — the highlight could default to a destructive
-	// row. AutoDismissKeys refuses so it surfaces for a client to answer.
-	const unknownMenu = `
-  Something new happened.
+func TestAutoDismiss_InformationalNoticeBlindEnters(t *testing.T) {
+	// A "Press enter to continue" notice carrying informational rows (e.g. a
+	// "What's new" / changelog screen) is dismissed with a bare Enter — the
+	// continuation Codex advertises. The one actionable "Press enter to continue"
+	// menu, the sign-in wall, is excluded upstream (see
+	// TestDetectInput_SigninWallExcluded), so a remaining KindNotice is safe to
+	// clear. Mirrors the TS port; keeps a multi-line notice from wedging a run.
+	const noticeMenu = `
+  What's new in Codex
 
-› 1. Delete everything
-  2. Keep it
+› 1. View the changelog
+  2. Learn about /fast
 
   Press enter to continue
 `
-	req, ok := DetectInput(unknownMenu)
+	req, ok := DetectInput(noticeMenu)
 	if !ok {
 		t.Fatal("DetectInput did not recognize the notice")
 	}
 	if req.Kind != KindNotice {
 		t.Errorf("Kind = %q, want %q", req.Kind, KindNotice)
 	}
-	if _, ok := AutoDismissKeys(req); ok {
-		t.Error("AutoDismissKeys must refuse an unknown numbered menu, not blind-Enter it")
+	keys, ok := AutoDismissKeys(req)
+	if !ok {
+		t.Fatal("AutoDismissKeys refused an informational notice; want a bare Enter")
+	}
+	if string(keys) != "\r" {
+		t.Errorf("AutoDismissKeys = %q, want Enter", keys)
+	}
+}
+
+// TestDetectInput_SigninWallExcluded locks in that Codex's logged-out sign-in
+// wall is NOT classified as a dismissable interstitial. It renders "Press enter
+// to continue" but is an auth wall handled by the auth-required path; treating
+// it as a notice would surface a spurious codex_notice and, with blind-Enter,
+// could kick off a real sign-in. Screen text mirrors test/corpus/auth/codex.
+func TestDetectInput_SigninWallExcluded(t *testing.T) {
+	const signinMenu = `
+  Welcome to Codex, OpenAI's command-line coding agent
+  Sign in with ChatGPT to use Codex as part of your paid plan
+  or connect an API key for usage-based billing
+> 1. Sign in with ChatGPT
+  2. Sign in with Device Code
+  3. Provide your own API key
+  Press enter to continue
+`
+	if req, ok := DetectInput(signinMenu); ok {
+		t.Errorf("DetectInput classified the sign-in wall as %q; want (nil, false)", req.Kind)
+	}
+
+	const browserMenu = `
+  Finish signing in via your browser
+  Press enter to continue
+`
+	if req, ok := DetectInput(browserMenu); ok {
+		t.Errorf("DetectInput classified the browser sign-in screen as %q; want (nil, false)", req.Kind)
 	}
 }
 

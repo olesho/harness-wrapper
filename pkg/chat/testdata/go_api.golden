@@ -12,6 +12,7 @@ type Options struct
 	field EventBuffer int
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
+	field AutoSkipCodexUpdateNotice bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 type Conversation struct
 	method AcquireControl(context.Context) (func(), error)
