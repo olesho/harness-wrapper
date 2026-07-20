@@ -103,11 +103,13 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 		return req, true
 
 	case strings.Contains(text, continueAnchor):
-		// A bare "Press enter to continue" screen. If it carries a numbered
-		// menu we do not recognize, attach the parsed options and let
-		// AutoDismissKeys refuse blind-Enter (a future menu could default to a
-		// destructive choice like the update menu's "Update now"); a menu-less
-		// notice is safely dismissed with Enter.
+		// A bare "Press enter to continue" screen. The one actionable menu that
+		// renders this anchor — the logged-out sign-in wall — is excluded above
+		// (signinWallRE), so what reaches here is an informational notice, and
+		// AutoDismissKeys blind-Enters it. Any numbered rows are attached as
+		// options for a surfacing client, but they do not change the dismissal:
+		// a menu-less notice and an informational multi-row notice both clear
+		// with Enter.
 		opts := parseMenuOptions(text)
 		if len(opts) == 0 {
 			opts = continueOption()
