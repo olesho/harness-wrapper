@@ -109,11 +109,12 @@ func TestRunStructuredTurn_EmptyHarness(t *testing.T) {
 // harness args passed through verbatim.
 func TestBuildRunnerArgv(t *testing.T) {
 	got := buildRunnerArgv(StructuredTurnConfig{
-		Runner:      []string{"harness-wrapper", "structured-run"},
-		Harness:     "claude",
-		HarnessArgs: []string{"--dangerously-skip-permissions"},
-		Effort:      "high",
-		Model:       "opus",
+		Runner:          []string{"harness-wrapper", "structured-run"},
+		Harness:         "claude",
+		HarnessArgs:     []string{"--dangerously-skip-permissions"},
+		Effort:          "high",
+		Model:           "opus",
+		SandboxDefaults: true,
 	}, "/guest/tmp/prompt.txt")
 
 	want := []string{
@@ -121,6 +122,7 @@ func TestBuildRunnerArgv(t *testing.T) {
 		"--prompt-file", "/guest/tmp/prompt.txt",
 		"--effort", "high",
 		"--model", "opus",
+		"--sandbox-defaults",
 		"claude", "--",
 		"--dangerously-skip-permissions",
 	}

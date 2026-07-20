@@ -53,6 +53,12 @@ type StructuredTurnConfig struct {
 	// Effort / Model are optional wrapper flags (`--effort` / `--model`).
 	Effort string
 	Model  string
+	// SandboxDefaults, when true, passes `--sandbox-defaults` to the guest
+	// runner: claude only — the wrapper injects
+	// --dangerously-skip-permissions into the harness args and IS_SANDBOX=1
+	// into the harness env (meta-harness parity); a no-op for other
+	// harnesses.
+	SandboxDefaults bool
 
 	// Prompt is uploaded into the workspace and fed to the turn via
 	// `--prompt-file` — a prompt with quotes / newlines / leading dashes can
@@ -155,7 +161,7 @@ func uploadPrompt(ctx context.Context, ws ienv.Workspace, prompt, guestPath stri
 
 // buildRunnerArgv assembles the guest argv:
 //
-//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] <harness> -- <harnessArgs...>
+//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] [--sandbox-defaults] <harness> -- <harnessArgs...>
 //
 // mirroring the structured-run subcommand's own extractPromptFile +
 // parseHarnessWrapperArgs contract (`[wrapper flags] <name> -- <args>`).
@@ -172,6 +178,9 @@ func buildRunnerArgv(cfg StructuredTurnConfig, guestPrompt string) []string {
 	}
 	if cfg.Model != "" {
 		argv = append(argv, "--model", cfg.Model)
+	}
+	if cfg.SandboxDefaults {
+		argv = append(argv, "--sandbox-defaults")
 	}
 	argv = append(argv, cfg.Harness, "--")
 	argv = append(argv, cfg.HarnessArgs...)

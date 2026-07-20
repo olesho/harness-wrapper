@@ -88,19 +88,25 @@ func runOneShot(args []string) int {
 		defer func() { _ = tty.Close() }()
 	}
 
+	// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*): when
+	// harness-wrapper itself runs inside a Claude Code session, a nested
+	// `claude` disables session persistence and never writes the JSONL
+	// transcript we read back. A top-level env makes it persist normally.
+	// Then apply the opt-in --sandbox-defaults injection on top.
+	harnessArgs, env := parsed.HarnessArgs, cleanedEnv()
+	if parsed.SandboxDefaults {
+		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, harnessArgs, env)
+	}
+
 	wd, _ := os.Getwd()
 	cfg := harness.TurnConfig{
-		Harness:    parsed.HarnessName,
-		BinaryPath: binPath,
-		Args:       parsed.HarnessArgs,
-		Effort:     parsed.Effort,
-		Model:      parsed.Model,
-		WorkingDir: wd,
-		// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*): when
-		// harness-wrapper itself runs inside a Claude Code session, a nested
-		// `claude` disables session persistence and never writes the JSONL
-		// transcript we read back. A top-level env makes it persist normally.
-		Env:           cleanedEnv(),
+		Harness:       parsed.HarnessName,
+		BinaryPath:    binPath,
+		Args:          harnessArgs,
+		Effort:        parsed.Effort,
+		Model:         parsed.Model,
+		WorkingDir:    wd,
+		Env:           env,
 		Prompt:        string(prompt),
 		ExitAfterTurn: true, // stop after the turn (graceful) → clean, bounded run
 	}

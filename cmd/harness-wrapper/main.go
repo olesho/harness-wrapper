@@ -60,6 +60,16 @@ func runHarnessWrapper(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	// --sandbox-defaults is a run/structured-run policy toggle; an interactive
+	// passthrough session should make that call in the harness itself, so it is
+	// rejected — explicitly, not silently ignored. The check sits BEFORE
+	// resolveHarness so the rejection is deterministic on machines without the
+	// harness binary on PATH, and before the tmux branch so no session is ever
+	// spawned for a rejected invocation.
+	if parsed.SandboxDefaults {
+		fmt.Fprintln(os.Stderr, "harness-wrapper: --sandbox-defaults is only supported by run and structured-run")
+		return 2
+	}
 	binPath, err := resolveHarness(parsed.HarnessName)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -238,6 +248,9 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          named hw-<NAME> and exit immediately")
 	_, _ = fmt.Fprintln(w, "  --auto-accept           run: auto-answer blocking prompts (affirmative)")
 	_, _ = fmt.Fprintln(w, "                          even with a terminal attached, instead of asking")
+	_, _ = fmt.Fprintln(w, "  --sandbox-defaults      run/structured-run, claude only (DANGEROUS): inject")
+	_, _ = fmt.Fprintln(w, "                          --dangerously-skip-permissions and IS_SANDBOX=1;")
+	_, _ = fmt.Fprintln(w, "                          no-op for other harnesses; rejected by passthrough")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "supported harness names: claude, codex, opencode, pi")
 	_, _ = fmt.Fprintln(w, "")

@@ -104,6 +104,58 @@ func TestRunHarnessWrapper_TraceIncludesSignalAndCLIExitOnSIGTERM(t *testing.T) 
 	}
 }
 
+// TestRunHarnessWrapper_RejectsSandboxDefaults freezes the passthrough policy:
+// --sandbox-defaults is a run/structured-run toggle, and the default
+// passthrough mode rejects it explicitly (exit 2 + a named error) instead of
+// silently ignoring it. The check precedes resolveHarness, so the test is
+// hermetic — no `claude` on PATH, no HARNESS_BINARY_CLAUDE override — and it
+// precedes the tmux branch, so the tmux variant needs no session inspection:
+// rejection fires before any session could be spawned.
+func TestRunHarnessWrapper_RejectsSandboxDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"passthrough", []string{"--sandbox-defaults", "claude", "--"}},
+		{"tmux passthrough", []string{"--tmux-session", "X", "--sandbox-defaults", "claude", "--"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stderr, code := captureRunStderr(t, tc.args)
+			if code != 2 {
+				t.Errorf("exit code = %d, want 2; stderr:\n%s", code, stderr)
+			}
+			const want = "--sandbox-defaults is only supported by run and structured-run"
+			if !strings.Contains(stderr, want) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+			}
+		})
+	}
+}
+
+// captureRunStderr runs run(args) with os.Stderr captured, returning the
+// stderr text and the exit code.
+func captureRunStderr(t *testing.T, args []string) (string, int) {
+	t.Helper()
+	rp, wp, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	orig := os.Stderr
+	os.Stderr = wp
+	defer func() { os.Stderr = orig }()
+
+	code := run(args)
+
+	_ = wp.Close()
+	os.Stderr = orig
+	data, err := io.ReadAll(rp)
+	if err != nil {
+		t.Fatalf("read stderr pipe: %v", err)
+	}
+	_ = rp.Close()
+	return string(data), code
+}
+
 func readLastTraceKind(t *testing.T, path string) map[string]any {
 	t.Helper()
 	events := readTraceEvents(t, path)
