@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "onboarding-theme-picker",
+  "source": "live VM 167.233.43.85, fresh claude-code 2.1.215 (probe render, session d413926b, toolu_01UvhRhpLiNV4qN7PtaEanA6)",
+  "note": "Fresh claude boots into onboarding (theme picker -> 'Select login method') and hangs to the run deadline. Anchor: 'Choose the text style'. Motivates Fix B (onboarding short-circuit)."
+}

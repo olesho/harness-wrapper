@@ -1,0 +1,16 @@
+OpenAI Codex v0.144.6
+--------
+workdir: /root/meta-harness
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: none
+reasoning summaries: none
+--------
+user
+reply with just: ok
+
+ERROR: Reconnecting... 5/5
+warning: Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: Unknown error, url: wss://api.openai.com/v1/responses
+ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, request id: req_ba9836cb6b59419f9117bd2139e80a7f

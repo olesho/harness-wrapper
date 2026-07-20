@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "logged-out-false-success",
+  "source": "live VM 167.233.43.85, logged-out claude-code 2.1.215 in a clean dir (probe2 capture, session d413926b, toolu_01B97Yp9WihFo73x13cAx9xg)",
+  "note": "Same false-success case as not-logged-in-brewed, captured in a clean working dir (no repo hooks). Thinking marker variant 'Churned for 0s', with a bottom-right 'Not logged in · Run /login' status too. Anchors: 'not logged in', 'run /login'."
+}

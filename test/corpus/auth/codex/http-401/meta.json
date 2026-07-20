@@ -1,0 +1,7 @@
+{
+  "harness": "codex",
+  "authRequired": true,
+  "state": "logged-out-401",
+  "source": "live VM 167.233.43.85, codex exec with bogus key (session d413926b, toolu_01XCX652Z1MStKxoAiY1NXiP)",
+  "note": "A codex past onboarding but with an invalid/expired key fails its turn with a terminal 401. This is the path PR #13/#5 already handled (Errored branch). Anchors: '401 Unauthorized', 'Missing bearer or basic authentication'."
+}

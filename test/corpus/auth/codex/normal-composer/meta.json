@@ -1,0 +1,7 @@
+{
+  "harness": "codex",
+  "authRequired": false,
+  "state": "normal-composer-chrome",
+  "source": "live VM 167.233.43.85, codex 0.144.6 started with an accepted key (session d413926b, toolu_017zDtGCRVSWtrjg9ktSGVah)",
+  "note": "NEGATIVE guard: an authenticated codex composer must NOT match any auth anchor. Protects against over-broad regexes (e.g. an anchor that matches ordinary startup chrome)."
+}
