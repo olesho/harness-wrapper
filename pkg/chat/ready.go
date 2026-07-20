@@ -4,11 +4,21 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
 )
+
+// authGateStabilizeGap is how long a soft logged-out BANNER (matching
+// authRequired but not onboardingWall, and never reaching readyForInput) must
+// persist before waitReadyForSend short-circuits with ErrAuthRequired. The dwell
+// distinguishes a persistent banner from a transient startup frame. An onboarding
+// WALL does NOT wait for this — it fires immediately (see waitReadyForSend),
+// because a sign-in / device-code / login-method screen never becomes ready and
+// can flash by in a single frame as the CLI advances its own login flow.
+const authGateStabilizeGap = 2 * time.Second
 
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
@@ -31,8 +41,56 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	notifyCh, unsubscribe := c.screen.Subscribe()
 	defer unsubscribe()
 
-	if readyForInput(c.opts.Harness, c.screen.Snapshot().Text) {
+	// Stabilize timer for a soft logged-out BANNER on a not-ready screen (rare on
+	// the send path). An onboarding WALL is handled separately, immediately.
+	var authTimer *time.Timer
+	var authCh <-chan time.Time
+	armAuth := func() {
+		if authTimer == nil {
+			authTimer = time.NewTimer(authGateStabilizeGap)
+			authCh = authTimer.C
+		}
+	}
+	disarmAuth := func() {
+		if authTimer != nil {
+			if !authTimer.Stop() {
+				select {
+				case <-authTimer.C:
+				default:
+				}
+			}
+			authTimer = nil
+			authCh = nil
+		}
+	}
+	defer disarmAuth()
+
+	// check classifies the current screen. An onboarding WALL (sign-in wizard /
+	// device-code / login-method screen) fires NOW: it never becomes ready, and
+	// it can appear for a single frame before the CLI advances its own login flow
+	// past it — a dwell would miss it. A softer logged-out banner arms the
+	// debounce timer instead. readyForInput wins first, so a real composer (even
+	// with a stale banner scrolled above) is never auth-gated.
+	check := func() (ready, wall bool) {
+		txt := c.screen.Snapshot().Text
+		if readyForInput(c.opts.Harness, txt) {
+			return true, false
+		}
+		if onboardingWall(c.opts.Harness, txt) {
+			return false, true
+		}
+		if authRequired(c.opts.Harness, txt) {
+			armAuth()
+		} else {
+			disarmAuth()
+		}
+		return false, false
+	}
+
+	if ready, wall := check(); ready {
 		return nil
+	} else if wall {
+		return ErrAuthRequired
 	}
 
 	for {
@@ -41,12 +99,23 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			return ctx.Err()
 		case <-c.closed:
 			return ErrClosed
+		case <-authCh:
+			// Re-confirm against the live screen before committing: a frame may
+			// have changed the screen without a wake we processed, so never
+			// short-circuit on a stale banner.
+			txt := c.screen.Snapshot().Text
+			if !readyForInput(c.opts.Harness, txt) && authRequired(c.opts.Harness, txt) {
+				return ErrAuthRequired
+			}
+			disarmAuth()
 		case <-c.inputStateCh:
 			if c.inputAwaitingClient() {
 				return ErrInputPending
 			}
-			if readyForInput(c.opts.Harness, c.screen.Snapshot().Text) {
+			if ready, wall := check(); ready {
 				return nil
+			} else if wall {
+				return ErrAuthRequired
 			}
 		case _, ok := <-notifyCh:
 			if !ok {
@@ -55,8 +124,10 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			if c.inputAwaitingClient() {
 				return ErrInputPending
 			}
-			if readyForInput(c.opts.Harness, c.screen.Snapshot().Text) {
+			if ready, wall := check(); ready {
 				return nil
+			} else if wall {
+				return ErrAuthRequired
 			}
 		}
 	}
@@ -77,6 +148,14 @@ func requiresPromptReadiness(harness string) bool {
 func readyForInput(harness, text string) bool {
 	switch harness {
 	case chatClaudeCode:
+		// A first-run onboarding WIZARD (theme picker, "Select login method")
+		// paints the "Claude Code" header and a "❯" menu selector, so it would
+		// otherwise look ready — but it is waiting for menu input and never turns
+		// into a usable composer on its own. Treat it as not-ready so Send's auth
+		// gate short-circuits it instead of typing the prompt into the wizard.
+		if onboardingWall(harness, text) {
+			return false
+		}
 		// A blocking dialog (folder-trust, bypass acceptance) renders its own
 		// "❯" selector and the "Claude Code" header, which would otherwise
 		// look ready. Treat the dialog as not-ready so Send waits for it to
@@ -86,6 +165,12 @@ func readyForInput(harness, text string) bool {
 		}
 		return strings.Contains(text, "Claude Code") && strings.Contains(text, "❯")
 	case "codex":
+		// The never-signed-in onboarding menu ("Sign in with ChatGPT") renders a
+		// "›"-highlighted row and would look ready; it is a stuck sign-in wall, so
+		// treat it as not-ready and let Send's auth gate short-circuit it.
+		if onboardingWall(harness, text) {
+			return false
+		}
 		// A blocking startup interstitial (update notice, model migration)
 		// renders its own "›" highlight and looks ready. Treat it as not-ready
 		// so Send waits for the auto-dismiss to clear it instead of typing the
@@ -109,26 +194,49 @@ func readyForInput(harness, text string) bool {
 	}
 }
 
-// Logged-out / re-authentication banners, per harness. A harness whose CLI login
-// has expired or was never established produces NO assistant output for the turn.
-// The anchors are grounded in real observed CLI output, not invented:
-//   - claude-code: "Not logged in · Please run /login" (printed then exit); the
-//     "run /login" family of re-auth banners.
-//   - codex:       the turn fails with "401 Unauthorized: missing bearer or basic
-//     authentication" on screen; a logged-out TUI / `codex login status` say "Not
-//     logged in"; codex's own remediation is "run `codex login`".
+// Logged-out / re-authentication AND not-yet-onboarded banners, per harness. A
+// harness whose CLI login has expired, was never established, or that is still
+// sitting in first-run onboarding produces NO assistant output for the turn. The
+// anchors are grounded in real observed CLI output, not invented — see
+// test/corpus/auth for the captured screen each one matches:
+//   - claude-code: "Not logged in · Please run /login" (logged out); "Invalid API
+//     key · Fix external API key" (bad external key); the first-run onboarding
+//     "Choose the text style" theme picker and the "Select login method" screen.
+//   - codex:       "401 Unauthorized: missing bearer or basic authentication"
+//     (bad/expired key); a logged-out TUI / `codex login status` say "Not logged
+//     in"; codex's own remediation is "run `codex login`"; the never-signed-in
+//     onboarding menu "Sign in with ChatGPT".
 //
-// These are matched ONLY at a turn's terminal point, and only once the turn has
-// already ended in failure (see Conversation.handleTurnsEvent) — they EXPLAIN a
-// failed turn, they never complete one. That gating is what keeps a genuine reply
+// Reachability: these are scanned (a) when a turn ends in failure, (b) on the
+// completion path when the turn produced NO clean assistant text — an auth banner
+// left on a settled screen (see maybeIdleComplete / handleTurnsEvent), and (c)
+// before a turn is sent, to short-circuit an onboarding screen that would
+// otherwise hang to the deadline (see Conversation.Send). They EXPLAIN or
+// pre-empt a turn that cannot produce output; they never COMPLETE a turn that
+// produced a real reply. The empty-output gate is what keeps a genuine reply
 // mentioning logins, or a benign "your login expires in N days" WARNING on a
 // still-valid session, from being scanned and mislabeled.
 var (
-	claudeAuthRE = []*regexp.Regexp{
+	// Onboarding WIZARDS: interactive first-run screens that wait for menu input
+	// and never become a usable composer on their own. readyForInput treats these
+	// as not-ready (so Send's auth gate short-circuits them), distinct from a
+	// normal composer showing a stale logged-out banner (which IS ready).
+	claudeOnboardingRE = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)choose the text style`), // theme picker
+		regexp.MustCompile(`(?i)select login method`),   // login-method screen
+	}
+	codexOnboardingRE = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)sign in with chatgpt`),               // never-signed-in menu
+		regexp.MustCompile(`(?i)finish signing in via your browser`), // the login flow the menu advances into (browser + device-code)
+	}
+	// Logged-out / bad-key banners left on an otherwise-ready screen. Handled on
+	// the completion path (a turn that yielded no reply), not by refusing to send.
+	claudeLoggedOutRE = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\brun /login\b`),
 		regexp.MustCompile(`(?i)\bnot logged in\b`),
+		regexp.MustCompile(`(?i)\binvalid api key\b`),
 	}
-	codexAuthRE = []*regexp.Regexp{
+	codexLoggedOutRE = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\b401 unauthorized\b`),
 		regexp.MustCompile(`(?i)missing bearer or basic authentication`),
 		regexp.MustCompile(`(?i)\bnot logged in\b`),
@@ -145,16 +253,32 @@ func anyMatch(res []*regexp.Regexp, text string) bool {
 	return false
 }
 
+// onboardingWall reports whether the screen is a first-run onboarding / sign-in
+// WIZARD that is waiting for menu input and will never turn into a usable
+// composer on its own — distinct from a normal composer that merely shows a stale
+// logged-out banner. readyForInput uses it to keep Send from typing a prompt into
+// the wizard, so the auth gate short-circuits with ReasonAuthRequired instead.
+func onboardingWall(harness, text string) bool {
+	switch harness {
+	case chatClaudeCode:
+		return anyMatch(claudeOnboardingRE, text)
+	case "codex":
+		return anyMatch(codexOnboardingRE, text)
+	default:
+		return false
+	}
+}
+
 // authRequired reports whether the rendered screen shows a harness login-expiry /
-// logged-out banner. Callers MUST gate this on a turn that has already ended in
-// failure — it is a failure EXPLANATION, not a turn-completion signal. Returns
-// false for any harness without a known banner set.
+// logged-out banner OR a first-run onboarding wizard — either way the turn can
+// produce no assistant output until the human authenticates. Returns false for
+// any harness without a known banner set.
 func authRequired(harness, text string) bool {
 	switch harness {
 	case chatClaudeCode:
-		return anyMatch(claudeAuthRE, text)
+		return anyMatch(claudeOnboardingRE, text) || anyMatch(claudeLoggedOutRE, text)
 	case "codex":
-		return anyMatch(codexAuthRE, text)
+		return anyMatch(codexOnboardingRE, text) || anyMatch(codexLoggedOutRE, text)
 	default:
 		return false
 	}

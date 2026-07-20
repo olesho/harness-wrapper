@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -417,6 +418,9 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.Reason = ev.Reason
 		if ev.Snap != nil {
 			turn.Text = c.assistantText(*ev.Snap)
+			// A "completed" turn that yielded no real reply on a logged-out /
+			// not-onboarded screen is not a success — relabel it ReasonAuthRequired.
+			c.authRelabel(turn, *ev.Snap)
 		}
 	case turns.Blocked:
 		turn.State = TurnStateErrored
@@ -643,6 +647,10 @@ func (c *Conversation) maybeIdleComplete() {
 	// clean assistant reply rather than a full-screen dump — matching the
 	// marker-event completion path in onTurnEvent.
 	turn.Text = c.assistantText(snap)
+	// The claude-code false-success lands HERE: a logged-out turn ends on a
+	// "✻ … for 0s" marker and would otherwise complete with the raw banner screen
+	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted.
+	c.authRelabel(turn, snap)
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
@@ -756,6 +764,40 @@ func (c *Conversation) assistantText(snap screen.Snapshot) string {
 		}
 	}
 	return snap.Text
+}
+
+// cleanAssistantText is the adapter's extracted assistant reply with NO
+// whole-screen fallback: "" when the adapter has no extractor or finds no reply
+// (unlike assistantText, which returns the whole screen in that case). It is the
+// "did this turn actually produce a reply?" signal used by authRelabel.
+func (c *Conversation) cleanAssistantText(snap screen.Snapshot) string {
+	if ex, ok := c.adapter.(turns.MessageExtractor); ok {
+		if msg, ok := ex.ExtractMessage(snap); ok {
+			return strings.TrimSpace(msg)
+		}
+	}
+	return ""
+}
+
+// authRelabel converts a turn that "completed" but produced NO real assistant
+// reply, on a settled screen showing a logged-out / not-onboarded banner, into
+// the canonical ReasonAuthRequired failure. Without it a logged-out claude-code
+// turn — which ends on a "✻ … for 0s" end-of-turn thinking marker, not an error
+// — is persisted as a SUCCESS with the raw banner screen as its "reply" (the
+// false-success bug). Gated on an EMPTY clean extraction, so a genuine reply
+// (which produces a "⏺" bullet) is never touched even if it mentions "/login".
+// Returns true if it relabeled the turn.
+func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
+	if c.cleanAssistantText(snap) != "" {
+		return false
+	}
+	if !authRequired(c.opts.Harness, snap.Text) {
+		return false
+	}
+	turn.State = TurnStateErrored
+	turn.Reason = ReasonAuthRequired
+	turn.Text = ""
+	return true
 }
 
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {

@@ -192,6 +192,15 @@ var (
 	// handler is auto-answering the prompt — in that case Send waits.
 	ErrInputPending = errors.New("chat: blocked on interactive input request")
 
+	// ErrAuthRequired is returned by waitReadyForSend when the harness cannot
+	// reach a ready prompt because it is sitting in a logged-out / not-onboarded
+	// screen (a sign-in wizard, login-method picker, or re-auth banner) that
+	// never clears on its own. Send catches it and records a terminal assistant
+	// turn carrying ReasonAuthRequired, so the onboarding case surfaces the same
+	// canonical signal as the completion- and error-path cases instead of
+	// hanging to the run deadline.
+	ErrAuthRequired = errors.New("chat: harness requires authentication / onboarding")
+
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.
 	ErrNoInputPending = errors.New("chat: no input request pending")

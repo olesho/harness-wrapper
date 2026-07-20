@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "invalid-external-key",
+  "source": "live VM 167.233.43.85, claude-code 2.1.215 with a bogus ANTHROPIC_API_KEY, print mode (session d413926b, toolu_01NzahX7JCfQvvgzuFfNGJ4C)",
+  "note": "A bogus external API key renders a DIFFERENT banner from logged-out: 'Invalid API key · Fix external API key'. The original PR regex ('not logged in' / 'run /login') does NOT match this. Anchor added: 'Invalid API key'."
+}

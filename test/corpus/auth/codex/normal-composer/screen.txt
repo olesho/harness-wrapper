@@ -1,0 +1,14 @@
+╭───────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.144.6)                │
+│                                           │
+│ model:     gpt-5.6-sol   /model to change │
+│ directory: ~/meta-harness                 │
+╰───────────────────────────────────────────╯
+
+  Tip: Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished
+  documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower,
+  then turn it up for harder jobs.
+
+› Summarize recent commits
+
+  gpt-5.6-sol default · ~/meta-harness

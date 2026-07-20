@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "logged-out-false-success",
+  "source": "live VM 167.233.43.85, logged-out claude-code 2.1.215 (tmux capture, session d413926b, toolu_01VWSVtdqrBpd9FncV1XQRjq)",
+  "note": "THE false-success case. Logged-out claude renders 'Not logged in · Please run /login', returns to the idle composer, and leaves an end-of-turn thinking marker ('Brewed for 0s'). The marker makes the turn complete SUCCESSFULLY (raw screen persisted as the reply, exit 0) and the auth scan is skipped. Anchors: 'not logged in', 'run /login'. Motivates Fix A (relabel on the completion path)."
+}
