@@ -8,9 +8,27 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/versions"
 )
 
 type nameContent struct{ name, body string }
+
+// pinFor returns the live embedded pin for a harness, so tests assert
+// against versions.json instead of hardcoding version literals that go
+// stale on every pin bump.
+func pinFor(t *testing.T, harness string) string {
+	t.Helper()
+	all, err := versions.All()
+	if err != nil {
+		t.Fatalf("versions.All: %v", err)
+	}
+	e, ok := all[harness]
+	if !ok || e.Pinned == "" {
+		t.Fatalf("harness %q has no pinned version in versions.json", harness)
+	}
+	return e.Pinned
+}
 
 // setShimPath writes the given shims into a fresh temp dir, points
 // PATH at it, and arranges for the version cache to be cleared on
@@ -52,8 +70,8 @@ func TestLookup_NotInstalled(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.PinnedVersion != "0.142.2" {
-		t.Errorf("want PinnedVersion=0.142.2, got %q", got.PinnedVersion)
+	if pin := pinFor(t, "codex"); got.PinnedVersion != pin {
+		t.Errorf("want PinnedVersion=%s, got %q", pin, got.PinnedVersion)
 	}
 	if got.InstallHint == "" || !strings.Contains(got.InstallHint, "codex") {
 		t.Errorf("InstallHint should mention codex, got %q", got.InstallHint)
@@ -64,7 +82,8 @@ func TestLookup_NotInstalled(t *testing.T) {
 }
 
 func TestLookup_InstalledViaHarnessKey(t *testing.T) {
-	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho 0.142.2\n"})
+	pin := pinFor(t, "codex")
+	setShimPath(t, nameContent{"codex", "#!/bin/sh\necho " + pin + "\n"})
 
 	got, err := Lookup("codex")
 	if err != nil {
@@ -79,8 +98,8 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 	if got.Binary != "codex" {
 		t.Errorf("want Binary=codex, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "0.142.2" {
-		t.Errorf("want DetectedVersion=0.142.2, got %q", got.DetectedVersion)
+	if got.DetectedVersion != pin {
+		t.Errorf("want DetectedVersion=%s, got %q", pin, got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true (detected matches pin)")
@@ -88,7 +107,8 @@ func TestLookup_InstalledViaHarnessKey(t *testing.T) {
 }
 
 func TestLookup_InstalledViaBinaryName(t *testing.T) {
-	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho 2.1.193\n"})
+	pin := pinFor(t, "claude-code")
+	setShimPath(t, nameContent{"claude", "#!/bin/sh\necho " + pin + "\n"})
 
 	got, err := Lookup("claude")
 	if err != nil {
@@ -103,8 +123,8 @@ func TestLookup_InstalledViaBinaryName(t *testing.T) {
 	if got.Binary != "claude" {
 		t.Errorf("want Binary=claude, got %q", got.Binary)
 	}
-	if got.DetectedVersion != "2.1.193" {
-		t.Errorf("want DetectedVersion=2.1.193, got %q", got.DetectedVersion)
+	if got.DetectedVersion != pin {
+		t.Errorf("want DetectedVersion=%s, got %q", pin, got.DetectedVersion)
 	}
 	if !got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=true")
@@ -166,8 +186,8 @@ func TestLookup_VersionMismatch_FlagsDrift(t *testing.T) {
 	if got.DetectedVersion != "9.9.9" {
 		t.Errorf("want DetectedVersion=9.9.9, got %q", got.DetectedVersion)
 	}
-	if got.PinnedVersion != "0.142.2" {
-		t.Errorf("want PinnedVersion=0.142.2, got %q", got.PinnedVersion)
+	if pin := pinFor(t, "codex"); got.PinnedVersion != pin {
+		t.Errorf("want PinnedVersion=%s, got %q", pin, got.PinnedVersion)
 	}
 	if got.VersionMatchesPin {
 		t.Error("want VersionMatchesPin=false (detected drifts from pin)")
