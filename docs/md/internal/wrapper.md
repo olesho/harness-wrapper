@@ -169,6 +169,36 @@ decisions on it.
 `Session.Events()` is the typed contract for state transitions (the `Status` vocabulary). Use events,
 not trace, for control flow.
 
+## Sandbox-defaults injection
+
+The CLI's `--sandbox-defaults` flag (honored by `run` and `structured-run`, rejected by the default
+passthrough mode) opts into the permission injection the meta-harness structured runner performs for
+claude-code — restoring **identical harness behavior for identical argv** across the two
+implementations. For the `claude` harness it:
+
+- appends `--dangerously-skip-permissions` to the harness args, and
+- sets `IS_SANDBOX=1` in the harness env.
+
+For every other harness it is a documented no-op. `IS_SANDBOX=1` is what suppresses claude-code's
+"Bypass Permissions mode" acceptance screen entirely and allows running as root — relevant for
+container workspaces under `internal/env`. (An explicitly passed `--dangerously-skip-permissions`
+already works unattended without the env var: the acceptance screen is detected as a `trust_prompt`
+and auto-answered, so the flag's value is cross-implementation parity plus the `IS_SANDBOX` effects,
+not an un-hang fix.)
+
+Dedup rules make the injection idempotent against caller-supplied values:
+
+- the arg is not appended when already present as the exact token **or** in the
+  `--dangerously-skip-permissions=<value>` spelling;
+- `IS_SANDBOX=1` is not appended when the env already defines the `IS_SANDBOX` key (whatever its
+  value — containers may set it), matching the key exactly at the `=` boundary so a
+  prefix-sharing key like `IS_SANDBOXED` never suppresses it.
+
+The injection lives in `cmd/harness-wrapper` (`applySandboxDefaults`), **not** in
+`pkg/harness.RunTurn`: `TurnConfig.Args` keeps its documented verbatim passthrough, and the
+danger-carrying policy toggle stays auditable at the CLI boundary. There is **no silent injection
+anywhere** — without the flag, nothing is added.
+
 ## PTY execution & attach
 
 The wrapper starts each harness under a pseudoterminal with `pty.Start`; the PTY stream is the
