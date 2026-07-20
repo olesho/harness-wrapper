@@ -68,16 +68,22 @@ func runStructuredRun(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// Strip Claude Code's nesting markers so the spawned harness persists a
+	// transcript (see runOneShot for the full rationale), then apply the
+	// opt-in --sandbox-defaults injection on top.
+	harnessArgs, env := parsed.HarnessArgs, cleanedEnv()
+	if parsed.SandboxDefaults {
+		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, harnessArgs, env)
+	}
+
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
-		Harness:    parsed.HarnessName,
-		BinaryPath: binPath,
-		Args:       parsed.HarnessArgs,
-		Effort:     parsed.Effort,
-		Model:      parsed.Model,
-		WorkingDir: wd,
-		// Strip Claude Code's nesting markers so the spawned harness persists a
-		// transcript (see runOneShot for the full rationale).
-		Env:           cleanedEnv(),
+		Harness:       parsed.HarnessName,
+		BinaryPath:    binPath,
+		Args:          harnessArgs,
+		Effort:        parsed.Effort,
+		Model:         parsed.Model,
+		WorkingDir:    wd,
+		Env:           env,
 		Prompt:        prompt,
 		ExitAfterTurn: true,
 		InputPolicy: &chat.InputPolicy{

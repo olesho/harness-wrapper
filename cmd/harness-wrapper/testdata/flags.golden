@@ -1,6 +1,7 @@
 --auto-accept <*flag.boolValue> = "false" : run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human
 --effort <*flag.stringValue> = "" : reasoning effort for supported harnesses (low, medium, high, xhigh, max)
 --model <*flag.stringValue> = "" : model id for supported harnesses (claude --model, codex -c model)
+--sandbox-defaults <*flag.boolValue> = "false" : run/structured-run: claude only — DANGEROUS: inject --dangerously-skip-permissions into harness args and set IS_SANDBOX=1 in the harness env (meta-harness parity; IS_SANDBOX=1 also suppresses the bypass-permissions acceptance screen and allows root); no-op for other harnesses; rejected by the default passthrough mode
 --tmux-child <*flag.stringValue> = "" : internal: in-pane re-exec marker; do not set manually
 --tmux-session <*flag.stringValue> = "" : spawn the run inside a detached tmux session named hw-<value> and exit immediately
 --trace-file <*flag.stringValue> = "" : path to write trace events as NDJSON (default: trace events are dropped)

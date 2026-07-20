@@ -26,9 +26,16 @@ type harnessWrapperArgs struct {
 	// option) even when a controlling terminal is attached, restoring the fully
 	// unattended behavior. Only runOneShot reads it; the default passthrough
 	// ignores it (the harness TUI asks the human directly).
-	AutoAccept  bool
-	HarnessName string
-	HarnessArgs []string
+	AutoAccept bool
+	// SandboxDefaults opts into meta-harness-parity permission injection for
+	// claude: run/structured-run append --dangerously-skip-permissions to the
+	// harness args and IS_SANDBOX=1 to the harness env (see
+	// applySandboxDefaults). No-op for other harnesses; the default
+	// passthrough mode rejects it (a human session should make that policy
+	// call in the harness itself).
+	SandboxDefaults bool
+	HarnessName     string
+	HarnessArgs     []string
 }
 
 // parseHarnessWrapperArgs splits the args after the "harness-wrapper"
@@ -88,5 +95,6 @@ func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
 	fs.StringVar(&a.TmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
 	fs.StringVar(&a.TmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
 	fs.BoolVar(&a.AutoAccept, "auto-accept", false, "run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human")
+	fs.BoolVar(&a.SandboxDefaults, "sandbox-defaults", false, "run/structured-run: claude only — DANGEROUS: inject --dangerously-skip-permissions into harness args and set IS_SANDBOX=1 in the harness env (meta-harness parity; IS_SANDBOX=1 also suppresses the bypass-permissions acceptance screen and allows root); no-op for other harnesses; rejected by the default passthrough mode")
 	return fs
 }

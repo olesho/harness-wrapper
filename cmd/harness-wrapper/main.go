@@ -60,6 +60,16 @@ func runHarnessWrapper(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	// --sandbox-defaults is a run/structured-run policy toggle; an interactive
+	// passthrough session should make that call in the harness itself, so it is
+	// rejected — explicitly, not silently ignored. The check sits BEFORE
+	// resolveHarness so the rejection is deterministic on machines without the
+	// harness binary on PATH, and before the tmux branch so no session is ever
+	// spawned for a rejected invocation.
+	if parsed.SandboxDefaults {
+		fmt.Fprintln(os.Stderr, "harness-wrapper: --sandbox-defaults is only supported by run and structured-run")
+		return 2
+	}
 	binPath, err := resolveHarness(parsed.HarnessName)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
