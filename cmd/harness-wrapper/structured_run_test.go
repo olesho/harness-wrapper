@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,6 +79,94 @@ func TestStructuredRun_GoldenCompleted(t *testing.T) {
 	}
 	if res.WorkingDir == "" {
 		t.Errorf("working_dir is empty")
+	}
+}
+
+// TestStructuredRun_SandboxDefaultsInjection asserts what the SPAWNED harness
+// actually receives: with --sandbox-defaults the claude argv carries
+// --dangerously-skip-permissions and the env carries IS_SANDBOX=1; without the
+// flag, neither is injected. The fakeharness records neither argv nor env, so
+// HARNESS_BINARY_CLAUDE points at a small recording shim that dumps "$@" and
+// IS_SANDBOX to a file and then EXECs the fakeharness binary — exec (not fork)
+// keeps the harness a direct child of the PTY, preserving wrapper.Run's
+// process-tree and graceful-quit expectations. The injected flag traveling
+// through "$@" into the fakeharness is harmless: cmd/fakeharness reads only
+// $FAKEHARNESS_SCRIPT (inherited by the shim) and never touches os.Args.
+func TestStructuredRun_SandboxDefaultsInjection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script recording shim is Unix-only")
+	}
+	fakeBin, err := fakeharness.BuildOnce()
+	if err != nil {
+		t.Skipf("fakeharness unavailable: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		args       []string
+		wantInject bool
+	}{
+		{"with sandbox-defaults", []string{"--sandbox-defaults", "claude", "--"}, true},
+		{"without sandbox-defaults", []string{"claude", "--"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const prompt = "ship the turn API"
+			script := fakeharness.New("claude-code").
+				Idle().
+				AwaitSubmit().
+				Working(30, "Working").
+				Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+				StayAliveUntilStopped().
+				Build()
+			scriptData, err := json.Marshal(script)
+			if err != nil {
+				t.Fatalf("marshal script: %v", err)
+			}
+			dir := t.TempDir()
+			scriptPath := filepath.Join(dir, "script.json")
+			if err := os.WriteFile(scriptPath, scriptData, 0o600); err != nil {
+				t.Fatalf("write script: %v", err)
+			}
+
+			recordPath := filepath.Join(dir, "record.txt")
+			shimPath := filepath.Join(dir, "claude-shim")
+			shim := fmt.Sprintf(`#!/bin/sh
+{
+  printf 'ARGS:'
+  for a in "$@"; do printf ' %%s' "$a"; done
+  printf '\n'
+  printf 'IS_SANDBOX=%%s\n' "${IS_SANDBOX-unset}"
+} > %q
+exec %q "$@"
+`, recordPath, fakeBin)
+			if err := os.WriteFile(shimPath, []byte(shim), 0o700); err != nil {
+				t.Fatalf("write shim: %v", err)
+			}
+
+			t.Setenv("HARNESS_BINARY_CLAUDE", shimPath)
+			t.Setenv(fakeharness.EnvVar, scriptPath)
+			t.Setenv("HARNESS_WRAPPER_RUN_TIMEOUT", "30s")
+			t.Chdir(t.TempDir())
+
+			out, code := captureStructuredRun(t, prompt, tc.args)
+			if code != turnproto.ExitOK {
+				t.Fatalf("exit code = %d, want %d; stdout:\n%s", code, turnproto.ExitOK, out)
+			}
+
+			rec, err := os.ReadFile(recordPath)
+			if err != nil {
+				t.Fatalf("read shim record: %v", err)
+			}
+			recorded := string(rec)
+			if got := strings.Contains(recorded, "--dangerously-skip-permissions"); got != tc.wantInject {
+				t.Errorf("argv has --dangerously-skip-permissions = %v, want %v; record:\n%s",
+					got, tc.wantInject, recorded)
+			}
+			if got := strings.Contains(recorded, "IS_SANDBOX=1"); got != tc.wantInject {
+				t.Errorf("env has IS_SANDBOX=1 = %v, want %v; record:\n%s",
+					got, tc.wantInject, recorded)
+			}
+		})
 	}
 }
 
