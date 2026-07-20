@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,6 +44,15 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.mu.Unlock()
 
 	if err := c.waitReadyForSend(ctx); err != nil {
+		// The harness is stuck on a logged-out / onboarding screen and will never
+		// reach a ready prompt. Record a terminal assistant turn carrying the
+		// canonical ReasonAuthRequired instead of hanging to the deadline, so the
+		// onboarding case surfaces through the same Events()/turn.Reason channel as
+		// the completion- and error-path cases. Returns (id, nil) so the RunTurn
+		// driver observes the emitted terminal turn rather than a bare error.
+		if errors.Is(err, ErrAuthRequired) {
+			return c.emitAuthRequiredTurn(ctx, text)
+		}
 		return "", err
 	}
 
@@ -99,10 +109,53 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	return assistantTurn.ID, nil
 }
 
+// emitAuthRequiredTurn records and emits a terminal assistant turn carrying
+// ReasonAuthRequired, for the case where the harness never reaches a ready prompt
+// because it is sitting in a logged-out / onboarding screen (detected by
+// waitReadyForSend). It mirrors the normal Send bookkeeping — a completed user
+// turn, then a terminal assistant turn — so consumers observe the auth signal
+// through the same Events()/turn.Reason channel as the completion- and error-path
+// cases. The prompt is NOT written to the harness (it would land in the sign-in
+// menu). Returns (assistantTurnID, nil); the RunTurn driver reads the emitted
+// Errored turn and surfaces its Reason.
+func (c *Conversation) emitAuthRequiredTurn(ctx context.Context, text string) (string, error) {
+	now := time.Now()
+
+	userTurn := Turn{
+		ID:          newID(),
+		SessionID:   c.session.ID,
+		Role:        RoleUser,
+		State:       TurnStateComplete,
+		Text:        text,
+		StartedAt:   now,
+		CompletedAt: now,
+	}
+	if err := c.store.AppendTurn(ctx, &userTurn); err != nil {
+		return "", fmt.Errorf("chat: append user turn: %w", err)
+	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: userTurn})
+
+	assistantTurn := Turn{
+		ID:          newID(),
+		SessionID:   c.session.ID,
+		Role:        RoleAssistant,
+		State:       TurnStateErrored,
+		Reason:      ReasonAuthRequired,
+		StartedAt:   now,
+		CompletedAt: now,
+	}
+	if err := c.store.AppendTurn(ctx, &assistantTurn); err != nil {
+		return "", fmt.Errorf("chat: append assistant turn: %w", err)
+	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
+	return assistantTurn.ID, nil
+}
+
 // Wrapper returns the underlying wrapper.Session for callers that need
-// to reach past the chat API — e.g. to Resize, AttachOutput, or read
-// the raw RecentOutput buffer. Use with care: writing directly to
-// stdin bypasses the control-token guard.
+// to reach past the chat API — e.g. to AttachOutput or read the raw
+// RecentOutput buffer. Use Conversation.Resize instead of resizing the
+// wrapper directly so the private terminal emulator stays synchronized.
+// Use with care: writing directly to stdin bypasses the control-token guard.
 func (c *Conversation) Wrapper() *wrapper.Session { return c.sess }
 
 // Quit asks the harness to exit gracefully by sending its adapter-defined quit

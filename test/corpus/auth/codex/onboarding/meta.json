@@ -1,0 +1,7 @@
+{
+  "harness": "codex",
+  "authRequired": true,
+  "state": "onboarding-signin-menu",
+  "source": "live VM 167.233.43.85, never-signed-in codex 0.144.6 (probe render, sessions d413926b + 3e9ee981)",
+  "note": "Fresh codex boots to the sign-in menu instead of a composer; the wrapper holds it as not-ready and hangs to the run deadline. Anchor: 'Sign in with ChatGPT'. Motivates Fix B (onboarding short-circuit)."
+}

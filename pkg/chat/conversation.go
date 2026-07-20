@@ -3,6 +3,8 @@ package chat
 import (
 	"context"
 	"fmt"
+	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,15 +62,27 @@ type Options struct {
 	InputPolicy *InputPolicy
 
 	// DisableCodexAutoDismiss turns off the built-in auto-dismissal of Codex's
-	// blocking startup interstitials (the "Update available!" menu, the
-	// model-migration screen). The zero value keeps auto-dismiss ENABLED: by
-	// default the chat layer clears those interstitials (selecting "Skip" on
-	// the update menu, never "Update now") so a stale Codex does not wedge the
-	// conversation. Set true to instead surface them on Events() for the
-	// client/InputPolicy to answer. This governs only those startup
-	// interstitial kinds — Codex's real approval prompts are never
-	// auto-dismissed regardless of this flag.
+	// blocking startup interstitials that carry no user choice — the
+	// model-migration screen and menu-less "Press enter to continue" notices.
+	// The zero value keeps their auto-dismiss ENABLED so a stale Codex does not
+	// wedge the conversation; set true to instead surface them on Events() for
+	// the client/InputPolicy to answer. The "Update available!" menu is NOT
+	// governed by this flag — it surfaces by default and is controlled by
+	// AutoSkipCodexUpdateNotice. This governs only those startup interstitial
+	// kinds — Codex's real approval prompts are never auto-dismissed regardless.
 	DisableCodexAutoDismiss bool
+
+	// AutoSkipCodexUpdateNotice re-enables the built-in auto-Skip of Codex's
+	// "Update available!" startup menu. The zero value SURFACES that menu on
+	// Events() (as a codex_update_notice InputRequest) so a client can choose
+	// Update / Skip; set true to instead have the chat layer transparently
+	// select "Skip" (never "Update now") without surfacing it — the safe
+	// default for headless/no-client callers (the one-shot run CLI, structured
+	// runner) that would otherwise wedge on the pending menu. Ignored when
+	// DisableCodexAutoDismiss is set (that surfaces every interstitial). An
+	// InputPolicy entry for codex_update_notice still takes precedence over
+	// this flag, as it is consulted first.
+	AutoSkipCodexUpdateNotice bool
 
 	// OnInputRequest is an in-process resolver consulted when InputPolicy
 	// did not auto-answer. Returning ok=true answers the prompt with the
@@ -139,6 +153,8 @@ type Conversation struct {
 	// exists so the input-resolution path is testable without a live session.
 	writeStdin func([]byte) (int, error)
 
+	resizeMu sync.Mutex
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -157,6 +173,9 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	}
 	if opts.Rows <= 0 {
 		opts.Rows = 40
+	}
+	if opts.Cols > math.MaxUint16 || opts.Rows > math.MaxUint16 {
+		return nil, fmt.Errorf("%w: Cols and Rows must not exceed %d", ErrInvalidOptions, math.MaxUint16)
 	}
 	if opts.EventBuffer <= 0 {
 		opts.EventBuffer = 32
@@ -229,7 +248,13 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 
 	// Match the PTY size to the virtual screen size so the harness's
 	// re-renders target the same dimensions our emulator is tracking.
-	_ = sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
+	if err := scr.ResizeWithPeer(opts.Cols, opts.Rows, func() error {
+		return sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
+	}); err != nil {
+		releaseWriter()
+		_ = sess.Stop(context.Background())
+		return nil, fmt.Errorf("chat: initial resize: %w", err)
+	}
 
 	// Persist the session record. Pass a copy: the PTY read loop is already
 	// live, so the tap may touch c.session (under c.mu) concurrently — the
@@ -285,6 +310,9 @@ func (c *Conversation) AcquireControl(ctx context.Context) (release func(), err 
 // multiple times.
 func (c *Conversation) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
+		c.resizeMu.Lock()
+		defer c.resizeMu.Unlock()
+
 		close(c.closed)
 		c.queue.Close()
 		if c.releaseWriter != nil {
@@ -300,8 +328,33 @@ func (c *Conversation) Close(ctx context.Context) error {
 	return nil
 }
 
+// Resize updates both the harness PTY and the private terminal emulator.
+// Calls are serialized so concurrent resizes cannot leave the two at
+// different final dimensions. Screen reads and writes are paused while the PTY
+// is resized, then the emulator is updated before queued output can be
+// interpreted. If the PTY resize fails, the screen remains untouched. Zero
+// dimensions are ignored, matching wrapper.Session.Resize.
+func (c *Conversation) Resize(cols, rows uint16) error {
+	if cols == 0 || rows == 0 {
+		return nil
+	}
+
+	c.resizeMu.Lock()
+	defer c.resizeMu.Unlock()
+
+	select {
+	case <-c.closed:
+		return ErrClosed
+	default:
+	}
+
+	return c.screen.ResizeWithPeer(int(cols), int(rows), func() error {
+		return c.sess.Resize(cols, rows)
+	})
+}
+
 // consumeWatcher pumps turns.Event from the watcher into Conversation
-// state and emits TurnEvent on c.eventCh.
+// state and emits ConversationEvent on c.eventCh.
 func (c *Conversation) consumeWatcher() {
 	defer close(c.eventCh)
 	for ev := range c.watcher.Events() {
@@ -377,11 +430,35 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.Reason = ev.Reason
 		if ev.Snap != nil {
 			turn.Text = c.assistantText(*ev.Snap)
+			// A "completed" turn that yielded no real reply on a logged-out /
+			// not-onboarded screen is not a success — relabel it ReasonAuthRequired.
+			c.authRelabel(turn, *ev.Snap)
 		}
-	case turns.Blocked, turns.Errored:
+	case turns.Blocked:
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
+		turn.HTTPCode = ev.HTTPCode
+		turn.RetryAfter = ev.RetryAfter
+	case turns.Errored:
+		turn.State = TurnStateErrored
+		turn.CompletedAt = ev.At
+		// A terminal error whose screen shows a logged-out / re-auth banner is not
+		// a task failure — the harness CLI is logged out. Prefer the canonical,
+		// machine-matchable auth reason over the generic one (e.g. "harness
+		// exited"). A status-derived Errored event carries no snapshot (the
+		// wrapper-status watcher pump stamps none), so fall back to the live
+		// screen, which still shows the banner after the harness exits.
+		turn.Reason = ev.Reason
+		screenText := ""
+		if ev.Snap != nil {
+			screenText = ev.Snap.Text
+		} else if c.screen != nil {
+			screenText = c.screen.Snapshot().Text
+		}
+		if authRequired(c.opts.Harness, screenText) {
+			turn.Reason = ReasonAuthRequired
+		}
 		turn.HTTPCode = ev.HTTPCode
 		turn.RetryAfter = ev.RetryAfter
 	case turns.ToolCall:
@@ -582,6 +659,10 @@ func (c *Conversation) maybeIdleComplete() {
 	// clean assistant reply rather than a full-screen dump — matching the
 	// marker-event completion path in onTurnEvent.
 	turn.Text = c.assistantText(snap)
+	// The claude-code false-success lands HERE: a logged-out turn ends on a
+	// "✻ … for 0s" marker and would otherwise complete with the raw banner screen
+	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted.
+	c.authRelabel(turn, snap)
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
@@ -695,6 +776,40 @@ func (c *Conversation) assistantText(snap screen.Snapshot) string {
 		}
 	}
 	return snap.Text
+}
+
+// cleanAssistantText is the adapter's extracted assistant reply with NO
+// whole-screen fallback: "" when the adapter has no extractor or finds no reply
+// (unlike assistantText, which returns the whole screen in that case). It is the
+// "did this turn actually produce a reply?" signal used by authRelabel.
+func (c *Conversation) cleanAssistantText(snap screen.Snapshot) string {
+	if ex, ok := c.adapter.(turns.MessageExtractor); ok {
+		if msg, ok := ex.ExtractMessage(snap); ok {
+			return strings.TrimSpace(msg)
+		}
+	}
+	return ""
+}
+
+// authRelabel converts a turn that "completed" but produced NO real assistant
+// reply, on a settled screen showing a logged-out / not-onboarded banner, into
+// the canonical ReasonAuthRequired failure. Without it a logged-out claude-code
+// turn — which ends on a "✻ … for 0s" end-of-turn thinking marker, not an error
+// — is persisted as a SUCCESS with the raw banner screen as its "reply" (the
+// false-success bug). Gated on an EMPTY clean extraction, so a genuine reply
+// (which produces a "⏺" bullet) is never touched even if it mentions "/login".
+// Returns true if it relabeled the turn.
+func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
+	if c.cleanAssistantText(snap) != "" {
+		return false
+	}
+	if !authRequired(c.opts.Harness, snap.Text) {
+		return false
+	}
+	turn.State = TurnStateErrored
+	turn.Reason = ReasonAuthRequired
+	turn.Text = ""
+	return true
 }
 
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {

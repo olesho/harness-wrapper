@@ -113,6 +113,12 @@ type TurnConfig struct {
 	// answer. Go-only (not exposed over transports).
 	OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 
+	// AutoSkipCodexUpdateNotice auto-Skips Codex's "Update available!" menu
+	// instead of surfacing it. A one-shot run has no live client to answer the
+	// menu, so leaving it false would wedge the run on the pending prompt; set
+	// true for unattended/headless callers. See chat.Options for the details.
+	AutoSkipCodexUpdateNotice bool
+
 	// Output, when non-nil, receives a best-effort copy of PTY output observed
 	// after RunTurn opens the conversation. This is diagnostic/display output;
 	// turn completion is driven by the screen adapter, not this writer.
@@ -186,6 +192,8 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 		EventBuffer:    cfg.EventBuffer,
 		InputPolicy:    cfg.InputPolicy,
 		OnInputRequest: cfg.OnInputRequest,
+
+		AutoSkipCodexUpdateNotice: cfg.AutoSkipCodexUpdateNotice,
 	})
 	if err != nil {
 		return TurnResult{}, err

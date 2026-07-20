@@ -97,6 +97,7 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrTurnInFlight", ErrTurnInFlight},
 		{"ErrClosed", ErrClosed},
 		{"ErrInputPending", ErrInputPending},
+		{"ErrAuthRequired", ErrAuthRequired},
 		{"ErrNoInputPending", ErrNoInputPending},
 		{"ErrStaleInputRequest", ErrStaleInputRequest},
 		{"ErrUnknownOption", ErrUnknownOption},

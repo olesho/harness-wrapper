@@ -29,13 +29,14 @@ type Envelope struct {
 
 // responseItem is the payload when Envelope.Type == "response_item".
 type responseItem struct {
-	Type      string          `json:"type"` // message, function_call, function_call_output, reasoning
+	Type      string          `json:"type"` // message, function_call, function_call_output, custom_tool_call, custom_tool_call_output, reasoning
 	Role      string          `json:"role,omitempty"`
 	Content   []contentBlock  `json:"content,omitempty"`
-	Name      string          `json:"name,omitempty"`      // function name (function_call)
+	Name      string          `json:"name,omitempty"`      // tool name (function_call / custom_tool_call)
 	Arguments string          `json:"arguments,omitempty"` // function args, a JSON string (function_call)
+	Input     json.RawMessage `json:"input,omitempty"`     // freeform tool input, a JSON value (custom_tool_call)
 	CallID    string          `json:"call_id,omitempty"`
-	Output    json.RawMessage `json:"output,omitempty"` // function_call_output payload
+	Output    json.RawMessage `json:"output,omitempty"` // function_call_output / custom_tool_call_output payload
 }
 
 type contentBlock struct {
@@ -69,7 +70,10 @@ func ParseRollout(data []byte) ([]Envelope, error) {
 
 // Events parses Codex rollout JSONL bytes into the canonical, tool-aware event
 // stream. Only response_item entries are surfaced (message / function_call /
-// function_call_output); the rest are operational noise.
+// function_call_output / custom_tool_call / custom_tool_call_output); the rest
+// are operational noise. custom_tool_call(_output) is the schema newer codex-cli
+// (>= 0.144) records for its freeform `exec` tool, alongside the legacy
+// function_call schema.
 func Events(data []byte) ([]transcript.Event, error) {
 	envelopes, err := ParseRollout(data)
 	if err != nil {
@@ -100,6 +104,23 @@ func Events(data []byte) ([]transcript.Event, error) {
 			out = append(out, transcript.Event{
 				Seq: seq, Timestamp: ts, Role: transcript.RoleTool, Type: transcript.EventToolResult,
 				ToolUseID: item.CallID, Output: decodeFunctionOutput(item.Output),
+				Source: transcript.SourceFile, NativeID: "tool-result:" + item.CallID,
+			})
+			seq++
+		case "custom_tool_call":
+			// Freeform tool call (e.g. codex-cli's `exec`). Input is a JSON value
+			// (a JSON string wrapping a script for exec), already valid JSON, so
+			// it becomes ToolInput directly — no re-encoding needed.
+			out = append(out, transcript.Event{
+				Seq: seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventToolUse,
+				ToolName: item.Name, ToolUseID: item.CallID, ToolInput: customToolInput(item.Input),
+				Source: transcript.SourceFile, NativeID: "tool-use:" + item.CallID,
+			})
+			seq++
+		case "custom_tool_call_output":
+			out = append(out, transcript.Event{
+				Seq: seq, Timestamp: ts, Role: transcript.RoleTool, Type: transcript.EventToolResult,
+				ToolUseID: item.CallID, Output: decodeCustomToolOutput(item.Output),
 				Source: transcript.SourceFile, NativeID: "tool-result:" + item.CallID,
 			})
 			seq++
@@ -137,6 +158,31 @@ func decodeFunctionOutput(raw json.RawMessage) string {
 		return str
 	}
 	return string(raw)
+}
+
+// customToolInput returns the ToolInput for a custom_tool_call. The input is
+// already a JSON value (typically a JSON string wrapping the freeform script),
+// so it is used verbatim; nil/empty input yields nil so ToolInput is omitted.
+func customToolInput(raw json.RawMessage) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	return raw
+}
+
+// decodeCustomToolOutput flattens a custom_tool_call_output "output" value into
+// readable text. codex records it as an array of {type,text} content blocks; it
+// falls back to a bare JSON string, then to the raw JSON.
+func decodeCustomToolOutput(raw json.RawMessage) string {
+	var blocks []contentBlock
+	if json.Unmarshal(raw, &blocks) == nil && len(blocks) > 0 {
+		var b bytes.Buffer
+		for _, blk := range blocks {
+			b.WriteString(blk.Text)
+		}
+		return b.String()
+	}
+	return decodeFunctionOutput(raw)
 }
 
 func canonicalRole(r string) string {

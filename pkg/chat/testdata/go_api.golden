@@ -12,6 +12,7 @@ type Options struct
 	field EventBuffer int
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
+	field AutoSkipCodexUpdateNotice bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 type Conversation struct
 	method AcquireControl(context.Context) (func(), error)
@@ -22,6 +23,7 @@ type Conversation struct
 	method History(context.Context) ([]chat.Turn, error)
 	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
 	method Quit(context.Context) error
+	method Resize(uint16, uint16) error
 	method ScreenSnapshot() screen.Snapshot
 	method Send(context.Context, string) (string, error)
 	method SessionID() string
@@ -100,6 +102,7 @@ ErrNoControl = "chat: control token not held"
 ErrTurnInFlight = "chat: previous turn still in flight"
 ErrClosed = "chat: conversation closed"
 ErrInputPending = "chat: blocked on interactive input request"
+ErrAuthRequired = "chat: harness requires authentication / onboarding"
 ErrNoInputPending = "chat: no input request pending"
 ErrStaleInputRequest = "chat: stale input request id"
 ErrUnknownOption = "chat: unknown input option"

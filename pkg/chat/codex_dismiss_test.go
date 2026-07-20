@@ -20,11 +20,37 @@ func codexUpdateRequest() *turns.InputRequest {
 	}
 }
 
-// Default (auto-dismiss on): a codex update notice is cleared by selecting
-// Skip, nothing is surfaced, and the request stays pending until it clears.
+// Default (no AutoSkipCodexUpdateNotice): the update menu is SURFACED to the
+// client so it can choose Update / Skip — the chat layer writes nothing and
+// keeps the request pending.
 func TestCodexAutoDismiss_Default(t *testing.T) {
 	rec := &keyRecorder{}
 	c := newTestConv(Options{Harness: "codex"}, rec)
+
+	c.handleInputRequested(codexUpdateRequest())
+
+	if len(rec.data) != 0 {
+		t.Errorf("wrote %q, want nothing (update menu surfaces by default)", rec.data)
+	}
+	if !c.inputSurfaced {
+		t.Error("inputSurfaced = false, want true (update menu surfaces to client)")
+	}
+	select {
+	case ev := <-c.eventCh:
+		if ev.Type != EventInputRequest || ev.Input == nil || ev.Input.Kind != codexharness.KindUpdateNotice {
+			t.Errorf("surfaced event = %+v, want EventInputRequest(codex_update_notice)", ev)
+		}
+	default:
+		t.Error("expected the update menu to surface as an EventInputRequest")
+	}
+}
+
+// With AutoSkipCodexUpdateNotice set (the headless default), the update menu is
+// cleared by selecting Skip and nothing is surfaced — the pre-existing safe
+// behavior, now opt-in.
+func TestCodexAutoSkipUpdateNotice(t *testing.T) {
+	rec := &keyRecorder{}
+	c := newTestConv(Options{Harness: "codex", AutoSkipCodexUpdateNotice: true}, rec)
 
 	c.handleInputRequested(codexUpdateRequest())
 
@@ -32,11 +58,11 @@ func TestCodexAutoDismiss_Default(t *testing.T) {
 		t.Errorf("wrote %q, want %q (Skip)", got, "2\r")
 	}
 	if c.inputSurfaced {
-		t.Error("inputSurfaced = true, want false for auto-dismissed interstitial")
+		t.Error("inputSurfaced = true, want false for auto-skipped update menu")
 	}
 	select {
 	case ev := <-c.eventCh:
-		t.Errorf("unexpected surfaced event for auto-dismissed interstitial: %+v", ev)
+		t.Errorf("unexpected surfaced event for auto-skipped update menu: %+v", ev)
 	default:
 	}
 }

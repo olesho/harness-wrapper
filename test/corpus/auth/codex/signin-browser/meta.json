@@ -1,0 +1,7 @@
+{
+  "harness": "codex",
+  "authRequired": true,
+  "state": "onboarding-signin-flow",
+  "source": "live VM 167.233.43.85, never-signed-in codex 0.144.6, the screen the 'Sign in with ChatGPT' menu ADVANCES INTO (captured 2026-07-20 during the live re-test)",
+  "note": "THE live-retest finding: the sign-in MENU (codex/onboarding) flashes for a single frame and the CLI advances into this browser/device login flow, which the original anchors did NOT match — so structured-run deadlined instead of firing auth_required. Anchor added: 'finish signing in via your browser'. The OAuth URL query is ephemeral and was replaced with EXAMPLE placeholders; the anchor line is verbatim. Combined with immediate onboardingWall firing (no dwell), this makes the gate catch the settled login wall."
+}

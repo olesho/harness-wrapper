@@ -16,6 +16,7 @@ func (s *Screen) Write(p []byte) (int, error)        // feed raw PTY bytes; bump
 func (s *Screen) Snapshot() Snapshot                 // coherent point-in-time view
 func (s *Screen) Generation() uint64                 // cheap "has anything changed?" counter
 func (s *Screen) Resize(cols, rows int)              // update dimensions; bumps Generation
+func (s *Screen) ResizeWithPeer(cols, rows int, resizePeer func() error) error // coordinate a fallible peer resize without freezing readers
 func (s *Screen) Subscribe() (<-chan struct{}, func()) // change notifications + an unsubscribe func
 ```
 
@@ -27,7 +28,7 @@ type Snapshot struct {
 	Cols, Rows int
 	CursorCol  int    // 0-indexed
 	CursorRow  int    // 0-indexed
-	Generation uint64 // monotonic; increments on each Write
+	Generation uint64 // monotonic; increments on each Write or size change
 }
 ```
 
@@ -36,11 +37,16 @@ type Snapshot struct {
 - The [wrapper](wrapper.md) supervisor's `Stdout` is pointed at a `Screen` by
   [`chat.Open`](../guide/chat.md#open), so every PTY byte the harness emits is rendered.
 - `Subscribe()` drives the [turns Watcher](turns.md#the-watcher)'s screen pump: every successful
-  `Write` signals (coalesced, buffer of 1), the Watcher takes a `Snapshot`, and hands it to
-  `adapter.OnScreen`.
+  `Write` or size change signals (coalesced, buffer of 1), the Watcher takes a `Snapshot`, and hands
+  it to `adapter.OnScreen`.
 - `Generation` lets callers cheaply detect change without rendering a full snapshot.
+- `ResizeWithPeer` runs a fallible peer operation (normally a PTY resize) WITHOUT holding the screen
+  read/write lock, then commits the emulator dimensions under a brief lock only when that operation
+  succeeds. Not holding the lock across the peer keeps `Write`/`Snapshot` live even when the peer
+  resize blocks (a PTY window-size ioctl can stall in the kernel behind an in-flight stdin write);
+  concurrent resizes are serialized separately so the peer op and its commit never interleave.
 
-The emulator wrapping is intentionally thin — `Write` / `Snapshot` / `Resize` / `Subscribe` is the
-whole surface. If a harness's rendering ever exceeds the emulator's fidelity, the fix is to bias that
-[adapter](turns.md) toward the harness's own [transcript](transcript.md) for text and use the screen
-only for the liveness signal — exactly the consequence ADR-001 anticipated.
+The emulator wrapping is intentionally thin — `Write` / `Snapshot` / `Resize` / `ResizeWithPeer` /
+`Subscribe` is the whole surface. If a harness's rendering ever exceeds the emulator's fidelity, the
+fix is to bias that [adapter](turns.md) toward the harness's own [transcript](transcript.md) for text and
+use the screen only for the liveness signal — exactly the consequence ADR-001 anticipated.

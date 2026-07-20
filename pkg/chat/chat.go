@@ -73,6 +73,16 @@ const (
 	TurnStateErrored TurnState = "errored"
 )
 
+// ReasonAuthRequired is the canonical Turn.Reason recorded when a turn ended in
+// failure because the harness CLI is logged out / its login has expired
+// (claude-code "Not logged in · Please run /login"; codex "401 Unauthorized" /
+// "Not logged in"). The stable "auth_required:" prefix is a machine token
+// consumers match to tell "renew the harness login" apart from a genuine task
+// failure — instead of re-scraping the rendered screen themselves. Set only when
+// a turn errored AND the terminal screen showed a logout banner (see
+// Conversation.handleTurnsEvent); it explains a failure, it never completes one.
+const ReasonAuthRequired = "auth_required: harness login expired or re-authentication required — renew the harness login"
+
 // Turn is one message in the conversation.
 type Turn struct {
 	ID          string
@@ -181,6 +191,15 @@ var (
 	// EventInputResolved) before sending. Not returned when a policy or
 	// handler is auto-answering the prompt — in that case Send waits.
 	ErrInputPending = errors.New("chat: blocked on interactive input request")
+
+	// ErrAuthRequired is returned by waitReadyForSend when the harness cannot
+	// reach a ready prompt because it is sitting in a logged-out / not-onboarded
+	// screen (a sign-in wizard, login-method picker, or re-auth banner) that
+	// never clears on its own. Send catches it and records a terminal assistant
+	// turn carrying ReasonAuthRequired, so the onboarding case surfaces the same
+	// canonical signal as the completion- and error-path cases instead of
+	// hanging to the run deadline.
+	ErrAuthRequired = errors.New("chat: harness requires authentication / onboarding")
 
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.
