@@ -20,8 +20,10 @@
 // (blocked_by_cost, retry_later, failed) continue to flow through to
 // the event stream alongside the screen-derived signals.
 //
-// Verified against Codex 0.142.2 (footer/resume-hint removal confirmed; corpus
-// re-baked). Interstitial detection (input.go) verified against 0.140.0, and the
+// Pinned at Codex 0.142.5 for cross-repo parity with meta-harness; the
+// corpus/marker verification (footer/resume-hint removal confirmed; corpus
+// re-baked) was performed at 0.142.2.
+// Interstitial detection (input.go) verified against 0.140.0, and the
 // 0.141.0 idle composer + CSI-13u submit (see input_test.go). Markers may shift
 // across upstream versions; the golden-recording tests under test/corpus/codex/
 // are the early-warning signal for that drift.

@@ -2,7 +2,9 @@
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
 // Detection signals first observed on 2.1.141; re-verified against 2.1.185
-// (corpus multi-turn/tool-call re-baked, live sentinel round-trip):
+// (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
+// in versions.json is 2.1.201, adopted for cross-repo parity with
+// meta-harness; detection signals were last verified at 2.1.185:
 //
 //   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
 //     line appears, where <verb> is a colorful word like Baked, Brewed,

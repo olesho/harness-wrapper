@@ -11,10 +11,10 @@
 // Schema:
 //
 //	{
-//	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.130.0", "verified_at": "2026-05-15"},
-//	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.141", "verified_at": "2026-05-15"},
+//	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.142.5", "verified_at": "2026-07-05"},
+//	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.201", "verified_at": "2026-07-05"},
 //	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
-//	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "",        "verified_at": ""}
+//	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 //	}
 //
 // An empty pinned/verified_at string is allowed and means "not yet
@@ -48,7 +48,9 @@ type Entry struct {
 	Pinned string `json:"pinned"`
 
 	// VerifiedAt is the YYYY-MM-DD date when Pinned was confirmed (by a
-	// successful corpus re-bake). Empty when Pinned is empty.
+	// successful corpus re-bake — possibly performed in the meta-harness
+	// counterpart when pins are adopted for cross-repo parity). Empty
+	// when Pinned is empty.
 	VerifiedAt string `json:"verified_at"`
 }
 

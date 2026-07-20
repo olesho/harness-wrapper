@@ -12,14 +12,24 @@ against. It is embedded into `pkg/versions` at build time.
 
 ```json
 {
-  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.142.2", "verified_at": "2026-06-26"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.193", "verified_at": "2026-06-26"},
+  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.142.5", "verified_at": "2026-07-05"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.201", "verified_at": "2026-07-05"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
-  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "",        "verified_at": ""}
+  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
 ```
 
-An empty `pinned` means "no corpus captured yet". The read API:
+An empty `pinned` means "no corpus captured yet".
+
+**Pin/corpus skew.** Pins may legitimately lead the corpus's `binary_version` when they are adopted
+for cross-repo parity with meta-harness (the TS port) rather than from a local re-bake — e.g. codex
+self-updates to latest on launch, so a targeted re-bake at the exact parity version isn't possible.
+The vendored snapshot `pkg/versions/testdata/meta-harness-versions.json` mirrors meta-harness's pin
+file; the hermetic parity test in `pkg/versions/parity_test.go` keeps this repo's pins semantically
+equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from a sibling checkout;
+`--check`: format-insensitive drift check) keeps the snapshot itself current.
+
+The read API:
 
 ```go
 versions.All() (map[string]Entry, error)        // every entry (embedded)
