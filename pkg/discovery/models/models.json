@@ -1,0 +1,20 @@
+{
+  "claude-code": {
+    "default": "opus",
+    "models": [
+      "default",
+      "opus",
+      "fable",
+      "sonnet",
+      "haiku",
+      "claude-opus-4-8",
+      "claude-fable-5",
+      "claude-sonnet-5",
+      "claude-haiku-4-5-20251001"
+    ]
+  },
+  "codex": {
+    "default": "gpt-5.5",
+    "models": ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
+  }
+}
