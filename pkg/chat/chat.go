@@ -218,6 +218,16 @@ var (
 	// no graceful-quit sequence (it does not implement turns.Quitter). The
 	// caller should fall back to Close, which signals the process.
 	ErrQuitUnsupported = errors.New("chat: harness has no graceful-quit sequence")
+
+	// ErrResumeUnsupported is returned by Open/Reopen when the harness adapter
+	// cannot build resume args (it does not implement turns.SessionResumer).
+	// Call sites wrap it with the harness name; errors.Is still matches.
+	ErrResumeUnsupported = errors.New("chat: harness has no resume sequence")
+
+	// ErrNoHarnessSession is returned by Reopen when the stored session carries
+	// no harness session id (never captured, so there is nothing to resume).
+	// Call sites wrap it with the session id; errors.Is still matches.
+	ErrNoHarnessSession = errors.New("chat: session has no harness session id")
 )
 
 // newID returns a fresh 16-byte hex ID. Used for chat-level Session

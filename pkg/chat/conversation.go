@@ -30,6 +30,14 @@ type Options struct {
 	// Args are passed verbatim to the harness.
 	Args []string
 
+	// Resume is a harness session id to resume instead of starting a fresh
+	// session. When set, the adapter must implement turns.SessionResumer (else
+	// Open returns ErrResumeUnsupported); its ResumeArgs fragment is prepended
+	// to Args, and Session.HarnessSessionID is seeded with this id. When set,
+	// Args must not carry any flag the adapter reserves via
+	// turns.SessionControlFlags (else Open returns ErrInvalidOptions).
+	Resume string
+
 	// WorkingDir is the harness's working directory. Defaults to the
 	// current process's CWD.
 	WorkingDir string
@@ -159,9 +167,91 @@ type Conversation struct {
 	closed    chan struct{}
 }
 
-// Open starts a harness, wires the screen + turn watcher, and returns
-// a live Conversation.
+// Open starts a fresh harness session, wires the screen + turn watcher, and
+// returns a live Conversation. To resume a prior harness session instead, set
+// Options.Resume (or use Reopen with a stored chat session id).
 func Open(ctx context.Context, opts Options) (*Conversation, error) {
+	session := Session{
+		ID:         newID(),
+		Harness:    opts.Harness,
+		WorkingDir: opts.WorkingDir,
+		CreatedAt:  time.Now(),
+	}
+	return openWithSession(ctx, opts, session, true)
+}
+
+// ReopenOptions configures Reopen. It is the Options knobs that make sense when
+// re-attaching to an already-stored session: the harness, working dir, and
+// resume id come from the stored record (looked up by SessionID), so they are
+// intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"resume">).
+type ReopenOptions struct {
+	// SessionID is the chat-level session id to reopen. The stored record
+	// supplies Harness, WorkingDir, and the harness session id to resume.
+	SessionID string
+
+	// The remaining fields mirror the identically-named Options knobs; see
+	// Options for their semantics.
+	BinaryPath              string
+	Args                    []string
+	Env                     []string
+	Effort                  string
+	Model                   string
+	Cols, Rows              int
+	Store                   Store
+	EventBuffer             int
+	InputPolicy             *InputPolicy
+	DisableCodexAutoDismiss bool
+	OnInputRequest          func(InputRequest) (InputAnswer, bool)
+
+	// idleGap, markerGap mirror the unexported Options test knobs; only
+	// same-package tests set them. See Options.idleGap / Options.markerGap.
+	idleGap, markerGap time.Duration
+}
+
+// Reopen resumes a previously-stored chat session against its harness's own
+// persisted session, re-attaching a fresh live Conversation. It looks up the
+// stored record by SessionID, requires it to carry a harness session id, and
+// launches the harness with the adapter's resume args spliced in. Unlike Open
+// it does NOT create a new store record — the record already exists.
+func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
+	if opts.Store == nil {
+		return nil, fmt.Errorf("%w: Store is required (pass memstore.New() for the default)", ErrInvalidOptions)
+	}
+	rec, err := opts.Store.GetSession(ctx, opts.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	if rec.HarnessSessionID == "" {
+		return nil, fmt.Errorf("chat: session %s has no harness session id: %w", opts.SessionID, ErrNoHarnessSession)
+	}
+
+	launch := Options{
+		Harness:                 rec.Harness,
+		BinaryPath:              opts.BinaryPath,
+		Args:                    opts.Args,
+		WorkingDir:              rec.WorkingDir,
+		Env:                     opts.Env,
+		Resume:                  rec.HarnessSessionID,
+		Effort:                  opts.Effort,
+		Model:                   opts.Model,
+		Cols:                    opts.Cols,
+		Rows:                    opts.Rows,
+		Store:                   opts.Store,
+		EventBuffer:             opts.EventBuffer,
+		InputPolicy:             opts.InputPolicy,
+		DisableCodexAutoDismiss: opts.DisableCodexAutoDismiss,
+		OnInputRequest:          opts.OnInputRequest,
+		idleGap:                 opts.idleGap,
+		markerGap:               opts.markerGap,
+	}
+	return openWithSession(ctx, launch, *rec, false)
+}
+
+// openWithSession is the shared launch/wiring body behind Open and Reopen. It
+// attaches the supplied chat Session (Open mints a fresh one; Reopen reuses the
+// stored record) and, when persist is set, inserts it via Store.CreateSession
+// after launch. Reopen passes persist=false because the record already exists.
+func openWithSession(ctx context.Context, opts Options, session Session, persist bool) (*Conversation, error) {
 	if opts.Harness == "" || opts.BinaryPath == "" {
 		return nil, fmt.Errorf("%w: Harness and BinaryPath are required", ErrInvalidOptions)
 	}
@@ -186,6 +276,32 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		return nil, err
 	}
 
+	// Resolve resume args up front so an unsupported harness fails before launch.
+	var resumeArgs []string
+	if opts.Resume != "" {
+		resumer, ok := adapter.(turns.SessionResumer)
+		if !ok {
+			return nil, fmt.Errorf("chat: harness %s cannot resume: %w", opts.Harness, ErrResumeUnsupported)
+		}
+		resumeArgs = resumer.ResumeArgs(opts.Resume)
+
+		// Whenever chat injects a resume prefix the caller must NOT also pass raw
+		// session-control flags in Options.Args — they would diverge the real
+		// transcript from the persisted harness session id. Reject before launch.
+		// Adapters that declare no reserved flags (e.g. codex) accept anything.
+		if scf, ok := adapter.(turns.SessionControlFlags); ok {
+			if bad := firstSessionControlConflict(opts.Args, scf.SessionControlFlags()); bad != "" {
+				return nil, fmt.Errorf("%w: argument %s conflicts with chat-managed session control; use Options.Resume / Reopen", ErrInvalidOptions, bad)
+			}
+		}
+
+		// Seed the session's harness id with the resume id so History and
+		// session-id capture reflect the resumed session immediately. This composes
+		// with the existing first-write-wins guards (maybeExtractSessionID /
+		// captureRawSessionID both short-circuit on a non-empty id).
+		session.HarnessSessionID = opts.Resume
+	}
+
 	scr := screen.New(opts.Cols, opts.Rows)
 
 	// Build the Conversation BEFORE starting the wrapper so the durable line
@@ -193,26 +309,28 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	// (mu, session, store, adapter) is initialized here; sess/releaseWriter are
 	// filled in right after Start and are not touched by the tap.
 	c := &Conversation{
-		opts:    opts,
-		store:   opts.Store,
-		adapter: adapter,
-		screen:  scr,
-		queue:   newControlQueue(),
-		session: Session{
-			ID:         newID(),
-			Harness:    opts.Harness,
-			WorkingDir: opts.WorkingDir,
-			CreatedAt:  time.Now(),
-		},
+		opts:         opts,
+		store:        opts.Store,
+		adapter:      adapter,
+		screen:       scr,
+		queue:        newControlQueue(),
+		session:      session,
 		eventCh:      make(chan ConversationEvent, opts.EventBuffer),
 		inputStateCh: make(chan struct{}, 1),
 		markerArmCh:  make(chan struct{}, 1),
 		closed:       make(chan struct{}),
 	}
 
+	// Prepend the resume fragment AHEAD of the caller's args so the resume verb
+	// leads the argv; empty for a fresh launch.
+	launchArgs := opts.Args
+	if len(resumeArgs) > 0 {
+		launchArgs = append(append([]string{}, resumeArgs...), opts.Args...)
+	}
+
 	cfg := wrapper.Config{
 		BinaryPath: opts.BinaryPath,
-		Args:       opts.Args,
+		Args:       launchArgs,
 		WorkingDir: opts.WorkingDir,
 		Env:        opts.Env,
 		Stdin:      nil,
@@ -256,14 +374,17 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 		return nil, fmt.Errorf("chat: initial resize: %w", err)
 	}
 
-	// Persist the session record. Pass a copy: the PTY read loop is already
-	// live, so the tap may touch c.session (under c.mu) concurrently — the
-	// store must not alias it.
-	sessionRec := c.session
-	if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
-		releaseWriter()
-		_ = sess.Stop(context.Background())
-		return nil, fmt.Errorf("chat: store CreateSession: %w", err)
+	// Persist the session record on the create path only. Reopen (persist=false)
+	// skips this — the record already exists. Pass a copy: the PTY read loop is
+	// already live, so the tap may touch c.session (under c.mu) concurrently —
+	// the store must not alias it.
+	if persist {
+		sessionRec := c.session
+		if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
+			releaseWriter()
+			_ = sess.Stop(context.Background())
+			return nil, fmt.Errorf("chat: store CreateSession: %w", err)
+		}
 	}
 
 	c.watcher = turns.Watch(sess, scr, adapter)
@@ -272,6 +393,36 @@ func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	go c.idleCompletionWatcher()
 
 	return c, nil
+}
+
+// firstSessionControlConflict scans args (up to a bare "--" terminator) for the
+// first token that conflicts with a chat-managed session-control flag: an exact
+// token match (covering short flags and bare long flags), or, for a LONG flag,
+// the attached "--flag=value" form. Returns the offending token, or "" when
+// there is no conflict. Mirrors the TS firstSessionControlConflict.
+func firstSessionControlConflict(args, banned []string) string {
+	set := make(map[string]struct{}, len(banned))
+	var longFlags []string
+	for _, f := range banned {
+		set[f] = struct{}{}
+		if strings.HasPrefix(f, "--") {
+			longFlags = append(longFlags, f)
+		}
+	}
+	for _, tok := range args {
+		if tok == "--" {
+			break // positionals follow; never flags
+		}
+		if _, ok := set[tok]; ok {
+			return tok
+		}
+		for _, f := range longFlags {
+			if strings.HasPrefix(tok, f+"=") {
+				return tok
+			}
+		}
+	}
+	return ""
 }
 
 // SessionID returns the chat-level session ID. Distinct from the
