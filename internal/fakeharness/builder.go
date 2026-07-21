@@ -1,7 +1,11 @@
 package fakeharness
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -162,6 +166,48 @@ func (b *Builder) SettleIdle(delayMs int, body string) *Builder {
 // PromptRef returns the placeholder a scenario embeds in a reply body to have
 // the captured prompt substituted at paint time.
 func PromptRef() string { return promptPlaceholder }
+
+// CapturedArgv runs the compiled fake binary at bin with the given args, having
+// it dump its launch argv via ArgvOutVar, then reads that dump back and returns
+// the decoded JSON array. It lets a conformance test assert argv prepending: the
+// args the caller passes here are exactly what the fake should observe as
+// os.Args[1:].
+//
+// The fake runs against a throwaway one-step script (an immediate Exit) so it
+// terminates without a PTY — argv is dumped before script loading, so it is
+// captured regardless. Any run error is surfaced only if the argv file is then
+// missing, since the dump itself is what the test cares about.
+func CapturedArgv(bin string, args ...string) ([]string, error) {
+	dir, err := os.MkdirTemp("", "fakeharness-argv")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+
+	scriptPath := filepath.Join(dir, "script.json")
+	scriptData, err := json.Marshal(New("claude-code").Exit(0).Build())
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(scriptPath, scriptData, 0o644); err != nil {
+		return nil, err
+	}
+
+	argvPath := filepath.Join(dir, "argv.json")
+	cmd := exec.Command(bin, args...)
+	cmd.Env = append(os.Environ(), EnvVar+"="+scriptPath, ArgvOutVar+"="+argvPath)
+	_ = cmd.Run() // exit code is irrelevant; the argv dump is best-effort but pre-exit.
+
+	raw, err := os.ReadFile(argvPath)
+	if err != nil {
+		return nil, fmt.Errorf("read argv dump: %w", err)
+	}
+	var got []string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		return nil, fmt.Errorf("decode argv dump: %w", err)
+	}
+	return got, nil
+}
 
 // --- codex screen vocabulary --------------------------------------------
 //

@@ -18,6 +18,13 @@ package fakeharness
 // from. The chat test helper sets it when spawning the binary.
 const EnvVar = "FAKEHARNESS_SCRIPT"
 
+// ArgvOutVar is the environment variable cmd/fakeharness dumps its launch argv
+// (os.Args[1:]) to, as a single JSON array, when set. It mirrors the TS fake's
+// ArgvOutVar (meta-harness/test/chat/fakeharness.ts) so conformance tests can
+// read back the exact args the wrapper spawned the fake with — asserting argv
+// prepending. See Builder-side CapturedArgv for the read-back helper.
+const ArgvOutVar = "FAKEHARNESS_ARGV_OUT"
+
 // SubmitCSI13u is the byte sequence chat.Send writes to submit a turn for both
 // claude-code and codex: CSI 13 u, the unmodified Enter key in the kitty /
 // enhanced keyboard protocol those TUIs enable at startup. Scenarios wait for

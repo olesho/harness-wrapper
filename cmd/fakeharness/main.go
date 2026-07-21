@@ -29,6 +29,12 @@ func main() {
 }
 
 func run() error {
+	// Dump argv BEFORE loading the script, so conformance tests can read back
+	// the exact spawned args even when the script env is broken (mirrors the TS
+	// fake's ordering in test/chat/fakeharness.mjs). Best-effort: any failure is
+	// swallowed so it never perturbs the harness contract under test.
+	dumpArgv()
+
 	sc, err := loadScript()
 	if err != nil {
 		return err
@@ -59,6 +65,23 @@ func run() error {
 	// closes (the parent kills us on Conversation.Close).
 	_, _ = io.Copy(io.Discard, in)
 	return nil
+}
+
+// dumpArgv writes os.Args[1:] as a single JSON array to the path named by
+// $FAKEHARNESS_ARGV_OUT, when set, so tests can assert the exact argv the
+// wrapper spawned the fake with (argv prepending). It is best-effort: an unset
+// var, a bad path, or an unwritable file is silently ignored — this facility
+// exists only for observation and must never change the fake's behavior.
+func dumpArgv() {
+	path := os.Getenv(fakeharness.ArgvOutVar)
+	if path == "" {
+		return
+	}
+	data, err := json.Marshal(os.Args[1:])
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o644)
 }
 
 // loadScript reads and parses the script named by $FAKEHARNESS_SCRIPT.
