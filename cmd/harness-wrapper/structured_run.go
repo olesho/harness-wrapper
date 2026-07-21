@@ -112,6 +112,22 @@ func runStructuredRun(args []string) int {
 		result.TranscriptEntries = entries
 	}
 
+	// Populate token accounting best-effort, mirroring meta-harness's
+	// `usage ?? undefined`: a Reader that also implements transcript.UsageReader
+	// is asked for usage, but a ReadUsage failure, an absent/empty session id, or
+	// a (nil, nil) result must NEVER erase a good reply or change the exit code.
+	// Usage is optional — on any of those paths result.Usage stays nil and the
+	// omitempty tag drops the field. No usage_error sibling is emitted (a
+	// failure-observability field would be an additive follow-up, not this
+	// ticket).
+	if reader, ok := transcriptReaderFor(parsed.HarnessName); ok {
+		if ur, ok := reader.(transcript.UsageReader); ok {
+			if u, uerr := ur.ReadUsage(outcome.HarnessSessionID, wd); uerr == nil && u != nil {
+				result.Usage = u
+			}
+		}
+	}
+
 	emitStructured(result)
 	exit := turnproto.ExitCode(status)
 	if status == turnproto.StatusDeadline {
