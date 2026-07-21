@@ -1,4 +1,4 @@
-// upstream-version-sentry compares the upstream-version pins in
+// Command check-versions compares the upstream-version pins in
 // versions.json against the npm registry's latest published version
 // for each declared package. Run via `make check-versions`.
 //
@@ -40,8 +40,8 @@ func main() {
 
 	all, err := versions.All()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "upstream-version-sentry: %v\n", err)
-		os.Exit(2)
+		fmt.Fprintf(os.Stderr, "check-versions: %v\n", err)
+		os.Exit(exitCode(true, false))
 	}
 
 	client := &http.Client{Timeout: *timeout}
@@ -54,13 +54,20 @@ func main() {
 		writeTable(os.Stdout, report)
 	}
 
+	os.Exit(exitCode(anyErr, anyDrift))
+}
+
+// exitCode maps a check() result to the process exit code.
+//
+//	0 = all match, 1 = drift, 2 = probe/read error.
+func exitCode(anyErr, anyDrift bool) int {
 	switch {
 	case anyErr:
-		os.Exit(2)
+		return 2
 	case anyDrift:
-		os.Exit(1)
+		return 1
 	default:
-		os.Exit(0)
+		return 0
 	}
 }
 

@@ -72,7 +72,7 @@ each is defined in full.
   verbatim in the captured reply (catches truncation + extraction drift).
 - **Drift** — an upstream release shifting a marker/schema and breaking detection. Caught by the
   [drift pipeline](versions-drift.md).
-- **Sentry** — `upstream-version-sentry`: compares `versions.json` pins against the npm registry.
+- **Sentry** — the `cmd/check-versions` drift check (formerly `upstream-version-sentry`): compares `versions.json` pins against the npm registry.
 - **Pin / `versions.json`** — the per-harness upstream version each adapter was last verified against.
 - **Quiescence** — the timing logic that defers turn completion until output settles, defended by the
   Layer-3 [fake-harness](testing/fakeharness.md) tests.

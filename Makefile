@@ -46,7 +46,7 @@ docs-serve:
 	cd docs/gen && go run . serve
 
 check-versions:
-	@go run ./internal/cmd/upstream-version-sentry 2>/dev/null; \
+	@go run ./cmd/check-versions 2>/dev/null; \
 	code=$$?; \
 	case $$code in \
 		0) echo "" ; echo "✓ all pins match latest" ;; \

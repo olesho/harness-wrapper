@@ -26,6 +26,27 @@ func fakeRegistry(t *testing.T, m map[string]string) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+func TestExitCode(t *testing.T) {
+	cases := []struct {
+		name     string
+		anyErr   bool
+		anyDrift bool
+		want     int
+	}{
+		{"all match", false, false, 0},
+		{"drift", false, true, 1},
+		{"probe error", true, false, 2},
+		{"error dominates drift", true, true, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := exitCode(tc.anyErr, tc.anyDrift); got != tc.want {
+				t.Errorf("exitCode(%v, %v) = %d, want %d", tc.anyErr, tc.anyDrift, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCheckMatch(t *testing.T) {
 	srv := fakeRegistry(t, map[string]string{"@foo/bar": "1.2.3"})
 	defer srv.Close()

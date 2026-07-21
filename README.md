@@ -176,8 +176,8 @@ The per-harness detail and "adding a harness" workflow are in the
 - `pkg/discovery/` — "is harness X installed on PATH, at what version?"
 - `cmd/harness-wrapper/` — thin CLI front-end for the wrapper
 - `cmd/harness-chatd/` — HTTP + SSE gateway exposing `pkg/chat` to non-Go clients
+- `cmd/check-versions/` — offline drift check against the npm registry
 - `clients/` — Python + TypeScript example clients for `harness-chatd`
-- `internal/cmd/upstream-version-sentry/` — offline drift check against the npm registry
 - `internal/screenbench/` — bake-off harness used to choose the vt100 emulator + scripted recorder
 - `test/corpus/` — recorded byte streams used by the bake-off and the adapter compatibility tests
 - `docs/md/` — canonical documentation sources; `docs/gen/` — the Go static-site generator
