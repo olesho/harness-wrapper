@@ -61,6 +61,21 @@ func (r *Reader) Read(harnessSessionID, workingDir string) ([]transcript.Event, 
 	return Events(data)
 }
 
+// ReadUsage returns best-effort token accounting for the given Claude Code
+// session, or (nil, nil) when the transcript carried no usage. It reuses the
+// same locate flow as Read, so *Reader satisfies transcript.UsageReader.
+func (r *Reader) ReadUsage(harnessSessionID, workingDir string) (*transcript.Usage, error) {
+	path, err := r.locate(harnessSessionID, workingDir)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path is located under projectsRoot
+	if err != nil {
+		return nil, fmt.Errorf("claudecode transcript: read %s: %w", path, err)
+	}
+	return UsageFromJSONL(data)
+}
+
 // claudeCWDSanitize matches every character Claude Code rewrites when it names
 // a project dir: anything that is not an ASCII letter or digit. Crucially this
 // includes '.', so a path under ~/.loom encodes the dot too. Replacing only '/'
