@@ -49,3 +49,10 @@ type Reader interface {
 	// []Turn via TurnsFromEvents at its boundary.)
 	Read(harnessSessionID, workingDir string) ([]Event, error)
 }
+
+// UsageReader is an optional capability a transcript.Reader may also implement:
+// it returns best-effort token accounting for a session, or (nil, nil) when the
+// transcript carried no usage. Callers type-assert a Reader to UsageReader.
+type UsageReader interface {
+	ReadUsage(harnessSessionID, workingDir string) (*Usage, error)
+}
