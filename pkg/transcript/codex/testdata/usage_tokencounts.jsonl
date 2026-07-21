@@ -1,0 +1,9 @@
+{"type":"session_meta","payload":{"id":"parity-codex-sess","timestamp":"2026-07-21T09:10:00.000Z","cwd":"/work/repo"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"refactor the parser"}]}}
+{"type":"event_msg","payload":{"type":"token_count","info":null}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Starting the refactor."}]}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":2000,"cached_input_tokens":1500,"output_tokens":300,"reasoning_output_tokens":100,"total_tokens":2300},"last_token_usage":{"input_tokens":2000,"cached_input_tokens":1500,"output_tokens":300,"reasoning_output_tokens":100,"total_tokens":2300}}}}
+{"type":"response_item","payload":{"type":"function_call","name":"shell","call_id":"call_01","arguments":"{\"command\":[\"sed\",\"-i\",\"\",\"s/a/b/\",\"parse.go\"]}"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_01","output":"{\"output\":\"\"}"}}
+{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5000,"cached_input_tokens":3200,"output_tokens":850,"reasoning_output_tokens":420,"total_tokens":5850},"last_token_usage":{"input_tokens":3000,"cached_input_tokens":1700,"output_tokens":550,"reasoning_output_tokens":320,"total_tokens":3550}}}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Done."}]}}

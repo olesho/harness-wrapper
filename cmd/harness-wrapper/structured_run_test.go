@@ -276,6 +276,184 @@ func TestStructuredTranscript_CodexFidelity(t *testing.T) {
 	assertToolCallFidelity(t, entries)
 }
 
+// TestStructuredRun_UsagePopulatedBestEffort drives a full structured-run turn
+// with a REAL claude-layout JSONL staged at the session's on-disk slot — the same
+// staging TestStructuredTranscript_ClaudeFidelity uses, but the transcript now
+// carries message.usage lines. It asserts the emitted StructuredTurnResult
+// carries `usage` (summed + deduped by message.id) alongside the reply, proving
+// the best-effort ReadUsage hook fires. It also proves the ABSENT-usage twin: a
+// transcript with no usage lines leaves `usage` omitted, without changing status
+// or exit code.
+func TestStructuredRun_UsagePopulatedBestEffort(t *testing.T) {
+	fakeBin, err := fakeharness.BuildOnce()
+	if err != nil {
+		t.Skipf("fakeharness unavailable: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name      string
+		jsonl     string
+		wantUsage *transcript.Usage
+	}{
+		{
+			name: "with usage",
+			// Two distinct API calls, each repeated across content-block lines that
+			// share one message.id — dedup-by-id + SUM must apply.
+			jsonl: `{"type":"assistant","uuid":"a1","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"x"}],"usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":5,"cache_creation_input_tokens":3}}}
+{"type":"assistant","uuid":"a2","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"t1"}],"usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":5,"cache_creation_input_tokens":3}}}
+{"type":"assistant","uuid":"a3","message":{"id":"m2","role":"assistant","content":[{"type":"text","text":"y"}],"usage":{"input_tokens":100,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":7}}}
+`,
+			wantUsage: &transcript.Usage{
+				InputTokens:              110,
+				OutputTokens:             22,
+				CacheReadInputTokens:     5,
+				CacheCreationInputTokens: 10,
+			},
+		},
+		{
+			name: "without usage",
+			jsonl: `{"type":"assistant","uuid":"a1","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"x"}]}}
+`,
+			wantUsage: nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const prompt = "ship the turn API"
+			// The fakeharness reports this session id via its scripted resume hint
+			// (which extraction matches with a UUID-shaped regex), so it must be a
+			// UUID; stage the matching claude-layout JSONL under HOME at
+			// <session>.jsonl so the in-guest ReadUsage locates it.
+			const sessionID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			wd := t.TempDir()
+
+			projDir := filepath.Join(home, ".claude", "projects", claudecode.EncodedCWD(wd))
+			if err := os.MkdirAll(projDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(projDir, sessionID+".jsonl"), []byte(tc.jsonl), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			script := fakeharness.New("claude-code").
+				Session(sessionID).
+				Idle().
+				AwaitSubmit().
+				Working(30, "Working").
+				Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+				StayAliveUntilStopped().
+				Build()
+			scriptData, err := json.Marshal(script)
+			if err != nil {
+				t.Fatalf("marshal script: %v", err)
+			}
+			scriptPath := filepath.Join(t.TempDir(), "script.json")
+			if err := os.WriteFile(scriptPath, scriptData, 0o600); err != nil {
+				t.Fatalf("write script: %v", err)
+			}
+
+			t.Setenv("HARNESS_BINARY_CLAUDE", fakeBin)
+			t.Setenv(fakeharness.EnvVar, scriptPath)
+			t.Setenv("HARNESS_WRAPPER_RUN_TIMEOUT", "30s")
+			t.Setenv("LOOM_WORKTREE_PATH", wd)
+
+			out, code := captureStructuredRun(t, prompt, []string{"claude", "--"})
+			if code != turnproto.ExitOK {
+				t.Fatalf("exit code = %d, want %d; stdout:\n%s", code, turnproto.ExitOK, out)
+			}
+			res, ok := turnproto.ParseLastJSONLine([]byte(out))
+			if !ok {
+				t.Fatalf("no JSON result line in stdout:\n%s", out)
+			}
+			if res.Status != turnproto.StatusCompleted {
+				t.Errorf("status = %q, want %q", res.Status, turnproto.StatusCompleted)
+			}
+			// A completed turn must carry a non-empty reply; the exact text is
+			// incidental here (reply extraction may read it back from the staged
+			// transcript) — this test's subject is the usage field.
+			if res.Reply == "" {
+				t.Errorf("reply is empty, want the completed turn's reply preserved")
+			}
+
+			// The `usage` key must be present iff usage was expected — assert on the
+			// raw JSON so omitempty behavior (absent key, not a zero-value object) is
+			// verified directly.
+			hasUsageKey := strings.Contains(out, `"usage"`)
+			if (tc.wantUsage != nil) != hasUsageKey {
+				t.Errorf("usage key present = %v, want %v; stdout:\n%s", hasUsageKey, tc.wantUsage != nil, out)
+			}
+			if tc.wantUsage == nil {
+				if res.Usage != nil {
+					t.Errorf("usage = %+v, want nil (absent-usage transcript)", *res.Usage)
+				}
+			} else {
+				if res.Usage == nil {
+					t.Fatalf("usage is nil, want %+v", *tc.wantUsage)
+				}
+				if *res.Usage != *tc.wantUsage {
+					t.Errorf("usage = %+v, want %+v", *res.Usage, *tc.wantUsage)
+				}
+			}
+		})
+	}
+}
+
+// TestStructuredRun_UsageAbsentOnUnreadableTranscript proves the best-effort
+// contract's failure path end-to-end: when NO transcript is staged (the
+// fakeharness writes none), the ReadUsage locate fails, `usage` is omitted, and
+// neither the status nor the exit code changes — the reply survives intact.
+func TestStructuredRun_UsageAbsentOnUnreadableTranscript(t *testing.T) {
+	fakeBin, err := fakeharness.BuildOnce()
+	if err != nil {
+		t.Skipf("fakeharness unavailable: %v", err)
+	}
+
+	const prompt = "ship the turn API"
+	script := fakeharness.New("claude-code").
+		Idle().
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+		StayAliveUntilStopped().
+		Build()
+	scriptData, err := json.Marshal(script)
+	if err != nil {
+		t.Fatalf("marshal script: %v", err)
+	}
+	scriptPath := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(scriptPath, scriptData, 0o600); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	t.Setenv("HARNESS_BINARY_CLAUDE", fakeBin)
+	t.Setenv(fakeharness.EnvVar, scriptPath)
+	t.Setenv("HARNESS_WRAPPER_RUN_TIMEOUT", "30s")
+	t.Chdir(t.TempDir())
+
+	out, code := captureStructuredRun(t, prompt, []string{"claude", "--"})
+
+	res, ok := turnproto.ParseLastJSONLine([]byte(out))
+	if !ok {
+		t.Fatalf("no JSON result line in stdout:\n%s", out)
+	}
+	if res.Status != turnproto.StatusCompleted {
+		t.Errorf("status = %q, want %q (usage failure must not change status)", res.Status, turnproto.StatusCompleted)
+	}
+	if code != turnproto.ExitOK {
+		t.Errorf("exit code = %d, want %d (usage failure must not change exit code)", code, turnproto.ExitOK)
+	}
+	if !strings.Contains(res.Reply, "assistant reply: "+prompt) {
+		t.Errorf("reply = %q, want the reply preserved", res.Reply)
+	}
+	if res.Usage != nil {
+		t.Errorf("usage = %+v, want nil (unreadable transcript)", *res.Usage)
+	}
+	if strings.Contains(out, `"usage"`) {
+		t.Errorf("usage key present, want omitted; stdout:\n%s", out)
+	}
+}
+
 // assertToolCallFidelity asserts the event stream carries a populated tool_use
 // and a populated tool_result — the tool-call detail res.History would fold away.
 func assertToolCallFidelity(t *testing.T, entries []transcript.Event) {
