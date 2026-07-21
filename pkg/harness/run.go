@@ -29,6 +29,16 @@ type Config struct {
 	// Optional; empty means envelopes carry no run id.
 	RunID string
 
+	// ResumeSessionID is the native harness session id this run resumes — the
+	// SAME value the caller passes to Resumer.ResumeArgs — or empty for a fresh
+	// start. When non-empty (a resume launch) it is threaded into the hook env
+	// as HW_HARNESS_SESSION_ID to arm the resume session guard (see
+	// filterResumeSession): a stale/leftover hook fired for a DIFFERENT session
+	// lingering in the same per-run spool is dropped before it reaches the
+	// spool. Empty ⇒ the guard is disarmed (fresh starts force no --session-id,
+	// so the expected id is empty exactly as on TS's cold path).
+	ResumeSessionID string
+
 	// TranscriptMode selects the acquisition strategy (default Off — no events).
 	TranscriptMode Mode
 
@@ -146,7 +156,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := rp.Hooks.EnsureConfig(cfg.Wrapper.WorkingDir, cfg.HookCommand); err != nil {
 			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: ensure hooks: %w", err)
 		}
-		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield)
+		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield, cfg.ResumeSessionID)
 	}
 
 	// Install the tap when there is something to observe: live events to parse
@@ -318,17 +328,22 @@ func planAcquisition(mode Mode, rp ResolvedProfile, haveSink bool) acqPlan {
 // hookEnv augments the harness launch env with the HW_* hook variables. It must
 // APPEND to the inherited env (defaulting to os.Environ when base is nil), not
 // replace it, so the harness keeps its normal environment. The yield var is
-// added only when a YieldControl was supplied.
-func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl) []string {
+// added only when a YieldControl was supplied; HW_HARNESS_SESSION_ID only on a
+// resume launch (harnessSessionID non-empty) — leaving it unset on fresh starts
+// keeps the resume session guard disarmed there.
+func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSessionID string) []string {
 	if base == nil {
 		base = os.Environ()
 	}
 	home, _ := os.UserHomeDir()
-	out := make([]string, 0, len(base)+4)
+	out := make([]string, 0, len(base)+5)
 	out = append(out, base...)
 	out = append(out, EnvSpool+"="+spoolDir, EnvHookCwd+"="+cwd, EnvHome+"="+home)
 	if yield != nil {
 		out = append(out, EnvYieldFile+"="+yield.path)
+	}
+	if harnessSessionID != "" {
+		out = append(out, EnvHarnessSessionID+"="+harnessSessionID)
 	}
 	return out
 }

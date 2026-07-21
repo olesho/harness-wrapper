@@ -97,6 +97,93 @@ func TestHandleHookEventSessionStartSpoolsMarker(t *testing.T) {
 	}
 }
 
+// writeClaudeTranscript writes a two-line Claude transcript for session sid
+// under home/.claude/projects/proj and returns the hook stdin payload for it.
+func writeClaudeTranscript(t *testing.T, home, sid string) []byte {
+	t.Helper()
+	dir := filepath.Join(home, ".claude", "projects", "proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tpath := filepath.Join(dir, sid+".jsonl")
+	body := `{"type":"user","uuid":"u1","timestamp":"2026-05-14T12:00:00Z","message":{"role":"user","content":"hi"}}
+{"type":"assistant","uuid":"a1","timestamp":"2026-05-14T12:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}
+`
+	if err := os.WriteFile(tpath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdin, _ := json.Marshal(map[string]string{"session_id": sid, "transcript_path": tpath})
+	return stdin
+}
+
+// A resume launch (HW_HARNESS_SESSION_ID set) drops a stale PARENT hook fired
+// for a DIFFERENT session before it reaches the spool: env → HookContext →
+// filterResumeSession end-to-end.
+func TestHandleHookEventResumeGuardDropsMismatchedParent(t *testing.T) {
+	home := t.TempDir()
+	spool := t.TempDir()
+	stdin := writeClaudeTranscript(t, home, "stale-session")
+	env := []string{
+		harness.EnvSpool + "=" + spool,
+		harness.EnvHome + "=" + home,
+		harness.EnvHookCwd + "=/wt",
+		harness.EnvHarnessSessionID + "=resumed-session", // expected id ≠ fired session
+	}
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+		t.Fatalf("HandleHookEvent: %v", err)
+	}
+	if entries, _ := os.ReadDir(spool); len(entries) != 0 {
+		t.Fatalf("stale parent hook should write nothing on resume, spool = %v", names(entries))
+	}
+}
+
+// A resume launch whose fired session MATCHES the expected id spools normally.
+func TestHandleHookEventResumeGuardKeepsMatchingParent(t *testing.T) {
+	home := t.TempDir()
+	spool := t.TempDir()
+	stdin := writeClaudeTranscript(t, home, "resumed-session")
+	env := []string{
+		harness.EnvSpool + "=" + spool,
+		harness.EnvHome + "=" + home,
+		harness.EnvHookCwd + "=/wt",
+		harness.EnvHarnessSessionID + "=resumed-session", // expected id == fired session
+	}
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+		t.Fatalf("HandleHookEvent: %v", err)
+	}
+	evs, err := harness.DrainSpool(spool)
+	if err != nil {
+		t.Fatalf("DrainSpool: %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("matching resume parent should spool both events, got %d", len(evs))
+	}
+}
+
+// Without HW_HARNESS_SESSION_ID (fresh start / non-resume) the guard is disarmed:
+// events spool regardless of the fired session id.
+func TestHandleHookEventFreshStartDisarmsResumeGuard(t *testing.T) {
+	home := t.TempDir()
+	spool := t.TempDir()
+	stdin := writeClaudeTranscript(t, home, "any-session")
+	env := []string{
+		harness.EnvSpool + "=" + spool,
+		harness.EnvHome + "=" + home,
+		harness.EnvHookCwd + "=/wt",
+		// NO HW_HARNESS_SESSION_ID
+	}
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+		t.Fatalf("HandleHookEvent: %v", err)
+	}
+	evs, err := harness.DrainSpool(spool)
+	if err != nil {
+		t.Fatalf("DrainSpool: %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("fresh start should spool all events, got %d", len(evs))
+	}
+}
+
 func TestHandleHookEventUnknownHarness(t *testing.T) {
 	env := []string{harness.EnvSpool + "=" + t.TempDir()}
 	if _, err := harness.HandleHookEvent("nonesuch", "stop", env, []byte("{}")); err == nil {

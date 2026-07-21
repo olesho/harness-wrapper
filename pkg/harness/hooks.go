@@ -66,6 +66,12 @@ type HookContext struct {
 	// HW_EVENT_SPOOL. Empty ⇒ the handler is inert (the run is not a wrapper
 	// run). Used by HandleHookEvent, not ParseHookPayload.
 	SpoolDir string
+	// HarnessSessionID is the native session id a RESUME launch is resuming,
+	// from HW_HARNESS_SESSION_ID. Empty on fresh starts (and every
+	// non-resume/codex launch), which DISARMS the resume session guard in
+	// HandleHookEvent. Non-empty ⇒ a parent-conversation event whose session id
+	// mismatches is a stale/leftover hook and is dropped before the spool write.
+	HarnessSessionID string
 }
 
 // HookSpec describes the hook entries the orchestrator idempotently + atomically
