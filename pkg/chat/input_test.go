@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
@@ -167,6 +168,152 @@ func TestAnswer(t *testing.T) {
 	}
 	if got := string(rec.data); got != "1\r" {
 		t.Errorf("wrote %q, want %q", got, "1\r")
+	}
+}
+
+// multiSelectRequest is a synthetic clarifying-question prompt: MultiSelect
+// with TOGGLE-ONLY option Keys (no submit baked in). No adapter produces this
+// yet, so it is constructed directly to exercise the answer plumbing.
+func multiSelectRequest() *turns.InputRequest {
+	return &turns.InputRequest{
+		ID:          "q-1",
+		Kind:        "question",
+		Prompt:      "Which do you want?",
+		Header:      "Choices",
+		MultiSelect: true,
+		Options: []turns.InputOption{
+			{ID: "1", Alias: "a", Label: "Alpha", Keys: []byte("a")},
+			{ID: "2", Alias: "b", Label: "Beta", Keys: []byte("b")},
+			{ID: "3", Alias: "c", Label: "Gamma", Keys: []byte("c")},
+		},
+	}
+}
+
+// newMultiSelectConv wires a real screen so submitKeyForHarness (which reads
+// c.screen.Snapshot().Text) does not deref a nil screen.
+func newMultiSelectConv(rec *keyRecorder) *Conversation {
+	c := newTestConv(Options{Harness: "claude-code"}, rec)
+	c.screen = screen.New(80, 24)
+	return c
+}
+
+// claude-code's submit key (see submitKeyForHarness).
+const ccSubmit = "\x1b[13u"
+
+func answerHeld(t *testing.T, c *Conversation, req *turns.InputRequest, ans InputAnswer) error {
+	t.Helper()
+	release, err := c.queue.Acquire(context.Background())
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	defer release()
+	c.handleInputRequested(req)
+	return c.Answer(context.Background(), req.ID, ans)
+}
+
+// Distinct OptionIDs toggle each option in order, then submit exactly once.
+func TestMultiSelect_DistinctTogglesThenSubmit(t *testing.T) {
+	rec := &keyRecorder{}
+	c := newMultiSelectConv(rec)
+	if err := answerHeld(t, c, multiSelectRequest(), InputAnswer{OptionIDs: []string{"1", "2"}}); err != nil {
+		t.Fatalf("Answer = %v, want nil", err)
+	}
+	if got, want := string(rec.data), "ab"+ccSubmit; got != want {
+		t.Errorf("wrote %q, want %q", got, want)
+	}
+}
+
+// A repeated id and an id+matching-label both resolve to the same option and
+// must collapse to a single toggle (double-toggle would net-deselect).
+func TestMultiSelect_DedupByResolvedOption(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{
+		{"repeated-id", []string{"1", "1"}},
+		{"id-and-label", []string{"1", "Alpha"}},
+		{"id-and-alias", []string{"1", "a"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &keyRecorder{}
+			c := newMultiSelectConv(rec)
+			if err := answerHeld(t, c, multiSelectRequest(), InputAnswer{OptionIDs: tc.ids}); err != nil {
+				t.Fatalf("Answer = %v, want nil", err)
+			}
+			if got, want := string(rec.data), "a"+ccSubmit; got != want {
+				t.Errorf("wrote %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Every error channel must write NOTHING.
+func TestMultiSelect_ErrorsWriteNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		req  *turns.InputRequest
+		ans  InputAnswer
+		want error
+	}{
+		// Empty OptionIDs on a MultiSelect request falls through to the
+		// single-select path — findOption(req, "") → nil → ErrUnknownOption,
+		// the decided "empty multi-select answer unsupported" contract.
+		{"empty-on-multiselect", multiSelectRequest(), InputAnswer{OptionIDs: []string{}}, ErrUnknownOption},
+		{"single-select", trustRequest(), InputAnswer{OptionIDs: []string{"proceed"}}, ErrNotMultiSelect},
+		{"conflicting", multiSelectRequest(), InputAnswer{OptionID: "1", OptionIDs: []string{"2"}}, ErrConflictingAnswer},
+		{"unknown-id", multiSelectRequest(), InputAnswer{OptionIDs: []string{"1", "nope"}}, ErrUnknownOption},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &keyRecorder{}
+			c := newMultiSelectConv(rec)
+			err := answerHeld(t, c, tc.req, tc.ans)
+			if err != tc.want {
+				t.Fatalf("Answer = %v, want %v", err, tc.want)
+			}
+			if len(rec.data) != 0 {
+				t.Errorf("wrote %q, want nothing on error", rec.data)
+			}
+		})
+	}
+}
+
+// PendingInput returns nil while a request is set-but-not-surfaced (being
+// auto-answered) and the client-facing view once inputSurfaced flips true.
+func TestPendingInput_GatesOnSurfaced(t *testing.T) {
+	rec := &keyRecorder{}
+
+	// Auto-answered by policy: currentInput is set but inputSurfaced stays
+	// false, so PendingInput must report nil (consistent with
+	// inputAwaitingClient()).
+	cAuto := newTestConv(Options{
+		Harness: "claude-code",
+		InputPolicy: &InputPolicy{ByKind: map[string]Disposition{
+			"trust_prompt": {Kind: DispositionAnswer, OptionID: "proceed"},
+		}},
+	}, rec)
+	cAuto.handleInputRequested(trustRequest())
+	if cAuto.currentInput == nil {
+		t.Fatal("precondition: currentInput should be set during auto-answer")
+	}
+	if cAuto.PendingInput() != nil {
+		t.Error("PendingInput() != nil while not surfaced")
+	}
+	if cAuto.inputAwaitingClient() {
+		t.Error("inputAwaitingClient() = true while not surfaced (should agree with PendingInput)")
+	}
+
+	// Surfaced request: PendingInput returns the client-facing view.
+	cSurf := newTestConv(Options{Harness: "claude-code"}, rec)
+	cSurf.handleInputRequested(trustRequest())
+	pi := cSurf.PendingInput()
+	if pi == nil {
+		t.Fatal("PendingInput() = nil after surfacing, want the request")
+	}
+	if pi.ID != "req-1" || len(pi.Options) != 2 {
+		t.Errorf("PendingInput() = %+v, want req-1 with 2 options", pi)
+	}
+	if !cSurf.inputAwaitingClient() {
+		t.Error("inputAwaitingClient() = false while surfaced (should agree with PendingInput)")
 	}
 }
 
