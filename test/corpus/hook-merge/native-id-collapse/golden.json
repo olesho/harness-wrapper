@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "id": "evt-42",
+      "harness_session_id": "sub-1",
+      "source": "live",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "subagent step done"
+    }
+  ]
+}

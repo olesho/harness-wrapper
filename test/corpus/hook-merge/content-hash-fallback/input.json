@@ -1,0 +1,52 @@
+{
+  "mode": "hooks",
+  "run_id": "run-hash",
+  "notes": "Rung 4 (content hash) for a parent event with no NativeID/UUID/ToolUseID. Two deliveries with identical content AND identical native timestamp collapse; a third with different text hashes distinctly and survives. All parent/file under Hooks, so all admitted before dedup.",
+  "events": [
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "no ids here",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "no ids here",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "a different line",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    }
+  ]
+}

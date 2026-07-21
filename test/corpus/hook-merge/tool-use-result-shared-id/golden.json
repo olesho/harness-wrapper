@@ -1,0 +1,25 @@
+{
+  "events": [
+    {
+      "id": "tool_result:toolu_1",
+      "harness_session_id": "parent",
+      "source": "file",
+      "type": "tool_result",
+      "role": "tool",
+      "timestamp": "2026-01-01T00:00:01Z",
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_1",
+      "output": "file1\nfile2"
+    },
+    {
+      "id": "tool_use:toolu_1",
+      "harness_session_id": "parent",
+      "source": "file",
+      "type": "tool_use",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "tool_name": "Bash",
+      "tool_use_id": "toolu_1"
+    }
+  ]
+}

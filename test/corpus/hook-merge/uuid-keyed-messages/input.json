@@ -1,0 +1,52 @@
+{
+  "mode": "hooks",
+  "run_id": "run-uuid",
+  "notes": "Rung 2 (UUID). Two file deliveries of the SAME message uuid ('msg:<uuid>') collapse regardless of differing content (the uuid rung ignores text); a second, distinct uuid survives on its own. All parent/file under Hooks, so all admitted; dedup by the uuid rung leaves two.",
+  "events": [
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "user",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "hello",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": "uuid-aaa"
+    },
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "user",
+      "timestamp": "2026-01-01T00:00:01Z",
+      "text": "hello (redelivered copy)",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": "uuid-aaa"
+    },
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:02Z",
+      "text": "hi there",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": "uuid-bbb"
+    }
+  ]
+}

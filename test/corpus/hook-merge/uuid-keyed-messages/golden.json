@@ -1,0 +1,24 @@
+{
+  "events": [
+    {
+      "id": "msg:uuid-aaa",
+      "harness_session_id": "parent",
+      "source": "file",
+      "type": "text",
+      "role": "user",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "hello",
+      "uuid": "uuid-aaa"
+    },
+    {
+      "id": "msg:uuid-bbb",
+      "harness_session_id": "parent",
+      "source": "file",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:02Z",
+      "text": "hi there",
+      "uuid": "uuid-bbb"
+    }
+  ]
+}
