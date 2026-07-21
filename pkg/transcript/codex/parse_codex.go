@@ -129,6 +129,69 @@ func Events(data []byte) ([]transcript.Event, error) {
 	return out, nil
 }
 
+// codexTokenCount is the payload of an event_msg envelope whose type is
+// "token_count". info can legitimately be null on early events; only events
+// carrying a non-null total_token_usage object contribute usage.
+type codexTokenCount struct {
+	Type string `json:"type"`
+	Info *struct {
+		TotalTokenUsage *codexTokenUsage `json:"total_token_usage"`
+	} `json:"info"`
+}
+
+// codexTokenUsage is Codex's cumulative token accounting. Numeric fields are
+// json.Number so transcript.ToCount can clamp them. Note input_tokens ALREADY
+// includes cached_input_tokens (a subset, not an addition), and Codex has no
+// cache-creation field.
+type codexTokenUsage struct {
+	InputTokens         json.Number `json:"input_tokens"`
+	CachedInputTokens   json.Number `json:"cached_input_tokens"`
+	OutputTokens        json.Number `json:"output_tokens"`
+	ReasoningOutputToks json.Number `json:"reasoning_output_tokens"`
+}
+
+// UsageFromJSONL returns the last token_count event's cumulative token usage
+// from a Codex rollout's JSONL bytes, or (nil, nil) when no token_count event
+// carried usage. Ports meta-harness usageFromCodexJSONL.
+//
+// This is a SEPARATE pass from Events: Codex usage lives in event_msg →
+// payload.type == "token_count" envelopes, which Events deliberately skips.
+// The aggregation contract is to keep the LAST token_count event whose
+// info.total_token_usage is a non-null object (info is null on early events),
+// using total_token_usage (the cumulative session total), not last_token_usage.
+func UsageFromJSONL(data []byte) (*transcript.Usage, error) {
+	envelopes, err := ParseRollout(data)
+	if err != nil {
+		return nil, err
+	}
+	var last *codexTokenUsage
+	for _, env := range envelopes {
+		if env.Type != "event_msg" {
+			continue
+		}
+		var tc codexTokenCount
+		if err := json.Unmarshal(env.Payload, &tc); err != nil {
+			continue
+		}
+		if tc.Type != "token_count" || tc.Info == nil || tc.Info.TotalTokenUsage == nil {
+			continue
+		}
+		last = tc.Info.TotalTokenUsage
+	}
+	if last == nil {
+		return nil, nil
+	}
+	// Codex spells the cached figure "cached_input_tokens" and has no
+	// cache-creation field, so CacheCreationInputTokens stays 0. input_tokens is
+	// mapped straight across (it already includes the cached subset).
+	return &transcript.Usage{
+		InputTokens:           transcript.ToCount(last.InputTokens),
+		OutputTokens:          transcript.ToCount(last.OutputTokens),
+		CacheReadInputTokens:  transcript.ToCount(last.CachedInputTokens),
+		ReasoningOutputTokens: transcript.ToCount(last.ReasoningOutputToks),
+	}, nil
+}
+
 // appendMessageEvents emits one text event per non-empty content block (user
 // text has IDE/system context tags stripped, matching loom + claudecode).
 func appendMessageEvents(out *[]transcript.Event, item responseItem, ts time.Time, seq int) int {
