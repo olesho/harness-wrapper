@@ -24,6 +24,12 @@ const (
 	EnvHookCwd   = "HW_HOOK_CWD"           // harness working dir (worktree)
 	EnvHome      = "HW_HOME"               // user home
 	EnvConfigDir = "HW_HARNESS_CONFIG_DIR" //nolint:gosec // env var NAME, not a credential
+	// EnvHarnessSessionID is the native session id a RESUME launch is resuming.
+	// Set only on resume (and only when non-empty); it arms the resume session
+	// guard in HandleHookEvent that drops a stale/leftover hook fired for a
+	// DIFFERENT session lingering in the same per-run spool. Absent (fresh
+	// starts, codex, any non-resume launch) ⇒ the guard is disarmed.
+	EnvHarnessSessionID = "HW_HARNESS_SESSION_ID" //nolint:gosec // env var NAME, not a credential
 )
 
 // HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
@@ -58,15 +64,17 @@ func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (Hoo
 	}
 
 	ctx := HookContext{
-		Cwd:       envLookup(env, EnvHookCwd),
-		Home:      envLookup(env, EnvHome),
-		ConfigDir: envLookup(env, EnvConfigDir),
-		SpoolDir:  spool,
+		Cwd:              envLookup(env, EnvHookCwd),
+		Home:             envLookup(env, EnvHome),
+		ConfigDir:        envLookup(env, EnvConfigDir),
+		SpoolDir:         spool,
+		HarnessSessionID: envLookup(env, EnvHarnessSessionID),
 	}
 	events, err := hp.ParseHookPayload(ctx, event, stdin)
 	if err != nil {
 		return HookOutcome{}, fmt.Errorf("harness: parse hook %s/%s: %w", harnessName, event, err)
 	}
+	events = filterResumeSession(ctx.HarnessSessionID, events)
 	if len(events) == 0 {
 		return HookOutcome{}, nil
 	}
@@ -148,6 +156,45 @@ func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 		return out, fmt.Errorf("harness: spool drain skipped %d file(s): %s", len(errs), strings.Join(errs, "; "))
 	}
 	return out, nil
+}
+
+// filterResumeSession is the resume session guard (item 4 of the
+// HARNESS-WRAPPER-52 plan). On a RESUME launch — expected != "" (from
+// HW_HARNESS_SESSION_ID, set only on resume) — it drops a PARENT-conversation
+// event whose session id mismatches: a stale/leftover hook fired for a
+// DIFFERENT session that lingers in the SAME per-run spool. It bites only on
+// resume within one worktree; the per-run temp spool (os.MkdirTemp "hw-spool-"
+// + deferred RemoveAll) already isolates unrelated sessions, so this defends
+// only the narrow residual where a resume reuses the spool across a session-id
+// change. It mirrors TS's sessionMatches(expected, payload.session_id), which
+// likewise bites only for a non-empty expected id.
+//
+// HandleHookEvent is the shared entrypoint for EVERY harness's hooks, so this
+// also runs on the codex hook path — harmlessly: HW_HARNESS_SESSION_ID is set
+// only on Claude resume launches, so for codex (and every fresh start) expected
+// is empty and the guard is disarmed, returning events unchanged.
+//
+// SUBAGENT-SAFETY: subagent events carry their OWN native agentID in
+// HarnessSessionID and the parent id in ParentSessionID (readSubagentTranscript),
+// whereas parent events carry the fired session id in HarnessSessionID and an
+// empty ParentSessionID (readParentTranscript / sessionMarker). A naive
+// HarnessSessionID == expected filter would therefore DROP EVERY SUBAGENT EVENT
+// on a resume (each subagent's id differs from the expected parent id), silently
+// discarding legitimate nested runs. The only correct drop condition is a
+// PARENT event (ParentSessionID == "") whose id mismatches; subagent events
+// (ParentSessionID != "") are ALWAYS kept.
+func filterResumeSession(expected string, events []transcript.ParsedEvent) []transcript.ParsedEvent {
+	if expected == "" {
+		return events // disarmed: fresh start / non-resume / codex
+	}
+	kept := events[:0]
+	for _, pe := range events {
+		if pe.ParentSessionID == "" && pe.HarnessSessionID != expected {
+			continue // stale parent event for a different session — drop
+		}
+		kept = append(kept, pe) // matching parent, or any subagent event
+	}
+	return kept
 }
 
 // envLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
