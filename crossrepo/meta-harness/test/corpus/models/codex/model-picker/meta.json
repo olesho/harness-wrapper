@@ -1,0 +1,31 @@
+{
+  "harness": "codex",
+  "binary_version": "0.143.0",
+  "recorded_at": "2026-07-08T20:27:03.416Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "/model picker capture",
+  "expected": [
+    {
+      "ID": "gpt-5.5",
+      "Label": "gpt-5.5",
+      "Description": "Frontier model for complex coding, research, and real-world work.",
+      "Current": false,
+      "IsDefault": true
+    },
+    {
+      "ID": "gpt-5.4",
+      "Label": "gpt-5.4",
+      "Description": "Strong model for everyday coding.",
+      "Current": false,
+      "IsDefault": false
+    },
+    {
+      "ID": "gpt-5.4-mini",
+      "Label": "gpt-5.4-mini",
+      "Description": "Small, fast, and cost-efficient model for simpler coding tasks.",
+      "Current": true,
+      "IsDefault": false
+    }
+  ]
+}
