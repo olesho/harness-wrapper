@@ -9,8 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/olesho/harness-wrapper/pkg/chat"
-	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/transcript/codex"
@@ -63,51 +62,50 @@ func runStructuredRun(args []string) int {
 
 	// Strip Claude Code's nesting markers so the spawned harness persists a
 	// transcript (see runOneShot for the full rationale), then apply the
-	// opt-in --sandbox-defaults injection on top.
+	// opt-in --sandbox-defaults injection on top. Both are env/arg POLICY and
+	// stay a cmd/ concern: pkg/oneshot receives the ALREADY-CLEANED Env/Args.
 	harnessArgs, env := parsed.HarnessArgs, cleanedEnv()
 	if parsed.SandboxDefaults {
 		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, harnessArgs, env)
 	}
 
-	res, err := harness.RunTurn(ctx, harness.TurnConfig{
-		Harness:       parsed.HarnessName,
-		BinaryPath:    binPath,
-		Args:          harnessArgs,
-		Effort:        parsed.Effort,
-		Model:         parsed.Model,
-		WorkingDir:    wd,
-		Env:           env,
-		Prompt:        prompt,
-		ExitAfterTurn: true,
-		// Unattended structured run: no client to answer Codex's update menu, so
-		// auto-Skip it rather than wedge the run on the pending prompt.
-		AutoSkipCodexUpdateNotice: true,
-		InputPolicy: &chat.InputPolicy{
-			ByKind: map[string]chat.Disposition{
-				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-			},
-		},
-		OnInputRequest: autoAcceptAnswer,
+	// The classification core + auto-accept-trust wiring + reply extraction now
+	// live in pkg/oneshot (the in-process one-shot library). This guest runner
+	// composes that core with the exit map (turnproto.ExitCode), the JSON emit,
+	// and the in-guest transcript read.
+	outcome, oerr := oneshot.RunOneShotDetailed(ctx, oneshot.Config{
+		Harness:    parsed.HarnessName,
+		BinaryPath: binPath,
+		Args:       harnessArgs,
+		Effort:     parsed.Effort,
+		Model:      parsed.Model,
+		WorkingDir: wd,
+		Env:        env,
+		Prompt:     prompt,
 	})
+	if oerr != nil {
+		// A non-nil error is an unclassifiable/infra failure (an invalid config);
+		// every classified turn returns a status with a nil error.
+		return emitStartupError(wd, oerr)
+	}
 
-	status, reason, exit := classifyStructuredResult(res, err)
-
+	status := outcome.Status
 	result := turnproto.StructuredTurnResult{
 		Status:            status,
-		HarnessSessionID:  res.Session.HarnessSessionID,
+		HarnessSessionID:  outcome.HarnessSessionID,
 		TranscriptEntries: []transcript.Event{},
 		WorkingDir:        wd,
-		Reason:            reason,
+		Reason:            outcome.Reason,
 	}
 	if status == turnproto.StatusCompleted {
-		result.Reply = cleanReply(res)
+		result.Reply = outcome.Reply
 	}
 
 	// Read the canonical transcript back in-guest — best-effort, so a Reader
 	// failure never erases a successful reply. An empty/absent session id makes
 	// Read error (missing files), which is tolerated: entries stay empty and the
 	// failure is recorded in transcript_error.
-	entries, terr := readStructuredTranscript(parsed.HarnessName, res.Session.HarnessSessionID, wd)
+	entries, terr := readStructuredTranscript(parsed.HarnessName, outcome.HarnessSessionID, wd)
 	if terr != nil {
 		result.TranscriptError = terr.Error()
 	} else {
@@ -115,47 +113,11 @@ func runStructuredRun(args []string) int {
 	}
 
 	emitStructured(result)
+	exit := turnproto.ExitCode(status)
 	if status == turnproto.StatusDeadline {
 		fmt.Fprintln(os.Stderr, turnproto.DeadlineLine)
 	}
 	return exit
-}
-
-// classifyStructuredResult maps a RunTurn (result, err) pair to the protocol
-// status, an optional reason, and the process exit code. It branches on the
-// RETURNED ERROR, not Turn.State — the critical fidelity fix (a mid-turn
-// transport failure returns Turn.State == "").
-func classifyStructuredResult(res harness.TurnResult, err error) (turnproto.TurnStatus, string, int) {
-	switch {
-	case err == nil:
-		if res.Turn.State == chat.TurnStateComplete {
-			return turnproto.StatusCompleted, "", turnproto.ExitOK
-		}
-		// RunTurn only returns nil on a completed turn; anything else is a
-		// defensive fallback.
-		return turnproto.StatusErrored, "turn ended in unexpected state", turnproto.ExitError
-	case errors.Is(err, context.DeadlineExceeded):
-		return turnproto.StatusDeadline, "", turnproto.ExitDeadline
-	case errors.Is(err, harness.ErrTurnErrored):
-		reason := res.Turn.Reason
-		if reason == "" {
-			reason = "turn errored"
-		}
-		return turnproto.StatusErrored, reason, turnproto.ExitError
-	case errors.Is(err, chat.ErrClosed):
-		// Mid-turn transport failure: the events channel closed after the turn
-		// had already started via conv.Send.
-		return turnproto.StatusErrored, err.Error(), turnproto.ExitError
-	default:
-		// Either a mid-turn ev.Err (the turn had started, so a chat Session was
-		// opened and snapshotTurnResult populated Session.ID) or a pre-turn
-		// startup failure (chat.Open / AcquireControl / Send returns a ZERO
-		// TurnResult). Distinguish by whether a session was ever opened.
-		if res.Session.ID != "" {
-			return turnproto.StatusErrored, err.Error(), turnproto.ExitError
-		}
-		return turnproto.StatusStartupError, err.Error(), turnproto.ExitError
-	}
 }
 
 // readStructuredTranscript reads the canonical Event stream for the session

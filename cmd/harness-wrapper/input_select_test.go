@@ -139,54 +139,9 @@ func TestSelectAnswer_RendersOptionWithoutAlias(t *testing.T) {
 	}
 }
 
-// TestAutoAcceptAnswer covers the shared three-tier fallback both modes use.
-func TestAutoAcceptAnswer(t *testing.T) {
-	tests := []struct {
-		name       string
-		req        chat.InputRequest
-		wantOK     bool
-		wantOption string
-	}{
-		{
-			name: "affirmative option chosen when present",
-			req: chat.InputRequest{Options: []chat.InputOption{
-				{ID: "cancel", Label: "Cancel"},
-				{ID: "go", Label: "Yes, proceed"},
-			}},
-			wantOK:     true,
-			wantOption: "go",
-		},
-		{
-			name: "first option when no affirmative match",
-			req: chat.InputRequest{Options: []chat.InputOption{
-				{ID: "one", Label: "Option one"},
-				{ID: "two", Label: "Option two"},
-			}},
-			wantOK:     true,
-			wantOption: "one",
-		},
-		{
-			name:   "zero-option prompt declines",
-			req:    chat.InputRequest{Prompt: "free text?"},
-			wantOK: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ans, ok := autoAcceptAnswer(tt.req)
-			if ok != tt.wantOK {
-				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
-			}
-			if ok && ans.OptionID != tt.wantOption {
-				t.Fatalf("OptionID = %q, want %q", ans.OptionID, tt.wantOption)
-			}
-		})
-	}
-}
-
 // TestInputHandling_UnattendedKeepsTrustPolicy: auto-accept mode preserves the
 // trust_prompt policy entry (today's unattended behavior) and answers via
-// autoAcceptAnswer.
+// oneshot.AutoAcceptAnswer.
 func TestInputHandling_UnattendedKeepsTrustPolicy(t *testing.T) {
 	policy, cb := inputHandling(context.Background(), false, nil)
 	if policy == nil {
@@ -217,7 +172,7 @@ func TestInputHandling_InteractiveDropsPolicy(t *testing.T) {
 
 // TestInputHandling_InteractiveFallbackThreeTier: when the interactive read
 // yields nothing (nil tty ⇒ interactiveSelect's read errors immediately), the
-// callback must fall back to autoAcceptAnswer — a has-options-but-no-affirmative
+// callback must fall back to oneshot.AutoAcceptAnswer — a has-options-but-no-affirmative
 // prompt resolves to the first option (true), NOT false (which would fail the
 // run with ErrInputPending).
 func TestInputHandling_InteractiveFallbackThreeTier(t *testing.T) {

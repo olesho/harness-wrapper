@@ -187,22 +187,6 @@ func buildRunnerArgv(cfg StructuredTurnConfig, guestPrompt string) []string {
 	return argv
 }
 
-// expectedExitCode maps a protocol status to the exit code the guest emits for
-// it — the host-side twin of the guest classifyStructuredResult table. Kept for
-// protocol fidelity and reconciliation; the JSON payload remains the source of
-// truth.
-func expectedExitCode(status turnproto.TurnStatus) int {
-	switch status {
-	case turnproto.StatusCompleted:
-		return turnproto.ExitOK
-	case turnproto.StatusDeadline:
-		return turnproto.ExitDeadline
-	default:
-		// errored / startup_error / any unexpected status.
-		return turnproto.ExitError
-	}
-}
-
 // stderrTail returns a trimmed, length-bounded tail of stderr for error
 // messages, so a noisy runner failure stays legible.
 func stderrTail(stderr string) string {

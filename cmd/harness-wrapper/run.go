@@ -12,6 +12,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"golang.org/x/term"
 )
 
@@ -55,7 +56,7 @@ func resolveRunTimeout() time.Duration {
 // human via a freshly opened /dev/tty, bounded by the run deadline. When no
 // /dev/tty is attached (CI, pipes, nohup) — or --auto-accept is set — the run
 // stays fully unattended and auto-answers the affirmative option so it never
-// hangs. See resolveInputMode / selectAnswer / autoAcceptAnswer.
+// hangs. See resolveInputMode / selectAnswer / oneshot.AutoAcceptAnswer.
 func runOneShot(args []string) int {
 	parsed, err := parseHarnessWrapperArgs(args)
 	if err != nil {
@@ -124,7 +125,7 @@ func runOneShot(args []string) int {
 		return 1
 	}
 
-	text := cleanReply(res)
+	text := oneshot.Reply(res)
 	_, _ = fmt.Fprint(os.Stdout, text)
 	if !strings.HasSuffix(text, "\n") {
 		_, _ = fmt.Fprintln(os.Stdout)
@@ -139,42 +140,6 @@ func runOneShot(args []string) int {
 		return 1
 	}
 	return 0
-}
-
-// cleanReply returns the assistant's final message, PREFERRING the harness's
-// own transcript (res.History, read back via turns.TranscriptReader) — it is
-// authoritative and complete, with no TUI chrome and no risk of the
-// screen-extraction dropping content. It falls back to the screen-derived
-// res.Turn.Text (adapter ExtractMessage) only when no transcript was available
-// (e.g. the harness session id could not be captured). Set
-// HARNESS_WRAPPER_RUN_DEBUG=1 to log which source was used.
-//
-// The source label is taken from res.HistorySource, NOT from whether
-// res.History happens to be non-empty: the store fallback also returns turns,
-// so len(History) can't distinguish the transcript from the lossy screen
-// scrape. We only report "transcript" when History is genuinely
-// transcript-backed AND carries assistant text.
-func cleanReply(res harness.TurnResult) string {
-	debug := os.Getenv("HARNESS_WRAPPER_RUN_DEBUG") == "1"
-
-	if res.HistorySource == chat.HistorySourceTranscript {
-		if t := lastAssistant(res.History); strings.TrimSpace(t) != "" {
-			if debug {
-				fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = transcript")
-			}
-			return t
-		}
-	}
-	if debug {
-		fmt.Fprintln(os.Stderr, "harness-wrapper run: reply source = screen-extract (no transcript)")
-	}
-	// Screen-derived fallback: prefer the completing turn's extracted message;
-	// if that's empty, use the last assistant turn the store recorded (also
-	// screen-derived) so we never silently drop a reply we did capture.
-	if strings.TrimSpace(res.Turn.Text) != "" {
-		return res.Turn.Text
-	}
-	return lastAssistant(res.History)
 }
 
 // cleanedEnv returns the current environment minus Claude Code's nesting
@@ -195,47 +160,6 @@ func cleanedEnv() []string {
 	return out
 }
 
-func lastAssistant(turns []chat.Turn) string {
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == chat.RoleAssistant && strings.TrimSpace(turns[i].Text) != "" {
-			return turns[i].Text
-		}
-	}
-	return ""
-}
-
-// affirmativeOption picks the "yes/accept/trust" option from an input request,
-// so auto-answering a trust/confirm dialog proceeds rather than declines.
-func affirmativeOption(req chat.InputRequest) *chat.InputOption {
-	for i := range req.Options {
-		o := &req.Options[i]
-		l := strings.ToLower(o.Label + " " + o.Alias + " " + o.ID)
-		if strings.Contains(l, "yes") || strings.Contains(l, "trust") ||
-			strings.Contains(l, "accept") || strings.Contains(l, "allow") ||
-			strings.Contains(l, "proceed") {
-			return o
-		}
-	}
-	return nil
-}
-
-// autoAcceptAnswer is the shared three-tier unattended fallback: pick the
-// affirmative option, else the first option, else decline (false). A false
-// return surfaces the request on Events(); in runOneShot nothing consumes that,
-// so falling through to the first option (rather than false) for a
-// has-options-but-no-affirmative prompt is what keeps the run from failing with
-// chat.ErrInputPending. Both the auto-accept-mode callback and the
-// interactive-mode fallback route through this single function.
-func autoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool) {
-	if opt := affirmativeOption(req); opt != nil {
-		return chat.InputAnswer{OptionID: opt.ID}, true
-	}
-	if len(req.Options) > 0 {
-		return chat.InputAnswer{OptionID: req.Options[0].ID}, true
-	}
-	return chat.InputAnswer{}, false
-}
-
 // inputHandling builds the InputPolicy + OnInputRequest callback for the chosen
 // mode. Factored out of runOneShot so the two wirings are unit-testable without
 // a real /dev/tty or a live harness.
@@ -245,19 +169,19 @@ func autoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool) {
 //     would silently auto-accept folder trust and it would never reach the
 //     human; nil makes every kind fall through to the callback. The callback
 //     surfaces the prompt on tty via selectAnswer (bounded by ctx), then falls
-//     back to autoAcceptAnswer on EOF/invalid/deadline so a partial interaction
-//     still resolves rather than failing the run with ErrInputPending.
+//     back to oneshot.AutoAcceptAnswer on EOF/invalid/deadline so a partial
+//     interaction still resolves rather than failing the run with ErrInputPending.
 //     TurnConfig.Output is left unset by the caller: raw PTY bytes would garble
 //     the clean menu on the same tty (see runOneShot).
 //   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
-//     autoAcceptAnswer callback, so an unattended one-shot never hangs.
+//     oneshot.AutoAcceptAnswer callback, so an unattended one-shot never hangs.
 func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.InputPolicy, func(chat.InputRequest) (chat.InputAnswer, bool)) {
 	if interactive {
 		return nil, func(req chat.InputRequest) (chat.InputAnswer, bool) {
 			if ans, ok := interactiveSelect(ctx, req, tty); ok {
 				return ans, true
 			}
-			return autoAcceptAnswer(req)
+			return oneshot.AutoAcceptAnswer(req)
 		}
 	}
 	policy := &chat.InputPolicy{
@@ -266,7 +190,7 @@ func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.I
 		},
 	}
 	return policy, func(req chat.InputRequest) (chat.InputAnswer, bool) {
-		return autoAcceptAnswer(req)
+		return oneshot.AutoAcceptAnswer(req)
 	}
 }
 
@@ -339,7 +263,7 @@ const selectInputMaxAttempts = 5
 //   - Free-text (no options): prints the prompt + "Enter response:" and returns
 //     the line as InputAnswer.Text.
 //   - EOF / closed reader / exhausted attempts return (_, false) — the caller's
-//     signal to fall back to autoAcceptAnswer. Never hangs, never panics.
+//     signal to fall back to oneshot.AutoAcceptAnswer. Never hangs, never panics.
 func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.InputAnswer, bool) {
 	r := bufio.NewReader(in)
 	if len(req.Options) == 0 {

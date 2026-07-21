@@ -42,6 +42,29 @@ const (
 	StatusStartupError TurnStatus = "startup_error"
 )
 
+// ExitCode is the ONE canonical status → process-exit-code table: the single
+// function every producer of the coarse orchestration signal delegates to, so
+// the mapping cannot drift across the guest structured-run subcommand and any
+// host-side turn client. Only a deadline changes the code to 124; a clean
+// completion exits 0; errored / startup_error / any unexpected status exit 1.
+//
+// It lives HERE, in the package that already owns the exit vocabulary
+// (ExitOK/ExitError/ExitDeadline) and the TurnStatus type — a leaf importing
+// only pkg/transcript — so homing it costs no importer a dependency on the
+// in-process PTY/turn runtime (pkg/harness). pkg/oneshot never returns an exit
+// code; it returns the status and the caller maps it here.
+func ExitCode(s TurnStatus) int {
+	switch s {
+	case StatusCompleted:
+		return ExitOK
+	case StatusDeadline:
+		return ExitDeadline
+	default:
+		// errored / startup_error / any unexpected status.
+		return ExitError
+	}
+}
+
 // StructuredTurnResult is the single JSON line the guest structured-run
 // subcommand emits on stdout, and the shape a host turn client parses back
 // (meta-harness design §7 step 3).
