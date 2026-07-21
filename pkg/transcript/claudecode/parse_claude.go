@@ -40,6 +40,67 @@ func Events(data []byte) ([]transcript.Event, error) {
 	return events, nil
 }
 
+// UsageFromJSONL sums per-API-call token usage across a Claude Code session's
+// JSONL bytes, deduped by message id. Returns (nil, nil) when no line carried
+// usage. Ports meta-harness usageFromClaudeJSONL.
+//
+// Claude writes one JSONL line per content block, and multiple lines from ONE
+// API call REPEAT the same message.usage. So we dedup by API call: the key is
+// message.id when non-empty, else "line:"+Line.UUID; only the first line for a
+// distinct key contributes its usage. A naive per-line sum would over-count.
+func UsageFromJSONL(data []byte) (*transcript.Usage, error) {
+	lines, err := transcript.ParseFromBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("claudecode transcript: %w", err)
+	}
+
+	var (
+		total transcript.Usage
+		seen  = map[string]bool{}
+		any   bool
+	)
+	for _, line := range lines {
+		if line.Type != transcript.TypeAssistant {
+			continue
+		}
+		var env struct {
+			ID    string `json:"id"`
+			Usage *struct {
+				InputTokens              json.Number `json:"input_tokens"`
+				OutputTokens             json.Number `json:"output_tokens"`
+				CacheReadInputTokens     json.Number `json:"cache_read_input_tokens"`
+				CacheCreationInputTokens json.Number `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal(line.Message, &env); err != nil {
+			continue
+		}
+		if env.Usage == nil {
+			continue
+		}
+
+		key := env.ID
+		if key == "" {
+			key = "line:" + line.UUID
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		any = true
+
+		total.InputTokens += transcript.ToCount(env.Usage.InputTokens)
+		total.OutputTokens += transcript.ToCount(env.Usage.OutputTokens)
+		total.CacheReadInputTokens += transcript.ToCount(env.Usage.CacheReadInputTokens)
+		total.CacheCreationInputTokens += transcript.ToCount(env.Usage.CacheCreationInputTokens)
+	}
+
+	if !any {
+		return nil, nil
+	}
+	return &total, nil
+}
+
 // parseLineTimestamp parses the optional top-level timestamp string Claude
 // writes on every JSONL line. Returns the zero time if empty or malformed.
 func parseLineTimestamp(s string) time.Time {
