@@ -14,25 +14,34 @@ import (
 // client answers semantically by option ID or Alias and the chat layer owns
 // the translation to keys.
 type InputRequest struct {
-	ID      string        `json:"id"`
-	Kind    string        `json:"kind"`
-	Prompt  string        `json:"prompt"`
-	Options []InputOption `json:"options,omitempty"`
+	ID          string        `json:"id"`
+	Kind        string        `json:"kind"`
+	Prompt      string        `json:"prompt"`
+	Header      string        `json:"header,omitempty"`
+	MultiSelect bool          `json:"multi_select,omitempty"`
+	Options     []InputOption `json:"options,omitempty"`
 }
 
 // InputOption is one selectable choice in an InputRequest.
 type InputOption struct {
-	ID    string `json:"id"`
-	Alias string `json:"alias,omitempty"`
-	Label string `json:"label"`
+	ID          string `json:"id"`
+	Alias       string `json:"alias,omitempty"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // InputAnswer is how a caller answers an InputRequest. Set OptionID (an
-// option ID or Alias) for menu/confirm/trust prompts; set Text for free-text
-// ("text_input") prompts.
+// option ID or Alias) for single-select menu/confirm/trust prompts; set Text
+// for free-text ("text_input") prompts; set OptionIDs (each an option ID or
+// Alias) to select one or more options on a MultiSelect request.
+//
+// OptionID and OptionIDs are mutually exclusive: setting both returns
+// ErrConflictingAnswer. OptionIDs on a request whose MultiSelect is false
+// returns ErrNotMultiSelect.
 type InputAnswer struct {
-	OptionID string `json:"option_id,omitempty"`
-	Text     string `json:"text,omitempty"`
+	OptionID  string   `json:"option_id,omitempty"`
+	OptionIDs []string `json:"option_ids,omitempty"`
+	Text      string   `json:"text,omitempty"`
 }
 
 // DispositionKind is how a policy disposes of a matched InputRequest.
@@ -88,7 +97,7 @@ func (p *InputPolicy) resolve(kind string) (Disposition, bool) {
 //
 // requestID must match the pending request's ID (pass "" to target whatever
 // is currently pending). Errors: ErrNoInputPending, ErrStaleInputRequest,
-// ErrUnknownOption.
+// ErrUnknownOption, ErrNotMultiSelect, ErrConflictingAnswer.
 func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAnswer) error {
 	select {
 	case <-c.closed:
@@ -176,6 +185,23 @@ func (c *Conversation) inputAwaitingClient() bool {
 	return c.currentInput != nil && c.inputSurfaced
 }
 
+// PendingInput returns the client-facing view of the interactive prompt
+// currently awaiting the client, or nil when nothing is. It gates on the SAME
+// condition as inputAwaitingClient (currentInput != nil && inputSurfaced) so
+// the two never disagree: a request that is set but not yet surfaced — while it
+// is being auto-dismissed or policy-resolved server-side — reports nil here,
+// exactly as inputAwaitingClient reports false. PendingInput answers "what is
+// awaiting me?"; inputAwaitingClient answers "is anything?".
+func (c *Conversation) PendingInput() *InputRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.currentInput == nil || !c.inputSurfaced {
+		return nil
+	}
+	cr := toClientInputRequest(c.currentInput)
+	return &cr
+}
+
 // write sends keystrokes to the harness PTY (or the injected test sink).
 func (c *Conversation) write(p []byte) error {
 	if c.writeStdin != nil {
@@ -243,12 +269,34 @@ func (c *Conversation) policyOption(req *turns.InputRequest) *turns.InputOption 
 }
 
 // writeAnswer translates an InputAnswer into keystrokes and writes them.
+//
+// Channel selection runs FIRST — before the free-text early-return — so the
+// OptionIDs guards apply even to a single-select free-text prompt (which has
+// zero options and would otherwise fall into the free-text branch and return
+// before any validation). Precedence, evaluated top to bottom:
+//  1. OptionIDs set AND OptionID set          → ErrConflictingAnswer
+//  2. OptionIDs set AND req is single-select   → ErrNotMultiSelect
+//  3. OptionIDs set AND req is MultiSelect      → multi-select toggle path
+//  4. OptionIDs empty                          → single-select / free-text path
 func (c *Conversation) writeAnswer(req *turns.InputRequest, ans InputAnswer) error {
+	if len(ans.OptionIDs) > 0 {
+		if ans.OptionID != "" {
+			return ErrConflictingAnswer
+		}
+		if !req.MultiSelect {
+			return ErrNotMultiSelect
+		}
+		return c.writeMultiSelect(req, ans.OptionIDs)
+	}
+
 	if len(req.Options) == 0 {
 		// Free-text prompt: send text + the harness submit key.
 		submit := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
 		return c.write(append([]byte(ans.Text), submit...))
 	}
+	// Single-select (this also handles an empty OptionIDs on a MultiSelect
+	// request: findOption(req, "") returns nil → ErrUnknownOption, the decided
+	// "empty multi-select answer unsupported" contract).
 	opt := findOption(req, ans.OptionID)
 	if opt == nil {
 		return ErrUnknownOption
@@ -256,12 +304,40 @@ func (c *Conversation) writeAnswer(req *turns.InputRequest, ans InputAnswer) err
 	return c.write(opt.Keys)
 }
 
+// writeMultiSelect resolves every id in ids to a distinct option, toggles each
+// one in request order, then appends the harness submit key exactly once. All
+// ids are resolved BEFORE any write, so an unknown id leaves the menu
+// untouched. Duplicates are collapsed by resolved-option identity (not by the
+// input string), so ["a","a"] or [id, matching-label] toggle the option once —
+// toggling twice would net-deselect it on a toggle UI.
+func (c *Conversation) writeMultiSelect(req *turns.InputRequest, ids []string) error {
+	seen := make(map[string]bool, len(ids))
+	var opts []*turns.InputOption
+	for _, id := range ids {
+		opt := findOption(req, id)
+		if opt == nil {
+			return ErrUnknownOption
+		}
+		if seen[opt.ID] {
+			continue
+		}
+		seen[opt.ID] = true
+		opts = append(opts, opt)
+	}
+	var keys []byte
+	for _, opt := range opts {
+		keys = append(keys, opt.Keys...)
+	}
+	keys = append(keys, submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)...)
+	return c.write(keys)
+}
+
 func toClientInputRequest(req *turns.InputRequest) InputRequest {
-	out := InputRequest{ID: req.ID, Kind: req.Kind, Prompt: req.Prompt}
+	out := InputRequest{ID: req.ID, Kind: req.Kind, Prompt: req.Prompt, Header: req.Header, MultiSelect: req.MultiSelect}
 	if len(req.Options) > 0 {
 		out.Options = make([]InputOption, 0, len(req.Options))
 		for _, o := range req.Options {
-			out.Options = append(out.Options, InputOption{ID: o.ID, Alias: o.Alias, Label: o.Label})
+			out.Options = append(out.Options, InputOption{ID: o.ID, Alias: o.Alias, Label: o.Label, Description: o.Description})
 		}
 	}
 	return out

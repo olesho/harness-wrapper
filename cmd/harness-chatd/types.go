@@ -102,25 +102,31 @@ type sendResponse struct {
 
 // answerRequest answers a pending interactive prompt. RequestID is optional
 // (empty targets whatever prompt is currently pending). Set OptionID (id or
-// alias) for menu/trust prompts, or Text for free-text prompts.
+// alias) for single-select menu/trust prompts, Text for free-text prompts, or
+// OptionIDs (each an id or alias) to select one or more options on a
+// multi_select prompt. OptionID and OptionIDs are mutually exclusive.
 type answerRequest struct {
-	Token     string `json:"token"`
-	RequestID string `json:"request_id,omitempty"`
-	OptionID  string `json:"option_id,omitempty"`
-	Text      string `json:"text,omitempty"`
+	Token     string   `json:"token"`
+	RequestID string   `json:"request_id,omitempty"`
+	OptionID  string   `json:"option_id,omitempty"`
+	OptionIDs []string `json:"option_ids,omitempty"`
+	Text      string   `json:"text,omitempty"`
 }
 
 type inputOptionDTO struct {
-	ID    string `json:"id"`
-	Alias string `json:"alias,omitempty"`
-	Label string `json:"label"`
+	ID          string `json:"id"`
+	Alias       string `json:"alias,omitempty"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 type inputRequestDTO struct {
-	ID      string           `json:"id"`
-	Kind    string           `json:"kind"`
-	Prompt  string           `json:"prompt"`
-	Options []inputOptionDTO `json:"options,omitempty"`
+	ID          string           `json:"id"`
+	Kind        string           `json:"kind"`
+	Prompt      string           `json:"prompt"`
+	Header      string           `json:"header,omitempty"`
+	MultiSelect bool             `json:"multi_select,omitempty"`
+	Options     []inputOptionDTO `json:"options,omitempty"`
 }
 
 // eventDTO is the typed SSE envelope. Type discriminates the payload:
@@ -190,9 +196,9 @@ func toInputRequestDTO(r *chat.InputRequest) *inputRequestDTO {
 	if r == nil {
 		return nil
 	}
-	out := &inputRequestDTO{ID: r.ID, Kind: r.Kind, Prompt: r.Prompt}
+	out := &inputRequestDTO{ID: r.ID, Kind: r.Kind, Prompt: r.Prompt, Header: r.Header, MultiSelect: r.MultiSelect}
 	for _, o := range r.Options {
-		out.Options = append(out.Options, inputOptionDTO{ID: o.ID, Alias: o.Alias, Label: o.Label})
+		out.Options = append(out.Options, inputOptionDTO{ID: o.ID, Alias: o.Alias, Label: o.Label, Description: o.Description})
 	}
 	return out
 }

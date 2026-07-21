@@ -2,6 +2,7 @@ answerRequest
 	Token string `json:"token"`
 	RequestID string `json:"request_id,omitempty"`
 	OptionID string `json:"option_id,omitempty"`
+	OptionIDs []string `json:"option_ids,omitempty"`
 	Text string `json:"text,omitempty"`
 controlResponse
 	Token string `json:"token"`
@@ -23,10 +24,13 @@ inputOptionDTO
 	ID string `json:"id"`
 	Alias string `json:"alias,omitempty"`
 	Label string `json:"label"`
+	Description string `json:"description,omitempty"`
 inputRequestDTO
 	ID string `json:"id"`
 	Kind string `json:"kind"`
 	Prompt string `json:"prompt"`
+	Header string `json:"header,omitempty"`
+	MultiSelect bool `json:"multi_select,omitempty"`
 	Options []main.inputOptionDTO `json:"options,omitempty"`
 openRequest
 	Harness string `json:"harness"`

@@ -324,7 +324,7 @@ func (s *Server) answerInput(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "no_control", "caller does not hold the control token")
 		return
 	}
-	err := entry.conv.Answer(r.Context(), req.RequestID, chat.InputAnswer{OptionID: req.OptionID, Text: req.Text})
+	err := entry.conv.Answer(r.Context(), req.RequestID, chat.InputAnswer{OptionID: req.OptionID, OptionIDs: req.OptionIDs, Text: req.Text})
 	if err != nil {
 		writeChatError(w, err)
 		return
@@ -471,6 +471,10 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "stale_input_request", err.Error())
 	case errors.Is(err, chat.ErrUnknownOption):
 		writeError(w, http.StatusBadRequest, "unknown_option", err.Error())
+	case errors.Is(err, chat.ErrNotMultiSelect):
+		writeError(w, http.StatusBadRequest, "not_multi_select", err.Error())
+	case errors.Is(err, chat.ErrConflictingAnswer):
+		writeError(w, http.StatusBadRequest, "conflicting_answer", err.Error())
 	case errors.Is(err, chat.ErrClosed):
 		writeError(w, http.StatusGone, "closed", err.Error())
 	default:

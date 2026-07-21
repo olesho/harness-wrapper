@@ -103,6 +103,8 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrNoInputPending", ErrNoInputPending},
 		{"ErrStaleInputRequest", ErrStaleInputRequest},
 		{"ErrUnknownOption", ErrUnknownOption},
+		{"ErrNotMultiSelect", ErrNotMultiSelect},
+		{"ErrConflictingAnswer", ErrConflictingAnswer},
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
 		{"ErrResumeUnsupported", ErrResumeUnsupported},
 		{"ErrNoHarnessSession", ErrNoHarnessSession},

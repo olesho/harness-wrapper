@@ -214,6 +214,14 @@ var (
 	// alias matches none of the request's options.
 	ErrUnknownOption = errors.New("chat: unknown input option")
 
+	// ErrNotMultiSelect is returned by Answer when OptionIDs is supplied for a
+	// request whose MultiSelect flag is false.
+	ErrNotMultiSelect = errors.New("chat: option_ids given for a single-select request")
+
+	// ErrConflictingAnswer is returned by Answer when both OptionID and
+	// OptionIDs are set (the singular and plural selection channels conflict).
+	ErrConflictingAnswer = errors.New("chat: option_id and option_ids both set")
+
 	// ErrQuitUnsupported is returned by Quit when the harness adapter exposes
 	// no graceful-quit sequence (it does not implement turns.Quitter). The
 	// caller should fall back to Close, which signals the process.

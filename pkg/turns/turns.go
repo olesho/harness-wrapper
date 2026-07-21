@@ -116,6 +116,17 @@ type InputRequest struct {
 	// Prompt is the question text shown to the user.
 	Prompt string
 
+	// Header is a short chip/label for the prompt (e.g. a clarifying
+	// question's category). Empty for prompts that carry no header.
+	Header string
+
+	// MultiSelect reports whether more than one option may be chosen. When
+	// true, each option's Keys is a TOGGLE-ONLY sequence (see InputOption.Keys)
+	// and the chat layer appends a single submit key after toggling all
+	// selected options. Every prompt produced in this repo today is
+	// single-select (false).
+	MultiSelect bool
+
 	// Options are the selectable choices for menu/confirm/trust prompts.
 	// nil for free-text ("text_input") prompts.
 	Options []InputOption
@@ -135,9 +146,29 @@ type InputOption struct {
 	// Label is the human-readable choice text ("Yes, proceed").
 	Label string
 
-	// Keys are the bytes to write to the PTY to select this option,
-	// including any submit key. SERVER-SIDE ONLY — never surfaced to a
-	// client; the client answers semantically via ID or Alias.
+	// Description is optional longer help text for the option (a
+	// clarifying-question choice's explanation). Empty when the option has
+	// no description.
+	Description string
+
+	// Keys are the bytes to write to the PTY to select this option.
+	// SERVER-SIDE ONLY — never surfaced to a client; the client answers
+	// semantically via ID or Alias.
+	//
+	// The meaning of Keys FORKS on the enclosing InputRequest.MultiSelect:
+	//   - MultiSelect == false (every prompt in this repo today): Keys is a
+	//     full SELECT-AND-SUBMIT sequence — it both picks this option and
+	//     confirms the menu.
+	//   - MultiSelect == true: Keys is a TOGGLE-ONLY sequence for this one
+	//     option — it must NOT include a submit key. The chat layer toggles
+	//     each selected option's Keys and then appends the harness submit key
+	//     exactly once.
+	//
+	// NOTHING enforces the toggle-only invariant at runtime: a producer that
+	// bakes a submit into a multi-select option's Keys yields a corrupt
+	// toggle+submit+toggle+submit+submit stream. Until an adapter DetectInput
+	// path emits multi-select prompts, the ONLY guard is the multi-select
+	// answer unit test in pkg/chat.
 	Keys []byte
 }
 
