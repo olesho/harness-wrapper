@@ -32,6 +32,7 @@ func apiTypes() []struct {
 		typ  reflect.Type
 	}{
 		{"Options", reflect.TypeOf(Options{})},
+		{"ReopenOptions", reflect.TypeOf(ReopenOptions{})},
 		{"Conversation", reflect.TypeOf(Conversation{})},
 		{"Turn", reflect.TypeOf(Turn{})},
 		{"Session", reflect.TypeOf(Session{})},
@@ -60,6 +61,7 @@ func TestContract_GoAPI(t *testing.T) {
 		fn   any
 	}{
 		{"Open", Open},
+		{"Reopen", Reopen},
 	} {
 		fmt.Fprintf(&b, "func %s %s\n", f.name, methodSig(reflect.TypeOf(f.fn), false))
 	}
@@ -102,6 +104,8 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrStaleInputRequest", ErrStaleInputRequest},
 		{"ErrUnknownOption", ErrUnknownOption},
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
+		{"ErrResumeUnsupported", ErrResumeUnsupported},
+		{"ErrNoHarnessSession", ErrNoHarnessSession},
 	} {
 		fmt.Fprintf(&b, "%s = %q\n", e.name, e.err.Error())
 	}

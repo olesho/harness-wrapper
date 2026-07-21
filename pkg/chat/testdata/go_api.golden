@@ -2,6 +2,7 @@ type Options struct
 	field Harness string
 	field BinaryPath string
 	field Args []string
+	field Resume string
 	field WorkingDir string
 	field Env []string
 	field Effort string
@@ -13,6 +14,20 @@ type Options struct
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
 	field AutoSkipCodexUpdateNotice bool
+	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
+type ReopenOptions struct
+	field SessionID string
+	field BinaryPath string
+	field Args []string
+	field Env []string
+	field Effort string
+	field Model string
+	field Cols int
+	field Rows int
+	field Store chat.Store
+	field EventBuffer int
+	field InputPolicy *chat.InputPolicy
+	field DisableCodexAutoDismiss bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 type Conversation struct
 	method AcquireControl(context.Context) (func(), error)
@@ -79,6 +94,7 @@ type Store interface
 
 -- functions --
 func Open (context.Context, chat.Options) (*chat.Conversation, error)
+func Reopen (context.Context, chat.ReopenOptions) (*chat.Conversation, error)
 
 -- consts --
 RoleUser Role = "user"
@@ -107,3 +123,5 @@ ErrNoInputPending = "chat: no input request pending"
 ErrStaleInputRequest = "chat: stale input request id"
 ErrUnknownOption = "chat: unknown input option"
 ErrQuitUnsupported = "chat: harness has no graceful-quit sequence"
+ErrResumeUnsupported = "chat: harness has no resume sequence"
+ErrNoHarnessSession = "chat: session has no harness session id"
