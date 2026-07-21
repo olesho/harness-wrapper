@@ -70,11 +70,13 @@ func ExitCode(s TurnStatus) int {
 // (meta-harness design §7 step 3).
 //
 // FROZEN schema: the five required keys are ALWAYS present with these types; the
-// two optional keys are present-with-type when set and ABSENT otherwise
+// three optional keys are present-with-type when set and ABSENT otherwise
 // (encoding/json omits them via omitempty — an exact-string match would be
-// flaky). The `usage` field from MH is intentionally DROPPED for this ticket (Go
-// has no usage/token reader); the JSON tag space is kept additively compatible so
-// a later `usage` field can be reintroduced without a schema break.
+// flaky). The `usage` field from MH is an EMITTED optional key: present when a
+// usage reader yielded counts, absent when unset, and its five inner keys always
+// serialize (including zeros) to stay byte-identical with MH's usageToPublicJSON.
+// The JSON tag space is kept additively compatible so further fields can be
+// reintroduced without a schema break.
 //
 // JSON tag spellings are load-bearing for cross-repo fidelity: harnessSessionID
 // is camelCase; transcript_entries / working_dir / transcript_error are
@@ -95,4 +97,9 @@ type StructuredTurnResult struct {
 	// TranscriptError is a best-effort transcript read failure; present only when
 	// the read failed.
 	TranscriptError string `json:"transcript_error,omitempty"`
+	// Usage is optional token accounting; present only when a usage reader
+	// yielded counts (encoding/json omits it via omitempty when nil). Its five
+	// inner keys always serialize (no inner omitempty) to stay byte-identical
+	// with meta-harness's usageToPublicJSON.
+	Usage *transcript.Usage `json:"usage,omitempty"`
 }

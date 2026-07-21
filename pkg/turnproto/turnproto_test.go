@@ -172,14 +172,10 @@ func TestJSONTagSpellings(t *testing.T) {
 			t.Errorf("required key %q missing from %s", k, data)
 		}
 	}
-	for _, k := range []string{"reason", "transcript_error"} {
+	for _, k := range []string{"reason", "transcript_error", "usage"} {
 		if _, ok := raw[k]; ok {
 			t.Errorf("optional key %q must be absent when unset, got %s", k, data)
 		}
-	}
-	// usage was dropped for this ticket — must never appear.
-	if _, ok := raw["usage"]; ok {
-		t.Errorf("usage key must not be emitted, got %s", data)
 	}
 	if len(raw) != len(required) {
 		t.Errorf("unexpected keys: got %v, want exactly %v", keys(raw), required)
@@ -206,6 +202,54 @@ func TestOptionalKeysPresentWhenSet(t *testing.T) {
 	}
 	if _, ok := raw["transcript_error"]; !ok {
 		t.Errorf("transcript_error missing when set: %s", data)
+	}
+}
+
+// TestUsagePresentWhenSet confirms that a non-nil Usage emits the frozen `usage`
+// key with ALL FIVE nested keys present — including zero-valued ones (the inner
+// fields carry no omitempty), which guards byte-parity with MH's
+// usageToPublicJSON.
+func TestUsagePresentWhenSet(t *testing.T) {
+	// A Codex-shaped usage: CacheCreationInputTokens and ReasoningOutputTokens
+	// are zero, yet must still serialize.
+	data, err := json.Marshal(StructuredTurnResult{
+		Status: StatusCompleted,
+		Usage: &transcript.Usage{
+			InputTokens:              100,
+			OutputTokens:             50,
+			CacheReadInputTokens:     20,
+			CacheCreationInputTokens: 0,
+			ReasoningOutputTokens:    0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	usageRaw, ok := raw["usage"]
+	if !ok {
+		t.Fatalf("usage missing when set: %s", data)
+	}
+	var usage map[string]json.RawMessage
+	if err := json.Unmarshal(usageRaw, &usage); err != nil {
+		t.Fatalf("unmarshal usage: %v", err)
+	}
+	for _, k := range []string{
+		"input_tokens",
+		"output_tokens",
+		"cache_read_input_tokens",
+		"cache_creation_input_tokens",
+		"reasoning_output_tokens",
+	} {
+		if _, ok := usage[k]; !ok {
+			t.Errorf("nested usage key %q missing (zero-valued keys must still serialize): %s", k, usageRaw)
+		}
+	}
+	if len(usage) != 5 {
+		t.Errorf("usage should have exactly 5 keys, got %d: %s", len(usage), usageRaw)
 	}
 }
 
