@@ -66,6 +66,18 @@ interface CorpusCase {
   expected: string; // expected.txt
 }
 
+// Go's screen.Snapshot().Text appends a single terminal newline after the last
+// row; the TS Screen.snapshot().text does not. expected.txt is the canonical
+// Go-rendered snapshot (byte-identical across repos, pinned by MANIFEST.sha256),
+// so it carries that trailing newline. This is a Snapshot serialization
+// convention, NOT a render drift — every rendered COLUMN, including per-line
+// trailing whitespace, is asserted byte-for-byte; only the file-terminating
+// newline is normalized away (mirrors pkg/versions/parity_test.go comparing
+// parsed values, not bytes, across the two repos' different formatters).
+function normalizeRender(s: string): string {
+  return s.replace(/\n+$/, "");
+}
+
 function toModelInfo(c: CanonicalInfo): ModelInfo {
   return {
     id: c.ID,
@@ -108,10 +120,12 @@ describe("models corpus conformance", () => {
 
   for (const c of cases) {
     describe(c.name, () => {
-      test("render(bytes.raw) byte-equals expected.txt", async () => {
+      test("render(bytes.raw) matches expected.txt (per-column byte-equal)", async () => {
         const scr = newScreen(c.meta.cols, c.meta.rows);
         await scr.write(c.raw);
-        expect(scr.snapshot().text).toBe(c.expected);
+        expect(normalizeRender(scr.snapshot().text)).toBe(
+          normalizeRender(c.expected),
+        );
       });
 
       test("parseModelPicker deep-equals meta.json.expected", () => {
