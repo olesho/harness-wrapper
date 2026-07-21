@@ -1,4 +1,4 @@
-.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex
+.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance
 
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Kept in sync with test/scripts/<harness>/*.json.
@@ -21,6 +21,8 @@ help:
 	@echo "                             (PAID for codex/claude API tokens)"
 	@echo "  make schema-canary-codex   re-record codex short-reply then re-run the"
 	@echo "                             codex transcript reader's real-corpus smoke test"
+	@echo "  make regen-conformance     regenerate the cross-language conformance corpus"
+	@echo "                             (test/conformance/) — ordered: chatd then external"
 
 test:
 	go vet ./...
@@ -136,3 +138,14 @@ schema-canary-codex:
 	@echo ""
 	@echo "▶ re-running codex transcript real-corpus smoke against the fresh on-disk JSONL..."
 	@go test -run TestReadAgainstRealCorpus -v ./pkg/transcript/codex/...
+
+# regen-conformance: regenerate the cross-language conformance corpus under
+# test/conformance/ (see its README). ORDERED two-step: the chatd-hosted test
+# emits gateway/ (its DTOs are unexported package-main types), then the external
+# test emits turnresult/ + cli/ and hashes the WHOLE corpus into MANIFEST.sha256.
+# A plain `UPDATE_GOLDEN=1 go test ./...` does NOT guarantee this order and can
+# write a manifest over stale gateway bytes — always use this target.
+regen-conformance:
+	UPDATE_GOLDEN=1 go test ./cmd/harness-chatd/
+	UPDATE_GOLDEN=1 go test ./test/conformance/
+	@echo "✓ conformance corpus regenerated; run 'go test ./...' to verify no diff."
