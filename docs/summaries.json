@@ -17,7 +17,7 @@
       "summaryHash": "79fa2dd93da913e524688cf3d56bc700105fd177413465be160baaf0826cedc4",
       "summary": "Static site generator for the harness-wrapper docs: renders canonical markdown with chroma highlighting, theme-aware inlined SVG diagrams, and a shared layout."
     },
-    "github.com/olesho/harness-wrapper/internal/cmd/upstream-version-sentry": {
+    "github.com/olesho/harness-wrapper/cmd/check-versions": {
       "summaryHash": "2f0a90e08c59a3dffe55bef2b1ebf44571335c15de50bacae8b976a3f5037fd9",
       "summary": "CLI that compares versions.json upstream-version pins against the npm registry's latest published version for each harness (run via make check-versions)."
     },

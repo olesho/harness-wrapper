@@ -58,7 +58,7 @@ The canonical lists live in the `Makefile`:
 `SCENARIOS = short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn`;
 `HARNESSES = codex claude`.
 
-`make check-versions` runs `internal/cmd/upstream-version-sentry`, which compares each pin against
+`make check-versions` runs `cmd/check-versions`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
 detected, **2** registry unreachable.
 
@@ -133,7 +133,7 @@ re-run the canary.
 ## Load-bearing files
 
 `Makefile` (orchestrator) · `pkg/versions/{versions.json,versions.go}` (pins + read API) ·
-`internal/cmd/upstream-version-sentry/main.go` (npm check) ·
+`cmd/check-versions/main.go` (npm check) ·
 `internal/screenbench/cmd/screenbench-record/` (scripted recorder) · `test/scripts/<harness>/*.json`
 (canonical scenarios) · `test/corpus/<harness>/<scenario>/{bytes.raw,meta.json,expected.txt}` (the
 recorded [corpus](testing/corpus.md)) · `pkg/turns/harness/<name>/<name>.go` (marker regexes; package
