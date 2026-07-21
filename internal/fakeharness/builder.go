@@ -182,7 +182,7 @@ func CapturedArgv(bin string, args ...string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	scriptPath := filepath.Join(dir, "script.json")
 	scriptData, err := json.Marshal(New("claude-code").Exit(0).Build())
