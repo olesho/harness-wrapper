@@ -56,7 +56,7 @@ func resolveRunTimeout() time.Duration {
 // human via a freshly opened /dev/tty, bounded by the run deadline. When no
 // /dev/tty is attached (CI, pipes, nohup) — or --auto-accept is set — the run
 // stays fully unattended and auto-answers the affirmative option so it never
-// hangs. See resolveInputMode / selectAnswer / autoAcceptAnswer.
+// hangs. See resolveInputMode / selectAnswer / oneshot.AutoAcceptAnswer.
 func runOneShot(args []string) int {
 	parsed, err := parseHarnessWrapperArgs(args)
 	if err != nil {
@@ -169,12 +169,12 @@ func cleanedEnv() []string {
 //     would silently auto-accept folder trust and it would never reach the
 //     human; nil makes every kind fall through to the callback. The callback
 //     surfaces the prompt on tty via selectAnswer (bounded by ctx), then falls
-//     back to autoAcceptAnswer on EOF/invalid/deadline so a partial interaction
-//     still resolves rather than failing the run with ErrInputPending.
+//     back to oneshot.AutoAcceptAnswer on EOF/invalid/deadline so a partial
+//     interaction still resolves rather than failing the run with ErrInputPending.
 //     TurnConfig.Output is left unset by the caller: raw PTY bytes would garble
 //     the clean menu on the same tty (see runOneShot).
 //   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
-//     autoAcceptAnswer callback, so an unattended one-shot never hangs.
+//     oneshot.AutoAcceptAnswer callback, so an unattended one-shot never hangs.
 func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.InputPolicy, func(chat.InputRequest) (chat.InputAnswer, bool)) {
 	if interactive {
 		return nil, func(req chat.InputRequest) (chat.InputAnswer, bool) {
@@ -263,7 +263,7 @@ const selectInputMaxAttempts = 5
 //   - Free-text (no options): prints the prompt + "Enter response:" and returns
 //     the line as InputAnswer.Text.
 //   - EOF / closed reader / exhausted attempts return (_, false) — the caller's
-//     signal to fall back to autoAcceptAnswer. Never hangs, never panics.
+//     signal to fall back to oneshot.AutoAcceptAnswer. Never hangs, never panics.
 func selectAnswer(req chat.InputRequest, in io.Reader, out io.Writer) (chat.InputAnswer, bool) {
 	r := bufio.NewReader(in)
 	if len(req.Options) == 0 {

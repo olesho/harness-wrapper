@@ -141,7 +141,7 @@ func TestSelectAnswer_RendersOptionWithoutAlias(t *testing.T) {
 
 // TestInputHandling_UnattendedKeepsTrustPolicy: auto-accept mode preserves the
 // trust_prompt policy entry (today's unattended behavior) and answers via
-// autoAcceptAnswer.
+// oneshot.AutoAcceptAnswer.
 func TestInputHandling_UnattendedKeepsTrustPolicy(t *testing.T) {
 	policy, cb := inputHandling(context.Background(), false, nil)
 	if policy == nil {
@@ -172,7 +172,7 @@ func TestInputHandling_InteractiveDropsPolicy(t *testing.T) {
 
 // TestInputHandling_InteractiveFallbackThreeTier: when the interactive read
 // yields nothing (nil tty ⇒ interactiveSelect's read errors immediately), the
-// callback must fall back to autoAcceptAnswer — a has-options-but-no-affirmative
+// callback must fall back to oneshot.AutoAcceptAnswer — a has-options-but-no-affirmative
 // prompt resolves to the first option (true), NOT false (which would fail the
 // run with ErrInputPending).
 func TestInputHandling_InteractiveFallbackThreeTier(t *testing.T) {
