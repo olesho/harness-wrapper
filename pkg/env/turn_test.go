@@ -77,8 +77,8 @@ func TestRunStructuredTurn_RoundTripLocal(t *testing.T) {
 	if res.Status != turnproto.StatusCompleted {
 		t.Errorf("status = %q, want %q", res.Status, turnproto.StatusCompleted)
 	}
-	if got, want := expectedExitCode(res.Status), turnproto.ExitOK; got != want {
-		t.Errorf("expectedExitCode(%q) = %d, want %d", res.Status, got, want)
+	if got, want := turnproto.ExitCode(res.Status), turnproto.ExitOK; got != want {
+		t.Errorf("turnproto.ExitCode(%q) = %d, want %d", res.Status, got, want)
 	}
 	if !strings.Contains(res.Reply, "assistant reply: "+prompt) {
 		t.Errorf("reply = %q, want it to contain %q", res.Reply, "assistant reply: "+prompt)
