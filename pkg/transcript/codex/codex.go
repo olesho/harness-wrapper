@@ -48,6 +48,24 @@ func (r *Reader) Read(harnessSessionID, _ string) ([]transcript.Event, error) {
 	return parseJSONL(path)
 }
 
+// ReadUsage returns the cumulative token usage for a Codex session, or
+// (nil, nil) when the rollout carried no token_count usage. It reuses the same
+// unexported locate as Read (Codex indexes by session id, so workingDir is
+// unused), then reads the file and delegates to UsageFromJSONL. This makes
+// *Reader satisfy transcript.UsageReader. Reading the file here as well as in
+// Read (once per turn each) is intentional and matches meta-harness.
+func (r *Reader) ReadUsage(harnessSessionID, _ string) (*transcript.Usage, error) {
+	path, err := r.locate(harnessSessionID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path) //nolint:gosec // path located under the codex sessions root
+	if err != nil {
+		return nil, fmt.Errorf("codex transcript: read %s: %w", path, err)
+	}
+	return UsageFromJSONL(data)
+}
+
 func (r *Reader) sessionsRoot() (string, error) {
 	if r.SessionsRoot != "" {
 		return r.SessionsRoot, nil
