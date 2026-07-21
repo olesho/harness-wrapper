@@ -1,0 +1,30 @@
+{
+  "events": [
+    {
+      "id": "h:6f9a641840eaef9be1c144b17a799827",
+      "harness_session_id": "parent",
+      "source": "file",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent"
+    },
+    {
+      "id": "h:cd6119b2ea3e9bd4179c8d3a167fdb1d",
+      "harness_session_id": "parent",
+      "source": "live",
+      "type": "session_meta",
+      "role": "system",
+      "timestamp": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "h:6f9a641840eaef9be1c144b17a799827",
+      "harness_session_id": "sub-1",
+      "source": "live",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent"
+    }
+  ]
+}

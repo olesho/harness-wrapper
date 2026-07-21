@@ -1,0 +1,82 @@
+{
+  "mode": "hooks",
+  "run_id": "run-authority",
+  "notes": "Authority reconciliation (admitParent) + hsid-scoped dedup. Under Hooks the FILE is authoritative for the parent conversation: the live parent text (A) is DROPPED, its file copy (B) is kept. A live parent session_meta (E) is a NON-conversation kind and is admitted anyway. A subagent text arrives live (C) and file (D) — both admitted (subagent), collapsing on the content-hash rung (identical native timestamp). B and C carry byte-identical content, so their content hashes match, but they live in different harness sessions (parent vs sub-1); the (RunID, HarnessSessionID, Event.ID()) dedup key keeps them as two distinct rows. Surviving set: B, C (live wins over D), E.",
+  "events": [
+    {
+      "source": "live",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "file",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "live",
+      "harness_session_id": "sub-1",
+      "parent_session_id": "parent",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "file",
+      "harness_session_id": "sub-1",
+      "parent_session_id": "parent",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "spawning subagent",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "live",
+      "harness_session_id": "parent",
+      "parent_session_id": "",
+      "native_id": "",
+      "type": "session_meta",
+      "role": "system",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    }
+  ]
+}

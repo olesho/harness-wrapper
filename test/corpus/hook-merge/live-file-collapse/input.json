@@ -1,0 +1,37 @@
+{
+  "mode": "hooks",
+  "run_id": "run-collapse",
+  "notes": "Rung 4 (content hash). The same subagent event arrives live and file with NO NativeID/UUID/ToolUseID, so identity falls to the content hash. CRITICAL: both copies carry the IDENTICAL native timestamp — Event.ID() folds Timestamp.UnixNano() into the hash, so a mismatched timestamp would give two distinct ids and defeat the collapse. Both admitted (subagent), collapse to one. First admitted copy (live) wins.",
+  "events": [
+    {
+      "source": "live",
+      "harness_session_id": "sub-1",
+      "parent_session_id": "parent",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "subagent output line",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    },
+    {
+      "source": "file",
+      "harness_session_id": "sub-1",
+      "parent_session_id": "parent",
+      "native_id": "",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "subagent output line",
+      "tool_name": "",
+      "tool_use_id": "",
+      "tool_input": null,
+      "output": "",
+      "uuid": ""
+    }
+  ]
+}

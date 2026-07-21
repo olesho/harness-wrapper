@@ -1,0 +1,13 @@
+{
+  "events": [
+    {
+      "id": "h:015d4f0da1fd462da0bc103c8ea623ca",
+      "harness_session_id": "sub-1",
+      "source": "live",
+      "type": "text",
+      "role": "assistant",
+      "timestamp": "2026-01-01T00:00:00Z",
+      "text": "subagent output line"
+    }
+  ]
+}
