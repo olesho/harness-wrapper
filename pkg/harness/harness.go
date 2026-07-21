@@ -89,6 +89,13 @@ type SessionIDExtractor interface {
 
 // Resumer produces the resume-specific CLI argument prefix for a given session
 // id. The caller appends its own policy flags (output format, prompt, etc.).
+//
+// Intentionally separate from turns.SessionResumer (pkg/turns/turns.go): this
+// one serves the headless pkg/harness registry (keyed e.g. "claude", not chat's
+// "claude-code") and composes into headless invocations, whereas the turns
+// counterpart is keyed the way chat looks adapters up and composes into the
+// interactive TUI argv. See turns.SessionResumer's doc for why the two must not
+// be merged.
 type Resumer interface {
 	// ResumeArgs returns the argv fragment that resumes sessionID (e.g.
 	// {"--resume", id}). Returns nil for an empty id.

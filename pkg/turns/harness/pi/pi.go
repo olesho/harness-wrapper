@@ -67,6 +67,28 @@ func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcrip
 	return transcriptpi.New().Read(harnessSessionID, workingDir)
 }
 
+// ResumeArgs returns the argv fragment that resumes harnessSessionID:
+// `pi --session <uuid>`. Implements turns.SessionResumer.
+func (*Adapter) ResumeArgs(harnessSessionID string) []string {
+	return []string{"--session", harnessSessionID}
+}
+
+// SessionControlFlags lists the chat-managed session-control flags a caller must
+// not pass in Options.args. Implements turns.SessionControlFlags.
+func (*Adapter) SessionControlFlags() []string {
+	return []string{
+		"--session",
+		"--session-id",
+		"--fork",
+		"-c",
+		"--continue",
+		"-r",
+		"--resume",
+		"--no-session",
+		"--session-dir",
+	}
+}
+
 // quitCommand is pi's "/quit" slash command followed by Enter. pi auto-saves its
 // session continuously, and "/quit" exits cleanly; sending it lets pi flush
 // rather than being SIGTERM'd by Close.

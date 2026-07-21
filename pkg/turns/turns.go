@@ -229,6 +229,47 @@ type Quitter interface {
 	QuitSequence() []byte
 }
 
+// SessionResumer is an optional capability adapters may implement to surface
+// the argv fragment that resumes a prior harness session. The chat layer builds
+// a resume invocation by splicing this fragment into the launch args; an adapter
+// that does NOT implement it is treated as non-resumable (chat returns
+// ErrResumeUnsupported — this is exactly why the opencode adapter deliberately
+// omits it). Mirrors the TS turns.SessionResumer (src/turns/types.ts).
+//
+// Deliberate duplication with pkg/harness.Resumer (pkg/harness/harness.go): the
+// two layers describe the same shape ({"--resume", id}) but must NOT be merged.
+//
+//  1. Registry-key mismatch — pkg/harness/claude registers under "claude" while
+//     chat identifies this harness as "claude-code", so harness.For("claude-code")
+//     fails to find the pkg/harness resumer; the turns adapter is keyed the way
+//     chat looks it up.
+//  2. Capability divergence — pkg/harness/opencode implements Resumer, but chat
+//     treats opencode as non-resumable; only the turns layer (where opencode
+//     omits SessionResumer) expresses that policy correctly.
+//  3. Composition context — pkg/harness/codex's resumer is a fragment for the
+//     headless `codex exec resume` invocation, whereas the turns codex adapter
+//     prepends {"resume", uuid} to the interactive TUI argv. Same words,
+//     different call sites.
+//
+// The TS SessionForkResumer counterpart (src/turns/types.ts) is intentionally
+// left unported here; porting it is deferred to a follow-up ticket.
+type SessionResumer interface {
+	// ResumeArgs returns the argv fragment that resumes harnessSessionID (e.g.
+	// {"--resume", id}).
+	ResumeArgs(harnessSessionID string) []string
+}
+
+// SessionControlFlags is an optional capability adapters may implement to list
+// the chat-managed session-control flags a caller must not pass in Options.args
+// (chat owns session identity/resume/fork, so caller-supplied duplicates of
+// these flags would fight it). Mirrors the TS turns.SessionControlFlags
+// (src/turns/types.ts). An adapter that omits it declares no reserved flags.
+type SessionControlFlags interface {
+	// SessionControlFlags returns the flags (e.g. "--resume", "--fork-session")
+	// that chat reserves and callers must not supply.
+	SessionControlFlags() []string
+}
+
 // MessageExtractor is an optional capability adapters may implement to recover
 // the assistant's reply text from the rendered screen, stripped of the
 // harness's TUI chrome (banner, the echoed prompt, the thinking-summary

@@ -140,6 +140,18 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	return out
 }
 
+// ResumeArgs returns the argv fragment that resumes harnessSessionID:
+// {"resume", uuid} prepended to the interactive TUI argv (`codex resume
+// <uuid>`). Implements turns.SessionResumer.
+//
+// Codex deliberately does NOT implement turns.SessionControlFlags: in the TS
+// mirror (codex.ts) codex declares no session-control flags, so chat accepts
+// Options.resume plus a caller-supplied `resume X` for codex. Implementing it
+// here would reject what TS accepts — a conformance-mirror divergence to avoid.
+func (*Adapter) ResumeArgs(harnessSessionID string) []string {
+	return []string{"resume", harnessSessionID}
+}
+
 // ExtractSessionID scrapes the "codex resume <uuid>" line Codex prints
 // to identify the on-disk transcript. Implements turns.SessionIDExtractor.
 func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {

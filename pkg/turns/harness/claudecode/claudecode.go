@@ -505,6 +505,27 @@ func (*Adapter) ExtractSessionIDFromLine(line string) (string, bool) {
 	return m[1], true
 }
 
+// ResumeArgs returns the argv fragment that resumes harnessSessionID:
+// `claude --resume <uuid>`. Implements turns.SessionResumer.
+func (*Adapter) ResumeArgs(harnessSessionID string) []string {
+	return []string{"--resume", harnessSessionID}
+}
+
+// SessionControlFlags lists the chat-managed session-control flags a caller must
+// not pass in Options.args. Implements turns.SessionControlFlags.
+func (*Adapter) SessionControlFlags() []string {
+	return []string{
+		"--session-id",
+		"-r",
+		"--resume",
+		"-c",
+		"--continue",
+		"--fork-session",
+		"--from-pr",
+		"--no-session-persistence",
+	}
+}
+
 // ReadTranscript reads the on-disk Claude Code session log. Implements
 // turns.TranscriptReader.
 func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
