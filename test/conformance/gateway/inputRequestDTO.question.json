@@ -1,0 +1,16 @@
+{
+  "id": "req-1",
+  "kind": "question",
+  "prompt": "Pick one",
+  "options": [
+    {
+      "id": "1",
+      "label": "Yes"
+    },
+    {
+      "id": "2",
+      "alias": "n",
+      "label": "No"
+    }
+  ]
+}

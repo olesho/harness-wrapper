@@ -1,0 +1,18 @@
+{
+  "id": "req-2",
+  "kind": "question_review",
+  "prompt": "Approve this change?",
+  "header": "Review",
+  "options": [
+    {
+      "id": "1",
+      "label": "Approve",
+      "description": "Accept the pending diff"
+    },
+    {
+      "id": "2",
+      "label": "Reject",
+      "description": "Discard the pending diff"
+    }
+  ]
+}

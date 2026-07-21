@@ -1,0 +1,18 @@
+{
+  "completed": {
+    "exit_code": 0,
+    "stderr_anchor": ""
+  },
+  "deadline": {
+    "exit_code": 124,
+    "stderr_anchor": "harness-wrapper run: context deadline exceeded"
+  },
+  "errored": {
+    "exit_code": 1,
+    "stderr_anchor": ""
+  },
+  "startup_error": {
+    "exit_code": 1,
+    "stderr_anchor": ""
+  }
+}

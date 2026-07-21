@@ -1,0 +1,22 @@
+{
+  "id": "req-3",
+  "kind": "question",
+  "prompt": "Select all that apply",
+  "header": "Features",
+  "multi_select": true,
+  "options": [
+    {
+      "id": "a",
+      "label": "Alpha",
+      "description": "the first"
+    },
+    {
+      "id": "b",
+      "label": "Beta"
+    },
+    {
+      "id": "c",
+      "label": "Gamma"
+    }
+  ]
+}

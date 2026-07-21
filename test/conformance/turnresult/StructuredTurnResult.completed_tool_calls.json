@@ -1,0 +1,34 @@
+{
+  "status": "completed",
+  "reply": "ran ls",
+  "harnessSessionID": "sess-2",
+  "transcript_entries": [
+    {
+      "seq": 1,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "assistant",
+      "type": "text",
+      "text": "running a tool"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "assistant",
+      "type": "tool_use",
+      "tool_name": "Bash",
+      "tool_use_id": "tu_1",
+      "tool_input": {
+        "command": "ls -la"
+      }
+    },
+    {
+      "seq": 3,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "tool",
+      "type": "tool_result",
+      "tool_use_id": "tu_1",
+      "output": "total 0\n"
+    }
+  ],
+  "working_dir": "/work"
+}

@@ -1,0 +1,554 @@
+{
+  "answerRequest": [
+    {
+      "name": "Token",
+      "json_tag": "token",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "RequestID",
+      "json_tag": "request_id",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "OptionID",
+      "json_tag": "option_id",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "OptionIDs",
+      "json_tag": "option_ids",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "Text",
+      "json_tag": "text",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "controlResponse": [
+    {
+      "name": "Token",
+      "json_tag": "token",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "conversationSummary": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Harness",
+      "json_tag": "harness",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "SessionID",
+      "json_tag": "session_id",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "errorResponse": [
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Code",
+      "json_tag": "code",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "eventDTO": [
+    {
+      "name": "Type",
+      "json_tag": "type",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Turn",
+      "json_tag": "turn",
+      "type": "ref",
+      "optional": true
+    },
+    {
+      "name": "Input",
+      "json_tag": "input",
+      "type": "ref",
+      "optional": true
+    },
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "historyResponse": [
+    {
+      "name": "Turns",
+      "json_tag": "turns",
+      "type": "array",
+      "optional": false
+    }
+  ],
+  "inputOptionDTO": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Alias",
+      "json_tag": "alias",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Label",
+      "json_tag": "label",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Description",
+      "json_tag": "description",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "inputRequestDTO": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Kind",
+      "json_tag": "kind",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Prompt",
+      "json_tag": "prompt",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Header",
+      "json_tag": "header",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "MultiSelect",
+      "json_tag": "multi_select",
+      "type": "bool",
+      "optional": true
+    },
+    {
+      "name": "Options",
+      "json_tag": "options",
+      "type": "array",
+      "optional": true
+    }
+  ],
+  "openRequest": [
+    {
+      "name": "Harness",
+      "json_tag": "harness",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "BinaryPath",
+      "json_tag": "binary_path",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Args",
+      "json_tag": "args",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "WorkingDir",
+      "json_tag": "working_dir",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Env",
+      "json_tag": "env",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "Cols",
+      "json_tag": "cols",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "Rows",
+      "json_tag": "rows",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "InputPolicy",
+      "json_tag": "input_policy",
+      "type": "ref",
+      "optional": true
+    },
+    {
+      "name": "Effort",
+      "json_tag": "effort",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Model",
+      "json_tag": "model",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "DisableCodexAutoDismiss",
+      "json_tag": "disable_codex_auto_dismiss",
+      "type": "bool",
+      "optional": true
+    },
+    {
+      "name": "AutoSkipCodexUpdateNotice",
+      "json_tag": "auto_skip_codex_update_notice",
+      "type": "bool",
+      "optional": true
+    }
+  ],
+  "openResponse": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "runTurnRequest": [
+    {
+      "name": "Harness",
+      "json_tag": "harness",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "TurnHarness",
+      "json_tag": "turn_harness",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "BinaryPath",
+      "json_tag": "binary_path",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Args",
+      "json_tag": "args",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "WorkingDir",
+      "json_tag": "working_dir",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Env",
+      "json_tag": "env",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "Prompt",
+      "json_tag": "prompt",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "ExitAfterTurn",
+      "json_tag": "exit_after_turn",
+      "type": "bool",
+      "optional": true
+    },
+    {
+      "name": "TimeoutSeconds",
+      "json_tag": "timeout_seconds",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "Cols",
+      "json_tag": "cols",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "Rows",
+      "json_tag": "rows",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "InputPolicy",
+      "json_tag": "input_policy",
+      "type": "ref",
+      "optional": true
+    },
+    {
+      "name": "Effort",
+      "json_tag": "effort",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Model",
+      "json_tag": "model",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "runTurnResponse": [
+    {
+      "name": "Turn",
+      "json_tag": "turn",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "Session",
+      "json_tag": "session",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "History",
+      "json_tag": "history",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "ProcessStoppedAfterTurn",
+      "json_tag": "process_stopped_after_turn",
+      "type": "bool",
+      "optional": false
+    },
+    {
+      "name": "WrapperStatus",
+      "json_tag": "wrapper_status",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "WrapperReason",
+      "json_tag": "wrapper_reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "screenResponse": [
+    {
+      "name": "Text",
+      "json_tag": "text",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Cols",
+      "json_tag": "cols",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Rows",
+      "json_tag": "rows",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "CursorCol",
+      "json_tag": "cursor_col",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "CursorRow",
+      "json_tag": "cursor_row",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Generation",
+      "json_tag": "generation",
+      "type": "int",
+      "optional": false
+    }
+  ],
+  "sendRequest": [
+    {
+      "name": "Token",
+      "json_tag": "token",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Text",
+      "json_tag": "text",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "sendResponse": [
+    {
+      "name": "TurnID",
+      "json_tag": "turn_id",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "sessionDTO": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Harness",
+      "json_tag": "harness",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "WorkingDir",
+      "json_tag": "working_dir",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "CreatedAt",
+      "json_tag": "created_at",
+      "type": "timestamp",
+      "optional": false
+    },
+    {
+      "name": "HarnessSessionID",
+      "json_tag": "harness_session_id",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "turnDTO": [
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "SessionID",
+      "json_tag": "session_id",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Role",
+      "json_tag": "role",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "State",
+      "json_tag": "state",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Text",
+      "json_tag": "text",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Reason",
+      "json_tag": "reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "StartedAt",
+      "json_tag": "started_at",
+      "type": "timestamp",
+      "optional": false
+    },
+    {
+      "name": "CompletedAt",
+      "json_tag": "completed_at",
+      "type": "timestamp",
+      "optional": true
+    },
+    {
+      "name": "HTTPCode",
+      "json_tag": "http_code",
+      "type": "int",
+      "optional": true
+    },
+    {
+      "name": "RetryAfter",
+      "json_tag": "retry_after",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "turnEventDTO": [
+    {
+      "name": "Turn",
+      "json_tag": "turn",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
+      "optional": true
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "turn-done",
+  "session_id": "sess-1",
+  "role": "assistant",
+  "state": "complete",
+  "text": "the reply",
+  "started_at": "2026-07-21T10:00:00Z",
+  "completed_at": "2026-07-21T10:00:42Z"
+}

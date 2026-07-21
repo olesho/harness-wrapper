@@ -1,0 +1,7 @@
+{
+  "id": "turn-zero",
+  "session_id": "sess-1",
+  "role": "assistant",
+  "state": "running",
+  "started_at": "0001-01-01T00:00:00Z"
+}

@@ -1,0 +1,8 @@
+{
+  "status": "completed",
+  "reply": "done",
+  "harnessSessionID": "sess-4",
+  "transcript_entries": [],
+  "working_dir": "/work",
+  "transcript_error": "read transcript: no session file"
+}

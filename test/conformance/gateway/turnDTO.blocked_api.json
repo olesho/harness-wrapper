@@ -1,0 +1,10 @@
+{
+  "id": "turn-blocked",
+  "session_id": "sess-1",
+  "role": "assistant",
+  "state": "blocked",
+  "reason": "api_error",
+  "started_at": "2026-07-21T10:00:00Z",
+  "http_code": 429,
+  "retry_after": "30s"
+}

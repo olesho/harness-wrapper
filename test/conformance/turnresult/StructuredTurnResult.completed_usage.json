@@ -1,0 +1,29 @@
+{
+  "status": "completed",
+  "reply": "done",
+  "harnessSessionID": "sess-3",
+  "transcript_entries": [
+    {
+      "seq": 1,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "user",
+      "type": "text",
+      "text": "do the thing"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "assistant",
+      "type": "text",
+      "text": "done"
+    }
+  ],
+  "working_dir": "/work",
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 50,
+    "cache_read_input_tokens": 20,
+    "cache_creation_input_tokens": 0,
+    "reasoning_output_tokens": 0
+  }
+}

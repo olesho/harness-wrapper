@@ -1,0 +1,8 @@
+{
+  "status": "startup_error",
+  "reply": "",
+  "harnessSessionID": "",
+  "transcript_entries": [],
+  "working_dir": "/work",
+  "reason": "empty prompt"
+}

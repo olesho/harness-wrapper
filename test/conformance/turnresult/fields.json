@@ -1,0 +1,146 @@
+{
+  "Event": [
+    {
+      "name": "Seq",
+      "json_tag": "seq",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Timestamp",
+      "json_tag": "timestamp",
+      "type": "timestamp",
+      "optional": false
+    },
+    {
+      "name": "Role",
+      "json_tag": "role",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Type",
+      "json_tag": "type",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Text",
+      "json_tag": "text",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "ToolName",
+      "json_tag": "tool_name",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "ToolUseID",
+      "json_tag": "tool_use_id",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "ToolInput",
+      "json_tag": "tool_input",
+      "type": "any",
+      "optional": true
+    },
+    {
+      "name": "Output",
+      "json_tag": "output",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "UUID",
+      "json_tag": "uuid",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "StructuredTurnResult": [
+    {
+      "name": "Status",
+      "json_tag": "status",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Reply",
+      "json_tag": "reply",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "HarnessSessionID",
+      "json_tag": "harnessSessionID",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "TranscriptEntries",
+      "json_tag": "transcript_entries",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "WorkingDir",
+      "json_tag": "working_dir",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Reason",
+      "json_tag": "reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "TranscriptError",
+      "json_tag": "transcript_error",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Usage",
+      "json_tag": "usage",
+      "type": "ref",
+      "optional": true
+    }
+  ],
+  "Usage": [
+    {
+      "name": "InputTokens",
+      "json_tag": "input_tokens",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "OutputTokens",
+      "json_tag": "output_tokens",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "CacheReadInputTokens",
+      "json_tag": "cache_read_input_tokens",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "CacheCreationInputTokens",
+      "json_tag": "cache_creation_input_tokens",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "ReasoningOutputTokens",
+      "json_tag": "reasoning_output_tokens",
+      "type": "int",
+      "optional": false
+    }
+  ]
+}

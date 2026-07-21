@@ -1,0 +1,4 @@
+{
+  "error": "option_ids is only valid for multi_select prompts",
+  "code": "not_multi_select"
+}

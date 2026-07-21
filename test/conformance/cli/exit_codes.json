@@ -1,0 +1,7 @@
+{
+  "ExitOK": 0,
+  "ExitError": 1,
+  "ExitUsage": 2,
+  "ExitDeadline": 124,
+  "deadline_line": "harness-wrapper run: context deadline exceeded"
+}

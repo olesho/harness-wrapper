@@ -1,0 +1,8 @@
+{
+  "status": "errored",
+  "reply": "",
+  "harnessSessionID": "sess-5",
+  "transcript_entries": [],
+  "working_dir": "/work",
+  "reason": "harness exited non-zero"
+}
