@@ -723,3 +723,61 @@ the three-signature test shape. Full evidence chain in
 [`docs/triage/HARNESS-WRAPPER-113.md`](../../triage/HARNESS-WRAPPER-113.md). Once the
 bundle is handed to `orche`, the correct disposition here is **close-as-invalid**, per
 the standing human ruling on HARNESS-WRAPPER-24 (2026-07-16).
+
+## HARNESS-WRAPPER-114 — dead-spawner false positive (6th): the deployed observer is a second, untested tick
+
+**Filed as:** `[observer] crashed/dead spawner bug-reviewer left HARNESS-WRAPPER-112
+working (dead-spawner:bug-reviewer:HARNESS-WRAPPER-112)`.
+
+**Why it landed here:** unchanged from §HARNESS-WRAPPER-23, §HARNESS-WRAPPER-26,
+§HARNESS-WRAPPER-98, §HARNESS-WRAPPER-99, §HARNESS-WRAPPER-111,
+§HARNESS-WRAPPER-112 and §HARNESS-WRAPPER-113 — the detector files against the *task*
+it is watching (`HARNESS-WRAPPER-112`, in this repo's fleet-db workspace), so the
+ticket lands in this workspace even though every line of the defect lives in `orche`.
+`grep -rniE 'dead-spawner|fileAnomaly|obs-sig|deadSpawnerMs|task_released|agent_stopped'
+--include='*.go' .` returns **zero** hits in this Go module. This is the **sixth**
+recurrence of the class and the third in a single evening; as in §HARNESS-WRAPPER-111
+and §HARNESS-WRAPPER-113 the observer **explicitly dismissed** the signature in the
+same `onComplete` pass and it was filed anyway — the ticket's only comment is that
+dismissal, written 4 ms after the ticket itself. The accusation was already false at
+file time: the accused bug-reviewer had delivered its triage and released, and the
+integrator had merged `117c0b1` ~2 minutes earlier.
+
+**What is new — the hardening has been landing in code the fleet does not run.** The
+deployed chain resolves to `makeObserver` in
+`packages/agent/examples/observer.ts:62`, a *second*, hand-rolled tick implementation
+that never calls `observe()`. It is missing the library's persistence gate
+(`packages/agent/src/observer.ts:294-304`), the probe filter and the `ignoreSpawners`
+mute knob, and `incidentId` correlation — and it has **zero test coverage** (no test
+references `makeObserver` or `examples/observer`; all 35 `observe(` call sites in
+`observer.unit.test.ts` drive the library). That is the meta-reason five prior triages
+did not stop this.
+
+**Also new — the class now feeds itself.** -114 is the first instance where the accused
+agent was a **bug-reviewer triaging an observer-filed ticket**. Each observer bug
+occupies a bug-reviewer for a long, quiet turn, which is exactly the shape the
+lag-contaminated liveness predicate misreads, so each filed ticket manufactures the
+next false positive. Muting the spawner is unavailable: `ignoreSpawners` exists only
+in `observe()`.
+
+**Actual defect location:** `orche` — the un-drained single-page `pull`
+(`examples/observer.ts:117`, `src/observer.ts:242`,
+`packages/queue/src/fleet.ts:256-261`) leaves the bus view ≥ 6 min stale while the
+*fleet* view fetched three lines above the filing (`src/observer.ts:825`) is current
+and already contradicts the claim; plus the still-unlanded assignee grounding in
+`fileAnomaly` (`src/observer.ts:852`), the substring verdict matcher
+(`examples/observer.ts:181`), and the missing persistence gate.
+
+**Resolution:** no source change made in this repo — documentation only, and no human
+gate requested. The fix is staged additively in the existing bundle
+[`crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md`](../../../crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md)
+(new **Patch C**: port the persistence gate to the deployed tick as an exported pure
+`gateByPersistence`, so that path becomes testable at all; plus the `in_progress`
+*and* reassigned row in Patch B's matrix — the anchor proving the ownership guard
+cannot be approximated by a status check). Full evidence chain in
+[`docs/triage/HARNESS-WRAPPER-114.md`](../../triage/HARNESS-WRAPPER-114.md). Once the
+bundle is handed to `orche`, the correct disposition here is **close-as-invalid** —
+HARNESS-WRAPPER-24 (2026-07-16) already directed that this class not be re-filed in
+this workspace. Carried forward for a human: the drain-to-empty fix is now on its
+**fifth** consecutive re-derivation and is still unfiled in `ORCHE`, and no agent in
+this worktree can file there.
