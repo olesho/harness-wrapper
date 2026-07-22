@@ -323,6 +323,50 @@ func TestReopen_ReusesStoredRecord(t *testing.T) {
 	}
 }
 
+// TestReopen_ForwardsPermissionMode guards the silent-drop risk in the
+// ReopenOptions -> Options copy: Reopen rebuilds a fresh Options literal, so a
+// field missing from that copy would leave a RESUMED conversation launching
+// without the permission rung — invisibly, since nothing else observes it. The
+// argv dump is the observable proof: wrapper prepends claude's native
+// --permission-mode ahead of the resume fragment.
+func TestReopen_ForwardsPermissionMode(t *testing.T) {
+	bin := buildFake(t)
+	store := memstore.New()
+	const storedID = "chat-sess-reopen-permission"
+	seedSession(t, store, chat.Session{
+		ID:               storedID,
+		Harness:          "claude-code",
+		WorkingDir:       t.TempDir(),
+		CreatedAt:        time.Now(),
+		HarnessSessionID: uuid,
+	})
+
+	argvPath := argvOutPath(t)
+	env := fakeLaunchEnv(t, fakeharness.New("claude-code").Idle().Build(), argvPath)
+
+	conv, err := chat.Reopen(context.Background(), chat.ReopenOptions{
+		SessionID:      storedID,
+		BinaryPath:     bin,
+		Env:            env,
+		Store:          store,
+		PermissionMode: "plan",
+	})
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	trackClose(t, conv)
+
+	argv := readArgv(t, argvPath)
+	i := indexOf(argv, "--permission-mode")
+	if i < 0 || i+1 >= len(argv) || argv[i+1] != "plan" {
+		t.Fatalf("argv = %#v, want --permission-mode plan (ReopenOptions.PermissionMode must survive the Options copy)", argv)
+	}
+	// The resume fragment must still be intact behind the injected flag.
+	if !contains(argv, "--resume") || !contains(argv, uuid) {
+		t.Fatalf("argv = %#v, want the resume fragment [--resume %s] preserved", argv, uuid)
+	}
+}
+
 // TestReopen_NoHarnessSession: Reopen returns ErrNoHarnessSession when the
 // stored record captured no harness session id.
 func TestReopen_NoHarnessSession(t *testing.T) {
