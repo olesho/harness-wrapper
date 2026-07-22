@@ -1,0 +1,23 @@
+{
+  "status": "completed",
+  "reply": "done",
+  "harnessSessionID": "sess-7",
+  "transcript_entries": [
+    {
+      "seq": 1,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "user",
+      "type": "text",
+      "text": "do the thing"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "assistant",
+      "type": "text",
+      "text": "done"
+    }
+  ],
+  "working_dir": "/work",
+  "permission_mode": "bypass"
+}

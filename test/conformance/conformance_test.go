@@ -54,7 +54,8 @@ func mustTime(s string) time.Time {
 }
 
 // turnFixtures covers each TurnStatus, the present/absent variants of the
-// omitempty optionals (reason, transcript_error, usage), and — critically — a
+// omitempty optionals (reason, transcript_error, usage, permission_mode), and
+// — critically — a
 // completed fixture whose transcript_entries carry tool_use / tool_result
 // events (ToolInput as raw JSON, omitempty Text/Output across event types),
 // where cross-language structural comparison is most likely to catch a bug.
@@ -112,11 +113,23 @@ func turnFixtures() []turnFixture {
 			Status: turnproto.StatusDeadline, HarnessSessionID: "sess-6",
 			TranscriptEntries: []transcript.Event{}, WorkingDir: "/work",
 		}},
-		// startup_error — reason PRESENT, no session id recovered.
+		// startup_error — reason PRESENT, no session id recovered. permission_mode
+		// is ABSENT by rule, not by accident: no harness was launched, so there is
+		// no rung to report (see StructuredTurnResult.PermissionMode).
 		{"StructuredTurnResult.startup_error", turnproto.StructuredTurnResult{
 			Status:            turnproto.StatusStartupError,
 			TranscriptEntries: []transcript.Event{}, WorkingDir: "/work",
 			Reason: "empty prompt",
+		}},
+		// completed carrying permission_mode — the present variant of the fourth
+		// omitempty optional; StructuredTurnResult.completed above is the omitted
+		// variant. The value is a CANONICAL RUNG ("bypass"), never a harness-native
+		// spelling: TS must not reuse the conversationSummary.permission_mode
+		// vocabulary (which does carry native spellings) for this key.
+		{"StructuredTurnResult.completed_permission_mode", turnproto.StructuredTurnResult{
+			Status: turnproto.StatusCompleted, Reply: "done", HarnessSessionID: "sess-7",
+			TranscriptEntries: textEntries, WorkingDir: "/work",
+			PermissionMode: "bypass",
 		}},
 	}
 }
@@ -356,6 +369,7 @@ func assertOptionalKeys(t *testing.T, golden []byte, value any) {
 		"reason":           res.Reason != "",
 		"transcript_error": res.TranscriptError != "",
 		"usage":            res.Usage != nil,
+		"permission_mode":  res.PermissionMode != "",
 	}
 	for key, wantPresent := range checks {
 		_, present := raw[key]
