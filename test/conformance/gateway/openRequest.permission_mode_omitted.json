@@ -1,0 +1,7 @@
+{
+  "harness": "claude",
+  "binary_path": "/usr/local/bin/claude",
+  "working_dir": "/repo",
+  "cols": 120,
+  "rows": 40
+}

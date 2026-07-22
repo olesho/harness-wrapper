@@ -39,7 +39,9 @@ type gatewayFixture struct {
 // zero-StartedAt turnDTO ("0001-01-01T00:00:00Z" — a Go-ism a TS consumer would
 // get wrong), the omitzero-absent completed_at, the input_request superset
 // (header / multi_select / option description / option_ids via answerRequest),
-// and the not_multi_select errorResponse standing in for HW-49's 400 behavior.
+// the present/absent permission_mode pairs on openRequest and
+// conversationSummary, and the not_multi_select / invalid_config errorResponses
+// standing in for HW-49's and HW-74's 400 behavior.
 func gatewayFixtures() []gatewayFixture {
 	started := mustTime("2026-07-21T10:00:00Z")
 	completed := mustTime("2026-07-21T10:00:42Z")
@@ -97,6 +99,57 @@ func gatewayFixtures() []gatewayFixture {
 		{"errorResponse.not_multi_select", errorResponse{
 			Error: "option_ids is only valid for multi_select prompts",
 			Code:  "not_multi_select",
+		}},
+		// permission_mode, present and absent, on the representative inbound
+		// (openRequest) and outbound (conversationSummary) DTOs. The two guards
+		// covering these fixtures catch DIFFERENT failures — do not collapse one
+		// into the other:
+		//
+		//   - TestConformance_GatewayFixtures round-trips each golden through
+		//     assertRoundTripsStructurally (parse golden into the DTO,
+		//     re-serialize, structurally compare). The *_omitted goldens pin
+		//     `omitempty`: drop the tag option and re-serialization emits
+		//     "permission_mode": "", which mismatches the golden and fails loudly.
+		//
+		//   - They do NOT pin the Go type. *string + omitempty round-trips the
+		//     absent golden nil->absent and the present golden pointer->present, so
+		//     BOTH fixtures still pass under a pointer swap. A pointer/type change
+		//     is caught instead by cmd/harness-chatd/testdata/wire_contract.golden,
+		//     because TestContract_WireTypes records f.Type.String().
+		//
+		// No runTurnRequest pair: its PermissionMode is declared identically to
+		// openRequest's (same type, tag and omitempty), so a fixture would pin
+		// nothing this pair doesn't; its declaration is covered by fields.json plus
+		// wire_contract.golden and its behavior by the chatd handler tests.
+		{"openRequest.permission_mode", openRequest{
+			Harness: "claude", BinaryPath: "/usr/local/bin/claude",
+			WorkingDir: "/repo", Cols: 120, Rows: 40,
+			PermissionMode: "plan",
+		}},
+		// Same shape with PermissionMode zero: the key is ABSENT from the JSON.
+		{"openRequest.permission_mode_omitted", openRequest{
+			Harness: "claude", BinaryPath: "/usr/local/bin/claude",
+			WorkingDir: "/repo", Cols: 120, Rows: 40,
+		}},
+		{"conversationSummary.permission_mode", conversationSummary{
+			ID: "conv-1", Harness: "claude", SessionID: "sess-1",
+			PermissionMode: "auto",
+		}},
+		// Same shape with PermissionMode zero: the key is ABSENT from the JSON.
+		{"conversationSummary.permission_mode_omitted", conversationSummary{
+			ID: "conv-2", Harness: "codex", SessionID: "sess-2",
+		}},
+		// The invalid-permission_mode 400 (HW-74), same treatment as
+		// not_multi_select above: the DTO chatd emits via writeError, plus a README
+		// behavior row; the HTTP status is a chatd handler test.
+		//
+		// The message here is ILLUSTRATIVE and pins nothing — emit mode just
+		// marshals the literal and assertRoundTripsStructurally never compares it
+		// against anything the code produces. What this fixture pins is the `code`
+		// and the {error, code} envelope, not the wording.
+		{"errorResponse.invalid_config", errorResponse{
+			Error: `permission mode "nonsense" is not supported`,
+			Code:  "invalid_config",
 		}},
 	}
 }

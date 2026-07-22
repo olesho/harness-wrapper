@@ -1,0 +1,6 @@
+{
+  "id": "conv-1",
+  "harness": "claude",
+  "session_id": "sess-1",
+  "permission_mode": "auto"
+}

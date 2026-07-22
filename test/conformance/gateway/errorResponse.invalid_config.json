@@ -1,0 +1,4 @@
+{
+  "error": "permission mode \"nonsense\" is not supported",
+  "code": "invalid_config"
+}
