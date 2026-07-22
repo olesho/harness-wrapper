@@ -1,4 +1,4 @@
-.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance
+.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance test-clients
 
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Kept in sync with test/scripts/<harness>/*.json.
@@ -9,6 +9,7 @@ help:
 	@echo "harness-wrapper make targets:"
 	@echo ""
 	@echo "  make test                  hermetic suite (go vet + gofmt + go test -race)"
+	@echo "  make test-clients          TS + Python client suites (needs network + Node >=18.19)"
 	@echo "  make build                 go build ./..."
 	@echo "  make docs                  build the docs site (docs/md/ -> docs/html/)"
 	@echo "  make docs-serve            preview the docs site at http://localhost:4321"
@@ -36,6 +37,17 @@ test:
 
 build:
 	go build ./...
+
+# test-clients: run the shipped SDK test suites. NOT hermetic — `npm install`
+# needs network (there is no package-lock.json or vendored node_modules under
+# clients/typescript/, and tsx is a devDependency), and `node --import` needs
+# Node >=18.19. The typecheck step runs tsc -p tsconfig.test.json (noEmit) so
+# the tests' compile-time assertions are checked without polluting dist/.
+# The python suite must run from clients/python so `discover -t .` puts that
+# directory (where harness_chat.py lives) on sys.path.
+test-clients:
+	cd clients/typescript && npm install && npm run typecheck && npm test
+	cd clients/python && python3 -m unittest discover -s tests -t .
 
 # docs: regenerate the static documentation site from the canonical markdown
 # under docs/md/ into docs/html/ (a gitignored build artifact). The generator is
