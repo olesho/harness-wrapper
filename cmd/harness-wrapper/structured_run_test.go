@@ -112,8 +112,14 @@ func TestStructuredRun_SandboxDefaultsInjection(t *testing.T) {
 	// up in the record). Unset, don't t.Setenv("IS_SANDBOX", ""): that DEFINES
 	// the key, which hasEnvKey treats as present.
 	if prev, ok := os.LookupEnv("IS_SANDBOX"); ok {
-		os.Unsetenv("IS_SANDBOX")
-		t.Cleanup(func() { os.Setenv("IS_SANDBOX", prev) })
+		if err := os.Unsetenv("IS_SANDBOX"); err != nil {
+			t.Fatalf("unset IS_SANDBOX: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := os.Setenv("IS_SANDBOX", prev); err != nil {
+				t.Errorf("restore IS_SANDBOX: %v", err)
+			}
+		})
 	}
 
 	for _, tc := range []struct {

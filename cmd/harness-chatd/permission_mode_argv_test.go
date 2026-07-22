@@ -321,8 +321,14 @@ func TestPermissionModeEnv_OpenBypassAddsNoSandboxEnv(t *testing.T) {
 	// and invert on any box (or container) that already exports IS_SANDBOX.
 	// Unset rather than t.Setenv("IS_SANDBOX", "") — the latter DEFINES the key.
 	if prev, ok := os.LookupEnv("IS_SANDBOX"); ok {
-		os.Unsetenv("IS_SANDBOX")
-		t.Cleanup(func() { os.Setenv("IS_SANDBOX", prev) })
+		if err := os.Unsetenv("IS_SANDBOX"); err != nil {
+			t.Fatalf("unset IS_SANDBOX: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := os.Setenv("IS_SANDBOX", prev); err != nil {
+				t.Errorf("restore IS_SANDBOX: %v", err)
+			}
+		})
 	}
 
 	bin := fakeHarnessBin(t)
