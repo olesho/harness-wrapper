@@ -62,7 +62,7 @@ as 400 `invalid_config`. Two residual gaps remain:
 
 The one-shot response does not echo the mode; only the conversation listing reports it.
 
-**`bypass` over the wire has no `IS_SANDBOX=1`.** The `--sandbox-defaults` [CLI flag](cli.md)
+**`bypass` over the wire has no `IS_SANDBOX=1`.** The `--sandbox-defaults` [CLI flag](cli.md#flags)
 contributes args **and** env — notably `IS_SANDBOX=1`, which suppresses claude-code's *Bypass
 Permissions mode* acceptance screen and allows running as root. chatd has no `--sandbox-defaults`
 equivalent and no `--auto-accept`; its only levers are the request's `env` and `input_policy`. So a
