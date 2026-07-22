@@ -21,6 +21,18 @@ func TestContract_Flags(t *testing.T) {
 	assertGolden(t, "flags.golden", flagSurface(fs))
 }
 
+// TestContract_Usage freezes the human-facing --help text. printUsage is the
+// only place a user learns that --permission-mode is NOT a drop-in for
+// --sandbox-defaults (bypass sets no IS_SANDBOX=1, so the acceptance screen
+// still appears and root is still refused) and that restrictive rungs bind
+// fully only with a human at the TUI. Wording that load-bearing should not
+// drift silently, so it lives behind a golden like the flag surface does.
+func TestContract_Usage(t *testing.T) {
+	var sb strings.Builder
+	printUsage(&sb)
+	assertGolden(t, "usage.golden", sb.String())
+}
+
 // flagSurface renders a FlagSet as a stable, sorted "name <type> = <default>
 // : <usage>" line per flag — the frozen shape of the binary's CLI.
 func flagSurface(fs *flag.FlagSet) string {
