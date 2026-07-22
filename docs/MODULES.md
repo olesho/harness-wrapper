@@ -1578,6 +1578,116 @@ pkg/harness/all to register every built-in.
 #### `type Profile`
 Profile is the pi coding-agent harness profile.
 
+## Module: oneshot (`pkg/oneshot`)
+
+_(summary pending — run the harness-docs skill)_
+
+> Package oneshot is the IN-PROCESS Go library for the typed one-shot turn — the
+parity sibling of meta-harness's `oneshot` library subpath
+(runOneShot / runOneShotDetailed), returning the typed outcome union under a
+headless auto-accept-trust policy WITHOUT spawning a subprocess or crossing a
+workspace transport.
+
+The typed union already exists two ways in this tree: the guest
+`structured-run` subcommand (cmd/harness-wrapper) and the host-side
+pkg/env.RunStructuredTurn client. Both go over a boundary — a spawned process
+or a Workspace exec. oneshot fills the narrow remaining gap: an ordinary Go
+call that drives one real interactive harness turn via harness.RunTurn and
+hands back turnproto.TurnStatus directly.
+
+This is extract-and-consolidate, NOT a third re-implementation. oneshot reuses
+turnproto.TurnStatus (the frozen union) rather than defining a new one, and
+Classify is the (TurnResult, error) → status/reason core lifted VERBATIM from
+the guest classifyStructuredResult, preserving its exact branch order. The
+status → exit-code table is NOT here — it is turnproto.ExitCode, the single
+function all producers delegate to — so oneshot never leaks a process exit
+code into an in-process return.
+
+Scope: unattended / headless ONLY. oneshot wires the existing auto-accept
+trust policy plus the AutoAcceptAnswer callback and never touches the
+interactive /dev/tty machinery, which stays in cmd/harness-wrapper's runOneShot.
+
+Parity is documented as MINUS `usage` (turnproto deliberately drops token
+usage — Go has no usage reader) and MINUS `transcript_entries` (an in-process
+caller reconstructs them from HarnessSessionID + WorkingDir via the
+pkg/transcript readers). Neither omission is a parity miss.
+
+### Exported Types & Functions
+
+#### `func AffirmativeOption(req chat.InputRequest) *chat.InputOption`
+AffirmativeOption picks the "yes/accept/trust" option from an input request, so
+auto-answering a trust/confirm dialog proceeds rather than declines.
+
+#### `func AutoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool)`
+AutoAcceptAnswer is the shared three-tier unattended fallback: pick the
+affirmative option, else the first option, else decline (false). Falling
+through to the first option (rather than false) for a has-options-but-no-
+affirmative prompt keeps an unattended run from failing with
+chat.ErrInputPending when nothing consumes the surfaced request.
+
+#### `func Classify(res harness.TurnResult, err error) (turnproto.TurnStatus, string)`
+Classify maps a RunTurn (result, err) pair to the protocol status and an
+optional reason. It is the (TurnResult, error) → status/reason core lifted
+VERBATIM from the guest classifyStructuredResult, MINUS the process exit code
+(that is turnproto.ExitCode) — no exit code leaks into an in-process return.
+
+It branches on the RETURNED ERROR for the deadline / errored / startup
+distinction — the fidelity fix, because a mid-turn transport failure returns
+Turn.State == "". The `err == nil` arm is the one exception: it reads
+res.Turn.State and carries the defensive "turn ended in unexpected state"
+fallback for any state other than complete. Turn.State is load-bearing THERE
+and only there.
+
+#### `func Reply(res harness.TurnResult) string`
+Reply returns the assistant's final message, PREFERRING the harness's own
+transcript (res.History, transcript-backed) — authoritative and complete, with
+no TUI chrome and no risk of the screen-extraction dropping content. It falls
+back to the screen-derived res.Turn.Text only when no transcript was available
+(e.g. the harness session id could not be captured). Set
+HARNESS_WRAPPER_RUN_DEBUG=1 to log which source was used.
+
+The source label is taken from res.HistorySource, NOT from whether res.History
+happens to be non-empty: the store fallback also returns turns, so
+len(History) can't distinguish the transcript from the lossy screen scrape.
+
+#### `func RunOneShot(ctx context.Context, cfg Config) (turnproto.TurnStatus, error)`
+RunOneShot drives ONE headless turn and returns its typed status.
+
+Error contract (mirroring pkg/env.RunStructuredTurn): all four CLASSIFIED
+outcomes — completed / errored / deadline / startup_error — return the
+classified status with a NIL error; the caller inspects Status, never the
+error, to tell the arms apart. A non-nil error is reserved for a genuinely
+unclassifiable / infra failure that produces no usable outcome (an invalid
+Config). This avoids double-encoding the outcome, so a caller never has to
+decide whether the status or the error wins.
+
+The per-turn deadline is the caller's responsibility via ctx: oneshot reads no
+environment and owns no timeout, so it observes ctx.Err() == DeadlineExceeded
+regardless of who set the deadline. The HARNESS_WRAPPER_RUN_TIMEOUT → ctx
+resolution stays a cmd/ concern.
+
+#### `type Config`
+Config carries the fields oneshot needs to build a harness.TurnConfig, EXCEPT
+the input-policy fields oneshot owns itself (InputPolicy / OnInputRequest /
+AutoSkipCodexUpdateNotice). It mirrors the harness.TurnConfig literal the guest
+runStructuredRun builds today.
+
+Env / arg POLICY is a cmd/ concern and stays out of this library: the caller
+runs cleanedEnv (strip CLAUDECODE / CLAUDE_CODE_*) and applySandboxDefaults
+(the opt-in --sandbox-defaults injection) itself, then passes the
+ALREADY-CLEANED Env / Args in here. oneshot does not re-implement either.
+
+#### `type Outcome`
+Outcome is the detailed typed result of one one-shot turn. It deliberately
+omits `usage` (no Go usage reader) and `transcript_entries` — an in-process
+caller reconstructs the transcript from HarnessSessionID + WorkingDir via the
+pkg/transcript readers, so it is a documented narrowing, not a parity miss.
+
+#### `func RunOneShotDetailed(ctx context.Context, cfg Config) (Outcome, error)`
+RunOneShotDetailed is RunOneShot's detailed form: same error contract, but it
+also returns the clean reply (on completion), the failure reason, and the
+harness session id. See RunOneShot for the contract.
+
 ## Module: screen (`pkg/screen`)
 
 _(summary pending — run the harness-docs skill)_
@@ -1614,7 +1724,7 @@ underlying terminal state will continue to mutate independently.
 
 ## Module: transcript (`pkg/transcript`)
 
-Read-only view of harness-owned conversation logs: a leaf package defining the canonical Event/Turn model and the Reader interface per-harness parsers implement.
+_(summary pending — run the harness-docs skill)_
 
 > Package transcript is a read-only view of harness-owned conversation
 logs (Codex's ~/.codex/sessions/, Claude Code's ~/.claude/projects/).
@@ -1647,6 +1757,14 @@ Returns empty slice if startLine exceeds the number of lines.
 #### `func StripIDEContextTags(text string) string`
 StripIDEContextTags removes IDE-injected and system-injected context tags
 from prompt text so they don't leak into rendered transcripts.
+
+#### `func ToCount(v json.Number) int`
+ToCount clamps a raw token count to a non-negative integer: a non-finite,
+non-numeric, or non-positive value becomes 0. Mirrors meta-harness toCount.
+
+The value is parsed as an integer (via json.Number) rather than a bare
+float64, so a stray fractional or garbage field truncates toward its integer
+part predictably instead of silently diverging on the wire.
 
 #### `type AssistantMessage`
 AssistantMessage represents an assistant message in the transcript.
@@ -1707,6 +1825,24 @@ TurnsFromEvents projects canonical Events down to the lossy chat Turn view
 (Role/Text/Timestamp) that pkg/chat.History returns. Tool-only events without
 renderable Text are dropped — chat shows conversational turns, not tool I/O.
 
+#### `type Usage`
+Usage is the normalized token accounting for a session — the union of both
+harnesses' token fields, keyed by the five acceptance wire keys.
+
+All five keys ALWAYS serialize: none of the inner fields carry omitempty, so
+numeric zeros stay on the wire (a Codex usage always emits
+"cache_creation_input_tokens":0; a Claude usage always emits
+"reasoning_output_tokens":0). This keeps the Go object byte-identical with
+meta-harness's usageToPublicJSON, which emits all five keys unconditionally.
+omitempty belongs ONLY on the top-level *Usage field of a containing struct
+(e.g. StructuredTurnResult), never on these inner fields.
+
+input_tokens semantics legitimately differ per harness and must NOT be
+"fixed": Claude's input_tokens EXCLUDES cache reads/creates (they live in the
+separate cache_* fields, matching Anthropic API semantics), while Codex's
+input_tokens INCLUDES cached_input_tokens (the cached count is a subset, not
+an addition — nobody should re-add it).
+
 #### `type UserMessage`
 UserMessage represents a user message in the transcript.
 
@@ -1730,9 +1866,17 @@ silently truncate.
 
 - `Read(harnessSessionID, workingDir string) ([]Event, error)`
 
+#### `UsageReader`
+
+> UsageReader is an optional capability a transcript.Reader may also implement:
+it returns best-effort token accounting for a session, or (nil, nil) when the
+transcript carried no usage. Callers type-assert a Reader to UsageReader.
+
+- `ReadUsage(harnessSessionID, workingDir string) (*Usage, error)`
+
 ## Module: claudecode (`pkg/transcript/claudecode`)
 
-Reads Claude Code session transcripts (~/.claude/projects/<encoded-cwd>/<uuid>.jsonl) into the canonical, tool-aware transcript.Event stream.
+_(summary pending — run the harness-docs skill)_
 
 > Package claudecode reads Claude Code session transcripts.
 
@@ -1776,6 +1920,16 @@ Events parses a Claude Code JSONL transcript and returns the canonical
 event stream (one event per content block, tool-aware). Malformed lines are
 skipped. This is the file-source counterpart equivalent to loomcli's
 claude.Events, so the wrapper can replace loom's per-harness parser.
+
+#### `func UsageFromJSONL(data []byte) (*transcript.Usage, error)`
+UsageFromJSONL sums per-API-call token usage across a Claude Code session's
+JSONL bytes, deduped by message id. Returns (nil, nil) when no line carried
+usage. Ports meta-harness usageFromClaudeJSONL.
+
+Claude writes one JSONL line per content block, and multiple lines from ONE
+API call REPEAT the same message.usage. So we dedup by API call: the key is
+message.id when non-empty, else "line:"+Line.UUID; only the first line for a
+distinct key contributes its usage. A naive per-line sum would over-count.
 
 #### `type Reader`
 Reader implements transcript.Reader for Claude Code.
@@ -1821,6 +1975,17 @@ function_call_output / custom_tool_call / custom_tool_call_output); the rest
 are operational noise. custom_tool_call(_output) is the schema newer codex-cli
 (>= 0.144) records for its freeform `exec` tool, alongside the legacy
 function_call schema.
+
+#### `func UsageFromJSONL(data []byte) (*transcript.Usage, error)`
+UsageFromJSONL returns the last token_count event's cumulative token usage
+from a Codex rollout's JSONL bytes, or (nil, nil) when no token_count event
+carried usage. Ports meta-harness usageFromCodexJSONL.
+
+This is a SEPARATE pass from Events: Codex usage lives in event_msg →
+payload.type == "token_count" envelopes, which Events deliberately skips.
+The aggregation contract is to keep the LAST token_count event whose
+info.total_token_usage is a non-null object (info is null on early events),
+using total_token_usage (the cumulative session total), not last_token_usage.
 
 #### `type Envelope`
 Envelope is Codex's top-level rollout line: {timestamp, type, payload}.
@@ -1879,7 +2044,7 @@ New constructs a pi transcript Reader.
 
 ## Module: turnproto (`pkg/turnproto`)
 
-The single source of truth for the neutral structured-turn protocol: exit codes, deadline anchor, and the frozen StructuredTurnResult schema shared by guest producer and host client.
+_(summary pending — run the harness-docs skill)_
 
 > Package turnproto is the ONE source of truth for the neutral structured-turn
 protocol: the exit codes, the deadline anchor line, and the result-schema type
@@ -1894,17 +2059,32 @@ constants, so do not rename fields or change JSON tag spellings.
 
 ### Exported Types & Functions
 
+#### `func ExitCode(s TurnStatus) int`
+ExitCode is the ONE canonical status → process-exit-code table: the single
+function every producer of the coarse orchestration signal delegates to, so
+the mapping cannot drift across the guest structured-run subcommand and any
+host-side turn client. Only a deadline changes the code to 124; a clean
+completion exits 0; errored / startup_error / any unexpected status exit 1.
+
+It lives HERE, in the package that already owns the exit vocabulary
+(ExitOK/ExitError/ExitDeadline) and the TurnStatus type — a leaf importing
+only pkg/transcript — so homing it costs no importer a dependency on the
+in-process PTY/turn runtime (pkg/harness). pkg/oneshot never returns an exit
+code; it returns the status and the caller maps it here.
+
 #### `type StructuredTurnResult`
 StructuredTurnResult is the single JSON line the guest structured-run
 subcommand emits on stdout, and the shape a host turn client parses back
 (meta-harness design §7 step 3).
 
 FROZEN schema: the five required keys are ALWAYS present with these types; the
-two optional keys are present-with-type when set and ABSENT otherwise
+three optional keys are present-with-type when set and ABSENT otherwise
 (encoding/json omits them via omitempty — an exact-string match would be
-flaky). The `usage` field from MH is intentionally DROPPED for this ticket (Go
-has no usage/token reader); the JSON tag space is kept additively compatible so
-a later `usage` field can be reintroduced without a schema break.
+flaky). The `usage` field from MH is an EMITTED optional key: present when a
+usage reader yielded counts, absent when unset, and its five inner keys always
+serialize (including zeros) to stay byte-identical with MH's usageToPublicJSON.
+The JSON tag space is kept additively compatible so further fields can be
+reintroduced without a schema break.
 
 JSON tag spellings are load-bearing for cross-repo fidelity: harnessSessionID
 is camelCase; transcript_entries / working_dir / transcript_error are
@@ -2249,14 +2429,18 @@ AutoDismissKeys returns the keystrokes that safely dismiss an interstitial
 request without triggering a destructive action, and whether the request is
 an auto-dismissable interstitial at all. For the update menu it selects the
 "skip" option (never "update now"); for the other interstitials it presses
-Enter.
+Enter. A genuine approval (KindApproval) is NOT auto-dismissable — it falls
+to the default arm and returns (nil, false), so it is surfaced to the client
+rather than blind-confirmed.
 
 #### `func DetectInput(text string) (*turns.InputRequest, bool)`
-DetectInput recognizes a blocking startup interstitial in the rendered
-screen text and returns the structured request, or (nil, false) when none
-is present. Pure function: the turn adapter and the chat readiness gate
-share it as the single source of truth for what counts as a blocking
-codex interstitial.
+DetectInput recognizes a blocking codex dialog in the rendered screen text
+and returns the structured request, or (nil, false) when none is present.
+Two families are classified: the startup INTERSTITIALS (update notice, model
+migration, informational notice), which the chat layer auto-dismisses, and
+genuine command / apply-patch APPROVALS (KindApproval), which it never does.
+Pure function: the turn adapter and the chat readiness gate share it as the
+single source of truth for what counts as a blocking codex dialog.
 
 #### `func PromptReady(text string) bool`
 PromptReady reports whether the idle composer prompt is on screen. Callers
@@ -2758,9 +2942,56 @@ Receives wrapper diagnostic events; implementations (writer, slog) must be safe 
 
 - `Emit(Event)`
 
+## Module: neutral (`test/conformance/neutral`)
+
+_(summary pending — run the harness-docs skill)_
+
+> Package neutral reflects Go DTO structs into the language-neutral field
+vocabulary the cross-language conformance corpus freezes. It is the ONE place
+the Go→neutral mapping lives, shared by the two generators (the chatd-hosted
+gateway generator in package main and the external turnresult generator under
+test/conformance) so both emit identical `fields.json` shapes.
+
+The neutral type vocabulary is deliberately small — string / int / bool /
+array / object / ref / any / timestamp — and hides every Go-side distinction a
+TypeScript consumer cannot see: pointer vs value, omitempty vs omitzero, and
+the concrete Go type name behind a nested DTO. See test/conformance/README.md.
+
+### Exported Types & Functions
+
+#### `func FieldsFor(vs ...any) map[string][]FieldInfo`
+FieldsFor builds the DTO-name → ordered-fields map for a set of struct
+values. The top-level map marshals with sorted DTO names (encoding/json sorts
+map keys); each field slice keeps declaration order — together giving the
+deterministic byte form the manifest hash depends on.
+
+#### `func Marshal(m map[string][]FieldInfo) ([]byte, error)`
+Marshal emits deterministic, pretty-printed JSON for a fields map: sorted DTO
+names (map-key sort), declaration-order fields, two-space indent, and a
+trailing newline. Regenerated bytes are reproducible.
+
+#### `func NeutralType(t reflect.Type) string`
+NeutralType maps a Go type to the neutral vocabulary. Pointers are
+transparent (optionality is captured separately). time.Time → timestamp;
+json.RawMessage / []byte → any (arbitrary JSON value); byte-slices aside,
+slices/arrays → array; maps and anonymous structs → object; a named struct
+(a nested DTO) → ref; interfaces → any.
+
+#### `type FieldInfo`
+FieldInfo is one struct field's neutral, language-neutral descriptor. The Go
+field name is kept as a stable identifier; json_tag is the wire key a
+consumer matches on; type is the neutral vocabulary; optional is the single
+boolean collapsing all three Go-side optionality sources (pointer, omitempty,
+omitzero).
+
+#### `func Fields(v any) []FieldInfo`
+Fields reflects a struct value into its ordered neutral field descriptors,
+preserving struct-declaration order. Fields tagged json:"-" (internal store
+metadata, never on the public wire) are excluded.
+
 ## Module: main (`test/fakeharness/mock`)
 
-Standalone mock interactive-agent CLI for pkg/wrapper tests: prints a banner and runs a --mode-selected behavior (completed, failed, stuck, needs-input, cost-limited, api-error).
+_(summary pending — run the harness-docs skill)_
 
 > Mock CLI harness for harness-wrapper tests. It behaves like an
 interactive agent CLI: prints a banner, performs a configurable

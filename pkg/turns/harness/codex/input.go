@@ -88,11 +88,13 @@ var menuRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(›)?[^\S\r\n]*(\d+)\.[^\S\r\n]
 // interstitial gate (DetectInput) has confirmed no blocking menu is present.
 var promptRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›`)
 
-// DetectInput recognizes a blocking startup interstitial in the rendered
-// screen text and returns the structured request, or (nil, false) when none
-// is present. Pure function: the turn adapter and the chat readiness gate
-// share it as the single source of truth for what counts as a blocking
-// codex interstitial.
+// DetectInput recognizes a blocking codex dialog in the rendered screen text
+// and returns the structured request, or (nil, false) when none is present.
+// Two families are classified: the startup INTERSTITIALS (update notice, model
+// migration, informational notice), which the chat layer auto-dismisses, and
+// genuine command / apply-patch APPROVALS (KindApproval), which it never does.
+// Pure function: the turn adapter and the chat readiness gate share it as the
+// single source of truth for what counts as a blocking codex dialog.
 func DetectInput(text string) (*turns.InputRequest, bool) {
 	// KindApproval is checked FIRST — before updateAnchor / migration / continue
 	// — for two safety reasons (both would otherwise mis-handle an approval
@@ -233,7 +235,9 @@ func PromptReady(text string) bool {
 // request without triggering a destructive action, and whether the request is
 // an auto-dismissable interstitial at all. For the update menu it selects the
 // "skip" option (never "update now"); for the other interstitials it presses
-// Enter.
+// Enter. A genuine approval (KindApproval) is NOT auto-dismissable — it falls
+// to the default arm and returns (nil, false), so it is surfaced to the client
+// rather than blind-confirmed.
 func AutoDismissKeys(req *turns.InputRequest) ([]byte, bool) {
 	if req == nil {
 		return nil, false
