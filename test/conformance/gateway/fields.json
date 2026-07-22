@@ -233,6 +233,12 @@
       "optional": true
     },
     {
+      "name": "PermissionMode",
+      "json_tag": "permission_mode",
+      "type": "string",
+      "optional": true
+    },
+    {
       "name": "DisableCodexAutoDismiss",
       "json_tag": "disable_codex_auto_dismiss",
       "type": "bool",
@@ -335,6 +341,12 @@
     {
       "name": "Model",
       "json_tag": "model",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "PermissionMode",
+      "json_tag": "permission_mode",
       "type": "string",
       "optional": true
     }

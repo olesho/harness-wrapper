@@ -152,19 +152,20 @@ func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res, err := harness.RunTurn(ctx, harness.TurnConfig{
-		Harness:       req.Harness,
-		TurnHarness:   req.TurnHarness,
-		BinaryPath:    req.BinaryPath,
-		Args:          req.Args,
-		WorkingDir:    req.WorkingDir,
-		Env:           req.Env,
-		Effort:        req.Effort,
-		Model:         req.Model,
-		Prompt:        req.Prompt,
-		ExitAfterTurn: true,
-		Cols:          req.Cols,
-		Rows:          req.Rows,
-		InputPolicy:   req.InputPolicy,
+		Harness:        req.Harness,
+		TurnHarness:    req.TurnHarness,
+		BinaryPath:     req.BinaryPath,
+		Args:           req.Args,
+		WorkingDir:     req.WorkingDir,
+		Env:            req.Env,
+		Effort:         req.Effort,
+		Model:          req.Model,
+		PermissionMode: req.PermissionMode,
+		Prompt:         req.Prompt,
+		ExitAfterTurn:  true,
+		Cols:           req.Cols,
+		Rows:           req.Rows,
+		InputPolicy:    req.InputPolicy,
 	})
 	if err != nil && !errors.Is(err, harness.ErrTurnErrored) {
 		writeRunTurnError(w, err)
@@ -198,17 +199,18 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 	// which keeps it for the lifetime of the harness process. r.Context()
 	// would cancel as soon as this handler returns.
 	conv, err := chat.Open(context.Background(), chat.Options{
-		Harness:     req.Harness,
-		BinaryPath:  req.BinaryPath,
-		Args:        req.Args,
-		WorkingDir:  req.WorkingDir,
-		Env:         req.Env,
-		Effort:      req.Effort,
-		Model:       req.Model,
-		Cols:        req.Cols,
-		Rows:        req.Rows,
-		Store:       memstore.New(),
-		InputPolicy: req.InputPolicy,
+		Harness:        req.Harness,
+		BinaryPath:     req.BinaryPath,
+		Args:           req.Args,
+		WorkingDir:     req.WorkingDir,
+		Env:            req.Env,
+		Effort:         req.Effort,
+		Model:          req.Model,
+		PermissionMode: req.PermissionMode,
+		Cols:           req.Cols,
+		Rows:           req.Rows,
+		Store:          memstore.New(),
+		InputPolicy:    req.InputPolicy,
 
 		DisableCodexAutoDismiss:   req.DisableCodexAutoDismiss,
 		AutoSkipCodexUpdateNotice: req.AutoSkipCodexUpdateNotice,

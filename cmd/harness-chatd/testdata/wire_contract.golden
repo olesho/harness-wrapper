@@ -43,6 +43,7 @@ openRequest
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Model string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
 	AutoSkipCodexUpdateNotice bool `json:"auto_skip_codex_update_notice,omitempty"`
 openResponse
@@ -62,6 +63,7 @@ runTurnRequest
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort string `json:"effort,omitempty"`
 	Model string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 runTurnResponse
 	Turn main.turnDTO `json:"turn"`
 	Session main.sessionDTO `json:"session"`
