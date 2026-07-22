@@ -119,8 +119,11 @@ only `dead-spawner` drop is the ORCHE-130 terminal-status check at `:852`, scope
 `task.assignee` against `a.facts.agentId` (`observer.ts:622`). `Issue.assignee` already exists
 (`packages/fleet-db/src/types.ts:39`), so the check needs no new I/O.
 
-**Unlike [HARNESS-WRAPPER-112](../md/internal/out-of-scope-tickets.md), this guard *does* fire
-here.** HARNESS-WRAPPER-102 was `open`/`assignee: none` at file time and is assigned to a
+**Unlike [HARNESS-WRAPPER-112](HARNESS-WRAPPER-112.md), this guard *does* fire here.**
+That triage established that `:103` was `blocked`/`assignee: agent:plan-reviewer:20f348b0-…` at
+file time *and still is*, so the guard is a no-op there
+(`HARNESS-WRAPPER-112.md:114-120`). Here it is decisive:
+HARNESS-WRAPPER-102 was `open`/`assignee: none` at file time and is assigned to a
 different agent today, so `task.assignee !== 'agent:plan-critic:024391fc-…'` either way.
 HARNESS-WRAPPER-113 is therefore the direct regression anchor for the guard that §-23, §-26,
 [§-99](HARNESS-WRAPPER-99.md) and [§-111](HARNESS-WRAPPER-111.md) have all now re-derived without
@@ -154,7 +157,9 @@ suppresses all three — which is why Patch A remains the higher-value half.
 ## Correction carried into the bundle: the Patch B fixture list is three tests, not one
 
 The committed bundle's "Required companion" for Patch B named a single fixture
-(`packages/agent/test/observer.unit.test.ts:725-736`). Verified against that file, **three**
+(`packages/agent/test/observer.unit.test.ts:725-736`), as did
+[HARNESS-WRAPPER-112](HARNESS-WRAPPER-112.md)'s companion note (`:194-196`, `:725-730`) and
+[§-99](HARNESS-WRAPPER-99.md)'s (`:725`). Verified against that file, **three**
 `dead-spawner` tests assert the anomaly *still files* and all three stub `getTask` with **no
 `assignee`**, so all three fail the moment Patch B lands:
 

@@ -21,7 +21,10 @@ predicted to **confirmed**).
 **This bundle covers three filed signatures, not one.** HARNESS-WRAPPER-111 (`:109`),
 HARNESS-WRAPPER-112 (`:103`) and HARNESS-WRAPPER-113 (`:102`) were all filed from a *single*
 observer reply at 2026-07-22T19:59:11Z whose three verdict lines were all decorated `DISMISS`es.
-One fix retires all three.
+One fix retires all three. The `:103` case is measured span-by-span against the orche build trace
+in [`docs/triage/HARNESS-WRAPPER-112.md`](../../docs/triage/HARNESS-WRAPPER-112.md); note that
+Patch B alone does **not** retire it (its assignee never changed), which is why Patch A is the
+load-bearing half.
 
 ## Why this exists
 
