@@ -272,6 +272,12 @@ The injection lives in `cmd/harness-wrapper` (`applySandboxDefaults`), **not** i
 danger-carrying policy toggle stays auditable at the CLI boundary. There is **no silent injection
 anywhere** — without the flag, nothing is added.
 
+`IS_SANDBOX=1` has exactly one writer — `applySandboxDefaults` in `cmd/harness-wrapper`
+(`grep IS_SANDBOX` over non-test Go: every other hit is a comment). A `bypass` rung arriving from
+`pkg/wrapper`, `pkg/chat`, `pkg/oneshot` or the chatd wire never implies it. Over the wire that is
+the documented contract, not a gap — see
+[`permission_mode` semantics](../guide/gateway.md#permission_mode-semantics).
+
 That env/args split is load-bearing and deliberate: the **arg** half must be reachable by every
 `wrapper.Start` caller — passthrough included — so it lives in `pkg/wrapper`; the **env** half grants
 root and must stay auditable in one CLI file, so it lives in `applySandboxDefaults` and nowhere else.

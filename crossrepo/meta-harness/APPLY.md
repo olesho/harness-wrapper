@@ -1,6 +1,6 @@
 # HARNESS-WRAPPER-66 — cross-repo deliverable for meta-harness
 
-> This file covers **HARNESS-WRAPPER-66 only**; the permission-mode cross-repo handoff is its sibling file [`HARNESS-WRAPPER-77-permission-mode.md`](HARNESS-WRAPPER-77-permission-mode.md) — neither is the other's bundle.
+> This file covers **HARNESS-WRAPPER-66 only**; the permission-mode cross-repo handoff is its sibling file [`HARNESS-WRAPPER-77-permission-mode.md`](HARNESS-WRAPPER-77-permission-mode.md), and the `--sandbox-defaults` argv tripwire is [`HARNESS-WRAPPER-78-sandbox-defaults-argv.md`](HARNESS-WRAPPER-78-sandbox-defaults-argv.md) — neither sibling is this file's bundle, and neither is the other's.
 
 This directory is a **byte-exact, ready-to-apply bundle** for the sibling
 `meta-harness` repo (`~/Work/aether/meta-harness`, override with
