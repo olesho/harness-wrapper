@@ -66,6 +66,16 @@ func (b *Builder) AwaitMenuChoice() *Builder {
 	return b.waitInput(`[0-9]\r`, false, "menu-choice")
 }
 
+// AwaitShiftTab blocks until the wrapper presses Shift+Tab (CSI 9;2u — the
+// permission-mode cycle key for claude-code / codex). It does not capture: the
+// keypress carries no prompt text. regexp.QuoteMeta escapes the ESC, "[" and
+// ";" bytes, so the pattern matches the exported constant literally and NOT the
+// legacy "\x1b[Z" form or a bare tab. Pins the Shift+Tab contract the way
+// AwaitSubmit pins CSI 13u.
+func (b *Builder) AwaitShiftTab() *Builder {
+	return b.waitInput(regexp.QuoteMeta(ShiftTabCSI9_2u), false, "shift-tab")
+}
+
 // AwaitSubmitCR blocks until the wrapper submits a turn with a bare carriage
 // return (pi's submit key) and captures the typed text as the prompt for later
 // Echo frames. Pins pi's submit contract the way AwaitSubmit pins CSI 13u.
