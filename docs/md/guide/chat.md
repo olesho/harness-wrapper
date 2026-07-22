@@ -257,7 +257,7 @@ control-token guard — use it with care.
 
 | Error | Returned by |
 |---|---|
-| `ErrInvalidOptions` | `Open`: required option missing or invalid |
+| `ErrInvalidOptions` | `Open`: required option missing or invalid. Also wraps `wrapper.ErrInvalidConfig` for an invalid `Effort` — an unknown rung, or an effort on a harness with no effort axis — so a bad option never surfaces as an internal error. `errors.Is` still matches `wrapper.ErrInvalidConfig` through the wrap |
 | `ErrUnknownHarness` | `Open`: `Options.Harness` not registered |
 | `ErrNoControl` | `Send` / `Answer`: control token not held |
 | `ErrTurnInFlight` | `Send`: previous assistant turn still pending |
