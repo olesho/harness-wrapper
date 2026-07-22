@@ -2080,7 +2080,7 @@ subcommand emits on stdout, and the shape a host turn client parses back
 (meta-harness design §7 step 3).
 
 FROZEN schema: the five required keys are ALWAYS present with these types; the
-three optional keys are present-with-type when set and ABSENT otherwise
+four optional keys are present-with-type when set and ABSENT otherwise
 (encoding/json omits them via omitempty — an exact-string match would be
 flaky). The `usage` field from MH is an EMITTED optional key: present when a
 usage reader yielded counts, absent when unset, and its five inner keys always
@@ -2089,8 +2089,8 @@ The JSON tag space is kept additively compatible so further fields can be
 reintroduced without a schema break.
 
 JSON tag spellings are load-bearing for cross-repo fidelity: harnessSessionID
-is camelCase; transcript_entries / working_dir / transcript_error are
-snake_case.
+is camelCase; transcript_entries / working_dir / transcript_error /
+permission_mode are snake_case.
 
 #### `func ParseLastJSONLine(data []byte) (*StructuredTurnResult, bool)`
 ParseLastJSONLine returns the LAST line of stdout that parses as a JSON object,
@@ -2673,6 +2673,13 @@ codex's -a axis is set (which suppresses injection but leaves the sandbox at
 the harness default), and when neither argv nor mode says anything. "" means
 UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
 answer.
+
+Passing ALREADY-INJECTED args is safe — the function is idempotent over
+argsWithHarnessPermissionMode, because injection self-suppresses: once the
+axis is in argv, argsContainAnyFlag short-circuits the second pass and the
+argv arm reads back the value that was injected. Formally,
+EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
+== EffectiveLaunchRung(h, args, mode).
 
 #### `func IsBypassPermissionMode(mode string) bool`
 IsBypassPermissionMode reports whether mode resolves to claude-code's
