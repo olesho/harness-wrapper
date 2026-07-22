@@ -385,14 +385,15 @@ func validatePermissionMode(cfg *Config) error {
 	// but the only surviving --sandbox-defaults + --permission-mode combination
 	// is bypass, where the CLI skips the arg append. Do not mistake this for a
 	// second composition check.
-	switch normHarness(cfg.Harness) {
-	case "claude", harnessClaudeCode:
-		if !IsBypassPermissionMode(mode) && argsContainAnyFlag(cfg.Args, SkipPermissionsFlag) {
-			return fmt.Errorf("%w: PermissionMode %q contradicts %s in Args", ErrInvalidConfig, mode, SkipPermissionsFlag)
-		}
-	case "codex":
-		if !isCodexBypassMode(mode) && argsContainAnyFlag(cfg.Args, codexBypassFlag) {
-			return fmt.Errorf("%w: PermissionMode %q contradicts %s in Args", ErrInvalidConfig, mode, codexBypassFlag)
+	bypassMode := IsBypassPermissionMode(mode)
+	if normHarness(cfg.Harness) == "codex" {
+		bypassMode = isCodexBypassMode(mode)
+	}
+	if !bypassMode {
+		for _, flag := range BypassEnablingFlags(cfg.Harness) {
+			if argsContainAnyFlag(cfg.Args, flag) {
+				return fmt.Errorf("%w: PermissionMode %q contradicts %s in Args", ErrInvalidConfig, mode, flag)
+			}
 		}
 	}
 	return nil
@@ -683,6 +684,186 @@ func codexPermissionMode(mode string) (sandbox, approval string) {
 	default:
 		return mode, ""
 	}
+}
+
+// PermissionRungs returns the canonical rungs, ordered least to most
+// permissive — the same order the unexported consts are declared in.
+//
+// A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
+// may sort, truncate or reverse the result without corrupting a later call.
+func PermissionRungs() []string {
+	return []string{
+		permissionModePlan,
+		permissionModeManual,
+		permissionModeAsk,
+		permissionModeAuto,
+		permissionModeBypass,
+	}
+}
+
+// MorePermissive reports whether rung a is strictly more permissive than b,
+// by index in PermissionRungs.
+//
+// Unknown rungs are never more permissive (fail closed): an empty string, a
+// native spelling ("acceptEdits", "danger-full-access") or a typo yields false
+// for a, so a caller asking "may I stay where I am?" never gets a yes it did
+// not earn. Note b being unknown ALSO yields false, so the answer is false
+// whenever either side is not a canonical rung.
+func MorePermissive(a, b string) bool {
+	ai, bi := rungIndex(a), rungIndex(b)
+	if ai < 0 || bi < 0 {
+		return false
+	}
+	return ai > bi
+}
+
+// rungIndex returns the position of rung in PermissionRungs, or -1 when rung is
+// not a canonical rung.
+func rungIndex(rung string) int {
+	for i, r := range PermissionRungs() {
+		if r == rung {
+			return i
+		}
+	}
+	return -1
+}
+
+// BypassEnablingFlags returns the harness argv flags that, when present at
+// launch, leave the harness able to reach the bypass rung. Single source of
+// truth for validatePermissionMode's contradiction check and pkg/chat's
+// ring-length calculation.
+//
+// Only two such flags exist: claude's SkipPermissionsFlag and codex's
+// --dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
+// permission axis at all return nil.
+func BypassEnablingFlags(harness string) []string {
+	switch normHarness(harness) {
+	case "claude", harnessClaudeCode:
+		return []string{SkipPermissionsFlag}
+	case "codex":
+		return []string{codexBypassFlag}
+	default:
+		return nil
+	}
+}
+
+// EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
+// given the caller's argv and the Config.PermissionMode knob — i.e. it replays
+// argsWithHarnessPermissionMode's suppression rule rather than trusting the
+// knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
+// extracts the VALUE from both "--permission-mode=x" and the separated
+// "--permission-mode x" form and normalizes native spellings (acceptEdits ->
+// ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
+//
+// A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
+// itself reported as a definite bypass: it suppresses injection AND leaves the
+// harness unrestricted, so there is nothing unknown about the result.
+//
+// Returns "" when argv carries a permission flag whose value cannot be resolved
+// (a trailing flag with no operand, an unrecognized spelling), when only
+// codex's -a axis is set (which suppresses injection but leaves the sandbox at
+// the harness default), and when neither argv nor mode says anything. "" means
+// UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
+// answer.
+func EffectiveLaunchRung(harness string, args []string, mode string) string {
+	switch normHarness(harness) {
+	case "claude", harnessClaudeCode:
+		if argsContainAnyFlag(args, SkipPermissionsFlag) {
+			return permissionModeBypass
+		}
+		if value, ok := flagValue(args, "--permission-mode"); ok {
+			// argv wins, mirroring the suppression rule.
+			return claudeRung(value)
+		}
+		return claudeRung(mode)
+	case "codex":
+		if argsContainAnyFlag(args, codexBypassFlag) {
+			return permissionModeBypass
+		}
+		if value, ok := flagValue(args, "-s", "--sandbox"); ok {
+			return codexSandboxRung(value)
+		}
+		if argsContainAnyFlag(args, "-a", "--ask-for-approval") {
+			// Whole-directive suppression fired with no sandbox value to read.
+			return ""
+		}
+		return codexRung(mode)
+	default:
+		// No launch-time permission axis: nothing was injected and nothing in
+		// argv is ours to interpret.
+		return ""
+	}
+}
+
+// claudeRung normalizes a canonical rung or a claude-native --permission-mode
+// value to a canonical rung. The inverse of claudePermissionMode, except that
+// claudeModeDontAsk has NO canonical rung and so reports unknown ("") rather
+// than being guessed into ask or auto.
+func claudeRung(value string) string {
+	switch value {
+	case claudeModeAcceptEdits:
+		return permissionModeAsk
+	case claudeModeBypassPermissions:
+		return permissionModeBypass
+	}
+	if rungIndex(value) >= 0 {
+		return value
+	}
+	return ""
+}
+
+// codexRung normalizes the Config.PermissionMode knob for codex: canonical
+// rungs pass through, codex-native sandbox values map to their rung.
+func codexRung(value string) string {
+	if rungIndex(value) >= 0 {
+		return value
+	}
+	return codexSandboxRung(value)
+}
+
+// codexSandboxRung maps a codex -s/--sandbox value to its canonical rung —
+// the inverse of codexPermissionMode's sandbox half. Anything else is unknown.
+func codexSandboxRung(value string) string {
+	switch value {
+	case codexSandboxReadOnly:
+		return permissionModeManual
+	case codexSandboxWorkspaceWrite:
+		return permissionModeAsk
+	case codexSandboxDangerFullAccess:
+		return permissionModeBypass
+	default:
+		return ""
+	}
+}
+
+// flagValue extracts the operand of the first occurrence of any of flags, in
+// each of the spellings argsContainAnyFlag recognizes: the attached long form
+// ("--permission-mode=plan"), clap's attached short form ("-sread-only") and
+// the separated form ("--permission-mode plan"), which argsContainAnyFlag
+// cannot read at all.
+//
+// ok reports PRESENCE, exactly as argsContainAnyFlag would. A present-but-
+// unreadable flag (trailing, no operand) returns ("", true) — the caller must
+// distinguish that from ("", false) only if absence and unknown differ to it;
+// EffectiveLaunchRung maps both to "".
+func flagValue(args []string, flags ...string) (string, bool) {
+	for i, arg := range args {
+		for _, flag := range flags {
+			if arg == flag {
+				if i+1 < len(args) {
+					return args[i+1], true
+				}
+				return "", true
+			}
+			if strings.HasPrefix(arg, flag+"=") {
+				return strings.TrimPrefix(arg, flag+"="), true
+			}
+			if isShortFlag(flag) && len(arg) > 2 && strings.HasPrefix(arg, flag) {
+				return arg[len(flag):], true
+			}
+		}
+	}
+	return "", false
 }
 
 func prependArgs(args []string, prefix ...string) []string {
