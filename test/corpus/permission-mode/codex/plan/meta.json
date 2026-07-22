@@ -1,0 +1,9 @@
+{
+  "harness": "codex",
+  "binary_version": "0.144.5",
+  "recorded_at": "2026-07-22T19:53:58.57976Z",
+  "cols": 200,
+  "rows": 40,
+  "mode": "plan",
+  "notes": "Codex 0.144.5, one shift+tab from the default collaboration mode, recorded at 200 cols so the cwd is not truncated and the 'Plan mode' marker keeps a wide right-alignment gutter."
+}

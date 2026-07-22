@@ -1,0 +1,10 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.217",
+  "recorded_at": "2026-07-22T19:45:58.591108Z",
+  "cols": 120,
+  "rows": 40,
+  "mode": "dontAsk",
+  "pending_parser": "claude-code 2.1.217 paints a SIXTH, distinct footer word for --permission-mode dontAsk (\"⏵⏵ don't ask on\"), which permissionModeFromFooter's closed alternation does not match, so it reports (\"\", false) today. Adding the sixth branch — and deciding which rung name it reports — belongs to the parser ticket, not to this corpus. Drop this field once that lands.",
+  "notes": "Launched with --permission-mode dontAsk. Footer: \"⏵⏵ don't ask on (shift+tab to cycle)\" — a footer word absent from the five-marker observed set."
+}
