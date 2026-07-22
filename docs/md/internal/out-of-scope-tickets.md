@@ -283,3 +283,61 @@ already carries the sibling tickets ORCHE-14/15/26 on this subsystem; (2)
 this is the only thing that restores promotion, it is not a code change, and it
 kills every in-flight agent in the fleet, so it must be scheduled; (3) file a
 separate ticket for the 46 retained `agent-release-*` worktrees.
+
+## HARNESS-WRAPPER-99 — dead-spawner false positive: right diagnosis, wrong repo
+
+**Filed as:** `[observer] crashed/dead spawner plan-critic left HARNESS-WRAPPER-78
+working (dead-spawner:plan-critic:HARNESS-WRAPPER-78)`, escalated to `review`.
+
+**Why it landed here:** identical misrouting to §HARNESS-WRAPPER-23 and
+§HARNESS-WRAPPER-26 — the observer files a `dead-spawner` against the *task* it is
+watching (`HARNESS-WRAPPER-78`, in this repo's fleet-db workspace), so the ticket
+lands here even though the detector lives in `orche`.
+
+**How this differs from the earlier entries in the class.** HARNESS-WRAPPER-23 and
+-26 both proposed the same assignee-based grounding guard and both stopped there.
+HARNESS-WRAPPER-99 goes further and finds the *systemic* cause the other two missed:
+the observer's own bus lag. Its `tick` drains with one un-looped, un-limited
+`pull()` per 300s (`observer.ts:242`) against a backend whose `pull` is single-page
+by construction (`fleet.ts:258`), so once arrivals exceed one 1000-message page the
+cursor lag grows monotonically — and `dead-spawner`, being an *absence* detector,
+cannot distinguish "no heartbeat exists" from "I haven't read the heartbeats yet".
+Every actively-working agent progressively reads as dead. Three signatures firing in
+one digest (`:-78`, `:-79`, `:-89`) is that fault, not three coincident crashes.
+
+**Actual defect location:** `orche` — `packages/agent/src/observer.ts` (the `tick`
+drain and `fileAnomaly`'s grounding check), with the single-page contract in
+`packages/queue/src/fleet.ts`. Every load-bearing claim was re-verified against real
+orche source; all hold.
+
+**Confirmed:** none of those files exist here — this is a Go module. `grep -rn
+"spawner\|observer\|heartbeat" --include="*.go"` returns only unrelated matches (an
+`exec` process spawner at `internal/env/openshell/openshell.go:266`, an activity
+observer callback at `pkg/harness/run.go:78`, screen-change observers, and a mock
+harness's `--api-error-heartbeat` flag). No bus, queue, anomaly detector, or
+`fileAnomaly` exists in this repo.
+
+**One correction to the ticket, and it matters.** The ticket's proposed **Fix #2**
+(skip the `dead-spawner` scan when `now - max(ts over windowEvents)` exceeds
+`deadSpawnerMs`) is unsound as written. With `windowMs` 30 min and `deadSpawnerMs`
+4.5 min, a fleet whose only `working` agents are the dead ones has its newest
+in-window event *be* the dead agent's last heartbeat — so the guard suppresses the
+scan across the entire genuine detection band, then the acquire event ages out and
+the anomaly can never fire. It goes blind in exactly the outage it exists to catch.
+The ticket's own proposed test passes only because it seeds heartbeats from *other*
+live agents. Fix by keying freshness on the drain (did the pull loop reach empty?)
+rather than on event age. Details in
+[`docs/triage/HARNESS-WRAPPER-99.md`](../../triage/HARNESS-WRAPPER-99.md).
+
+**Resolution:** no source change made in this repo — there is nothing here to
+change. For the human at the `review` gate: (1) **decide the disposition** —
+close-as-invalid vs. re-file against `ORCHE` as a follow-up to ORCHE-130;
+HARNESS-WRAPPER-24 (2026-07-16) already directed that this class not be re-filed
+here; (2) if re-filed, **land the ownership guard (Fix #1) alone first** — a
+strict-subset check needing no new I/O, which suppresses this ticket while provably
+still filing the genuinely wedged `:-79`, and which requires extending the existing
+`observer.unit.test.ts:725` fixture with an `assignee` or it starts failing; (3)
+**do not land Fix #2 verbatim** — take its drain-to-empty loop, drop its event-age
+guard; (4) confirm the `:-78`/`:-89` false-positive claim against live fleet history
+before closing them, which could not be re-verified here (running `orche` commands
+was out of scope for this task).
