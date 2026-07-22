@@ -22,6 +22,11 @@ harness-wrapper-port
 /node_modules/
 /package-lock.json
 /bun.lock
+
+# `make test-clients` runs `npm install` in clients/typescript; both artifacts
+# are generated (the suite deliberately ships no lockfile — see the Makefile).
+/clients/typescript/node_modules/
+/clients/typescript/package-lock.json
 # Orche project control dir — generated, machine-local (config, run state, gate artifacts).
 /.orche/
 # Orche skills — machine-local symlinks into the orche checkout; broken on any other clone.
