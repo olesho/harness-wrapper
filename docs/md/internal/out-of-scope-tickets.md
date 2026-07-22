@@ -237,7 +237,7 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
 (release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
@@ -337,6 +337,28 @@ Two findings are genuinely new to this filing:
 **This signature will re-fire on every observer sweep until pid 65669 is restarted
 or Fix A lands in `orche`. No change made in this repository — of any kind — can
 affect it.** HARNESS-WRAPPER-110 has no in-repo deliverable beyond this amendment.
+
+**Amendment — re-fired a fourth time as HARNESS-WRAPPER-116 (2026-07-22 20:31Z).**
+Same signature `obs-sig:1bf9fcd2c6`, same cause: operator action (2) still has not
+happened. Re-measured live in the -116 worktree at **20:31Z**, and again at
+**20:33Z** while writing this: the lag is **109 total / 50 first-parent** commits
+(20:31Z), already **112 / 51** two minutes later, while `dev..main` = **0** — `main`
+is still a clean ancestor of `dev`, so the gate would simply fast-forward if it ever
+ran. `main` is still at **`6281927`** (10:15:03), byte-identical to what -97 recorded
+~8 hours earlier: **zero promotions since**. Supervisor **pid 65669** is alive and has
+never been restarted (start **Wed Jul 22 11:32:51**, elapsed **11:00**), the oldest
+unpromoted commit `40e7251` dates to 16:16:09Z (**~255 min**), and **46**
+`agent-release-*` worktrees are still retained under `cleanup: 'on-success'`. Full
+progression across the four filings: **27 → 32 → 52/57 → 82/41 → 112/51**.
+
+Because ORCHE-31 and ORCHE-40 are both **closed** and both fixed only the *detector*
+(first-parent commit counting; the clamped `oldestUnpromotedMs`), this fire **cannot**
+be a detector artifact — the counts and ages above are post-fix, trustworthy values,
+which is what separates it from [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md).
+The wedged-slot defect itself remains **unfiled in any workspace**: no `ORCHE` ticket
+covers Fix A–E, so operator actions (1) and (3) are both still outstanding.
+HARNESS-WRAPPER-116 has **no in-repo deliverable beyond this amendment** — per the
+observer's own instruction, no fifth triage document was created.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
