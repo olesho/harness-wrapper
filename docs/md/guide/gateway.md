@@ -99,7 +99,7 @@ as 400 `invalid_config`. Two residual gaps remain:
 The one-shot response does not echo the mode; only the conversation listing reports it.
 
 **The same key means something different on `StructuredTurnResult`.** `permission_mode` on the
-[`structured-run` result](cli.md#the-reported-permission_mode) — not a gateway response — reports the
+[`structured-run` result](cli.md#the-reported-permission-mode) — not a gateway response — reports the
 **effective canonical rung** resolved from the final launch arguments, and never a harness-native
 spelling. The gateway's key reports what was *requested* and can legitimately carry `acceptEdits`,
 `dontAsk`, or `read-only`. Two readings, one key name, by design: do not share a parser or a schema

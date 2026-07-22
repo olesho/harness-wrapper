@@ -50,15 +50,21 @@ type Options struct {
 	Harness     string   // "codex" | "claude-code" | "opencode" | "pi" | "generic"  (required)
 	BinaryPath  string   // harness executable                                                  (required)
 	Args        []string // passed verbatim to the harness
+	Resume      string   // harness session id to resume; Args must not carry any flag the
+	                     // adapter reserves via turns.SessionControlFlags
 	WorkingDir  string
 	Env         []string
+	Effort      string   // reasoning effort ("" = harness default)
+	Model       string   // model for this run ("" = harness default)
+	PermissionMode string // launch-time permission rung ("" = harness default)
 	Cols, Rows  int      // default 120×40
 	Store       Store    // required; use memstore.New() for the in-process default
 	EventBuffer int      // default 32; Events() channel size
 
-	InputPolicy             *InputPolicy                              // declarative answers (see below)
-	OnInputRequest          func(InputRequest) (InputAnswer, bool)    // in-process answer callback
-	DisableCodexAutoDismiss bool                                      // keep Codex startup interstitials
+	InputPolicy               *InputPolicy                            // declarative answers (see below)
+	OnInputRequest            func(InputRequest) (InputAnswer, bool)  // in-process answer callback
+	DisableCodexAutoDismiss   bool                                    // keep Codex startup interstitials
+	AutoSkipCodexUpdateNotice bool                                    // auto-Skip Codex's "Update available!" menu
 }
 
 func Open(ctx context.Context, opts Options) (*Conversation, error)
