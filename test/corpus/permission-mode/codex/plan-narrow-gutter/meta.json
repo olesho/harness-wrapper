@@ -1,0 +1,10 @@
+{
+  "harness": "codex",
+  "binary_version": "0.144.5",
+  "recorded_at": "2026-07-22T19:51:01.820357Z",
+  "cols": 120,
+  "rows": 40,
+  "mode": "plan",
+  "pending_parser": "At 120 cols with a long cwd, codex truncates the left half of the hint row with '…' and leaves a SINGLE space before 'Plan mode'. collaborationPlanRE requires the marker to be preceded by start-of-row or two-or-more horizontal spaces, so it does not match and the adapter reports 'default' — a wrong axis value, not an unreadable screen. Re-rendering this same screen with one extra space flips it to 'plan', which pins the gutter rule as the cause. Widening the rule belongs to the parser ticket. Drop this field once that lands.",
+  "notes": "Same session shape as codex/plan but at 120 cols; kept because it is the width real sessions run at."
+}

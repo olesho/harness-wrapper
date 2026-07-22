@@ -1,0 +1,40 @@
+                                                                                                                        
+╭─── Claude Code v2.1.217 ─────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting started                                        │
+│                 Welcome back Oleh!                 │ Ask Claude to create a new app or clone a repository            │
+│                                                    │ ─────────────────────────────────────────────────────────────── │
+│                      ▗ ▗   ▖ ▖                     │ What's new                                                      │
+│                                                    │ Added emoji shortcode autocomplete in the prompt input: type `… │
+│                        ▘▘ ▝▝                       │ Added warnings when transcript writes are failing (e.g. disk f… │
+│ Opus 4.8 (1M context) with hi… · Claude Max · Oleh │ Fixed a memory leak where truncated MCP tool outputs kept the … │
+│ Luchkiv                                            │ /release-notes for more                                         │
+│                 /…/scratchpad/work                 │                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+                                                                                                                        
+ ⚠ 2 MCP servers need authentication · run /mcp                                                                         
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                       ● high · /effort 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                       
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_SESSION_PERS…
+  /private/tmp/claude-501/-Users-oleh--orche-worktrees-agent-worker-d10a71e6-3b24-4c07-a603-8e326bb93eee/954eb1be-92b5… 
+  ⏵⏵ don't ask on (shift+tab to cycle)                                                                                  

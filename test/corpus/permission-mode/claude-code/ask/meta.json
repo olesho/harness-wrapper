@@ -1,0 +1,9 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.217",
+  "recorded_at": "2026-07-22T19:45:38.902432Z",
+  "cols": 120,
+  "rows": 40,
+  "mode": "ask",
+  "notes": "Launched with --permission-mode acceptEdits (claude-native spelling for the canonical rung 'ask'). Footer: '⏵⏵ accept edits on (shift+tab to cycle)'."
+}

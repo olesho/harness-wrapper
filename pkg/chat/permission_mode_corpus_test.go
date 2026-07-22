@@ -39,7 +39,19 @@ type permModeCorpusMeta struct {
 	Cols          int    `json:"cols"`
 	Rows          int    `json:"rows"`
 	Mode          string `json:"mode"`
-	Notes         string `json:"notes"`
+
+	// PendingParser, when non-empty, marks a capture whose OBSERVED truth
+	// (meta.mode) the shipped parser does not yet report, and says why. It
+	// exists so a real capture of a real gap can be recorded here without
+	// either fabricating a passing expectation or turning the tree red for
+	// work that belongs to the parser ticket.
+	//
+	// It is deliberately self-clearing: TestPermissionModeCorpusConformance
+	// FAILS a pending case that now agrees with meta.mode, so the field
+	// cannot silently outlive the fix it names.
+	PendingParser string `json:"pending_parser,omitempty"`
+
+	Notes string `json:"notes"`
 }
 
 type permModeCorpusCase struct {
@@ -99,6 +111,10 @@ func loadPermissionModeCorpus(t *testing.T) []permModeCorpusCase {
 // (test/corpus/claude-code/*) and the models corpus already pin how claude's
 // bytes render through pkg/screen. This corpus pins only the footer→posture
 // mapping.
+//
+// A case carrying meta.pending_parser is inverted: the parser is asserted to
+// still DISAGREE with the capture, so the recorded gap stays visible and the
+// marker self-clears the moment the parser ticket lands its fix.
 func TestPermissionModeCorpusConformance(t *testing.T) {
 	cases := loadPermissionModeCorpus(t)
 	if len(cases) == 0 {
@@ -117,6 +133,16 @@ func TestPermissionModeCorpusConformance(t *testing.T) {
 			}
 			snap := screen.Snapshot{Text: c.screen, Cols: c.meta.Cols, Rows: c.meta.Rows}
 			got, readable := det.PermissionMode(snap)
+			if c.meta.PendingParser != "" {
+				if readable && got == c.meta.Mode {
+					t.Fatalf("%s: pending_parser is stale — PermissionMode now reports %q, matching meta.mode. "+
+						"Drop pending_parser from meta.json so this case starts enforcing.\npending_parser: %s",
+						c.name, got, c.meta.PendingParser)
+				}
+				t.Logf("%s: known parser gap, want %q, parser reports %q (readable=%v)\n%s",
+					c.name, c.meta.Mode, got, readable, c.meta.PendingParser)
+				return
+			}
 			if !readable {
 				t.Fatalf("PermissionMode(%s) reported no readable signal, want %q\n--- screen ---\n%s",
 					c.name, c.meta.Mode, c.screen)

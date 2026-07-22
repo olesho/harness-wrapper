@@ -1,0 +1,9 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.217",
+  "recorded_at": "2026-07-22T19:45:48.647324Z",
+  "cols": 120,
+  "rows": 40,
+  "mode": "bypass",
+  "notes": "Launched with --permission-mode bypassPermissions. Footer: '⏵⏵ bypass permissions on (shift+tab to cycle)'. No acceptance dialog was raised on this rig (bypass had been accepted here previously) — see README capture question 1."
+}
