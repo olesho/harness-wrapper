@@ -8,6 +8,16 @@ the reported behavior, so this repository receives no code change; this document
 deliverable. It records the completed, re-verified triage so the routing decision and the fix plan
 survive in the ticket history.
 
+**The `orche`-side fix is specified as a patch bundle:**
+[`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md)
+— written at the sixth re-fire of this signature (HARNESS-WRAPPER-118), because five filings of
+prose analysis gave no `orche` implementer anything to pick up. It carries Patches A–D (hard slot
+deadline; `liveness.maxRunMs` on `release`; watchdog scope + `AbortSignal` into
+`HarnessSession.open()`; observable `at_capacity`) and their tests against pinned `orche` file:line
+anchors. This record remains the canonical evidence chain for `obs-sig:1bf9fcd2c6`; the amendment
+log for each re-fire lives in
+[`docs/md/internal/out-of-scope-tickets.md`](../md/internal/out-of-scope-tickets.md).
+
 Two things a worker in this worktree cannot do, and which this record exists to hand off:
 
 1. **Re-file in the `ORCHE` workspace.** A `HARNESS-WRAPPER` worker is spawned in a checkout of the
@@ -165,3 +175,10 @@ this code.
 3. **File a separate ticket for worktree accumulation** — 46 `agent-release-*` worktrees are
    currently retained, because `cleanup: 'on-success'` (`release.ts:569`) keeps every failed tick's
    worktree. That retention is by design, but its unbounded growth is not tracked anywhere.
+
+   > **Correction (HARNESS-WRAPPER-118, 2026-07-22 23:55).** The `46` above counts glob *entries*,
+   > not worktrees: **19 directories + 27 `.pid` sidecars**. The sidecars belong to four supervisors
+   > — `93479`×12, `8348`×8, `7802`×5 (the `META-HARNESS` fleet, whose worktrees are `orche`-repo
+   > checkouts) and only **2** to `65669`. This workspace's retention is just `agent-release-3a870b7e-…`
+   > (failed 13:40 tick) and `agent-release-8df3c501-…` (wedged 15:40 tick), so operator action 2
+   > above covers it; the accumulation ticket is a fleet-wide concern, not a HARNESS-WRAPPER one.
