@@ -237,7 +237,7 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
 (release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
@@ -449,6 +449,50 @@ Per the standing instruction **no seventh triage document was created** —
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) remains the
 canonical record, and now points at the bundle. This signature will keep re-firing on
 every observer sweep until pid 65669 is restarted or Patch A lands in `orche`.
+
+**Amendment — re-fired a seventh time as HARNESS-WRAPPER-119** (filed 2026-07-22 22:23Z,
+re-measured in the -119 worktree on 2026-07-23 at **~00:25 local**). Same signature
+`obs-sig:1bf9fcd2c6`; operator action (2) *still* has not happened. Every figure below was
+measured in this worktree, not carried over from the ticket:
+
+- Hub `/Users/oleh/repos/harness-wrapper.git`: **58** first-parent commits `main..dev`,
+  `dev..main` = **0** — `main` remains a clean ancestor of `dev`, so this is a *stopped
+  promoter*, not a diverged branch, and the gate would fast-forward if it ever ran.
+- `main` still at **`6281927`** (10:15:03 +0200); `dev` at **`0ea8c07`** (23:58:11).
+  Oldest unpromoted commit **`40e7251`** (18:16:09 +0200) → **~369 min**. Zero promotions
+  in ~14 h.
+- `agents.log`: **456** `[release@…]` lines total, the last tick being
+  `cron:release:1784725803650: success` at **15:10:03** — no release line since, while
+  `[observer@…]` keeps ticking every 5 min (latest `cron:observer:1784758874773`).
+- Newest release transcript is likewise the 15:10 one
+  (`agent_release_5d7d11ee…__cron_release_1784725803650.txt`); the 15:40 tick wrote
+  **none**, i.e. it died between `sandbox.open()` and the first transcript write.
+- Wedged worktree `agent-release-8df3c501-…` still present, dir mtime frozen at **15:40**,
+  `.pid` = **65669**, no live child. Supervisor **pid 65669** alive since
+  **Wed Jul 22 11:32:51**, elapsed **12:52** — never restarted.
+
+First-parent progression across the seven filings: **27 → 32 → 57 → 41 → 51 → 56 → 58**.
+
+**Nothing new in the root cause.** All four `orche` anchors were re-read and confirmed
+unchanged: the single slot-release path at `spawner.ts:641-649` (with `track()`'s
+idempotent `settle()` at `:700`), the `maxRunMs > 0`-gated watchdog at `:1437-1445`
+installed after `sandbox.open()` (`:1404`) and cleared at `:1495-1497` *before* the
+`onComplete` dispatch (`:1214`) that holds the whole promotion gate
+(`release.ts:570-680`), the unabortable `HarnessSession.open()` signature at
+`session.ts:215`, and `release.ts:558-569` declaring **no `liveness` block** (only
+`maxConcurrent: 1` at `:564`). The patch bundle from -118,
+[`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md),
+therefore needs **no revision** and still applies cleanly against `orche` HEAD.
+
+The defect remains **unfiled in any workspace**: no `ORCHE` ticket carries Patches A–D, so
+operator actions (1) and (3) are outstanding after seven filings. Per the standing
+instruction **no eighth triage document was created** —
+[`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) stays canonical
+and already points at the bundle. Seven automated cycles have now produced seven
+amendment paragraphs and zero resolution; nothing merged into this repository can change
+that, because the wedge is in another process in another repo. Only restarting pid 65669
+(destructive — it kills every in-flight fleet agent) or landing Patch A in `orche` will
+clear `obs-sig:1bf9fcd2c6`.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
