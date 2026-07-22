@@ -16,7 +16,7 @@ Triage record and the full evidence chain, in `harness-wrapper`:
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../docs/triage/HARNESS-WRAPPER-97.md) — the canonical
 record for observer signature `obs-sig:1bf9fcd2c6`, plus the running amendment log in
 [`docs/md/internal/out-of-scope-tickets.md`](../../docs/md/internal/out-of-scope-tickets.md)
-(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118`).
+(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119`).
 
 **This bundle exists because five prior filings produced no patch.** HARNESS-WRAPPER-97, -100,
 -110, -116 and -117 all re-derived the same root cause, all correctly concluded "not this repo",
@@ -61,6 +61,24 @@ Promotion dev→main is dead for the workspace, and nothing in the fleet reports
 
 Lag progression across the six filings: **27 → 32 → 52/57 → 82/41 → 112/51 → 122/56**.
 
+### Re-confirmed at the eighth and ninth filings (HARNESS-WRAPPER-119, -120)
+
+Nothing below revises the analysis — it re-stamps the evidence so a reader can tell the bundle is
+still live rather than a historical record. Measured in the HARNESS-WRAPPER-120 worktree,
+**2026-07-23 ~01:00 local**:
+
+- Same supervisor, never restarted: **pid 65669**, start Wed Jul 22 11:32:51, elapsed **13:29**.
+- `main` still **`6281927`**; `--first-parent main..dev` = **59**, `dev..main` = **0** — still a
+  clean fast-forward, still a *stopped promoter*. Oldest unpromoted `40e7251` (2026-07-22 18:16:09).
+  **Zero promotions in ~15 h.**
+- `agents.log`: the last release tick is line **3780** (`cron:release:1784725803650: success`,
+  15:10) and line **3781** its branch sweep — still the final `[release@…]` lines in the file. The
+  log has since grown to **4506** and counting, every later line another agent still ticking.
+- First-parent lag across all nine filings: **27 → 32 → 57 → 41 → 51 → 56 → 58 → 59**.
+- Every `orche` anchor cited in this bundle was re-read against `orche` HEAD and is **unchanged**.
+  The one substantive correction found is folded into [Patch A](#patch-a--hard-slot-deadline-load-bearing)
+  (`forceSettle()` is redundant — `track()`'s `settle()` already deletes from `this.tracked`).
+
 ### Deterministic reproduction (unit level, in `orche`)
 
 Subclass `Spawner` per the `packages/agent/test/spawner-pause.test.ts:33-50` idiom, override
@@ -99,7 +117,7 @@ const { settle, runAbort } = this.track(taskId);
 void this.runTick(taskId, agentId, runAbort).catch(…).finally(() => settle());
 ```
 
-`track()` (`spawner.ts:699-715`) registers the entry and hands back an idempotent `settle()` that
+`track()` (`spawner.ts:700-715`) registers the entry and hands back an idempotent `settle()` that
 *only* the `.finally()` above calls. A `runTick` that never settles owns the sole slot
 (`maxConcurrent: 1`) for the process lifetime.
 
@@ -147,7 +165,7 @@ const timer = setTimeout(() => {
       `[${this.spec.name}] tick ${taskId} did not settle ${SLOT_GRACE_MS}ms after abort — ` +
         `force-releasing the slot; the tick may still be running\n`,
     );
-    this.forceSettle(taskId);   // settle() + remove from this.tracked
+    settle();   // the SAME idempotent settle() from track() — see the note below
   }, SLOT_GRACE_MS);
 }, deadline);
 void this.runTick(taskId, agentId, runAbort)
@@ -159,9 +177,17 @@ Requirements on the implementation:
 
 - **`settle()` must stay idempotent.** The force path and the natural path can both fire; the
   second is a no-op. `track()` already returns an idempotent `settle` — preserve that and assert it.
-- **The forced entry must be removed from `this.tracked`.** Otherwise `drain()` blocks on an entry
-  whose promise will never settle, and shutdown hangs — trading a wedged cron slot for a wedged
-  shutdown. `spawner-drain.test.ts` covers the existing contract; extend it, do not break it.
+- **No separate `forceSettle()` is needed** *(correction folded in at HARNESS-WRAPPER-120, verified
+  against `orche` HEAD)*. Earlier revisions of this bundle asked the force path to "settle() **and**
+  remove the entry from `this.tracked`" as if those were two steps. They are one: `track()`'s
+  `settle` (`spawner.ts:707-713`) already does `this.tracked.delete(taskId)` *before* `resolveDone()`,
+  guarded by its `settled` flag. So the deadline path calls the **same closure** the `.finally()`
+  calls — which both frees the slot and lets `drain()` resolve, since `drain()` (`spawner.ts:529-543`)
+  snapshots `this.tracked` and awaits each entry's `done`. Adding a second private method would
+  duplicate the delete and give the `settled` flag a second owner. **The requirement that survives is
+  the test, not the method:** `drain()` must still resolve with a force-settled tick outstanding —
+  otherwise a wedged cron slot is traded for a wedged shutdown. `spawner-drain.test.ts` covers the
+  existing contract; extend it, do not break it.
 - **The deadline must be injectable** (spec field or constructor option) so the regression test can
   run in milliseconds on a fake clock.
 - **Both log lines are load-bearing**, not decoration. A silent force-settle reproduces this bug in
@@ -280,8 +306,8 @@ the test spec and drive a fake clock.
 There is no script: read each anchor, apply the change, run the suite.
 
     cd "$ORCHE_DIR"            # /Users/oleh/Work/new/orche
-    # Patch A: packages/agent/src/spawner.ts:640-648      (deadline race + abort + force-settle;
-    #                                                      remove the forced entry from this.tracked)
+    # Patch A: packages/agent/src/spawner.ts:640-648      (deadline race + abort + force-settle via
+    #                                                      track()'s own idempotent settle())
     # Patch B: packages/agent/examples/.orche/agents/release.ts:558-569  (liveness.maxRunMs)
     # Patch C: packages/agent/src/spawner.ts:1404         (arm before sandbox.open)
     #          packages/agent/src/spawner.ts:1214,1495-97 (clear after onComplete, not in the finally)
