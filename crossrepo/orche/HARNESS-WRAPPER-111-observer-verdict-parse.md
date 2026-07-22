@@ -13,7 +13,15 @@
 
 Triage record and the full evidence chain:
 [`docs/triage/HARNESS-WRAPPER-111.md`](../../docs/triage/HARNESS-WRAPPER-111.md) in
-`harness-wrapper`.
+`harness-wrapper`, amended by
+[`docs/triage/HARNESS-WRAPPER-113.md`](../../docs/triage/HARNESS-WRAPPER-113.md) (which corrected
+the Patch B fixture list below from one test to three, and promoted the `:237` block-bleed from
+predicted to **confirmed**).
+
+**This bundle covers three filed signatures, not one.** HARNESS-WRAPPER-111 (`:109`),
+HARNESS-WRAPPER-112 (`:103`) and HARNESS-WRAPPER-113 (`:102`) were all filed from a *single*
+observer reply at 2026-07-22T19:59:11Z whose three verdict lines were all decorated `DISMISS`es.
+One fix retires all three.
 
 ## Why this exists
 
@@ -45,7 +53,7 @@ produces the ticket.
     packages/agent/examples/observer.ts          Patch A — verdictFor(), used at :181 and :237
     packages/agent/src/observer.ts               Patch B — dead-spawner ownership grounding
     packages/agent/test/observer-verdict.unit.test.ts   new — Patch A regression matrix
-    packages/agent/test/observer.unit.test.ts    Patch B cases + one fixture fix at :725-736
+    packages/agent/test/observer.unit.test.ts    Patch B cases + three fixture fixes (:730, :777, :790)
 
 ## Patch A — read the verdict by line, not by substring (the actual fix)
 
@@ -81,6 +89,20 @@ Then:
   second verdict line is decorated bleeds one signature's investigation notes into the next
   signature's comment. Same defect, same line-shape assumption.
 
+  **This bleed is confirmed, not hypothetical** (HARNESS-WRAPPER-113). The block *start* is found
+  by `l.includes(sig)` at `:231` — decoration-tolerant — while the terminator is not, so the scan
+  runs to the 40-line cap at `:234`. The single 19:59:11Z reply produced three comments that are
+  exactly the reply's suffixes from each verdict line to EOF:
+
+  | Ticket | Comment ts | Comment content |
+  | --- | --- | --- |
+  | HARNESS-WRAPPER-111 (`:109`) | 19:59:11.682143Z | `:109` block + trailing prose |
+  | HARNESS-WRAPPER-112 (`:103`) | 19:59:11.693216Z | `:103` + `:109` blocks + trailing prose |
+  | HARNESS-WRAPPER-113 (`:102`) | 19:59:11.702469Z | `:102` + `:103` + `:109` blocks + trailing prose |
+
+  Three strictly nested suffixes is what a terminator that never fires produces, and nothing
+  else.
+
 **Why anchoring matters.** The match anchors at line start *after decoration only*. That is what
 keeps prose such as *"a DISMISS on `sig` would be wrong"* from matching — the one direction that
 could suppress a **genuine** anomaly, which is strictly worse than the bug being fixed. Do not
@@ -106,9 +128,30 @@ A strict-subset guard; it alone would have suppressed this signature. It keys on
 **not** on `PROGRESSED_STATUSES`, **not** on progress labels. See the rationale at
 `packages/agent/src/observer.ts:120-130` on why label-based convergence hid the ORCHE-67 stall.
 
-**Required companion.** The fixture at `packages/agent/test/observer.unit.test.ts:725-736` stubs
-`getTask` with **no `assignee`**, so it starts failing under this guard. Give it an `assignee`
-matching the seeded agent id. (Verified: this is a real break, not a hypothetical.)
+**The concrete anchor is HARNESS-WRAPPER-113** (`dead-spawner:plan-critic:HARNESS-WRAPPER-102`).
+That agent posted its two-chunk critique at 19:52:15.74Z and released; the task was
+`open`/`assignee: none` at file time and is assigned to a different agent today, so
+`task.assignee !== a.facts.agentId` either way and this guard drops it. Contrast
+HARNESS-WRAPPER-112 (`:103`), where the assignee never changed — that one is retired by Patch A
+or by the drain fix, not by this guard. Land both patches.
+
+**Required companion — three fixtures, not one.** Verified against
+`packages/agent/test/observer.unit.test.ts`: **three** `dead-spawner` tests assert the anomaly
+*still files* and all three stub `getTask` with **no `assignee`**, so all three fail the moment
+this guard lands:
+
+| Test | Line | Stub |
+| --- | --- | --- |
+| `…whose task is in_progress is still filed` | `:730` | `{ id, status: 'in_progress', labels: [], title: id }` |
+| `ORCHE-130: …in \`review\` still files` | `:777` | `{ id, status: 'review', … }` |
+| `ORCHE-130: …\`deferred\` still files` | `:790` | `{ id, status: 'deferred', … }` |
+
+Give each `assignee: 'a1'`, matching the `acquired` helper's default `agentId = 'a1'`
+(`observer.unit.test.ts:51`). (Verified: a real break, not a hypothetical. An earlier revision of
+this bundle named only `:725-736`; that was incomplete.) The `:569` fixture is a *reopen-loop*
+test and is unaffected — the guard is scoped to `a.kind === 'dead-spawner'`. The default
+`fakeClient.getTask` at `:100-106` also carries no `assignee`, but no `dead-spawner` filing test
+relies on it: all five stub explicitly.
 
 ## Explicitly NOT in this bundle
 
@@ -143,18 +186,24 @@ Against the exported `verdictFor` and, where practical, the `onComplete` hook en
   (e.g. `a DISMISS on <sig> would be wrong`).
 - A two-signature reply whose **second** verdict line is decorated: each investigation note is
   extracted to its own block, with no bleed across the boundary (`extractInvestigation`).
+- **The HARNESS-WRAPPER-113 shape** — the observed production case: a **three**-signature reply
+  with all three verdict lines decorated ⇒ **three disjoint** `extractInvestigation` blocks. No
+  block may contain a later signature's text, and the trailing non-verdict prose after the final
+  `---` attaches to the **last** block only. Pre-fix this yields three nested suffixes; that
+  assertion is the regression anchor for `:237`.
 
 ### `packages/agent/test/observer.unit.test.ts` (Patch B)
 
 Beside the ORCHE-130 block at `:725-805`, reusing its `seed` / `acquired` helpers and the fake
 fleet's `f.created`:
 
-- a `dead-spawner` whose re-fetched task is `{status:'open', assignee: undefined}` is **dropped**;
+- a `dead-spawner` whose re-fetched task is `{status:'open', assignee: undefined}` is **dropped**
+  — the direct HARNESS-WRAPPER-113 anchor;
 - a `dead-spawner` reassigned to a different agent (`assignee: 'agent:worker:other'`) is
   **dropped**;
 - a `dead-spawner` that is `in_progress` **and still assigned to the accused agent** **still
-  files** — the over-suppression guard, and the reason the `:725` fixture must gain a matching
-  `assignee`.
+  files** — the over-suppression guard, and the reason the `:730` / `:777` / `:790` fixtures must
+  each gain a matching `assignee`.
 
 ## Apply
 
@@ -163,12 +212,13 @@ There is no script: read each anchor, apply the change, run the suite.
     cd "$ORCHE_DIR"            # /Users/oleh/Work/new/orche
     # Patch A: packages/agent/examples/observer.ts  (add verdictFor; use at :181 and :237)
     # Patch B: packages/agent/src/observer.ts       (ownership drop after the :852 terminal drop)
-    #          packages/agent/test/observer.unit.test.ts:725-736  (fixture gains `assignee`)
+    #          packages/agent/test/observer.unit.test.ts:730,:777,:790  (each fixture gains `assignee: 'a1'`)
     pnpm vitest run packages/agent/test/observer-verdict.unit.test.ts \
                     packages/agent/test/observer.unit.test.ts
 
-Acceptance: the ``**DISMISS `<sig>`**`` case files nothing, the no-verdict case still files, and
-the `in_progress`-and-still-assigned case still files.
+Acceptance: the ``**DISMISS `<sig>`**`` case files nothing; the no-verdict case still files; the
+`in_progress` / `review` / `deferred`-and-still-assigned cases still file; and the
+three-signature decorated reply produces three disjoint comments.
 
 ## Paired ticket
 

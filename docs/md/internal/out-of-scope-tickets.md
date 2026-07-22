@@ -585,3 +585,65 @@ class not be re-filed here. One item is carried forward for a human and is not a
 defect: HARNESS-WRAPPER-79's decomposition children keep exceeding run deadlines
 (`-79` twice, `-109` once), and two more park the task at `blocked`/`stuck` per
 `MAX_CONSECUTIVE_TIMEOUTS` (`packages/agent/src/finalize.ts:60`).
+
+## HARNESS-WRAPPER-113 — same discarded `DISMISS`, and the block-bleed is now confirmed
+
+**Filed as:** `[observer] crashed/dead spawner plan-critic left HARNESS-WRAPPER-102
+working (dead-spawner:plan-critic:HARNESS-WRAPPER-102)`.
+
+**Why it landed here:** the same misrouting as §HARNESS-WRAPPER-23,
+§HARNESS-WRAPPER-26, §HARNESS-WRAPPER-98, §HARNESS-WRAPPER-99 and
+§HARNESS-WRAPPER-111 — the observer files a `dead-spawner` against the *task* it is
+watching (`HARNESS-WRAPPER-102`, in this repo's fleet-db workspace), so the ticket
+lands in this workspace even though every line of the defect lives in `orche`.
+
+**Fifth recurrence of the class — and the third signature from one reply.** As in
+§HARNESS-WRAPPER-111, the observer explicitly dismissed this exact signature and the
+dismissal was discarded: it wrote
+``**DISMISS `dead-spawner:plan-critic:HARNESS-WRAPPER-102`**`` as the **first** verdict
+line of its 2026-07-22T19:59:11Z reply, and the substring matcher at
+`packages/agent/examples/observer.ts:181` could not read it past the backtick. That one
+reply carried three decorated `DISMISS` lines and produced three tickets —
+HARNESS-WRAPPER-113 (`:102`), -112 (`:103`) and -111 (`:109`).
+
+**The `:237` block-bleed §-111 predicted is now measured.** Each of the three tickets'
+investigation comments is exactly the reply's suffix from its own verdict line to EOF —
+`:109` at 19:59:11.682143Z, `:103` at `.693216Z` (`:103`+`:109`), `:102` at `.702469Z`
+(`:102`+`:103`+`:109`). Three strictly nested suffixes is what a block terminator that
+never fires produces, and nothing else: `extractInvestigation` finds the block *start*
+by `l.includes(sig)` (decoration-tolerant, `:231`) but anchors its terminator at the
+line start (`:237`), so decorated verdicts never terminate a block.
+
+**The anomaly itself is false.** `agent:plan-critic:024391fc` posted its two-chunk
+critique at 19:52:15.74Z and released; HARNESS-WRAPPER-102 was `open`/`assignee: none`
+at file time and is now `implemented` under `agent:integrator:9208258e`. The digest's
+`ageMs` of 287 s implies the observer's `lastSeen` was ≈19:51:18Z — it had not drained
+events that already existed, the release among them.
+
+**The assignee guard would have suppressed this one.** Unlike -112 (`:103`), where the
+assignee never changed and only Patch A or the drain fix helps, HARNESS-WRAPPER-113 is
+dropped by HARNESS-WRAPPER-99's still-unlanded Fix #1 on its own — making it the direct
+regression anchor for that guard. One correction this triage established for the bundle:
+its Patch B companion fixture list is **three** tests, not one (`observer.unit.test.ts`
+`:730`, `:777`, `:790`), each of which stubs `getTask` with no `assignee` and each of
+which needs `assignee: 'a1'`.
+
+**Actual defect location:** `orche`, re-verified at HEAD `737ea45` —
+`packages/agent/examples/observer.ts:181` and `:237` (primary), plus the missing
+ownership grounding in `fileAnomaly` (`packages/agent/src/observer.ts:825`/`:852`) and
+the un-looped single-page drain (`examples/observer.ts:117`, `src/observer.ts:242`,
+`packages/queue/src/fleet.ts:256-261`).
+
+**Confirmed:** none of those files exist here — this is a Go module.
+`grep -rniE 'dead-spawner|fileAnomaly|obs-sig|deadSpawnerMs|verdictFor|extractInvestigation' --include='*.go' .`
+returns **zero** hits; the only tree-wide matches are this log, the triage records under
+`docs/triage/` and the cross-repo bundle.
+
+**Resolution:** no source change made in this repo — documentation only, no human gate
+requested. **No second bundle was created**: the existing
+[`crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md`](../../../crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md)
+was amended in place with the three-fixture correction, the confirmed `:237` bleed and
+the three-signature test shape. Full evidence chain in
+[`docs/triage/HARNESS-WRAPPER-113.md`](../../triage/HARNESS-WRAPPER-113.md). Once the
+bundle is handed to `orche`, the correct disposition here is **close-as-invalid**, per
+the standing human ruling on HARNESS-WRAPPER-24 (2026-07-16).
