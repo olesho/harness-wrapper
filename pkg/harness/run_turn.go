@@ -107,6 +107,15 @@ type TurnConfig struct {
 	// an unanswerable prompt fails the run with chat.ErrInputPending rather
 	// than hanging to the deadline. For an untrusted worktree, set
 	// {ByKind: {"trust_prompt": {Kind: "answer", OptionID: "proceed"}}}.
+	//
+	// Be aware that "trust_prompt" is NOT folder-trust-only: claude-code's
+	// --dangerously-skip-permissions ("Bypass Permissions mode") acceptance
+	// screen is emitted under the same Kind, so the entry above also accepts a
+	// skip-all-permissions launch. That is deliberate and pinned today, pending
+	// the follow-up that splits the detector's Kind. A policy alone also cannot
+	// gate what is never surfaced: claude's per-tool permission dialog is not
+	// detected, so it reaches no policy at all and stalls the turn to the
+	// deadline.
 	InputPolicy *chat.InputPolicy
 
 	// OnInputRequest is an in-process resolver for prompts the policy didn't

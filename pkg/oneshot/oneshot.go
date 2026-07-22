@@ -150,6 +150,26 @@ func validateConfig(cfg Config) error {
 // caller-supplied fields from cfg, plus the input-policy fields oneshot owns —
 // the auto-accept trust policy, the AutoAcceptAnswer callback, and Codex
 // update-menu auto-skip. ExitAfterTurn is always true (clean, bounded run).
+//
+// The single trust_prompt entry deliberately covers TWO different screens:
+// claude-code's folder-trust dialog AND its --dangerously-skip-permissions
+// ("Bypass Permissions mode") acceptance screen, which claudecode.DetectInput
+// emits under the same Kind with a "proceed"-aliased first option. So on this
+// path — used by structured-run and therefore by pkg/env.RunStructuredTurn, the
+// containerized guest path — the entry written for folder trust is what accepts
+// a skip-all-permissions launch. Pinned by
+// TestTurnConfig_BypassAcceptanceAutoAnswered, pending the follow-up that splits
+// the detector's Kind (e.g. bypass_acceptance); that split is a behavior change
+// to a shipped detector and is out of scope here. cmd/harness-wrapper's
+// inputHandling holds a SECOND, independent copy of this policy — change both.
+//
+// Two further limits of what this config enforces, both pinned in
+// permission_pin_test.go: claude's per-tool permission dialog is not detected at
+// all (no InputRequest is emitted, so restrictive --permission-mode rungs stall
+// an unattended turn to the deadline, exit 124), and OnInputRequest is wired to
+// the catch-all AutoAcceptAnswer unconditionally — which auto-approves codex's
+// KindApproval, so -a on-request / -a untrusted bind nothing here. (Codex's -s
+// sandbox axis is enforced by codex itself, independent of this loop.)
 func turnConfig(cfg Config) harness.TurnConfig {
 	return harness.TurnConfig{
 		Harness:       cfg.Harness,

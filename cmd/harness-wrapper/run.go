@@ -175,6 +175,21 @@ func cleanedEnv() []string {
 //     the clean menu on the same tty (see runOneShot).
 //   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
 //     oneshot.AutoAcceptAnswer callback, so an unattended one-shot never hangs.
+//     That ONE trust_prompt entry deliberately covers TWO different screens:
+//     claude-code's folder-trust dialog AND its --dangerously-skip-permissions
+//     ("Bypass Permissions mode") acceptance screen, which claudecode.DetectInput
+//     emits under the same Kind — so unattended, a bypass launch is accepted by
+//     the entry written for folder trust. This coupling is pinned
+//     (TestInputHandling_UnattendedAutoAcceptsBypassAcceptance) pending the
+//     follow-up that splits the detector's Kind (e.g. bypass_acceptance);
+//     splitting it is a behavior change to a shipped detector and is out of
+//     scope here. pkg/oneshot.turnConfig holds a SECOND, independent copy of
+//     this same policy — change both together.
+//     Note also what this callback does NOT gate: claude's per-tool permission
+//     dialog is not detected at all, so restrictive --permission-mode rungs
+//     stall an unattended turn to the deadline (exit 124), and codex's
+//     KindApproval is auto-answered "proceed" by AutoAcceptAnswer regardless of
+//     -a. Both are pinned as tests; see pkg/oneshot/permission_pin_test.go.
 func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.InputPolicy, func(chat.InputRequest) (chat.InputAnswer, bool)) {
 	if interactive {
 		return nil, func(req chat.InputRequest) (chat.InputAnswer, bool) {
