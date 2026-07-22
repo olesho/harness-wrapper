@@ -17,8 +17,7 @@ func TestPermissionRungsFreshSlice(t *testing.T) {
 	for i := range first {
 		first[i] = "clobbered"
 	}
-	first = append(first, "extra") //nolint:staticcheck // exercising caller mutation
-	_ = first
+	slices.Reverse(first)
 
 	want := []string{"plan", "manual", "ask", "auto", "bypass"}
 	if got := PermissionRungs(); !slices.Equal(got, want) {

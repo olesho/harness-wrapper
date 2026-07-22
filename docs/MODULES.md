@@ -2630,6 +2630,36 @@ terminal control.
 
 ### Exported Types & Functions
 
+#### `func BypassEnablingFlags(harness string) []string`
+BypassEnablingFlags returns the harness argv flags that, when present at
+launch, leave the harness able to reach the bypass rung. Single source of
+truth for validatePermissionMode's contradiction check and pkg/chat's
+ring-length calculation.
+
+Only two such flags exist: claude's SkipPermissionsFlag and codex's
+--dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
+permission axis at all return nil.
+
+#### `func EffectiveLaunchRung(harness string, args []string, mode string) string`
+EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
+given the caller's argv and the Config.PermissionMode knob — i.e. it replays
+argsWithHarnessPermissionMode's suppression rule rather than trusting the
+knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
+extracts the VALUE from both "--permission-mode=x" and the separated
+"--permission-mode x" form and normalizes native spellings (acceptEdits ->
+ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
+
+A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
+itself reported as a definite bypass: it suppresses injection AND leaves the
+harness unrestricted, so there is nothing unknown about the result.
+
+Returns "" when argv carries a permission flag whose value cannot be resolved
+(a trailing flag with no operand, an unrecognized spelling), when only
+codex's -a axis is set (which suppresses injection but leaves the sandbox at
+the harness default), and when neither argv nor mode says anything. "" means
+UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
+answer.
+
 #### `func IsBypassPermissionMode(mode string) bool`
 IsBypassPermissionMode reports whether mode resolves to claude-code's
 bypassPermissions directive — the canonical rung "bypass" and its
@@ -2648,6 +2678,23 @@ codex's bypass-equivalent: call site 2 runs before the harness is known, so
 treating it as bypass would let `--sandbox-defaults --permission-mode
 danger-full-access codex --` slip past the exclusion check. codex's own
 bypass handling lives in isCodexBypassMode.
+
+#### `func MorePermissive(a, b string) bool`
+MorePermissive reports whether rung a is strictly more permissive than b,
+by index in PermissionRungs.
+
+Unknown rungs are never more permissive (fail closed): an empty string, a
+native spelling ("acceptEdits", "danger-full-access") or a typo yields false
+for a, so a caller asking "may I stay where I am?" never gets a yes it did
+not earn. Note b being unknown ALSO yields false, so the answer is false
+whenever either side is not a canonical rung.
+
+#### `func PermissionRungs() []string`
+PermissionRungs returns the canonical rungs, ordered least to most
+permissive — the same order the unexported consts are declared in.
+
+A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
+may sort, truncate or reverse the result without corrupting a later call.
 
 #### `type Classification`
 Classification is a Classifier's verdict for a single ClassifierInput.
