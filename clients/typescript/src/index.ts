@@ -24,10 +24,38 @@ export interface Turn {
   retry_after?: string;
 }
 
+/** One selectable option of an `input_request` (trust dialog, menu, …). */
+export interface InputRequest {
+  id: string;
+  kind: string;
+  prompt: string;
+  header?: string;
+  multi_select?: boolean;
+  options?: Array<{ id: string; alias?: string; label: string; description?: string }>;
+}
+
+/**
+ * A frame from the `/events` SSE stream. `type` discriminates the payload:
+ * `"turn"` frames carry `turn`, `"input_request"` / `"input_resolved"` frames
+ * carry `input` and **no** `turn` at all — so always narrow on `type` (or check
+ * `turn` for presence) before dereferencing it.
+ *
+ * `type` is always present on the wire; `turn` and `input` are omitted per
+ * frame kind.
+ */
 export interface TurnEvent {
-  turn: Turn;
+  type: "turn" | "input_request" | "input_resolved" | (string & {});
+  turn?: Turn;
+  input?: InputRequest;
   error?: string;
 }
+
+/**
+ * Reasoning-effort levels the wrapper accepts. Mirrors the server-side enum;
+ * this is compile-time typo protection only — the client performs no runtime
+ * validation and sends whatever it is given.
+ */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface OpenOptions {
   harness: string;
@@ -37,6 +65,46 @@ export interface OpenOptions {
   env?: string[];
   cols?: number;
   rows?: number;
+  /**
+   * Reasoning effort for the harness. Unlike `model`, this is **validated and
+   * hard-fails**:
+   *
+   * 1. A value outside the enum, or any effort at all on a harness that does
+   *    not support it, is rejected before the harness launches. (`model` is
+   *    never validated — see its doc.)
+   * 2. On the harness-chatd gateway the effort-capable harness names are
+   *    exactly `"codex"` and `"claude-code"`, case-sensitively. Every other
+   *    accepted harness name — `"opencode"`, `"pi"`, `"generic"`/`""` —
+   *    rejects `effort` outright with a 400 `invalid_options`. That is the
+   *    exact opposite of `model`, which is a silent no-op on those same
+   *    harnesses: do not assume the two knobs behave symmetrically. Note also
+   *    that plain `"claude"` and `"Codex"` are 400 `unknown_harness` (the
+   *    gateway matches the raw string) even though the wrapper itself would
+   *    accept them.
+   * 3. An explicit flag already present in `args` wins over this field: a
+   *    `--effort` in `args` (claude / claude-code), or a
+   *    `-c model_reasoning_effort=…` (codex), suppresses injection silently.
+   * 4. codex remaps `"max"` → `"xhigh"`, so `effort: "max"` reaches the
+   *    harness as `model_reasoning_effort="xhigh"`.
+   */
+  effort?: Effort;
+  /**
+   * Model override for the harness. Unlike `effort`, this is **not validated
+   * at all**:
+   *
+   * 1. No value is ever rejected; an unsupported harness silently drops it
+   *    rather than erroring, so a typo'd model name reaches the harness (or is
+   *    dropped) without any client- or gateway-side complaint.
+   * 2. Injection happens only for claude / claude-code (`--model <v>`) and
+   *    codex (`-c model="<v>"`). On `"opencode"`, `"pi"` and
+   *    `"generic"`/`""` it is a SILENT NO-OP — whereas `effort` on those same
+   *    harnesses is a 400 `invalid_options`. The two knobs are not symmetric.
+   * 3. An explicit `--model` (claude / claude-code) or `-c model=…` (codex)
+   *    already in `args` wins over this field, silently.
+   * 4. Only `effort` is remapped per harness (codex `"max"` → `"xhigh"`); the
+   *    model string is passed through verbatim.
+   */
+  model?: string;
 }
 
 export class HarnessChatError extends Error {
@@ -59,6 +127,11 @@ export class Client {
       env: opts.env ?? [],
       cols: opts.cols ?? 0,
       rows: opts.rows ?? 0,
+      // Unset knobs are dropped by JSON.stringify below, so omitting them
+      // yields a byte-identical body to the pre-effort/model client. An
+      // explicit "" is deliberately sent as "" (presence, not truthiness).
+      effort: opts.effort,
+      model: opts.model,
     };
     const res = await this.request<{ id: string }>("POST", "/v1/conversations", body);
     return new Conversation(this, res.id);
