@@ -140,11 +140,14 @@ const permissionRungBypass = "bypass"
 // because a footer redraw is a single frame, not a picker screen build.
 const defaultPermissionModeRenderTimeout = 2 * time.Second
 
-// codexPlanRetryBudget bounds how long SetPermissionMode(ctx, "plan") keeps
-// re-issuing `/plan` while codex answers with the "disabled while a task is in
-// progress" refusal. MCP-server boot is the common cause and clears on its own
-// within a few seconds; past the budget the caller gets ErrCodexPlanRefusedBusy.
-const codexPlanRetryBudget = 10 * time.Second
+// codexPlanRetryBudgetFactor expresses the `/plan` retry budget as a multiple of
+// the per-press repaint budget: five repaints' worth of patience, i.e. 10s at
+// the default. MCP-server boot is the common cause of the refusal and clears on
+// its own within a few seconds; past the budget the caller gets
+// ErrCodexPlanRefusedBusy. Deriving it (rather than fixing a second constant)
+// means the hermetic tests' shrunken repaint budget shrinks this in proportion,
+// so a permanently-refusing codex is exercised in milliseconds.
+const codexPlanRetryBudgetFactor = 5
 
 // codexPlanRefusalRE matches codex's refusal banner for `/plan`:
 //
@@ -424,7 +427,8 @@ func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, b
 // returns ErrCodexPlanRefusedBusy if a refusal was ever seen, and the ordinary
 // bound-exhausted marker otherwise (so the caller's restore path runs).
 func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
-	deadline := time.Now().Add(codexPlanRetryBudget)
+	budget := codexPlanRetryBudgetFactor * c.permModeRenderBudget()
+	deadline := time.Now().Add(budget)
 	refused := false
 	last, _ := c.PermissionMode()
 
@@ -453,7 +457,7 @@ func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
 		}
 		if time.Now().After(deadline) {
 			if refused {
-				return last, fmt.Errorf("%w (retried for %s)", ErrCodexPlanRefusedBusy, codexPlanRetryBudget)
+				return last, fmt.Errorf("%w (retried for %s)", ErrCodexPlanRefusedBusy, budget)
 			}
 			return last, errPermissionModeBoundExhausted
 		}
