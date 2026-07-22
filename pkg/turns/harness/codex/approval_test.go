@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
+	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
 // approvalCorpusScreen renders one of the live 0.144.4 approval recordings
@@ -378,5 +379,56 @@ func TestAliasForLabel_InterstitialTokensStillWinFirst(t *testing.T) {
 		if got := aliasForLabel(label); got != want {
 			t.Errorf("aliasForLabel(%q) = %q, want %q", label, got, want)
 		}
+	}
+}
+
+// ── Adapter transitions ────────────────────────────────────────────────────
+
+// TestCodexAdapter_ApprovalRequestedThenResolved pins the adapter's event
+// sequence for a genuine approval: the dialog appearing emits exactly one
+// InputRequested carrying KindApproval, a redraw is silent, and the dialog
+// clearing emits exactly one InputResolved with the SAME id and kind (so a
+// client subscribed from the start can correlate them).
+func TestCodexAdapter_ApprovalRequestedThenResolved(t *testing.T) {
+	scr := screen.New(120, 40)
+	a := New()
+
+	dialog := "\x1b[H\x1b[2J" + strings.ReplaceAll(approvalScreen("", nil), "\n", "\r\n") + "\r\n"
+	_, _ = scr.Write([]byte(dialog))
+	evs := a.OnScreen(scr.Snapshot())
+	if len(evs) != 1 {
+		t.Fatalf("dialog frame: want exactly 1 event, got %d: %+v", len(evs), evs)
+	}
+	if evs[0].Kind != turns.InputRequested || evs[0].Input == nil || evs[0].Input.Kind != KindApproval {
+		t.Fatalf("dialog frame: want InputRequested(approval_prompt), got %+v", evs[0])
+	}
+	id := evs[0].Input.ID
+	if id == "" {
+		t.Fatal("InputRequested carried an empty request id")
+	}
+
+	// Redraw of the same dialog → nothing (the id is unchanged).
+	_, _ = scr.Write([]byte(dialog))
+	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 0 {
+		t.Errorf("redraw: want 0 events, got %d: %+v", len(evs), evs)
+	}
+
+	// The user answered: a dialog-free idle composer → one InputResolved.
+	_, _ = scr.Write([]byte("\x1b[H\x1b[2J  Done.\r\n\r\n› \r\n"))
+	evs = a.OnScreen(scr.Snapshot())
+	if len(evs) != 1 {
+		t.Fatalf("cleared frame: want exactly 1 event, got %d: %+v", len(evs), evs)
+	}
+	if evs[0].Kind != turns.InputResolved || evs[0].Input == nil {
+		t.Fatalf("cleared frame: want InputResolved, got %+v", evs[0])
+	}
+	if evs[0].Input.Kind != KindApproval || evs[0].Input.ID != id {
+		t.Errorf("resolve = {kind:%q id:%q}, want {kind:%q id:%q}",
+			evs[0].Input.Kind, evs[0].Input.ID, KindApproval, id)
+	}
+
+	// Nothing re-fires once resolved.
+	if evs := a.OnScreen(scr.Snapshot()); len(evs) != 0 {
+		t.Errorf("post-resolve: want 0 events, got %d: %+v", len(evs), evs)
 	}
 }
