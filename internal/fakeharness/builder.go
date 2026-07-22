@@ -20,9 +20,11 @@ const defaultSessionID = "11111111-2222-3333-4444-555555555555"
 // exact glyphs the corresponding adapter keys off of, kept in one place so a
 // future TUI drift updates fixtures and adapter patterns together.
 //
-// Methods chain; terminate with Build. The glyph helpers below currently cover
+// Methods chain; terminate with Build. The glyph helpers below cover
 // claude-code (the harness whose completion timing these fixtures regression-
-// lock); codex gets Idle only, enough for readiness.
+// lock) in most depth, but codex and pi each have a full turn vocabulary too:
+// CodexWorking/CodexReply and PiWorking/PiReply drive a turn to completion, not
+// just to readiness.
 type Builder struct{ s Script }
 
 // New starts a Builder for the named harness with the default session ID.
