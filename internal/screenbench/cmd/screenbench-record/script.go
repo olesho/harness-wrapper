@@ -279,6 +279,16 @@ func submitKeyForHarness(harness string) []byte {
 	}
 }
 
+// Shift+Tab (the permission-mode cycle key) deliberately has NO mirror here.
+// Its encoding lives in pkg/chat.shiftTabForHarness — CSI 9;2u, the enhanced-
+// keyboard form, not the legacy "\x1b[Z" — and internal/fakeharness exports it
+// as ShiftTabCSI9_2u for hermetic scenarios. No recorded scenario switches
+// permission mode yet, so mirroring it here would be a third copy with nothing
+// exercising it. If a mode-switch scenario is ever recorded, add a
+// shiftTabForHarness twin of the function above with the same
+// "mirrors pkg/chat.<fn> — the inward contract" note, rather than inlining the
+// bytes at the call site.
+
 // waitFor blocks until pattern matches the rolling buffer OR the
 // harness has been idle for idleTimeout. Idle-timeout return is
 // considered a non-error best-effort advance — the script keeps going.

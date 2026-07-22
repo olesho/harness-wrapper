@@ -360,3 +360,56 @@ func submitKeyForHarness(harness, screenText string) []byte {
 		return []byte("\n")
 	}
 }
+
+// shiftTabForHarness returns the byte sequence a synthetic PTY writer must send
+// to press Shift+Tab — the key claude-code and codex bind to "cycle permission
+// mode" — or nil for a harness with no known encoding.
+//
+// It is the Shift+Tab twin of submitKeyForHarness above, and rests on the same
+// fact: claude-code and codex both turn the kitty / enhanced keyboard protocol
+// on unconditionally at startup, which is why a plain CR does not submit and
+// CSI 13 u does. Under that protocol every key — modified or not — arrives as
+// CSI <codepoint> ; <modifiers> u. Tab is codepoint 9 and the Shift modifier is
+// encoded as 1+1 = 2, so Shift+Tab is "\x1b[9;2u" (CSI 9 ; 2 u).
+//
+// The legacy form is "\x1b[Z" (CSI Z, "cursor backward tabulation"), which is
+// what a terminal emits for Shift+Tab in *unenhanced* mode. It is deliberately
+// NOT used here: once a TUI has requested enhanced keys, its input decoder
+// reads the CSI u vocabulary, and a bare CSI Z either falls through as an
+// unrecognized escape or is swallowed — the mode never cycles, and a cycle loop
+// silently no-ops until it burns its whole bound. Sending the enhanced form is
+// the same trade submitKeyForHarness already makes for Enter.
+//
+// LIVE VERIFICATION STATUS: the CSI 9;2u encoding here is derived from the
+// kitty keyboard protocol spec and from submitKeyForHarness's live-verified
+// CSI 13u precedent (same protocol, same TUIs, same synthetic-writer path) —
+// it has NOT yet been confirmed against a running claude-code or codex that
+// visibly cycled its permission-mode indicator. Treat that confirmation as
+// outstanding: the first driver built on this helper should assert the mode
+// indicator actually changed rather than assuming the write landed, and this
+// comment should be updated to record the versions verified against.
+//
+// screenText is accepted to mirror submitKeyForHarness's shape (and to leave
+// room for a future screen-sensitive variant); today's encoding does not depend
+// on what is rendered.
+func shiftTabForHarness(harness, screenText string) []byte {
+	_ = screenText
+	switch harness {
+	case "claude", chatClaudeCode:
+		return []byte(shiftTabCSI9_2u)
+	case "codex":
+		return []byte(shiftTabCSI9_2u)
+	default:
+		// Unknown harnesses (and pi, which enables no enhanced keyboard mode and
+		// has no permission-mode cycle to drive) get nil rather than the legacy
+		// "\x1b[Z": a nil return lets the caller fail loudly on "this harness has
+		// no Shift+Tab contract" instead of writing bytes that quietly do nothing.
+		return nil
+	}
+}
+
+// shiftTabCSI9_2u is Shift+Tab in the kitty / enhanced keyboard protocol: CSI
+// 9 ; 2 u (Tab codepoint 9, Shift modifier 2). internal/fakeharness exports the
+// identical string as ShiftTabCSI9_2u so hermetic scenarios and this production
+// writer cannot drift; TestShiftTabMatchesFakeharness pins them byte-equal.
+const shiftTabCSI9_2u = "\x1b[9;2u"
