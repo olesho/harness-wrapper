@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // writeChatError maps each chat sentinel to a stable HTTP status + code string.
@@ -23,6 +24,11 @@ func TestWriteChatError_Codes(t *testing.T) {
 		{chat.ErrConflictingAnswer, 400, "conflicting_answer"},
 		{chat.ErrNoInputPending, 409, "no_input_pending"},
 		{chat.ErrStaleInputRequest, 409, "stale_input_request"},
+		// Not a chat sentinel: wrapper.validateConfig's rejection reaches
+		// writeChatError wrapped by chat.Open, and must not fall through to
+		// the 500 "internal" default — a rejected permission mode is a
+		// security control failing opaquely if it does.
+		{wrapper.ErrInvalidConfig, 400, "invalid_config"},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			rec := httptest.NewRecorder()

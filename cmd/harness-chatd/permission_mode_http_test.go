@@ -30,6 +30,105 @@ func TestPermissionMode_Decodes(t *testing.T) {
 	}
 }
 
+// TestPermissionMode_InvalidRejectedWith400 is the end-to-end half of the
+// error mapping: an unusable permission mode must come back as 400
+// invalid_config, not the 500 "internal" that writeChatError's default arm
+// used to produce. The binary path is a real, launchable fake harness, so a
+// 400 can only come from wrapper.validateConfig — which runs inside
+// wrapper.Start ahead of startSession, meaning no process is spawned.
+//
+// Posting directly rather than through the openConversation helper is
+// deliberate: that helper t.Fatalf's on any status != 201, which would turn
+// the expected 400 into a confusing helper failure.
+func TestPermissionMode_InvalidRejectedWith400(t *testing.T) {
+	bin := fakeHarnessBin(t)
+
+	srv := NewServer()
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	exitAfter := true
+	for _, tc := range []struct {
+		name string
+		path string
+		body any
+	}{
+		{
+			name: "turns/unknown-mode",
+			path: "/v1/turns",
+			body: runTurnRequest{
+				Harness:        "claude",
+				BinaryPath:     bin,
+				Prompt:         "hello",
+				ExitAfterTurn:  &exitAfter,
+				PermissionMode: "nonsense",
+			},
+		},
+		{
+			name: "open/unknown-mode",
+			path: "/v1/conversations",
+			body: openRequest{
+				// chat.Open resolves its adapter by the harness's full name.
+				Harness:        "claude-code",
+				BinaryPath:     bin,
+				PermissionMode: "nonsense",
+			},
+		},
+		{
+			// A non-bypass rung paired with an explicit bypass flag is a
+			// contradiction the wrapper rejects rather than silently
+			// suppressing.
+			name: "open/mode-contradicts-args",
+			path: "/v1/conversations",
+			body: openRequest{
+				Harness:        "claude-code",
+				BinaryPath:     bin,
+				Args:           []string{"--dangerously-skip-permissions"},
+				PermissionMode: "plan",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(tc.body)
+			if err != nil {
+				t.Fatalf("marshal request: %v", err)
+			}
+			resp, err := http.Post(ts.URL+tc.path, "application/json", bytes.NewReader(body))
+			if err != nil {
+				t.Fatalf("POST %s: %v", tc.path, err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			raw, _ := io.ReadAll(resp.Body)
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body = %s)", resp.StatusCode, raw)
+			}
+			var out errorResponse
+			if err := json.Unmarshal(raw, &out); err != nil {
+				t.Fatalf("decode error response: %v (body = %s)", err, raw)
+			}
+			if out.Code != "invalid_config" {
+				t.Fatalf("code = %q, want invalid_config (body = %s)", out.Code, raw)
+			}
+		})
+	}
+
+	// Nothing was opened, which is the observable form of "no process was
+	// spawned": openConv only publishes an entry after chat.Open returns.
+	resp, err := http.Get(ts.URL + "/v1/conversations")
+	if err != nil {
+		t.Fatalf("GET /v1/conversations: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var convs []conversationSummary
+	if err := json.NewDecoder(resp.Body).Decode(&convs); err != nil {
+		t.Fatalf("decode conversations: %v", err)
+	}
+	if len(convs) != 0 {
+		t.Fatalf("conversations = %#v, want none", convs)
+	}
+}
+
 // TestPermissionMode_ThreadedToConfig proves the decoded string actually reaches
 // harness.TurnConfig (run-turn) and chat.Options (open) rather than being
 // dropped in the handler: an unsupported rung is rejected by
