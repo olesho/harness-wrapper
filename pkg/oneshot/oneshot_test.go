@@ -14,7 +14,9 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
+	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 )
 
 // fakeBin builds the scriptable fake harness once per process, skipping when the
@@ -409,5 +411,47 @@ func TestAutoAcceptAnswer(t *testing.T) {
 				t.Fatalf("OptionID = %q, want %q", ans.OptionID, tt.wantOption)
 			}
 		})
+	}
+}
+
+// TestAutoAcceptAnswer_CodexApproval pins the CURRENT unattended policy for
+// codex's genuine command / apply-patch approval dialog, which HARNESS-WRAPPER-75
+// made reachable for the first time: before the KindApproval port the dialog was
+// never surfaced as a structured request (the prompt text was typed blindly into
+// it instead), so AutoAcceptAnswer never saw one.
+//
+// The behavior pinned here — selecting "Yes, proceed" — is the existing designed
+// unattended policy (it already applies to claude-code's trust_prompt), NOT a
+// decision made by this change. The pin exists so any future move to a
+// deny-by-default unattended stance is deliberate and shows up as a failing test
+// rather than a silent behavioral drift.
+func TestAutoAcceptAnswer_CodexApproval(t *testing.T) {
+	data, err := os.ReadFile("../../test/corpus/codex/approval-command/bytes.raw")
+	if err != nil {
+		t.Fatalf("test/corpus/codex/approval-command/bytes.raw is REQUIRED: %v", err)
+	}
+	scr := screen.New(120, 40)
+	_, _ = scr.Write(data)
+	req, ok := codex.DetectInput(scr.Snapshot().Text)
+	if !ok {
+		t.Fatal("the live approval dialog did not classify; this pin would be vacuous")
+	}
+
+	// Mirrors pkg/chat's toClientInputRequest (unexported): the client-facing DTO
+	// is built field-by-field, so Keys/Highlighted never cross this boundary.
+	cr := chat.InputRequest{ID: req.ID, Kind: req.Kind, Prompt: req.Prompt}
+	for _, o := range req.Options {
+		cr.Options = append(cr.Options, chat.InputOption{ID: o.ID, Alias: o.Alias, Label: o.Label})
+	}
+
+	ans, ok := oneshot.AutoAcceptAnswer(cr)
+	if !ok {
+		t.Fatal("AutoAcceptAnswer declined a codex approval; the unattended path would " +
+			"wedge on chat.ErrInputPending")
+	}
+	if ans.OptionID != "1" {
+		t.Errorf("OptionID = %q, want %q (the 'Yes, proceed' row) — if this changed "+
+			"deliberately, update the comment above; unattended runs now answer codex "+
+			"approvals differently", ans.OptionID, "1")
 	}
 }

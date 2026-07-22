@@ -28,7 +28,14 @@ opencode is unpinned pending corpus capture.
 - **Session-ID**: scraped from the on-screen `codex resume <uuid>` hint → resume with `codex resume <uuid>`.
 - **Transcript**: JSONL under `~/.codex/sessions/<YYYY>/<MM>/<DD>/rollout-<ts>-<uuid>.jsonl`.
 - **Interactive input**: startup interstitials (update-available notice, model-migration screen) are
-  detected and auto-dismissed unless `Options.DisableCodexAutoDismiss` is set.
+  detected and auto-dismissed unless `Options.DisableCodexAutoDismiss` is set. Genuine **approval
+  dialogs** — shell-command (`Would you like to run the following command?`) and apply-patch
+  (`Would you like to make the following edits?`) — are detected as kind `approval_prompt` and are
+  **never** auto-dismissed: they surface as a structured input request and hold the session
+  not-ready until answered. Recognition requires the anchor *plus* a proceed row, a deny row, and
+  the live `›` selector on a menu row parsed from the anchor tail, so quoted prose cannot
+  false-positive (a false positive would deadlock the turn). Pinned by
+  `test/corpus/codex/approval-command` and `approval-patch` (codex-cli 0.144.4).
 
 ## claude-code
 
