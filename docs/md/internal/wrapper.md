@@ -224,6 +224,16 @@ recognizes only `bypass` and claude's `bypassPermissions`. Admitting codex's spe
 gate the root-enabling env half. codex's own bypass handling lives in the unexported
 `isCodexBypassMode`, which keeps codex vocabulary out of `cmd/`.
 
+**Reading the composition back out.** `wrapper.EffectiveLaunchRung(harness, args, mode)` is the
+argv→rung **inverse** of `argsWithHarnessPermissionMode`: it replays the suppression rule rather than
+trusting the knob, so argv wins over the knob, a bypass-enabling flag in argv is itself a definite
+bypass, and it returns `""` for anything it cannot name (never as a stand-in for "default"). It is
+idempotent over injection — passing already-injected args resolves to the same rung. `structured-run`
+now puts its answer **on the wire** as `StructuredTurnResult.permission_mode`
+([guide](../guide/cli.md#the-reported-permission_mode)); note it reports the **args half only**, so a
+`--sandbox-defaults` run and a bare `--permission-mode bypass` run both report `bypass` while
+differing in root and acceptance-screen behaviour.
+
 The exclusion check also runs **before** the passthrough rejection of `--sandbox-defaults`, so
 `--sandbox-defaults --permission-mode manual claude --` reports the incompatibility, not the mode
 policy. `--permission-mode` on its own is accepted in every mode, passthrough included — it is argv
@@ -262,7 +272,12 @@ diverge, raise it in the META-HARNESS ticket rather than forking behavior on one
 Dedup rules make the injection idempotent against caller-supplied values:
 
 - the arg is not appended when already present as the exact token **or** in the
-  `--dangerously-skip-permissions=<value>` spelling;
+  `--dangerously-skip-permissions=<value>` spelling — the `<value>` is **not read**, so
+  `--dangerously-skip-permissions=false` counts as present. That now has a second consequence beyond
+  suppressing the injection: `EffectiveLaunchRung` matches the same prefix, so such an argv puts a
+  possibly-wrong `bypass` on the wire in `StructuredTurnResult.permission_mode`. Over-reporting is the
+  safe direction under that field's never-under-report rule, but it makes `bypass` a claim about
+  *this repo's* reading of argv, not about claude's actual parse;
 - `IS_SANDBOX=1` is not appended when the env already defines the `IS_SANDBOX` key (whatever its
   value — containers may set it), matching the key exactly at the `=` boundary so a
   prefix-sharing key like `IS_SANDBOXED` never suppresses it.
