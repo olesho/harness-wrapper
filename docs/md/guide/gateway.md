@@ -115,7 +115,7 @@ transports that validate nothing at runtime and forward whatever they are given,
 above is still the server's, surfaced as a 400. Leaving a knob unset omits its key from the request
 body entirely (rather than sending `null`), which keeps a knob-free `open()` byte-identical to the
 pre-knob clients; an explicit `""` is deliberately sent as `""`. Note that `permissionMode: "plan"` is
-not expressible against codex at all — see [`permission_mode` semantics](#permission_mode-semantics).
+not expressible against codex at all — see [`permission_mode` semantics](#permission-mode-semantics).
 
 **curl** smoke test:
 
