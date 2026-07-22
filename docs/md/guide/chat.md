@@ -50,15 +50,21 @@ type Options struct {
 	Harness     string   // "codex" | "claude-code" | "opencode" | "pi" | "generic"  (required)
 	BinaryPath  string   // harness executable                                                  (required)
 	Args        []string // passed verbatim to the harness
+	Resume      string   // harness session id to resume; Args must not carry any flag the
+	                     // adapter reserves via turns.SessionControlFlags
 	WorkingDir  string
 	Env         []string
+	Effort      string   // reasoning effort ("" = harness default)
+	Model       string   // model for this run ("" = harness default)
+	PermissionMode string // launch-time permission rung ("" = harness default)
 	Cols, Rows  int      // default 120×40
 	Store       Store    // required; use memstore.New() for the in-process default
 	EventBuffer int      // default 32; Events() channel size
 
-	InputPolicy             *InputPolicy                              // declarative answers (see below)
-	OnInputRequest          func(InputRequest) (InputAnswer, bool)    // in-process answer callback
-	DisableCodexAutoDismiss bool                                      // keep Codex startup interstitials
+	InputPolicy               *InputPolicy                            // declarative answers (see below)
+	OnInputRequest            func(InputRequest) (InputAnswer, bool)  // in-process answer callback
+	DisableCodexAutoDismiss   bool                                    // keep Codex startup interstitials
+	AutoSkipCodexUpdateNotice bool                                    // auto-Skip Codex's "Update available!" menu
 }
 
 func Open(ctx context.Context, opts Options) (*Conversation, error)
@@ -68,8 +74,12 @@ func Open(ctx context.Context, opts Options) (*Conversation, error)
 `wrapper.Session` pointed at the screen, claims the wrapper-level writer lock for the conversation's
 lifetime, and spawns a `turns.Watcher` whose events drive turn-state transitions.
 
-Returns `ErrInvalidOptions` (required field missing), `ErrUnknownHarness` (`Harness` not registered),
-or a wrapped wrapper/store error.
+Returns `ErrInvalidOptions` when a required field is missing, when a required field is present but
+invalid (`Cols`/`Rows` over `math.MaxUint16`), when `Resume` collides with an argument the adapter
+reserves via `turns.SessionControlFlags`, or wrapping `wrapper.ErrInvalidConfig` for a knob the
+wrapper rejects. `ErrResumeUnsupported` is a different failure: the resolved adapter does not
+implement `turns.SessionResumer` at all, so `Resume` cannot be honoured. Also returns
+`ErrUnknownHarness` (`Harness` not registered), or a wrapped wrapper/store error.
 
 ## Control acquisition
 
@@ -257,8 +267,9 @@ control-token guard — use it with care.
 
 | Error | Returned by |
 |---|---|
-| `ErrInvalidOptions` | `Open`: required option missing or invalid. Also wraps `wrapper.ErrInvalidConfig` for an invalid `Effort` — an unknown rung, or an effort on a harness with no effort axis — so a bad option never surfaces as an internal error. `errors.Is` still matches `wrapper.ErrInvalidConfig` through the wrap |
+| `ErrInvalidOptions` | `Open`: required option missing or invalid, or a `Resume` that collides with a reserved `turns.SessionControlFlags` argument. Also wraps `wrapper.ErrInvalidConfig` for an invalid `Effort` — an unknown rung, or an effort on a harness with no effort axis — or an invalid `PermissionMode` — an unknown rung, a rung on a harness with no permission axis, a rung the target harness rejects, or a non-bypass rung contradicted by a bypass-enabling flag already in `Args` — so a bad option never surfaces as an internal error. `errors.Is` still matches `wrapper.ErrInvalidConfig` through the wrap |
 | `ErrUnknownHarness` | `Open`: `Options.Harness` not registered |
+| `ErrResumeUnsupported` | `Open` / `Reopen`: `Options.Resume` was set but the adapter does not implement `turns.SessionResumer` |
 | `ErrNoControl` | `Send` / `Answer`: control token not held |
 | `ErrTurnInFlight` | `Send`: previous assistant turn still pending |
 | `ErrInputPending` | `Send`: a prompt is awaiting an external answer |

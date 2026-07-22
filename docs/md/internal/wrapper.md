@@ -46,6 +46,8 @@ type Config struct {
 	Trace      trace.Emitter      // diagnostic events; observability only
 	Harness    string             // selects a built-in classifier ("claude", "codex", "opencode", "pi", …)
 	Effort     string             // reasoning effort ("low"|"medium"|"high"|"xhigh"|"max"; "" = default)
+	Model      string             // model for this run ("" = harness default); never validated
+	PermissionMode string         // launch-time permission rung ("" = harness default)
 	Classifier Classifier         // explicit classifier; wins over Harness
 	OnLine     func(line string)  // durable line tap (session-id / transcript hooks)
 }
@@ -54,6 +56,22 @@ type Config struct {
 When `Stdin` and `Stdout` are both real `*os.File` TTYs the wrapper auto-enables raw mode and SIGWINCH
 forwarding for the run, restoring terminal state on return. Headless callers (file/pipe/buffer stdout)
 skip both — no flag.
+
+`Effort`, `Model` and `PermissionMode` are the three execution-mode knobs. Each has its own argv
+translator, and all three are applied in order inside `wrapper.Start` — `argsWithHarnessEffort`, then
+`argsWithHarnessModel`, then `argsWithHarnessPermissionMode` — after `validateConfig` / `applyDefaults`
+and before `startSession`. That call site, not a free-floating statement, is where a fourth knob
+translator would go. The three are not symmetric: `Effort` is validated and hard-fails, `Model` is
+never validated (an unsupported harness is a silent no-op), and `PermissionMode` is validated by
+`validatePermissionMode`, restricted to the claude/codex harnesses, value-rejecting per harness
+(codex has no `plan`), and additionally rejected when a bypass-enabling flag — see the exported
+`BypassEnablingFlags(cfg.Harness)` — is already present in `Args`.
+
+Alongside those, the package exports helpers for reasoning about the rungs themselves:
+`PermissionRungs()` (the canonical rungs, least→most permissive, a fresh slice per call),
+`MorePermissive()` and `BypassEnablingFlags()`. Their full signatures and godoc live in the generated
+`docs/MODULES.md`, which `harness docs markdown` regenerates from the AST — consult it there rather
+than duplicating a signature list here that would drift against it.
 
 ## Status
 
@@ -230,7 +248,7 @@ trusting the knob, so argv wins over the knob, a bypass-enabling flag in argv is
 bypass, and it returns `""` for anything it cannot name (never as a stand-in for "default"). It is
 idempotent over injection — passing already-injected args resolves to the same rung. `structured-run`
 now puts its answer **on the wire** as `StructuredTurnResult.permission_mode`
-([guide](../guide/cli.md#the-reported-permission_mode)); note it reports the **args half only**, so a
+([guide](../guide/cli.md#the-reported-permission-mode)); note it reports the **args half only**, so a
 `--sandbox-defaults` run and a bare `--permission-mode bypass` run both report `bypass` while
 differing in root and acceptance-screen behaviour.
 
@@ -291,7 +309,7 @@ anywhere** — without the flag, nothing is added.
 (`grep IS_SANDBOX` over non-test Go: every other hit is a comment). A `bypass` rung arriving from
 `pkg/wrapper`, `pkg/chat`, `pkg/oneshot` or the chatd wire never implies it. Over the wire that is
 the documented contract, not a gap — see
-[`permission_mode` semantics](../guide/gateway.md#permission_mode-semantics).
+[`permission_mode` semantics](../guide/gateway.md#permission-mode-semantics).
 
 That env/args split is load-bearing and deliberate: the **arg** half must be reachable by every
 `wrapper.Start` caller — passthrough included — so it lives in `pkg/wrapper`; the **env** half grants

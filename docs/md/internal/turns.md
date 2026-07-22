@@ -64,6 +64,9 @@ feature-detect with a type assertion):
 | `Quitter` | `QuitSequence() []byte` | Bytes for a graceful exit (claude-code: the `/quit` command + enhanced Enter). |
 | `MessageExtractor` | `ExtractMessage(snap) (string, bool)` | Isolate the assistant reply from TUI chrome. |
 | `BusyDetector` | `Busy(snap) bool` | Distinguish "still working" from "idle at the prompt". |
+| `PermissionModeDetector` | `PermissionMode(snap) (string, bool)` | Report the harness's posture on its **primary** permission axis, read off the rendered screen. The two implementations do **not** report the same kind of value: claude-code returns a canonical rung from `wrapper.PermissionRungs()`; codex returns a **COLLABORATION-axis** value (`"plan"` or `"default"`) which is *not* a rung — codex's permissions rung lives on a second axis this interface deliberately does not model. `false` means the screen carries **no readable signal** (onboarding wall, modal over the footer), never "readable, and not plan". Deliberately absent on opencode, pi and generic. |
+| `SessionResumer` | `ResumeArgs(harnessSessionID) []string` | The argv fragment that resumes an existing harness session (e.g. `{"--resume", id}`). `chat.Open` returns `ErrResumeUnsupported` when `Options.Resume` is set and the adapter omits this. |
+| `SessionControlFlags` | `SessionControlFlags() []string` | The session-control flags chat reserves (e.g. `--resume`, `--fork-session`) and callers must not pass in `Options.Args`; a collision is `ErrInvalidOptions`. An adapter that omits it declares no reserved flags. |
 
 `Busy()` is what keeps the chat layer from reporting `complete` mid-turn; only claude-code implements
 it today (its replies stream in multiple parts). See the [adapter matrix](../guide/adapters.md) for
