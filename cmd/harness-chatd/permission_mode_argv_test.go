@@ -44,10 +44,14 @@ func fakeScriptEnvArgv(t *testing.T, s fakeharness.Script, argvOut string) []str
 
 // readArgvDump polls the argv dump the fake writes at startup. The write races
 // the launch call's return (the HTTP response can land first), so retry briefly
-// instead of reading once. Mirrors readArgv in pkg/chat/resume_conformance_test.go.
+// instead of reading once. Mirrors readArgv in pkg/chat/resume_conformance_test.go,
+// but with a longer budget: that precedent's 2s is marginal here, because these
+// cases launch a real PTY child while the rest of `go test -race ./...` saturates
+// the box, and an observed miss took just over 2s. Only the WAIT is longer — a
+// dump that never appears still fails.
 func readArgvDump(t *testing.T, path string) []string {
 	t.Helper()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 400; i++ {
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			var got []string
