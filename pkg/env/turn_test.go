@@ -80,18 +80,18 @@ func TestRunStructuredTurn_RoundTripLocal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunStructuredTurn: %v", err)
 	}
-	// The guest-side --permission-mode flag registration lives in
-	// cmd/harness-wrapper and lands separately; until it does, the freshly
-	// built runner rejects the forwarded flag with a well-formed
-	// startup_error payload (which is itself the documented failure shape).
-	// Re-run without the mode so the round-trip proper stays covered, and let
-	// the assertion below harden automatically once the flag exists.
-	if res.Status == turnproto.StatusStartupError && strings.Contains(res.Reason, "permission-mode") {
-		t.Logf("guest runner does not yet accept --permission-mode (%s); re-running without it", res.Reason)
-		cfg.PermissionMode = ""
-		if res, err = RunStructuredTurn(ctx, ws, cfg); err != nil {
-			t.Fatalf("RunStructuredTurn (no permission mode): %v", err)
-		}
+	// The guest-side --permission-mode flag registration has LANDED
+	// (cmd/harness-wrapper/flags.go), so the earlier "re-run without the mode"
+	// fallback is gone: the flag must be accepted, and the rung it launched at
+	// must come BACK on the result. Verified by running this test with the
+	// fallback still in place and confirming it no longer fired.
+	//
+	// This is the in-repo host consumer of
+	// turnproto.StructuredTurnResult.PermissionMode: pkg/env threads no code for
+	// it (RunStructuredTurn returns the parsed result verbatim), so the assertion
+	// here is what proves the field survives the host round-trip.
+	if res.PermissionMode != "auto" {
+		t.Errorf("permission_mode = %q, want %q back from the guest", res.PermissionMode, "auto")
 	}
 
 	if res.Status != turnproto.StatusCompleted {
@@ -113,6 +113,22 @@ func TestRunStructuredTurn_RoundTripLocal(t *testing.T) {
 	}
 	if res.WorkingDir == "" {
 		t.Errorf("working_dir is empty")
+	}
+
+	// The omitted variant, on the SAME workspace and script: with no mode and no
+	// permission-axis harness arg, no canonical rung can be named and the field
+	// comes back empty. Absence is the honest answer here — it does NOT mean the
+	// turn was restricted.
+	cfg.PermissionMode = ""
+	noMode, err := RunStructuredTurn(ctx, ws, cfg)
+	if err != nil {
+		t.Fatalf("RunStructuredTurn (no permission mode): %v", err)
+	}
+	if noMode.Status != turnproto.StatusCompleted {
+		t.Errorf("no-mode status = %q, want %q (reason: %s)", noMode.Status, turnproto.StatusCompleted, noMode.Reason)
+	}
+	if noMode.PermissionMode != "" {
+		t.Errorf("no-mode permission_mode = %q, want empty (no canonical rung to name)", noMode.PermissionMode)
 	}
 }
 
