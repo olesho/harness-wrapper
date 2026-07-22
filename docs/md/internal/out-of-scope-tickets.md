@@ -283,3 +283,125 @@ already carries the sibling tickets ORCHE-14/15/26 on this subsystem; (2)
 this is the only thing that restores promotion, it is not a code change, and it
 kills every in-flight agent in the fleet, so it must be scheduled; (3) file a
 separate ticket for the 46 retained `agent-release-*` worktrees.
+
+## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
+
+**Filed as:** `[observer] crashed/dead spawner plan-reviewer left
+HARNESS-WRAPPER-79 working (dead-spawner:plan-reviewer:HARNESS-WRAPPER-79)`,
+escalated to `review`.
+
+**This one is confirmed real — unlike §-23 and §-26.** Both of those were
+false positives: the watched task had already moved on (a different live
+agent held it, or it carried a hand-off label), so "went quiet" meant
+"finished and released". Here neither is true. HARNESS-WRAPPER-79 is still
+`status: in_progress` with `assignee: agent:plan-reviewer:f9f5694a-680a-427d-a043-97dc9534cf9d`
+— the same agent the anomaly names — no hand-off label (`implemented`) ever
+appeared, and attempt 2's worktree
+(`~/.orche/worktrees/agent-plan-reviewer-f9f5694a-…`) shows no file activity
+and no comment. The lease is genuinely stranded: the plan-reviewer stopped
+heartbeating for 308s while still holding the task, and nothing will release
+it. The anomaly is filing correctly. Only the *location* of the defect is
+wrong, which is what puts it here rather than in the false-positive class.
+
+**Why it landed here:** same mechanism as §-23/§-26 — the dead-spawner
+detector files against the *task* it is watching (`HARNESS-WRAPPER-79`, in
+this repo's fleet-db workspace), so the ticket lands in this repo even though
+the detector, the heartbeat emitter, and the lease machinery all live in
+`orche`.
+
+**Actual defect location:** `orche`'s `@orche/agent` package. The chain is
+entirely out-of-repo: a run heartbeats via `packages/agent/src/spawner.ts:823`
+(`emitScreen(s => s.agentHeartbeat(...))`); a hard kill (SIGKILL/OOM/host
+death) stops it without reaching finalize, so no in-process JS runs and
+neither `agent_stopped` nor `task_released` is ever published;
+`apps/screen/src/state.ts:365-417` can only leave `'working'` via those two
+events, so the record wedges; the observer replays the same bus
+(`packages/agent/src/observer.ts:519-545`) and flags every
+`status === 'working' && now - agent.lastSeen > deadSpawnerMs` agent.
+`fileAnomaly`'s grounding guard (`observer.ts:846-854`) drops a
+`dead-spawner` only when the task status is in `DEAD_SPAWNER_TERMINAL_STATUSES`
+(`closed`, `tombstone`; `observer.ts:111`) — and `in_progress` is
+deliberately *not* terminal (ORCHE-130) — so the anomaly correctly files.
+
+**Correction to the observer's own suggestions.** Two of the four are
+**already implemented** in `orche` (grounded against that tree at `737ea45`);
+a worker acting on the comment verbatim would write redundant code:
+
+- *"It comments and dies while keeping the assignment"* is **inaccurate for
+  the deadline path**: `spawner.ts:1219-1221` runs `onTimeout`, `:1226-1235`
+  posts the `agent run <outcome>: <reason>` comment, and `:1237-1258` calls
+  `finalize(client, { outcome, reopenOnTimeout, priorLabels, … })` — the
+  lease is always released, the task reopened/transitioned only if owned. It
+  is accurate only for a hard kill, where no JS runs at all.
+- *"Bound the retries"* is **already done**:
+  `packages/agent/src/finalize.ts:60` `MAX_CONSECUTIVE_TIMEOUTS = 3`, tracked
+  via the `timeout-attempt-<n>` label prefix (`finalize.ts:61,133`) and
+  routed to `blocked` + `stuck` at `finalize.ts:426-444`. The
+  `timeout-attempt-1` label on HARNESS-WRAPPER-79 is that machinery working:
+  attempt 1 (`agent:plan-reviewer:f7a7b413`, `agent run timeout: context
+  deadline exceeded` at 17:45:30Z) timed out, released, reopened; attempt 2
+  claimed.
+
+**The two genuine remaining gaps:**
+
+1. **No out-of-band reaper** for an agent that dies *without* reaching
+   `finalize` — the gap ORCHE-130 explicitly left open.
+   `apps/screen/src/state.ts:530-541`'s `orphanMs` reaper prunes only the
+   screen app's local dashboard state; `observer.ts` never calls `prune()`,
+   and fleet-db's `assignee`/`in_progress` is never touched. A hard-killed
+   run therefore wedges the ticket in **both** the replayed registry and
+   fleet-db, indefinitely, with no timer that can ever clear it. This is
+   exactly what happened to HARNESS-WRAPPER-79.
+2. **The §-26 refinement is still unfiled in ORCHE.** `fileAnomaly`
+   (`observer.ts:818-855`) compares only `task.status`; it never compares
+   `task.assignee` against `a.facts.agentId`, nor checks hand-off labels like
+   `implemented`. That is the fix specified in §HARNESS-WRAPPER-26 above and
+   still not landed. Note it would **not** have suppressed this ticket — the
+   assignee is unchanged here — which is the correct behaviour and must stay
+   that way.
+
+**Confirmed out of repo.** Re-verified at this base (`c29a129`):
+`git grep -niE "dead-spawner|fileAnomaly|task_released|agent_stopped|heartbeat.*release|spawner"`
+over tracked source returns exactly **two coincidental hits** —
+`internal/env/openshell/openshell.go:266` (`// … a real process spawner.`) and
+`pkg/harness/claude/subagent_test.go:55` (`// … parented to the spawner.`);
+neither is a fleet spawner, heartbeat emitter, lease reaper, or anomaly
+detector. `go.mod` declares `module github.com/olesho/harness-wrapper` — a Go
+repo with no `packages/` or `apps/` tree, so `packages/agent/src/spawner.ts`,
+`packages/agent/src/observer.ts`, `packages/agent/src/finalize.ts`, and
+`apps/screen/src/state.ts` do not exist here. This repo's surface
+(`pkg/wrapper`, `pkg/screen`, `pkg/turns`, `pkg/chat`, `cmd/harness-chatd`)
+supervises a *single* harness PTY and has no notion of fleet leases,
+assignees, or agent liveness.
+
+**Routing.** File as a follow-up to `ORCHE-130` in the **ORCHE** workspace,
+per the standing human directive on HARNESS-WRAPPER-24 (2026-07-16): a human
+(oleh) already ruled on this exact class — *"Do not reopen in
+HARNESS-WRAPPER"* — and re-filed it as `fleet-db://ORCHE/ORCHE-130`.
+
+**Resolution:** no source change made in this repo — adding fleet/lease/
+observer logic to a Go PTY-supervision library would be a mis-port, and this
+dedup/out-of-scope entry is the only safe and correct in-repo edit. For the
+human at the `review` gate:
+
+1. **Unblock HARNESS-WRAPPER-79 now** — unassign
+   `agent:plan-reviewer:f9f5694a-…` and set it back to `open` so a fresh
+   reviewer can claim it. It is pinned to a non-progressing agent with no
+   timer that will ever release it. This is an operational fleet-db write
+   against another agent's live lease, which an automated worker must not
+   perform unilaterally.
+2. **Consider decomposing HARNESS-WRAPPER-79.** It is an oversized plan
+   (permission-mode detection *and* mid-session switching, spanning
+   `pkg/turns`, `pkg/chat`, `pkg/discovery`, plus corpus verification). Two
+   reviewers have now exceeded the run deadline on it; a third will hit the
+   same wall and burn the third `timeout-attempt` slot, parking it at
+   `blocked`/`stuck`.
+3. **Route the code fix to ORCHE** as a follow-up to ORCHE-130, with tests in
+   `packages/agent/test/`: (a) an out-of-band reaper test — an agent stuck
+   `working` past a liveness threshold with no `agent_stopped`/`task_released`
+   gets its fleet-db assignment released and the task reopened; (b) an
+   `observer.unit.test.ts` case asserting `fileAnomaly` drops a
+   `dead-spawner` when `task.assignee !== anomaly.facts.agentId` or the task
+   carries a hand-off label (`implemented`), while **still filing** when the
+   assignee is unchanged — the HARNESS-WRAPPER-79 shape must keep coming
+   through.
