@@ -121,7 +121,7 @@ contributing the env half only. `--sandbox-defaults` paired with **any other** m
 codex's native `danger-full-access` — exits 2 with:
 
 ```
---sandbox-defaults is incompatible with --permission-mode <mode> (only --permission-mode bypass composes with it)
+harness-wrapper: --sandbox-defaults is incompatible with --permission-mode <mode> (only --permission-mode bypass composes with it)
 ```
 
 In an interactive `run` the acceptance screen reaches the human on the tty; **`--auto-accept`** is the

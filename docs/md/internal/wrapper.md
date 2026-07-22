@@ -255,6 +255,10 @@ here:
 - the bypass acceptance screen shares the `trust_prompt` kind with folder trust, so no policy can
   target it independently (it would need its own `bypass_acceptance` kind).
 
+The flag name and its usage string are a deliberate cross-repo mirror: `cmd/harness-wrapper/testdata/flags.golden`
+here and the TypeScript half's `test/cli/testdata/wrapper-flags.golden` are meant to agree. If they
+diverge, raise it in the META-HARNESS ticket rather than forking behavior on one side.
+
 Dedup rules make the injection idempotent against caller-supplied values:
 
 - the arg is not appended when already present as the exact token **or** in the
