@@ -477,6 +477,15 @@ func (*Adapter) Busy(snap screen.Snapshot) bool {
 	return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text)
 }
 
+// PermissionMode reports Claude Code's current permission posture as a
+// canonical rung (plan|manual|ask|auto|bypass), read off the footer marker in
+// the rendered screen. It returns ("", false) when the screen carries no
+// readable marker — an onboarding/auth wall, a modal covering the footer, or a
+// release that renamed the modes. Implements turns.PermissionModeDetector.
+func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
+	return permissionModeFromFooter(snap.Text)
+}
+
 // quitCommand is Claude Code's "/quit" slash command followed by its enhanced
 // Enter (CSI 13 u). Claude's TUI runs the kitty keyboard protocol, so a plain
 // CR does NOT submit the composer — it only inserts a newline and "/quit" never
