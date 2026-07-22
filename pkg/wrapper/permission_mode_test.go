@@ -585,6 +585,45 @@ func TestValidateConfig_PermissionMode(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_PermissionModeMessages pins the two message texts the
+// CLI, pkg/env and the TypeScript meta-harness half quote verbatim. Reword
+// them here only in lockstep with those consumers.
+func TestValidateConfig_PermissionModeMessages(t *testing.T) {
+	planOnCodex := validateConfig(&Config{
+		BinaryPath: "x", Stdout: io.Discard, Harness: "codex", PermissionMode: "plan",
+	})
+	const wantPlan = `permission mode "plan" is not supported by the codex harness (no launch-time flag; use /plan after launch)`
+	if planOnCodex == nil || !strings.Contains(planOnCodex.Error(), wantPlan) {
+		t.Fatalf("plan-on-codex err = %v, want it to contain %q", planOnCodex, wantPlan)
+	}
+
+	unsupported := validateConfig(&Config{
+		BinaryPath: "x", Stdout: io.Discard, Harness: "opencode", PermissionMode: "manual",
+	})
+	const wantUnsupported = "PermissionMode is only supported for claude and codex harnesses"
+	if unsupported == nil || !strings.Contains(unsupported.Error(), wantUnsupported) {
+		t.Fatalf("unsupported-harness err = %v, want it to contain %q", unsupported, wantUnsupported)
+	}
+
+	contradiction := validateConfig(&Config{
+		BinaryPath: "x", Stdout: io.Discard, Harness: "claude",
+		Args: []string{SkipPermissionsFlag}, PermissionMode: "manual",
+	})
+	const wantContradiction = `PermissionMode "manual" contradicts --dangerously-skip-permissions in Args`
+	if contradiction == nil || !strings.Contains(contradiction.Error(), wantContradiction) {
+		t.Fatalf("claude contradiction err = %v, want it to contain %q", contradiction, wantContradiction)
+	}
+
+	codexContradiction := validateConfig(&Config{
+		BinaryPath: "x", Stdout: io.Discard, Harness: "codex",
+		Args: []string{codexBypassFlag}, PermissionMode: "manual",
+	})
+	const wantCodexContradiction = `PermissionMode "manual" contradicts --dangerously-bypass-approvals-and-sandbox in Args`
+	if codexContradiction == nil || !strings.Contains(codexContradiction.Error(), wantCodexContradiction) {
+		t.Fatalf("codex contradiction err = %v, want it to contain %q", codexContradiction, wantCodexContradiction)
+	}
+}
+
 // TestValidateConfig_BypassModeWithBypassFlagSuppressesInjection covers the
 // negative of the contradictory-argv rejection: a bypass-class mode paired with
 // the matching bypass flag is ACCEPTED, and injection is suppressed so argv
