@@ -469,6 +469,26 @@ func writeRunTurnError(w http.ResponseWriter, err error) {
 
 func writeChatError(w http.ResponseWriter, err error) {
 	switch {
+	// Checked AHEAD of chat.ErrInvalidOptions on purpose. pkg/chat classifies a
+	// rejected wrapper.Config as ErrInvalidOptions (multi-%w, so both sentinels
+	// match), which would otherwise shadow this arm and flip the wire code from
+	// invalid_config to invalid_options — a code the frozen conformance corpus
+	// (test/conformance/gateway/errorResponse.invalid_config.json) and
+	// docs/md/guide/gateway.md pin for exactly this condition. More specific
+	// sentinel wins; the 400 status is the same either way.
+	//
+	// wrapper.validateConfig rejects a bad Config before the harness process
+	// launches, and chat.Open wraps the sentinel, so errors.Is survives. A
+	// blanket 400 is safe *today* because every ErrInvalidConfig condition a
+	// chatd client can provoke is client-supplied: "Stdout is required" cannot
+	// fire (chat always sets Stdout), the IdleClassify/StaleThreshold ordering
+	// checks cannot fire (chatd never sets those knobs), "BinaryPath is
+	// required" is caught earlier as chat.ErrInvalidOptions (already a 400),
+	// and Effort/PermissionMode come straight off the request. Whoever later
+	// adds a *server-side* cause to validateConfig should note that chatd
+	// would blame the client for it, and split this arm.
+	case errors.Is(err, wrapper.ErrInvalidConfig):
+		writeError(w, http.StatusBadRequest, "invalid_config", err.Error())
 	case errors.Is(err, chat.ErrInvalidOptions):
 		writeError(w, http.StatusBadRequest, "invalid_options", err.Error())
 	case errors.Is(err, chat.ErrUnknownHarness):
@@ -491,18 +511,6 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "conflicting_answer", err.Error())
 	case errors.Is(err, chat.ErrClosed):
 		writeError(w, http.StatusGone, "closed", err.Error())
-	// wrapper.validateConfig rejects a bad Config before the harness process
-	// launches, and chat.Open wraps the sentinel, so errors.Is survives. A
-	// blanket 400 is safe *today* because every ErrInvalidConfig condition a
-	// chatd client can provoke is client-supplied: "Stdout is required" cannot
-	// fire (chat always sets Stdout), the IdleClassify/StaleThreshold ordering
-	// checks cannot fire (chatd never sets those knobs), "BinaryPath is
-	// required" is caught earlier as chat.ErrInvalidOptions (already a 400),
-	// and Effort/PermissionMode come straight off the request. Whoever later
-	// adds a *server-side* cause to validateConfig should note that chatd
-	// would blame the client for it, and split this arm.
-	case errors.Is(err, wrapper.ErrInvalidConfig):
-		writeError(w, http.StatusBadRequest, "invalid_config", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 	}

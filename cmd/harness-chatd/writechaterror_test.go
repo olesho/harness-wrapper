@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http/httptest"
 	"testing"
 
@@ -19,6 +21,7 @@ func TestWriteChatError_Codes(t *testing.T) {
 		status int
 		code   string
 	}{
+		{chat.ErrInvalidOptions, 400, "invalid_options"},
 		{chat.ErrUnknownOption, 400, "unknown_option"},
 		{chat.ErrNotMultiSelect, 400, "not_multi_select"},
 		{chat.ErrConflictingAnswer, 400, "conflicting_answer"},
@@ -47,5 +50,30 @@ func TestWriteChatError_Codes(t *testing.T) {
 				t.Errorf("error = %q, want %q", body.Error, tc.err.Error())
 			}
 		})
+	}
+}
+
+// pkg/chat classifies a rejected wrapper.Config as chat.ErrInvalidOptions with
+// a multi-%w wrap, so a real chat.Open error satisfies errors.Is for BOTH
+// sentinels and the switch order alone decides the code. The wrapper arm is the
+// more specific one and must win — invalid_config is the code the frozen
+// conformance corpus pins for an invalid effort / permission_mode.
+func TestWriteChatError_InvalidConfigWinsOverInvalidOptions(t *testing.T) {
+	err := fmt.Errorf("%w: chat: wrapper start: %w", chat.ErrInvalidOptions, fmt.Errorf("%w: Effort must be one of low, medium, high, xhigh, max", wrapper.ErrInvalidConfig))
+	if !errors.Is(err, chat.ErrInvalidOptions) || !errors.Is(err, wrapper.ErrInvalidConfig) {
+		t.Fatalf("test fixture no longer matches both sentinels: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	writeChatError(rec, err)
+	if rec.Code != 400 {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	var body errorResponse
+	if decErr := json.Unmarshal(rec.Body.Bytes(), &body); decErr != nil {
+		t.Fatalf("decode body: %v", decErr)
+	}
+	if body.Code != "invalid_config" {
+		t.Errorf("code = %q, want invalid_config", body.Code)
 	}
 }
