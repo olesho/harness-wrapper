@@ -267,6 +267,20 @@ func TestArgsWithHarnessPermissionMode(t *testing.T) {
 			want:    []string{"--ask-for-approval=untrusted", "exec"},
 		},
 		{
+			name:    "codex existing -s=value wins",
+			harness: "codex",
+			args:    []string{"-s=read-only", "exec"},
+			mode:    "bypass",
+			want:    []string{"-s=read-only", "exec"},
+		},
+		{
+			name:    "codex existing -a=value wins",
+			harness: "codex",
+			args:    []string{"-a=never", "exec"},
+			mode:    "manual",
+			want:    []string{"-a=never", "exec"},
+		},
+		{
 			// clap's attached short form: no separator between flag and value.
 			name:    "codex attached short -sread-only wins",
 			harness: "codex",
