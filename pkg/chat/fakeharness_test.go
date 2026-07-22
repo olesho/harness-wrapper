@@ -51,7 +51,11 @@ const (
 // Conversation. The script is delivered via a temp file referenced by the
 // FAKEHARNESS_SCRIPT env var; Env is the full environment (wrapper.Start
 // replaces, not merges) so the child keeps PATH/TERM.
-func openFake(t *testing.T, script fakeharness.Script) *Conversation {
+//
+// mutate lets a scenario adjust the launch Options before Open — the
+// permission-mode ring tests use it to set the launch rung / argv that decide
+// the cycle length. It runs last, so it can override any default set here.
+func openFake(t *testing.T, script fakeharness.Script, mutate ...func(*Options)) *Conversation {
 	t.Helper()
 	bin := buildFakeHarness(t)
 
@@ -64,7 +68,7 @@ func openFake(t *testing.T, script fakeharness.Script) *Conversation {
 		t.Fatalf("write script: %v", err)
 	}
 
-	conv, err := Open(context.Background(), Options{
+	opts := Options{
 		Harness:    script.Harness,
 		BinaryPath: bin,
 		Env:        append(os.Environ(), fakeharness.EnvVar+"="+scriptPath),
@@ -73,7 +77,12 @@ func openFake(t *testing.T, script fakeharness.Script) *Conversation {
 		Rows:       40,
 		idleGap:    testIdleGap,
 		markerGap:  testMarkerGap,
-	})
+	}
+	for _, m := range mutate {
+		m(&opts)
+	}
+
+	conv, err := Open(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

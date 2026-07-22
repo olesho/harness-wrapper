@@ -374,14 +374,16 @@ func TestSetPermissionMode_BlockedThenAnswerThenRetry_NoDeadlock(t *testing.T) {
 		// PendingInput reports — which is what makes Answer able to consume it.
 		pending := conv.PendingInput()
 		if pending == nil {
-			t.Fatalf("PendingInput() = nil while blocked")
+			t.Errorf("PendingInput() = nil while blocked")
+			return
 		}
 		if blocked.Request.ID != pending.ID {
 			t.Errorf("blocked.Request.ID = %q, want %q (PendingInput)", blocked.Request.ID, pending.ID)
 		}
 		if len(blocked.Request.Options) != len(pending.Options) {
-			t.Fatalf("blocked.Request has %d options, PendingInput has %d",
+			t.Errorf("blocked.Request has %d options, PendingInput has %d",
 				len(blocked.Request.Options), len(pending.Options))
+			return
 		}
 		for i := range pending.Options {
 			if blocked.Request.Options[i] != pending.Options[i] {

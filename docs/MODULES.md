@@ -901,6 +901,17 @@ the translation to keys.
 #### `type Options`
 Options configures a single Conversation.
 
+#### `type PermissionModeBlockedError`
+PermissionModeBlockedError is the concrete error behind
+ErrPermissionModeBlockedByInput. It carries the client-facing
+chat.InputRequest (NOT the internal turns.InputRequest): exactly the value
+PendingInput returns and Answer accepts, so the documented
+resolve-then-retry recovery round-trips without a type conversion the caller
+cannot perform.
+
+Observed is the last posture read before the driver stopped pressing; it is
+also returned as SetPermissionMode's string result.
+
 #### `type ReopenOptions`
 ReopenOptions configures Reopen. It is the Options knobs that make sense when
 re-attaching to an already-stored session: the harness, working dir, and
