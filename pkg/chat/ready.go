@@ -269,6 +269,52 @@ func onboardingWall(harness, text string) bool {
 	}
 }
 
+// --- usage / session-limit wall detection ---
+//
+// When the subscription's rolling usage window is exhausted, claude-code renders
+// a wall line IN PLACE of an assistant reply, e.g.
+//
+//	"You've hit your session limit · resets 10:20pm (Europe/Warsaw)"
+//
+// The TUI paints it as an assistant bubble, so ExtractMessage captures it and it
+// would otherwise be persisted as a genuine reply — a false success whose "Text"
+// is the wall. usageLimitMessage lets the completion path detect it and error the
+// turn with a usage-limit reason instead (see Conversation.usageLimitRelabel).
+//
+// Mirrored inline from the wrapper's sessionLimitRE (pkg/wrapper/internal/harness/
+// claude), which pkg/chat cannot import — it lives under pkg/wrapper's internal/
+// tree — and which classifies a FINISHED RUN's recent output rather than an
+// in-conversation turn. Anchored on the wall's own sentence and captured to
+// end-of-line so the reset time rides along in the reason; a genuine reply merely
+// mentioning a "usage limit" in prose won't match, because the CLI only ever emits
+// this exact phrasing and the leading glyph + "hit your … limit" anchor rejects
+// incidental prose.
+var claudeUsageLimitRE = regexp.MustCompile(
+	`(?im)^` + horizontalSpace + `*(?:[⎿·●⏺]` + horizontalSpace + `*)?(You(?:'ve|\s+have)\s+hit\s+your\s+(?:session|usage)\s+limit[^\r\n]*)$`,
+)
+
+// horizontalSpace matches one space-like character that is NOT a line break, so
+// the (?m)-anchored patterns above stay on their own line. Mirrors the wrapper's
+// constant of the same name.
+const horizontalSpace = `[\t \x{00A0}]`
+
+// usageLimitMessage returns the harness usage/session-limit wall line (its "out of
+// quota" screen, rendered in place of a reply) when present — trimmed, including
+// the "· resets …" tail — and false when absent. Returns false for any harness
+// without a known wall (only claude-code today).
+func usageLimitMessage(harness, text string) (string, bool) {
+	switch harness {
+	case chatClaudeCode:
+		m := claudeUsageLimitRE.FindStringSubmatch(text)
+		if m == nil {
+			return "", false
+		}
+		return strings.TrimSpace(m[1]), true
+	default:
+		return "", false
+	}
+}
+
 // authRequired reports whether the rendered screen shows a harness login-expiry /
 // logged-out banner OR a first-run onboarding wizard — either way the turn can
 // produce no assistant output until the human authenticates. Returns false for

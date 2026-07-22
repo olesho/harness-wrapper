@@ -583,7 +583,12 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			turn.Text = c.assistantText(*ev.Snap)
 			// A "completed" turn that yielded no real reply on a logged-out /
 			// not-onboarded screen is not a success — relabel it ReasonAuthRequired.
-			c.authRelabel(turn, *ev.Snap)
+			// A turn whose "reply" is in fact the usage-limit wall is not a success
+			// either; that one is a NON-empty extraction, so it must be checked first
+			// (authRelabel's empty-gate would let it through).
+			if !c.usageLimitRelabel(turn, *ev.Snap) {
+				c.authRelabel(turn, *ev.Snap)
+			}
 		}
 	case turns.Blocked:
 		turn.State = TurnStateErrored
@@ -812,8 +817,12 @@ func (c *Conversation) maybeIdleComplete() {
 	turn.Text = c.assistantText(snap)
 	// The claude-code false-success lands HERE: a logged-out turn ends on a
 	// "✻ … for 0s" marker and would otherwise complete with the raw banner screen
-	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted.
-	c.authRelabel(turn, snap)
+	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted —
+	// or ReasonUsageLimited when the "reply" is a usage-limit wall, which (being a
+	// non-empty extraction) would otherwise slip past authRelabel's empty-gate.
+	if !c.usageLimitRelabel(turn, snap) {
+		c.authRelabel(turn, snap)
+	}
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
@@ -959,6 +968,36 @@ func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
 	}
 	turn.State = TurnStateErrored
 	turn.Reason = ReasonAuthRequired
+	turn.Text = ""
+	return true
+}
+
+// usageLimitRelabel converts a turn that "completed" while the harness was out of
+// subscription quota into the canonical ReasonUsageLimited failure. claude-code
+// paints its usage/session-limit wall as an assistant bubble, so the turn ends on
+// a normal end-of-turn marker and the wall itself is what ExtractMessage returns —
+// persisting it would be a false SUCCESS whose "reply" is the wall, which a
+// downstream validator then rejects as a bogus answer, retrying until a TRANSIENT
+// quota outage blocks the task.
+//
+// Unlike authRelabel this is deliberately NOT gated on an empty extraction — the
+// wall IS the extraction — so it must run FIRST at each completion site (an
+// empty-gated authRelabel would decline anyway, but the ordering is what makes the
+// intent explicit). The probe prefers the clean extracted reply and falls back to
+// the whole screen, so it fires whether the CLI renders the wall as a "⏺" bubble
+// (captured) or only as a "⎿" decoration (not captured, still on screen).
+// Returns true if it relabeled the turn.
+func (c *Conversation) usageLimitRelabel(turn *Turn, snap screen.Snapshot) bool {
+	probe := c.cleanAssistantText(snap)
+	if strings.TrimSpace(probe) == "" {
+		probe = snap.Text
+	}
+	msg, ok := usageLimitMessage(c.opts.Harness, probe)
+	if !ok {
+		return false
+	}
+	turn.State = TurnStateErrored
+	turn.Reason = ReasonUsageLimited + " (" + msg + ")"
 	turn.Text = ""
 	return true
 }

@@ -83,6 +83,18 @@ const (
 // Conversation.handleTurnsEvent); it explains a failure, it never completes one.
 const ReasonAuthRequired = "auth_required: harness login expired or re-authentication required — renew the harness login"
 
+// ReasonUsageLimited is the canonical Turn.Reason recorded when a turn produced no
+// assistant reply because the harness subscription's usage/session window is
+// exhausted — claude-code renders a wall ("You've hit your session limit · resets
+// 10:20pm …") in place of a reply. Like ReasonAuthRequired the stable
+// "usage_limit:" prefix is a machine token consumers match to tell a TRANSIENT
+// quota outage (retry once the window resets) apart from a genuine task failure —
+// so an orchestrator can reopen the task blamelessly instead of counting it toward
+// a runaway/block guard. The specific reset time rides along in a trailing "(…)"
+// detail. Set only at a turn's terminal point when the "reply" was in fact the wall
+// (see Conversation.usageLimitRelabel).
+const ReasonUsageLimited = "usage_limit: harness usage or session limit reached — retry after the quota window resets"
+
 // Turn is one message in the conversation.
 type Turn struct {
 	ID          string
