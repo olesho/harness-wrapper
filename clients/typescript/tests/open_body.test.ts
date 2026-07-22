@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Client, type Effort, type OpenOptions } from "../src/index.js";
+import { Client, type Effort, type OpenOptions, type PermissionMode } from "../src/index.js";
 import { startStub } from "./stub.js";
 
-/** The seven keys `open()` has always posted, before effort/model existed. */
+/** The seven keys `open()` has always posted, before the typed knobs existed. */
 const BASE_KEYS = ["args", "binary_path", "cols", "env", "harness", "rows", "working_dir"];
 
 async function openBody(opts: OpenOptions): Promise<Record<string, unknown>> {
@@ -19,7 +19,7 @@ async function openBody(opts: OpenOptions): Promise<Record<string, unknown>> {
   }
 }
 
-test("omitted effort/model post exactly the historical seven keys", async () => {
+test("omitted knobs post exactly the historical seven keys", async () => {
   const body = await openBody({ harness: "codex", binaryPath: "/bin/codex" });
   assert.deepEqual(Object.keys(body).sort(), BASE_KEYS);
 });
@@ -46,4 +46,26 @@ test("an explicit empty effort is sent as \"\" (presence, not truthiness)", asyn
     effort: "" as Effort,
   });
   assert.equal(body.effort, "");
+});
+
+test("permissionMode is posted as permission_mode alongside the seven keys", async () => {
+  const body = await openBody({
+    harness: "claude-code",
+    binaryPath: "/bin/claude",
+    permissionMode: "plan",
+  });
+  assert.deepEqual(Object.keys(body).sort(), [...BASE_KEYS, "permission_mode"].sort());
+  assert.equal(body.permission_mode, "plan");
+});
+
+test("an explicit empty permissionMode is sent as \"\" (presence, not truthiness)", async () => {
+  // Same contract as effort: the cast forwards a value outside the union
+  // verbatim, and "" reaches the server as "" (a no-op there) rather than
+  // being dropped by a truthiness check.
+  const body = await openBody({
+    harness: "codex",
+    binaryPath: "/bin/codex",
+    permissionMode: "" as PermissionMode,
+  });
+  assert.equal(body.permission_mode, "");
 });

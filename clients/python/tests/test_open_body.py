@@ -33,7 +33,7 @@ class OpenBodyTest(unittest.TestCase):
         host, port = self.server.server_address
         self.client = Client(f"http://{host}:{port}")
 
-    def test_defaults_omit_effort_and_model(self):
+    def test_defaults_omit_the_typed_knobs(self):
         self.client.open(harness="codex", binary_path="/usr/local/bin/codex")
         self.assertEqual(set(self.server.captured), BASE_KEYS)
 
@@ -52,6 +52,22 @@ class OpenBodyTest(unittest.TestCase):
     def test_empty_effort_is_sent_not_dropped(self):
         self.client.open(harness="codex", binary_path="/x", effort="")
         self.assertEqual(self.server.captured["effort"], "")
+
+    def test_permission_mode_is_sent(self):
+        self.client.open(
+            harness="claude-code",
+            binary_path="/usr/local/bin/claude",
+            permission_mode="plan",
+        )
+        body = self.server.captured
+        self.assertEqual(set(body), BASE_KEYS | {"permission_mode"})
+        self.assertEqual(body["permission_mode"], "plan")
+
+    def test_empty_permission_mode_is_sent_not_dropped(self):
+        # Presence, not truthiness: "" is a server-side no-op, but a falsy
+        # check here would silently drop the key instead of sending it.
+        self.client.open(harness="codex", binary_path="/x", permission_mode="")
+        self.assertEqual(self.server.captured["permission_mode"], "")
 
 
 if __name__ == "__main__":

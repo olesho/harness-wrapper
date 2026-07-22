@@ -98,6 +98,16 @@ as 400 `invalid_config`. Two residual gaps remain:
 
 The one-shot response does not echo the mode; only the conversation listing reports it.
 
+**codex has no launch-time plan mode.** `permission_mode: "plan"` against codex is a 400
+`invalid_config`, not a no-op: codex ships no launch flag for the non-executing rung, and silently
+dropping it would start codex with *no* launch-time restriction for a caller who explicitly asked for
+the most restrictive one. Codex plan mode is reachable only in-band, by sending `/plan` as a message
+once the conversation is open. Everywhere else the vocabulary is the canonical rungs `plan`, `manual`,
+`ask`, `auto`, `bypass`, plus each harness's own spellings — `acceptEdits` / `dontAsk` /
+`bypassPermissions` for claude and claude-code, `read-only` / `workspace-write` /
+`danger-full-access` for codex. A native spelling sent to the harness that does not own it is
+rejected, not ignored.
+
 **`bypass` over the wire has no `IS_SANDBOX=1`.** The `--sandbox-defaults` [CLI flag](cli.md#flags)
 contributes args **and** env — notably `IS_SANDBOX=1`, which suppresses claude-code's *Bypass
 Permissions mode* acceptance screen and allows running as root. chatd has no `--sandbox-defaults`
@@ -131,6 +141,17 @@ the reply, tear down. Supply an `input_policy` to make an unattended turn surviv
 ## Reference clients
 
 The repo ships runnable example clients under [`clients/`](https://github.com/olesho/harness-wrapper/tree/main/clients).
+
+Both shipped clients expose the three execution-mode knobs on `open()` as typed optional parameters —
+`effort` / `model` / `permissionMode` in TypeScript, `effort` / `model` / `permission_mode` in Python
+— so reaching them no longer requires hand-assembling raw `args` and re-implementing the per-harness
+translation table. The typed unions (`Effort` / `PermissionMode` in TypeScript, the matching
+`Literal` aliases in Python) are **compile-time typo protection only**: the clients are thin
+transports that validate nothing at runtime and forward whatever they are given, so every rejection
+above is still the server's, surfaced as a 400. Leaving a knob unset omits its key from the request
+body entirely (rather than sending `null`), which keeps a knob-free `open()` byte-identical to the
+pre-knob clients; an explicit `""` is deliberately sent as `""`. Note that `permissionMode: "plan"` is
+not expressible against codex at all — see [`permission_mode` semantics](#permission-mode-semantics).
 
 **curl** smoke test:
 

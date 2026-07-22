@@ -57,6 +57,35 @@ export interface TurnEvent {
  */
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
+/**
+ * Launch-time permission rungs the wrapper accepts, least to most permissive,
+ * followed by the harness-native spellings it also takes. Mirrors
+ * `isSupportedPermissionMode` in `pkg/wrapper/wrapper.go`; like {@link Effort}
+ * this is compile-time typo protection only — the client performs no runtime
+ * validation and sends whatever it is given.
+ *
+ * The union is deliberately flat, but the server is not: a native spelling is
+ * accepted only by the harness that owns it. `acceptEdits` / `dontAsk` /
+ * `bypassPermissions` are claude / claude-code only; `read-only` /
+ * `workspace-write` / `danger-full-access` are codex only. Crossing them is a
+ * 400 `invalid_config`, not a silent no-op.
+ */
+export type PermissionMode =
+  // Canonical, harness-independent rungs.
+  | "plan"
+  | "manual"
+  | "ask"
+  | "auto"
+  | "bypass"
+  // claude / claude-code native --permission-mode values.
+  | "acceptEdits"
+  | "dontAsk"
+  | "bypassPermissions"
+  // codex native -s/--sandbox values.
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
 export interface OpenOptions {
   harness: string;
   binaryPath: string;
@@ -105,6 +134,35 @@ export interface OpenOptions {
    *    model string is passed through verbatim.
    */
   model?: string;
+  /**
+   * Launch-time permission posture for the harness. Like `effort` (and unlike
+   * `model`) this is **validated and hard-fails** — a mode the caller believes
+   * restricts the harness is never dropped on the floor:
+   *
+   * 1. An unknown mode, a native spelling belonging to the *other* harness, or
+   *    any mode at all on a harness with no permission axis (`"opencode"`,
+   *    `"pi"`, `"generic"`/`""`) is a 400 `invalid_config` before launch.
+   * 2. `"plan"` is rejected on codex: codex has **no launch-time flag** for the
+   *    plan rung, and a no-op would launch it unrestricted. Plan mode on codex
+   *    is only reachable in-band, by sending `/plan` after the conversation is
+   *    open.
+   * 3. An explicit permission-axis flag already in `args` wins over this field,
+   *    silently — `--permission-mode` / `--dangerously-skip-permissions` on
+   *    claude / claude-code, `-s` / `--sandbox` / `-a` / `--ask-for-approval` /
+   *    `--dangerously-bypass-approvals-and-sandbox` on codex. The two
+   *    `--dangerously-*` arms are reachable only for a bypass-class mode; any
+   *    other mode paired with them is rejected (400) rather than suppressed.
+   * 4. Restrictive rungs (`"plan"`, `"manual"`, `"ask"`) are fully enforced only
+   *    with a human at the TUI; unattended, claude's permission dialogs stall
+   *    the turn and codex's approval prompts are auto-approved (only the `-s`
+   *    sandbox axis still binds).
+   * 5. `"bypass"` over the gateway carries no `IS_SANDBOX=1` (chatd has no
+   *    `--sandbox-defaults`), so pass `IS_SANDBOX=1` in `env` or an
+   *    `input_policy` with `by_kind: {"trust_prompt": …}` — otherwise
+   *    claude-code stops on its acceptance screen as a `trust_prompt` input
+   *    request.
+   */
+  permissionMode?: PermissionMode;
 }
 
 export class HarnessChatError extends Error {
@@ -132,6 +190,7 @@ export class Client {
       // explicit "" is deliberately sent as "" (presence, not truthiness).
       effort: opts.effort,
       model: opts.model,
+      permission_mode: opts.permissionMode,
     };
     const res = await this.request<{ id: string }>("POST", "/v1/conversations", body);
     return new Conversation(this, res.id);
