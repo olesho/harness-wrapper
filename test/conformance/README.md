@@ -24,7 +24,8 @@ defined home: change the Go types, `make regen-conformance`, sync outward.
 ```
 gateway/      chatd wire DTOs (cmd/harness-chatd package-main types)
   fields.json     neutral field contract for every wireTypes() DTO
-  <DTO>.<case>.json   example instances (turnDTO, inputRequestDTO, answerRequest, errorResponse)
+  <DTO>.<case>.json   example instances (turnDTO, inputRequestDTO, answerRequest,
+                      openRequest, conversationSummary, errorResponse)
 turnresult/   StructuredTurnResult (pkg/turnproto) + embedded transcript.Event / Usage
   fields.json     neutral field contract
   StructuredTurnResult.<case>.json   example instances per TurnStatus + optional variants
@@ -123,6 +124,7 @@ Some contracts are HTTP/CLI *behavior*, represented by a fixture plus a row here
 |-----------|--------|---------|
 | `option_ids` on a non-`multi_select` prompt | HTTP **400** | `gateway/errorResponse.not_multi_select.json` |
 | turn status `deadline` | exit **124** + `DeadlineLine` on stderr | `cli/emit_pairing.json` |
+| invalid `permission_mode` (or `effort`) | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
 
 The HTTP status itself is asserted by chatd's own handler tests (HARNESS-WRAPPER-49),
 not by the corpus round-trip.
