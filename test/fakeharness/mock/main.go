@@ -114,10 +114,20 @@ func runNeedsInput(prompt, expected string) {
 func runTrust() {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("Do you trust the files in this folder?")
-	fmt.Println()
-	fmt.Println("❯ 1. Yes, proceed")
-	fmt.Println("  2. No, exit")
+	// Paint the whole dialog in ONE write. A real TUI emits its dialog as a
+	// single screen update, and the watcher surfaces an input request from the
+	// first frame that matches — with no settle window (see
+	// Conversation.handleInputRequested). Printing the menu line-by-line left a
+	// window in which the emulated screen held the question and option 1 but not
+	// yet option 2, so the request surfaced carrying ONE option. Locally the
+	// writes coalesce and it passes; on a loaded CI runner the reader lands in
+	// that window and `TestSSE_TrustDialogSurfacedAndAnswered` fails with
+	// "options = [{ID:1 … Yes, proceed}], want 2". That is an artifact of the
+	// fixture dribbling its paint, not of the code under test.
+	fmt.Print("Do you trust the files in this folder?\n" +
+		"\n" +
+		"❯ 1. Yes, proceed\n" +
+		"  2. No, exit\n")
 
 	choice, _ := reader.ReadString('\n')
 	if strings.TrimRight(choice, "\r\n") != "1" {
