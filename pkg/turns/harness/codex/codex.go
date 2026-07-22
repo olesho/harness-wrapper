@@ -164,6 +164,33 @@ func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
 	return m[1], true
 }
 
+// PermissionMode reports codex's COLLABORATION-axis posture — "plan" or
+// "default" — read off the rendered screen. It returns ("", false) only when
+// the screen carries no readable signal at all (a sign-in wall, an interstitial
+// covering the composer, a blank frame); codex's default mode paints no marker,
+// and that absence is reported as ("default", true), never as unknown.
+// Implements turns.PermissionModeDetector.
+//
+// Two asymmetries are deliberate and are NOT contradictions:
+//
+//  1. This returns "plan" for a mid-session codex even though
+//     `--permission-mode plan` is REJECTED at launch for codex
+//     (validatePermissionMode, pkg/wrapper/wrapper.go:367-372). Different
+//     axes: the launch flag names a permissions RUNG, while codex's
+//     shift+tab-cycled Plan is a COLLABORATION mode reachable only from
+//     inside a running session. Neither value is expressible in the other's
+//     vocabulary.
+//
+//  2. Codex's permissions rung lives on that second axis, which this method
+//     deliberately does not model. Reading it needs a `/status` box scrape
+//     plus an active write-then-read primer to make codex paint the box at
+//     all — neither of which exists in Go today (resumeRE scrapes
+//     `codex resume <uuid>` and nothing else, and extractSessionID in
+//     pkg/chat has no primer). That is a separate follow-up ticket.
+func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
+	return collaborationMode(snap.Text)
+}
+
 // LocateSessionID recovers the Codex session UUID from the most recent
 // on-disk rollout whose session_meta cwd matches workingDir. This is the
 // version-independent fallback for the screen-scrape ExtractSessionID, which
