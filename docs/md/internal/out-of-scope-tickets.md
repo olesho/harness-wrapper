@@ -237,7 +237,7 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
 (release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
@@ -359,6 +359,43 @@ The wedged-slot defect itself remains **unfiled in any workspace**: no `ORCHE` t
 covers Fix A–E, so operator actions (1) and (3) are both still outstanding.
 HARNESS-WRAPPER-116 has **no in-repo deliverable beyond this amendment** — per the
 observer's own instruction, no fifth triage document was created.
+
+**Amendment — re-fired a fifth time as HARNESS-WRAPPER-117 (2026-07-22 21:06Z).**
+Same signature `obs-sig:1bf9fcd2c6`; operator action (2) still has not happened.
+Re-measured live in the -117 worktree at **21:06Z** (measured here, not carried over
+from the ticket): the lag is **121 total / 55 first-parent** commits
+(`git -C /Users/oleh/repos/harness-wrapper.git rev-list --count [--first-parent]
+main..dev`), while `dev..main` = **0** — `main` is still a clean ancestor of `dev`, so
+the gate would simply fast-forward if it ever ran. `main` is still at **`6281927`**
+(10:15:03 +0200), byte-identical to what -97 recorded ~11 h earlier: **zero promotions
+since**. Supervisor **pid 65669** is alive and has never been restarted (`ps -p 65669`
+→ start **Wed Jul 22 11:32:51**, elapsed **11:33**, `agent-cli.ts up --dir
+…/harness-wrapper/.orche --workspace HARNESS-WRAPPER`). The oldest unpromoted commit
+`40e7251` dates to 18:16:09 +0200 = **16:16Z**, now **~290 min** old, and **46**
+`agent-release-*` worktrees are still retained under `cleanup: 'on-success'`. Full
+progression across the five filings: **27 → 32 → 52/57 → 82/41 → 112/51 → 121/55**.
+
+**Correction for the next triager — do not mistake other supervisors' worktrees for
+recent HARNESS-WRAPPER release activity.** Newer `agent-release-*` worktrees exist at
+15:53 / 16:23 / 16:53 / 17:23 and superficially look like this workspace's release
+agent still ticking. They are not: their sibling `.pid` files read **93479** (12
+worktrees), **8348** (8) and **7802** (5) — other supervisors, including META-HARNESS,
+sharing `ORCHE_WORKTREE_ROOT=/Users/oleh/.orche/worktrees`. Only **two** release
+worktrees carry `.pid` = **65669**: the wedged 15:40 tick
+(`agent-release-8df3c501-aa2b-412a-87b7-6d1decccb39e`, dir mtime frozen at 15:40,
+staged `.claude/` present, `node_modules` absent) and the failed 13:40 tick
+(`agent-release-3a870b7e-6de6-4a4b-87f5-94f1e1348d25`). **The last HARNESS-WRAPPER
+release tick remains 15:40.**
+
+Because ORCHE-31 and ORCHE-40 are both closed and both fixed only the *detector*, the
+`55` first-parent count above is a post-fix, trustworthy value — this is again not a
+detector artifact. The wedged-slot defect itself is still **unfiled in any workspace**:
+no `ORCHE` ticket covers Fix A–E, so operator actions (1) and (3) remain outstanding
+after five filings. HARNESS-WRAPPER-117 has **no in-repo deliverable beyond this
+amendment**; no source, test, or build change is possible here, and per the standing
+instruction no sixth triage document was created —
+[`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) remains the
+canonical record.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
