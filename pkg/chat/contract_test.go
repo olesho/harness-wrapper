@@ -108,6 +108,18 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
 		{"ErrResumeUnsupported", ErrResumeUnsupported},
 		{"ErrNoHarnessSession", ErrNoHarnessSession},
+		// Permission-mode switching. All six are listed on purpose:
+		// ErrPickerUnsupported / ErrPickerTimeout were NOT added when model
+		// discovery landed, and that gap is a precedent not to repeat for
+		// security-relevant errors — a silent rename of any of these would
+		// change how a caller distinguishes "did not switch" from "may be more
+		// permissive than it started".
+		{"ErrPermissionModeUnsupported", ErrPermissionModeUnsupported},
+		{"ErrPermissionModeUnreachable", ErrPermissionModeUnreachable},
+		{"ErrPermissionModeSwitchFailed", ErrPermissionModeSwitchFailed},
+		{"ErrPermissionModeIndeterminate", ErrPermissionModeIndeterminate},
+		{"ErrPermissionModeBlockedByInput", ErrPermissionModeBlockedByInput},
+		{"ErrCodexPlanRefusedBusy", ErrCodexPlanRefusedBusy},
 	} {
 		fmt.Fprintf(&b, "%s = %q\n", e.name, e.err.Error())
 	}
