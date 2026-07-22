@@ -35,7 +35,7 @@ type FieldInfo struct {
 // metadata, never on the public wire) are excluded.
 func Fields(v any) []FieldInfo {
 	rt := reflect.TypeOf(v)
-	for rt.Kind() == reflect.Ptr {
+	for rt.Kind() == reflect.Pointer {
 		rt = rt.Elem()
 	}
 	out := make([]FieldInfo, 0, rt.NumField())
@@ -49,7 +49,7 @@ func Fields(v any) []FieldInfo {
 		if name == "" {
 			name = f.Name // an untagged field serializes under its Go name
 		}
-		optional := f.Type.Kind() == reflect.Ptr ||
+		optional := f.Type.Kind() == reflect.Pointer ||
 			hasOpt(opts, "omitempty") ||
 			hasOpt(opts, "omitzero")
 		out = append(out, FieldInfo{
@@ -70,7 +70,7 @@ func FieldsFor(vs ...any) map[string][]FieldInfo {
 	m := make(map[string][]FieldInfo, len(vs))
 	for _, v := range vs {
 		rt := reflect.TypeOf(v)
-		for rt.Kind() == reflect.Ptr {
+		for rt.Kind() == reflect.Pointer {
 			rt = rt.Elem()
 		}
 		m[rt.Name()] = Fields(v)
@@ -100,7 +100,7 @@ var timeType = reflect.TypeOf(time.Time{})
 // slices/arrays → array; maps and anonymous structs → object; a named struct
 // (a nested DTO) → ref; interfaces → any.
 func NeutralType(t reflect.Type) string {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t.Kind() {
