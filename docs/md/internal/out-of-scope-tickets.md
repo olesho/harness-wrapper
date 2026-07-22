@@ -517,3 +517,67 @@ still filing the genuinely wedged `:-79`, and which requires extending the exist
 guard; (4) confirm the `:-78`/`:-89` false-positive claim against live fleet history
 before closing them, which could not be re-verified here (running `orche` commands
 was out of scope for this task).
+
+## HARNESS-WRAPPER-111 — the observer dismissed the anomaly and it was filed anyway
+
+**Filed as:** `[observer] crashed/dead spawner worker left HARNESS-WRAPPER-109
+working (dead-spawner:worker:HARNESS-WRAPPER-109)`.
+
+**Why it landed here:** unchanged from §HARNESS-WRAPPER-23, §HARNESS-WRAPPER-26 and
+§HARNESS-WRAPPER-99 — the observer files a `dead-spawner` against the *task* it is
+watching (`HARNESS-WRAPPER-109`, in this repo's fleet-db workspace), so the ticket
+lands in this workspace even though every line of the defect lives in `orche`. This
+is the **fourth** recurrence of the class.
+
+**What is new, and it is not more of the same noise.** The three prior sweeps all
+argued the detector is too noisy. This one finds something worse and much cheaper to
+fix: the observer **correctly judged the anomaly a false positive and wrote an
+explicit `DISMISS` verdict**, which was then silently discarded. The matcher at
+`packages/agent/examples/observer.ts:181` is
+``reply.includes(`DISMISS ${sig}`)`` — a strict substring test that any markdown
+between the keyword and the signature defeats. The observer wrote
+``**DISMISS `dead-spawner:worker:HARNESS-WRAPPER-109`**``; the backtick broke the
+match; `fileAnomaly` ran at `:187`. `extractInvestigation` (`:229`) locates blocks by
+`l.includes(sig)`, which *does* tolerate the decoration, so the dismissal was then
+posted as the ticket's own comment at `:196`. The prompt's contract is line-oriented
+(`prompts/observer.md:43`); the implementation is character-exact. The
+"a parse miss errs toward filing" default at `:170-173` is right for **silence** and
+inverted here: the strongest signal that a ticket should not exist is the exact input
+that produces it.
+
+**This ticket is its own reproduction.** Its description is verbatim `renderBugBody`
+output and its sole comment (`agent:observer:07f8a7c5-…`, 2026-07-22T19:59:11Z) opens
+with that `DISMISS` line. Both artifacts come from the same `onComplete` pass reading
+the same `reply` string, so no fleet-state reconstruction or ordering assumption is
+needed to prove the defect.
+
+**Actual defect location:** `orche` — `packages/agent/examples/observer.ts:181` and
+`:237` (primary), plus the two re-verified secondary causes: no ownership grounding in
+`fileAnomaly` (`packages/agent/src/observer.ts:822`/`:852`, the still-unlanded
+HARNESS-WRAPPER-99 Fix #1) and the un-looped single-page drain
+(`examples/observer.ts:117`, `src/observer.ts:242`, `packages/queue/src/fleet.ts:256-261`).
+The underlying event was benign and self-healed: `agent:worker:d10a71e6` blew its run
+deadline after preserving two commits, and orche released and re-leased the task to
+`agent:worker:53ee7ce1` under `timeout-attempt-1`.
+
+**Confirmed:** none of those files exist here — this is a Go module.
+`grep -rniE 'dead-spawner|fileAnomaly|obs-sig|deadSpawnerMs' --include='*.go' .`
+returns **zero** hits; the only tree-wide matches are this log and the triage records
+under `docs/triage/`. No bus, queue, anomaly detector, or verdict parser exists in
+this repo.
+
+**Resolution:** no source change made in this repo — documentation only, and no human
+gate requested, because the root cause is unambiguous. The fix is staged as a
+ready-to-apply cross-repo bundle,
+[`crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md`](../../../crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md)
+(Patch A: parse the verdict by line, decoration-tolerant, anchored so mid-sentence
+prose cannot suppress; Patch B: the assignee grounding guard, land it this time), with
+the full evidence chain in
+[`docs/triage/HARNESS-WRAPPER-111.md`](../../triage/HARNESS-WRAPPER-111.md). That
+bundle must be committed / PR'd **in `orche`** under its own ticket, as a follow-up to
+ORCHE-130. Once handed off, the correct disposition for this ticket in this workspace
+is **close-as-invalid** — HARNESS-WRAPPER-24 (2026-07-16) already directed that this
+class not be re-filed here. One item is carried forward for a human and is not a code
+defect: HARNESS-WRAPPER-79's decomposition children keep exceeding run deadlines
+(`-79` twice, `-109` once), and two more park the task at `blocked`/`stuck` per
+`MAX_CONSECUTIVE_TIMEOUTS` (`packages/agent/src/finalize.ts:60`).
