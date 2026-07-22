@@ -77,6 +77,15 @@ type openRequest struct {
 	// permission dialogs are not detected (the turn stalls to the deadline)
 	// and codex's approval prompts are auto-approved (only the `-s` sandbox
 	// axis still binds).
+	//
+	// `bypass` caveat: unlike --sandbox-defaults (cmd/harness-wrapper), which
+	// contributes both args and env (IS_SANDBOX=1, suppressing claude-code's
+	// Bypass Permissions mode acceptance screen and allowing root), chatd has
+	// no --sandbox-defaults equivalent — so a caller asking for `bypass` must
+	// either pass IS_SANDBOX=1 in Env or supply an InputPolicy with
+	// ByKind{"trust_prompt": ...}, otherwise the harness stops on the
+	// acceptance screen (surfaced as a trust_prompt input request) and root is
+	// disallowed.
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
 	// choice-free startup interstitials (model migration, menu-less notices).
@@ -96,6 +105,36 @@ type conversationSummary struct {
 	ID        string `json:"id"`
 	Harness   string `json:"harness"`
 	SessionID string `json:"session_id,omitempty"`
+	// PermissionMode is the mode the conversation was OPENED with — the value
+	// from openRequest, not an observed or live reading of the harness.
+	//
+	// For every value chatd accepts, requested == effective at launch:
+	// wrapper.validateConfig *rejects* (rather than no-ops) an unknown mode, a
+	// cross-harness native spelling, `plan` on codex, a non-empty mode on an
+	// unsupported harness, and mode/argv contradictions — and chatd maps that
+	// rejection to 400 invalid_config, which is what makes this field honest.
+	//
+	// Two residual gaps keep "requested" from being a guarantee of "effective"
+	// for the lifetime of the conversation:
+	//
+	// 1. Explicit-flag-wins. The wrapper skips injection when Args already
+	// carries a permission-axis flag (matched in three spellings: bare token
+	// `-s`, attached long `--sandbox=read-only`, clap attached short
+	// `-sread-only`). Suppression sets: claude/claude-code —
+	// --permission-mode, --dangerously-skip-permissions; codex — -s,
+	// --sandbox, -a, --ask-for-approval,
+	// --dangerously-bypass-approvals-and-sandbox. The two --dangerously-*
+	// arms are reachable only when the requested mode is bypass-class; any
+	// other mode paired with them is rejected (400), not silently suppressed.
+	// So an explicit permission-axis flag in `args` wins over
+	// `permission_mode`, and this field still reports what was requested.
+	//
+	// 2. In-band mutation. A client holding the control token can POST
+	// arbitrary text to /v1/conversations/{id}/messages — claude's
+	// /permissions, codex's /approvals — and flip the mode inside the TUI.
+	// Nothing validates or observes that; this field keeps reporting the
+	// open-time value indefinitely.
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 type controlResponse struct {

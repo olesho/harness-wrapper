@@ -57,6 +57,12 @@
       "json_tag": "session_id",
       "type": "string",
       "optional": true
+    },
+    {
+      "name": "PermissionMode",
+      "json_tag": "permission_mode",
+      "type": "string",
+      "optional": true
     }
   ],
   "errorResponse": [

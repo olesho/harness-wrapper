@@ -11,16 +11,26 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 type convEntry struct {
-	id   string
-	conv *chat.Conversation
-	fan  *fanout
+	// id, conv, fan, harness and permissionMode are immutable after publish:
+	// every one of them is written in the entry literal in openConv *before*
+	// the entry is stored into s.convs, and none is ever mutated afterwards.
+	// That is why listConvs may read harness/permissionMode under only
+	// s.mu.RLock() without taking e.mu — the happens-before edge comes from
+	// the s.mu handoff, not from e.mu. A future ticket that adds a *setter*
+	// for either field (e.g. the mid-session permission-mode mutation route)
+	// must move that field back under e.mu and have listConvs read it there.
+	id             string
+	conv           *chat.Conversation
+	fan            *fanout
+	harness        string
+	permissionMode string
 
-	mu      sync.Mutex
-	tokens  map[string]func() // control token -> release()
-	harness string
+	mu     sync.Mutex
+	tokens map[string]func() // control token -> release()
 }
 
 func (e *convEntry) acquireToken(release func()) string {
@@ -220,11 +230,12 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := &convEntry{
-		id:      conv.SessionID(),
-		conv:    conv,
-		fan:     newFanout(conv.Events()),
-		tokens:  make(map[string]func()),
-		harness: req.Harness,
+		id:             conv.SessionID(),
+		conv:           conv,
+		fan:            newFanout(conv.Events()),
+		harness:        req.Harness,
+		permissionMode: req.PermissionMode,
+		tokens:         make(map[string]func()),
 	}
 	s.mu.Lock()
 	s.convs[entry.id] = entry
@@ -237,9 +248,10 @@ func (s *Server) listConvs(w http.ResponseWriter, r *http.Request) {
 	out := make([]conversationSummary, 0, len(s.convs))
 	for _, e := range s.convs {
 		out = append(out, conversationSummary{
-			ID:        e.id,
-			Harness:   e.harness,
-			SessionID: e.conv.SessionID(),
+			ID:             e.id,
+			Harness:        e.harness,
+			SessionID:      e.conv.SessionID(),
+			PermissionMode: e.permissionMode,
 		})
 	}
 	s.mu.RUnlock()
@@ -479,6 +491,18 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "conflicting_answer", err.Error())
 	case errors.Is(err, chat.ErrClosed):
 		writeError(w, http.StatusGone, "closed", err.Error())
+	// wrapper.validateConfig rejects a bad Config before the harness process
+	// launches, and chat.Open wraps the sentinel, so errors.Is survives. A
+	// blanket 400 is safe *today* because every ErrInvalidConfig condition a
+	// chatd client can provoke is client-supplied: "Stdout is required" cannot
+	// fire (chat always sets Stdout), the IdleClassify/StaleThreshold ordering
+	// checks cannot fire (chatd never sets those knobs), "BinaryPath is
+	// required" is caught earlier as chat.ErrInvalidOptions (already a 400),
+	// and Effort/PermissionMode come straight off the request. Whoever later
+	// adds a *server-side* cause to validateConfig should note that chatd
+	// would blame the client for it, and split this arm.
+	case errors.Is(err, wrapper.ErrInvalidConfig):
+		writeError(w, http.StatusBadRequest, "invalid_config", err.Error())
 	default:
 		writeError(w, http.StatusInternalServerError, "internal", err.Error())
 	}

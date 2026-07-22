@@ -10,6 +10,7 @@ conversationSummary
 	ID string `json:"id"`
 	Harness string `json:"harness"`
 	SessionID string `json:"session_id,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 errorResponse
 	Error string `json:"error"`
 	Code string `json:"code,omitempty"`
