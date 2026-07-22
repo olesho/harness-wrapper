@@ -33,6 +33,27 @@ from typing import Any, Iterator, Literal
 # validates at runtime and no type checker is configured in this repo.
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
+# Mirrors isSupportedPermissionMode in pkg/wrapper/wrapper.go: the canonical
+# rungs (least to most permissive) followed by the harness-native spellings.
+# Documentation / IDE value only, same as Effort -- nothing validates at
+# runtime. The alias is flat but the server is not: acceptEdits / dontAsk /
+# bypassPermissions are claude / claude-code only, and read-only /
+# workspace-write / danger-full-access are codex only; crossing them is a 400
+# ``invalid_config`` rather than a silent no-op.
+PermissionMode = Literal[
+    "plan",
+    "manual",
+    "ask",
+    "auto",
+    "bypass",
+    "acceptEdits",
+    "dontAsk",
+    "bypassPermissions",
+    "read-only",
+    "workspace-write",
+    "danger-full-access",
+]
+
 
 class HarnessChatError(RuntimeError):
     def __init__(self, status: int, code: str, message: str):
@@ -123,10 +144,11 @@ class Client:
         rows: int = 0,
         effort: Effort | None = None,
         model: str | None = None,
+        permission_mode: PermissionMode | None = None,
     ) -> "Conversation":
-        """Open a conversation. ``effort`` and ``model`` are optional knobs
-        translated per-harness by the server; both are omitted from the request
-        body entirely when left as None.
+        """Open a conversation. ``effort``, ``model`` and ``permission_mode``
+        are optional knobs translated per-harness by the server; all three are
+        omitted from the request body entirely when left as None.
 
         effort/model behavior (server-side, pkg/wrapper/wrapper.go):
 
@@ -150,6 +172,32 @@ class Client:
            win.
         4. codex remaps "max" -> "xhigh", so ``effort="max"`` against codex
            reaches the harness as ``model_reasoning_effort="xhigh"``.
+
+        permission_mode behavior (server-side, pkg/wrapper/wrapper.go):
+
+        1. Like ``effort`` and unlike ``model``, it is validated and hard-fails:
+           an unknown mode, a native spelling belonging to the *other* harness,
+           or any mode at all on a harness with no permission axis ("opencode",
+           "pi", "generic"/"") is a 400 ``invalid_config`` before launch. A mode
+           the caller believes restricts the harness is never dropped.
+        2. "plan" is REJECTED on codex -- codex has no launch-time flag for the
+           plan rung, and a no-op would launch it unrestricted. Codex plan mode
+           is reachable only in-band, by sending "/plan" after opening.
+        3. An explicit permission-axis flag already in ``args`` wins silently:
+           --permission-mode / --dangerously-skip-permissions (claude,
+           claude-code) and -s / --sandbox / -a / --ask-for-approval /
+           --dangerously-bypass-approvals-and-sandbox (codex). The two
+           --dangerously-* arms are reachable only for a bypass-class mode; any
+           other mode paired with them is rejected (400), not suppressed.
+        4. Restrictive rungs ("plan", "manual", "ask") are fully enforced only
+           with a human at the TUI. Unattended, claude's permission dialogs are
+           not detected (the turn stalls to the deadline) and codex's approval
+           prompts are auto-approved -- only the -s sandbox axis still binds.
+        5. "bypass" over the gateway carries no IS_SANDBOX=1 (chatd has no
+           --sandbox-defaults), so pass IS_SANDBOX=1 in ``env`` or an
+           ``input_policy`` with by_kind {"trust_prompt": ...}; otherwise
+           claude-code stops on its acceptance screen as a trust_prompt input
+           request and root is disallowed.
         """
         body = {
             "harness": harness,
@@ -167,6 +215,8 @@ class Client:
             body["effort"] = effort
         if model is not None:
             body["model"] = model
+        if permission_mode is not None:
+            body["permission_mode"] = permission_mode
         resp = self._request("POST", "/v1/conversations", body)
         return Conversation(self, resp["id"])
 
