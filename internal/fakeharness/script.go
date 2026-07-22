@@ -43,8 +43,9 @@ const SubmitCR = "\r"
 // ShiftTabCSI9_2u is the byte sequence chat writes to press Shift+Tab — the key
 // claude-code and codex bind to "cycle permission mode" — in the kitty /
 // enhanced keyboard protocol those TUIs enable at startup: CSI 9 ; 2 u (Tab
-// codepoint 9, Shift modifier 2), NOT the legacy "\x1b[Z". The inward contract
-// lives in pkg/chat.shiftTabForHarness; this constant mirrors it so hermetic
+// codepoint 9, Shift modifier 2), rather than the legacy "\x1b[Z". The inward
+// contract lives in pkg/chat.shiftTabForHarness, whose doc comment records the
+// live measurements behind that choice; this constant mirrors it so hermetic
 // scenarios drive the fake with exactly the bytes the production writer emits.
 // Scenarios wait for it via Builder.AwaitShiftTab — if the wrapper ever stops
 // sending exactly this, the fake never advances and the test fails loudly.

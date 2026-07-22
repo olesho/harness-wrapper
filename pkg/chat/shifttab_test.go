@@ -10,10 +10,13 @@ import (
 // TestShiftTabForHarness pins the per-harness Shift+Tab key — the keystroke
 // claude-code and codex bind to "cycle permission mode". Both run the kitty /
 // enhanced keyboard protocol (the same fact that forces CSI 13u for Enter, see
-// TestSubmitKeyForHarness), where Shift+Tab is CSI 9 ; 2 u and NOT the legacy
-// CSI Z. A regression here is silent: the write succeeds, the harness ignores
-// it, and a cycle loop spins through its entire bound without ever changing
-// mode.
+// TestSubmitKeyForHarness), where Shift+Tab is CSI 9 ; 2 u. That encoding was
+// verified live against claude-code 2.1.217 and codex 0.144.5 (both visibly
+// cycled their mode indicator); see shiftTabForHarness's doc comment for the
+// measurements, including the finding that the legacy CSI Z still works too.
+// A regression here is silent in the worst way: the write succeeds, the harness
+// ignores it, and a cycle loop spins through its entire bound without ever
+// changing mode.
 func TestShiftTabForHarness(t *testing.T) {
 	const csi92u = "\x1b[9;2u"
 	tests := []struct {
@@ -28,8 +31,10 @@ func TestShiftTabForHarness(t *testing.T) {
 		{"codex", "codex", "›Find and fix a bug in @filename", []byte(csi92u)},
 		{"codex any screen", "codex", "whatever is on screen", []byte(csi92u)},
 		// pi enables no enhanced keyboard mode and exposes no permission-mode
-		// cycle, so it gets the same nil as any unknown harness — callers must
-		// fail loudly rather than write the legacy CSI Z into the void.
+		// cycle (verified live on 0.76.0: Shift+Tab lands on a thinking toggle
+		// instead), so it gets the same nil as any unknown harness — callers
+		// must fail loudly rather than fire a keystroke that means something
+		// else entirely.
 		{"pi unsupported", "pi", "0.0%/131k (auto)", nil},
 		{"unknown unsupported", "someharness", "anything", nil},
 	}
@@ -47,9 +52,12 @@ func TestShiftTabForHarness(t *testing.T) {
 }
 
 // TestShiftTabRejectsLegacyForm guards the single riskiest assumption in the
-// permission-mode work: the legacy "\x1b[Z" (CSI Z) encoding must never be what
-// we emit for an enhanced-keyboard harness. Spelled out separately from the
-// table above so the intent survives a careless table edit.
+// permission-mode work. Live measurement showed CSI Z *does* currently cycle
+// both harnesses, so this is not a "the legacy form is broken" test — it is a
+// deliberate pin on emitting the protocol-native encoding the TUIs' enhanced
+// keyboard mode defines, because the legacy path is the compatibility shim of
+// the two and the one that can disappear. Spelled out separately from the table
+// above so the intent survives a careless table edit.
 func TestShiftTabRejectsLegacyForm(t *testing.T) {
 	const legacy = "\x1b[Z"
 	for _, harness := range []string{"claude", chatClaudeCode, "codex"} {

@@ -281,7 +281,7 @@ func submitKeyForHarness(harness string) []byte {
 
 // Shift+Tab (the permission-mode cycle key) deliberately has NO mirror here.
 // Its encoding lives in pkg/chat.shiftTabForHarness — CSI 9;2u, the enhanced-
-// keyboard form, not the legacy "\x1b[Z" — and internal/fakeharness exports it
+// keyboard form rather than the legacy "\x1b[Z" — and internal/fakeharness exports it
 // as ShiftTabCSI9_2u for hermetic scenarios. No recorded scenario switches
 // permission mode yet, so mirroring it here would be a third copy with nothing
 // exercising it. If a mode-switch scenario is ever recorded, add a

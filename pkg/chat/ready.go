@@ -372,22 +372,30 @@ func submitKeyForHarness(harness, screenText string) []byte {
 // CSI <codepoint> ; <modifiers> u. Tab is codepoint 9 and the Shift modifier is
 // encoded as 1+1 = 2, so Shift+Tab is "\x1b[9;2u" (CSI 9 ; 2 u).
 //
-// The legacy form is "\x1b[Z" (CSI Z, "cursor backward tabulation"), which is
-// what a terminal emits for Shift+Tab in *unenhanced* mode. It is deliberately
-// NOT used here: once a TUI has requested enhanced keys, its input decoder
-// reads the CSI u vocabulary, and a bare CSI Z either falls through as an
-// unrecognized escape or is swallowed — the mode never cycles, and a cycle loop
-// silently no-ops until it burns its whole bound. Sending the enhanced form is
-// the same trade submitKeyForHarness already makes for Enter.
+// LIVE VERIFICATION (2026-07-22, claude-code 2.1.217 and codex 0.144.5, driven
+// through a real PTY + vt10x screen exactly like this package's writer):
 //
-// LIVE VERIFICATION STATUS: the CSI 9;2u encoding here is derived from the
-// kitty keyboard protocol spec and from submitKeyForHarness's live-verified
-// CSI 13u precedent (same protocol, same TUIs, same synthetic-writer path) —
-// it has NOT yet been confirmed against a running claude-code or codex that
-// visibly cycled its permission-mode indicator. Treat that confirmation as
-// outstanding: the first driver built on this helper should assert the mode
-// indicator actually changed rather than assuming the write landed, and this
-// comment should be updated to record the versions verified against.
+//   - claude-code: "\x1b[9;2u" cycles the mode — the status line goes from
+//     "⏵⏵ auto mode on (shift+tab to cycle)" to "⏸ manual mode on".
+//   - codex: "\x1b[9;2u" cycles the mode — the footer gains "Plan mode".
+//   - Control: a bare "\t" does NOT cycle either one (on claude-code it only
+//     swaps a hint line), so the mode change is genuinely attributable to the
+//     Shift+Tab decode and not to any tab-ish byte.
+//
+// The legacy form is "\x1b[Z" (CSI Z, "cursor backward tabulation"), what a
+// terminal emits for Shift+Tab in *unenhanced* mode. Contrary to what the
+// enhanced-keyboard story would suggest, CSI Z was measured to cycle the mode
+// on BOTH harnesses too — at these versions each TUI still keeps a legacy
+// Shift+Tab path alongside its CSI u decoder, so this is not a case where one
+// encoding works and the other silently no-ops.
+//
+// CSI 9;2u is nonetheless what we send, deliberately: it is the encoding the
+// kitty protocol these TUIs *actually enable* defines for Shift+Tab, so it is
+// what a real terminal would deliver and what their maintained input path is
+// built around. The legacy branch is a compatibility shim that can be dropped
+// when a TUI hardens its enhanced-mode decoder, whereas the protocol-native
+// form cannot be — the same trade submitKeyForHarness already makes for Enter,
+// where CR genuinely does nothing and CSI 13u is the only thing that submits.
 //
 // screenText is accepted to mirror submitKeyForHarness's shape (and to leave
 // room for a future screen-sensitive variant); today's encoding does not depend
@@ -396,14 +404,19 @@ func shiftTabForHarness(harness, screenText string) []byte {
 	_ = screenText
 	switch harness {
 	case "claude", chatClaudeCode:
+		// Verified live on 2.1.217: cycles auto → manual in the status line.
 		return []byte(shiftTabCSI9_2u)
 	case "codex":
+		// Verified live on 0.144.5: cycles the footer into "Plan mode".
 		return []byte(shiftTabCSI9_2u)
 	default:
-		// Unknown harnesses (and pi, which enables no enhanced keyboard mode and
-		// has no permission-mode cycle to drive) get nil rather than the legacy
-		// "\x1b[Z": a nil return lets the caller fail loudly on "this harness has
-		// no Shift+Tab contract" instead of writing bytes that quietly do nothing.
+		// Unknown harnesses, and pi, get nil rather than a best-guess keystroke.
+		// pi has no permission-mode cycle to drive at all: verified live on
+		// 0.76.0 that Shift+Tab there reaches a *thinking* toggle ("Current
+		// model does not support thinking") and leaves no mode indicator
+		// changed. Returning nil lets the caller fail loudly on "this harness
+		// has no Shift+Tab contract" instead of writing bytes that quietly do
+		// something unrelated.
 		return nil
 	}
 }
