@@ -5,6 +5,10 @@ Reference clients for the [`harness-chatd`](../cmd/harness-chatd) HTTP + SSE sid
 > 📖 The full endpoint reference, SSE envelope, and protocol walkthrough are in the
 > **[HTTP Gateway guide](../docs/md/guide/gateway.md)**. This file only covers running the examples.
 
+Both clients accept `effort` / `model` on `open()`. They are **not** symmetric — `effort` is
+validated and hard-fails, `model` is silently dropped on a harness that has no model flag; see
+[`effort` and `model` semantics](../docs/md/guide/gateway.md#effort-and-model-semantics).
+
 ## Run the sidecar
 
 ```sh
@@ -15,15 +19,17 @@ go run ./cmd/harness-chatd --bind 127.0.0.1:8080
 
 ## Python
 
-Stdlib only.
+Stdlib only. `PYTHONPATH=.` is required: `sys.path[0]` is the *script's* directory
+(`clients/python/examples`), never the cwd, so `cd` alone does not put `harness_chat` on the path.
 
 ```sh
-python clients/python/examples/basic.py /usr/local/bin/codex codex
+cd clients/python && PYTHONPATH=. python3 examples/basic.py /usr/local/bin/codex codex
 ```
 
 ## TypeScript / Node
 
-Node 18+ (built-in `fetch`).
+Node **>=18.19** (or **>=20.6** on the 20.x line) — the floor declared in `package.json`'s
+`engines`, for built-in `fetch` plus the module-register hook `tsx` uses.
 
 ```sh
 cd clients/typescript

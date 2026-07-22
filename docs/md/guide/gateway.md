@@ -18,7 +18,7 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/healthz` | — | `{"ok": true}` |
-| `POST` | `/v1/turns` | `{harness, turn_harness?, binary_path, prompt, args?, working_dir?, env?, exit_after_turn, cols?, rows?, input_policy?, timeout_seconds?, effort?, model?, permission_mode?}` | one-shot turn result |
+| `POST` | `/v1/turns` | `{harness, turn_harness?, binary_path, prompt, args?, working_dir?, env?, exit_after_turn?, cols?, rows?, input_policy?, timeout_seconds?, effort?, model?, permission_mode?}` | one-shot turn result |
 | `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?, input_policy?, effort?, model?, permission_mode?, disable_codex_auto_dismiss?, auto_skip_codex_update_notice?}` | `{id}` |
 | `GET` | `/v1/conversations` | — | `[{id, harness, session_id?, permission_mode?}]` |
 | `DELETE` | `/v1/conversations/{id}` | — | `204` |
@@ -38,6 +38,42 @@ Errors come back as `{error, code}` with the HTTP status mapped from the `pkg/ch
 `ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig` → 400 `invalid_config` — the first
 non-`pkg/chat` sentinel in that map. The routes and wire DTOs are frozen as golden snapshots (Layer 0
 of the [testing tiers](../internal/testing/README.md)).
+
+### `effort` and `model` semantics
+
+Both fields are accepted on `POST /v1/conversations` and `POST /v1/turns`, and both are threaded to
+`wrapper.Config`. They do **not** behave symmetrically:
+
+1. **`effort` is validated and hard-fails; `model` is never validated.** `wrapper.validateConfig`
+   rejects an effort outside the enum `low`, `medium`, `high`, `xhigh`, `max`, and rejects *any*
+   effort on a harness with no effort axis. `model` has no validation at all: on a harness the
+   wrapper has no model flag for, the request is accepted and the value is **silently dropped**. So
+   `{"harness":"pi","model":"…"}` is a silent no-op, while `{"harness":"pi","effort":"…"}` is an
+   error. Do not assume the two knobs fail the same way.
+2. **The effort-capable harness names on this gateway are exactly `"codex"` and `"claude-code"`,
+   case-sensitively.** `effort` against `opencode`, `pi`, or `generic`/`""` is rejected — the exact
+   opposite of `model`, which is a silent no-op on those same three. The gateway resolves the
+   adapter by raw string match, so it accepts only `codex`, `claude-code`, `opencode`, `pi`, and
+   `generic`/`""`: plain `"claude"` is a 400 `unknown_harness` *before* effort is ever considered
+   (even though `pkg/wrapper` itself accepts that spelling), and `"Codex"` 400s as
+   `unknown_harness` too, because the adapter lookup does not lowercase or trim. The CLI's name set
+   differs — see [`harness-wrapper --effort`](cli.md#flags).
+3. **An explicit flag already in `args` wins over the typed field.** If `args` already carries
+   `--effort` / `--model` (claude-code) or a `-c model_reasoning_effort=…` / `-c model=…` key
+   (codex), the wrapper skips injection and the typed field is silently ignored. A caller migrating
+   off the raw-`args` escape hatch will plausibly set both; the old `args` wins.
+4. **codex remaps `max` → `xhigh`.** `{"harness":"codex","effort":"max"}` reaches the harness as
+   `-c model_reasoning_effort="xhigh"`.
+
+**Rejection mapping.** An invalid `effort` — a bad enum value, or any effort against an accepted
+harness that has no effort axis — is a **400 `invalid_config`**. `pkg/chat` classifies the rejected
+`wrapper.Config` as [`chat.ErrInvalidOptions`](chat.md#sentinel-errors) (wrapping
+`wrapper.ErrInvalidConfig`, so `errors.Is` matches both) rather than letting it fall through as an
+internal error; `writeChatError` then checks the more specific `wrapper.ErrInvalidConfig` arm first,
+so the wire code is `invalid_config`, not `invalid_options`. Both are 400. Because the check lives
+in `pkg/chat`, `POST /v1/conversations`, `POST /v1/turns`, `Reopen`, and
+[`harness-wrapper run`](cli.md#flags) all reject an invalid effort identically, before the harness
+process launches.
 
 ### `permission_mode` semantics
 
@@ -112,10 +148,10 @@ curl -s -XPOST localhost:8080/v1/conversations/$ID/messages \
 **Python** (stdlib only):
 
 ```bash
-python clients/python/examples/basic.py /usr/local/bin/codex codex
+cd clients/python && PYTHONPATH=. python3 examples/basic.py /usr/local/bin/codex codex
 ```
 
-**TypeScript / Node** (Node 18+, built-in `fetch`):
+**TypeScript / Node** (Node >=18.19, or >=20.6 on the 20.x line; built-in `fetch`):
 
 ```bash
 cd clients/typescript && npm install

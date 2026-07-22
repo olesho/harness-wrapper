@@ -96,6 +96,17 @@ Wrapper flags go *before* the harness name:
 | `--sandbox-defaults` | `run` and `structured-run` only; **dangerous**. For `claude`, injects `--dangerously-skip-permissions` into the harness args and sets `IS_SANDBOX=1` in the harness env (parity with meta-harness; see the [wrapper spec note](../internal/wrapper.md#sandbox-defaults-injection)). No-op for every other harness. The default passthrough mode **rejects** it with an error — an interactive session should make that policy call in the harness itself. |
 | `--permission-mode RUNG` | Launch-time permission posture for `claude` / `codex`: `plan`, `manual`, `ask`, `auto`, `bypass` (per-harness native spellings also pass through). Accepted in **every** mode **including passthrough**, unlike `--sandbox-defaults` — see the composition rule below. `plan` is **rejected** for `codex` (no launch-time flag exists; use `/plan` after launch). Unsupported for `opencode` and `pi`. |
 
+`--effort` / `--model` reach the same per-harness translation as the gateway's `effort` / `model`
+fields (via `wrapper.Start` / `wrapper.Run`), so behaviors 1, 3 and 4 of
+[the gateway's `effort` and `model` semantics](gateway.md#effort-and-model-semantics) hold here
+verbatim: `--effort` is validated and hard-fails while `--model` is silently dropped on a harness
+that has none, an explicit `--effort`/`--model` (or codex `-c` key) in the harness args wins over
+the flag, and codex remaps `max` → `xhigh`. **Behavior 2 differs**: this CLI's harness registry is
+`codex`, `claude`, `opencode`, `pi`, and it rejects `claude-code` outright — so its effort-capable
+names are `codex` and `claude`, not the gateway's `codex` and `claude-code`. (`run` maps `claude` →
+`claude-code` internally before `chat.Open` sees it, so the two never disagree about which harness
+runs — only about which name you type.)
+
 ### `--permission-mode` rungs
 
 The canonical rungs are harness-independent; the wrapper translates each one into the harness's own
