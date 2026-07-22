@@ -140,7 +140,7 @@ Against the exported `verdictFor` and, where practical, the `onComplete` hook en
 - A reply with **no** verdict for `<sig>` **still files** — the conservative default is preserved.
 - `CONFIRM <sig>` files, however decorated.
 - Prose containing the word `DISMISS` mid-sentence alongside `<sig>` does **not** suppress
-  (e.g. *"a DISMISS on `<sig>` would be wrong"`)`.
+  (e.g. `a DISMISS on <sig> would be wrong`).
 - A two-signature reply whose **second** verdict line is decorated: each investigation note is
   extracted to its own block, with no bleed across the boundary (`extractInvestigation`).
 
