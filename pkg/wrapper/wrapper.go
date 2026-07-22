@@ -765,6 +765,13 @@ func BypassEnablingFlags(harness string) []string {
 // the harness default), and when neither argv nor mode says anything. "" means
 // UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
 // answer.
+//
+// Passing ALREADY-INJECTED args is safe — the function is idempotent over
+// argsWithHarnessPermissionMode, because injection self-suppresses: once the
+// axis is in argv, argsContainAnyFlag short-circuits the second pass and the
+// argv arm reads back the value that was injected. Formally,
+// EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
+// == EffectiveLaunchRung(h, args, mode).
 func EffectiveLaunchRung(harness string, args []string, mode string) string {
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode:
@@ -836,34 +843,45 @@ func codexSandboxRung(value string) string {
 	}
 }
 
-// flagValue extracts the operand of the first occurrence of any of flags, in
+// flagValue extracts the operand of the LAST occurrence of any of flags, in
 // each of the spellings argsContainAnyFlag recognizes: the attached long form
 // ("--permission-mode=plan"), clap's attached short form ("-sread-only") and
 // the separated form ("--permission-mode plan"), which argsContainAnyFlag
 // cannot read at all.
+//
+// LAST occurrence, not first, mirroring claude's and clap's own last-wins
+// parsers (see the notes in argsWithHarnessPermissionMode): on a duplicated
+// flag the harness launches at the LATER value, so reporting the earlier one
+// would under-report permissiveness — the one direction a safety field must
+// never fail in. Injection is unaffected: it only runs when argv carries none
+// of these flags and then emits exactly one, so first and last coincide.
 //
 // ok reports PRESENCE, exactly as argsContainAnyFlag would. A present-but-
 // unreadable flag (trailing, no operand) returns ("", true) — the caller must
 // distinguish that from ("", false) only if absence and unknown differ to it;
 // EffectiveLaunchRung maps both to "".
 func flagValue(args []string, flags ...string) (string, bool) {
+	value, found := "", false
 	for i, arg := range args {
 		for _, flag := range flags {
-			if arg == flag {
+			switch {
+			case arg == flag:
 				if i+1 < len(args) {
-					return args[i+1], true
+					value = args[i+1]
+				} else {
+					value = ""
 				}
-				return "", true
+			case strings.HasPrefix(arg, flag+"="):
+				value = strings.TrimPrefix(arg, flag+"=")
+			case isShortFlag(flag) && len(arg) > 2 && strings.HasPrefix(arg, flag):
+				value = arg[len(flag):]
+			default:
+				continue
 			}
-			if strings.HasPrefix(arg, flag+"=") {
-				return strings.TrimPrefix(arg, flag+"="), true
-			}
-			if isShortFlag(flag) && len(arg) > 2 && strings.HasPrefix(arg, flag) {
-				return arg[len(flag):], true
-			}
+			found = true
 		}
 	}
-	return "", false
+	return value, found
 }
 
 func prependArgs(args []string, prefix ...string) []string {
