@@ -236,3 +236,50 @@ architectural call with no single correct answer); (3) operationally re-queue
 `packages/agent/test/observer.unit.test.ts`), extending the convergence guard to cover
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
+
+## HARNESS-WRAPPER-97 — release-slot wedge: a **real** defect, in the wrong repo
+
+**Filed as:** `[observer] release branch behind base (dev..main) — not promoting
+(release-lag:dev..main)`, escalated to `review`.
+
+**How this differs from every entry above.** The other out-of-scope tickets here
+are observer *false positives* — the anomaly did not exist. This one is
+**genuine**: the release cron agent's single concurrency slot really is wedged,
+`main` really is not being promoted, and the lag really is growing (27 → 32
+commits during triage alone). Only the *location* is wrong. It is also distinct
+from [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md), which carried the
+same `release-lag:dev..main` signature but was a detector artifact (late-arriving
+commits mis-aged); here promotion is actually dead.
+
+**Why it landed here:** the observer files a `release-lag` anomaly against the
+workspace whose release branch is lagging (`HARNESS-WRAPPER`), so the ticket
+lands in this repo's fleet-db workspace even though the release *machinery* that
+wedged lives in `orche`.
+
+**Actual defect location:** `orche`'s `@orche/agent` package — a cron slot in
+`packages/agent/src/spawner.ts:640-648` that is released only by its own
+`runTick` promise settling, so a tick that never settles owns the sole slot for
+the process lifetime, plus the disabled/mis-scoped max-run watchdog
+(`spawner.ts:1436-1498`) and the unbounded release agent
+(`examples/.orche/agents/release.ts:558-569`) that let it go unnoticed.
+
+**Confirmed:** none of those files exist in this repo — it is a Go module
+(`module github.com/olesho/harness-wrapper`). A search of the tree (excluding
+`node_modules`) for `runTick`, `maxRunMs`, and `at_capacity` returns **zero**
+hits, and `spawner` turns up only two coincidental English-prose comments
+(`internal/env/openshell/openshell.go:266` "a real process spawner";
+`pkg/harness/claude/subagent_test.go:55` "parented to the spawner") — no cron,
+slot-tracking, or watchdog code exists here. All five defects and the live-fleet
+evidence were re-verified against the real orche source and the running
+supervisor at implementation time.
+
+**Resolution:** no source change made in this repo — there is nothing here to
+change. The full triage, the five-part root cause, the fix plan (A–E) with its
+test plan, and the required operator actions are recorded in
+[`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md). For
+the human at the `review` gate: (1) **re-file in the `ORCHE` workspace**, which
+already carries the sibling tickets ORCHE-14/15/26 on this subsystem; (2)
+**restart the wedged HARNESS-WRAPPER supervisor (pid 65669)** to free the slot —
+this is the only thing that restores promotion, it is not a code change, and it
+kills every in-flight agent in the fleet, so it must be scheduled; (3) file a
+separate ticket for the 46 retained `agent-release-*` worktrees.
