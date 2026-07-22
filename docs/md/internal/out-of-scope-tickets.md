@@ -237,12 +237,12 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100**
-under the identical observer signature `obs-sig:1bf9fcd2c6` — see the amendment at
-the end of this section.
+(release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
+and again as HARNESS-WRAPPER-110** under the identical observer signature
+`obs-sig:1bf9fcd2c6` — see the amendments at the end of this section.
 
 **How this differs from every entry above.** The other out-of-scope tickets here
 are observer *false positives* — the anomaly did not exist. This one is
@@ -300,6 +300,43 @@ five-part root cause, the A–E fix plan and its tests are already recorded in
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) and were
 re-verified against orche HEAD `737ea45` and the live fleet on 2026-07-22. **Do not
 open a second triage document for this signature**; amend this section instead.
+
+**Amendment — re-fired a third time as HARNESS-WRAPPER-110 (2026-07-22 21:53).**
+Operator action (2) *still* has not happened, so the signature fired again,
+unchanged. Live state re-verified in the -110 worktree at **21:55** (measured here,
+not carried over from the ticket): supervisor **pid 65669** is alive and has never
+been restarted (`ps -p 65669` → start **Wed Jul 22 11:32:51**, elapsed **10:22**,
+`agent-cli.ts up --dir …/.orche --workspace HARNESS-WRAPPER`); `main` is still at
+**`6281927`** (10:15:03, the last promotion); the lag is **82 total / 41
+first-parent** commits (`rev-list --count main..dev` = 82, `--first-parent` = 41),
+while `dev..main` = **0**, so `main` remains a clean ancestor and the gate would
+simply promote if it ran. The progression across filings is **27 → 32 → 52/57 →
+78/40 (ticket, 21:53) → 82/41 (verified, 21:55)** — it grows between the ticket
+being written and the work being done, which is itself the point: nothing is
+draining. A tree-wide grep for `runTick` / `at_capacity` / `maxRunMs` over `*.go`
+still returns **zero** hits.
+
+Two findings are genuinely new to this filing:
+
+- **No `ORCHE` ticket covers Fix A–D.** The sibling tickets that share this
+  signature label — `fleet-db://ORCHE/ORCHE-31` and `…/ORCHE-40`, resolved during
+  -110 triage — are both **closed** and both fix the *detector* (first-parent
+  commit count; clamped `oldestUnpromotedMs`); neither touches the wedged cron
+  slot. (Not re-run here: a worker must not issue `orche` commands.) The
+  wedged-slot defect is therefore still **unfiled anywhere**, and operator action
+  (1) above remains outstanding. A useful corollary: because ORCHE-31/-40 already
+  removed the two known phantom-fire paths, this fire cannot be a detector
+  artifact — the 41-commit first-parent count and the 210-minute oldest-unpromoted
+  age are post-fix, trustworthy values.
+- **Worktree accumulation is still untracked** — **46** retained `agent-release-*`
+  directories under `cleanup: 'on-success'`, including the wedged 15:40 tick
+  (`agent-release-8df3c501-…`, frozen at mtime 15:40, `.pid` = 65669, staged
+  `.claude/` present, `node_modules` absent) and the failed 13:40 tick
+  (`agent-release-3a870b7e-…`). Operator action (3) above has not been taken.
+
+**This signature will re-fire on every observer sweep until pid 65669 is restarted
+or Fix A lands in `orche`. No change made in this repository — of any kind — can
+affect it.** HARNESS-WRAPPER-110 has no in-repo deliverable beyond this amendment.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
