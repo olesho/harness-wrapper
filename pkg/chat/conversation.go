@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -370,6 +371,14 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 
 	sess, err := wrapper.Start(ctx, cfg)
 	if err != nil {
+		// An invalid wrapper.Config reaching Start from here means a caller-supplied
+		// option (in practice Effort — see the reachability note in Options) failed
+		// validation, so surface it as ErrInvalidOptions and let transports map it to
+		// a 4xx. The multi-%w keeps wrapper.ErrInvalidConfig matchable for consumers
+		// that discriminate on it, and both arms carry the same breadcrumb.
+		if errors.Is(err, wrapper.ErrInvalidConfig) {
+			return nil, fmt.Errorf("%w: chat: wrapper start: %w", ErrInvalidOptions, err)
+		}
 		return nil, fmt.Errorf("chat: wrapper start: %w", err)
 	}
 	c.sess = sess
