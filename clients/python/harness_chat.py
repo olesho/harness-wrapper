@@ -10,6 +10,8 @@ Stdlib only. Usage:
         with conv.control():
             turn_id = conv.send("summarize this project")
             for ev in conv.events():
+                if ev.type != "turn" or ev.turn is None:
+                    continue
                 if ev.turn.id == turn_id and ev.turn.state == "complete":
                     break
         print(conv.history())
@@ -24,7 +26,12 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
+
+# Mirrors isSupportedEffort in pkg/wrapper/wrapper.go. Documentation / IDE
+# value only: the clients are deliberately thin transports, so nothing here
+# validates at runtime and no type checker is configured in this repo.
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class HarnessChatError(RuntimeError):
@@ -70,12 +77,27 @@ class Turn:
 
 @dataclass
 class TurnEvent:
-    turn: Turn
+    """One SSE frame: a discriminated envelope keyed on ``type``.
+
+    ``turn`` is None for frames that carry no turn (``input_request`` /
+    ``input_resolved``, which carry ``input`` instead), so always check
+    ``type`` and guard ``turn is not None`` before dereferencing it.
+    """
+
+    type: str = ""
+    turn: Turn | None = None
+    input: dict[str, Any] | None = None
     error: str = ""
 
     @classmethod
     def from_json(cls, d: dict[str, Any]) -> "TurnEvent":
-        return cls(turn=Turn.from_json(d.get("turn", {})), error=d.get("error", ""))
+        raw = d.get("turn")
+        return cls(
+            type=d.get("type", ""),
+            turn=Turn.from_json(raw) if raw is not None else None,
+            input=d.get("input"),
+            error=d.get("error", ""),
+        )
 
 
 def _parse_sse_block(lines: list[str]) -> str | None:
@@ -99,7 +121,36 @@ class Client:
         env: list[str] | None = None,
         cols: int = 0,
         rows: int = 0,
+        effort: Effort | None = None,
+        model: str | None = None,
     ) -> "Conversation":
+        """Open a conversation. ``effort`` and ``model`` are optional knobs
+        translated per-harness by the server; both are omitted from the request
+        body entirely when left as None.
+
+        effort/model behavior (server-side, pkg/wrapper/wrapper.go):
+
+        1. ``effort`` is validated and hard-fails; ``model`` is not validated at
+           all. A non-enum effort is rejected, as is any effort on a harness
+           that does not support it. ``model`` on an unsupported harness is
+           silently ignored -- so ``model`` on "pi" is a SILENT NO-OP while
+           ``effort`` on "pi" is an ERROR.
+        2. On the harness-chatd gateway the effort-capable harness names are
+           exactly "codex" and "claude-code", case-sensitively. ``effort``
+           against "opencode", "pi" or "generic"/"" is a 400 ``invalid_options``
+           -- the exact opposite of ``model``'s behavior on those same harnesses
+           (silent no-op, see 1); do not assume symmetry. The gateway accepts
+           only "codex", "claude-code", "opencode", "pi" and "generic"/"": plain
+           "claude" is a 400 ``unknown_harness`` before effort is even
+           considered, and so is "Codex" (the gateway does not normalize case).
+        3. An explicit flag already present in ``args`` wins over the typed
+           field: the server bails out of both the effort and the model rewrite
+           when the flag / config key is already there. If you are migrating off
+           the raw-``args`` escape hatch, drop the old flags or they silently
+           win.
+        4. codex remaps "max" -> "xhigh", so ``effort="max"`` against codex
+           reaches the harness as ``model_reasoning_effort="xhigh"``.
+        """
         body = {
             "harness": harness,
             "binary_path": binary_path,
@@ -109,6 +160,13 @@ class Client:
             "cols": cols,
             "rows": rows,
         }
+        # Presence, not truthiness: an explicit "" is sent as "" (a server-side
+        # no-op) to stay byte-identical with the TypeScript client, while an
+        # unset value omits the key rather than emitting a JSON null.
+        if effort is not None:
+            body["effort"] = effort
+        if model is not None:
+            body["model"] = model
         resp = self._request("POST", "/v1/conversations", body)
         return Conversation(self, resp["id"])
 

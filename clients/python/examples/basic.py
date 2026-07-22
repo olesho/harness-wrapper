@@ -1,7 +1,7 @@
 """End-to-end smoke test against a running harness-chatd.
 
 Usage:
-    python examples/basic.py /usr/local/bin/codex codex
+    cd clients/python && PYTHONPATH=. python3 examples/basic.py /usr/local/bin/codex codex
 """
 
 import sys
@@ -22,6 +22,8 @@ def main() -> None:
             turn_id = conv.send("hello")
             print(f"sent turn {turn_id}")
             for ev in conv.events():
+                if ev.type != "turn" or ev.turn is None:
+                    continue
                 print(f"  event: turn={ev.turn.id} state={ev.turn.state}")
                 if ev.turn.id == turn_id and ev.turn.state in ("complete", "errored"):
                     break
