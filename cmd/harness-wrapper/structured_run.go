@@ -64,9 +64,11 @@ func runStructuredRun(args []string) int {
 	// transcript (see runOneShot for the full rationale), then apply the
 	// opt-in --sandbox-defaults injection on top. Both are env/arg POLICY and
 	// stay a cmd/ concern: pkg/oneshot receives the ALREADY-CLEANED Env/Args.
+	// The permission mode is passed in so a bypass rung composes: the env half
+	// (IS_SANDBOX=1) still lands here while pkg/wrapper owns the argv directive.
 	harnessArgs, env := parsed.HarnessArgs, cleanedEnv()
 	if parsed.SandboxDefaults {
-		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, harnessArgs, env)
+		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, parsed.PermissionMode, harnessArgs, env)
 	}
 
 	// The classification core + auto-accept-trust wiring + reply extraction now
@@ -74,14 +76,15 @@ func runStructuredRun(args []string) int {
 	// composes that core with the exit map (turnproto.ExitCode), the JSON emit,
 	// and the in-guest transcript read.
 	outcome, oerr := oneshot.RunOneShotDetailed(ctx, oneshot.Config{
-		Harness:    parsed.HarnessName,
-		BinaryPath: binPath,
-		Args:       harnessArgs,
-		Effort:     parsed.Effort,
-		Model:      parsed.Model,
-		WorkingDir: wd,
-		Env:        env,
-		Prompt:     prompt,
+		Harness:        parsed.HarnessName,
+		BinaryPath:     binPath,
+		Args:           harnessArgs,
+		Effort:         parsed.Effort,
+		Model:          parsed.Model,
+		PermissionMode: parsed.PermissionMode,
+		WorkingDir:     wd,
+		Env:            env,
+		Prompt:         prompt,
 	})
 	if oerr != nil {
 		// A non-nil error is an unclassifiable/infra failure (an invalid config);

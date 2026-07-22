@@ -66,21 +66,7 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 		return 1
 	}
 
-	// Re-exec command: same binary, but in --tmux-child mode with the
-	// resolved trace-file path. tmux runs this as the pane command.
-	reexec := []string{
-		self,
-		"--tmux-child", args.TmuxSession,
-		"--trace-file", tracePath,
-	}
-	if args.Effort != "" {
-		reexec = append(reexec, "--effort", args.Effort)
-	}
-	if args.Model != "" {
-		reexec = append(reexec, "--model", args.Model)
-	}
-	reexec = append(reexec, args.HarnessName, "--")
-	reexec = append(reexec, args.HarnessArgs...)
+	reexec := tmuxReexecArgv(args, self, tracePath)
 
 	tmuxArgs := []string{"new-session", "-d", "-s", tmuxName}
 	tmuxArgs = append(tmuxArgs, reexec...)
@@ -100,6 +86,37 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 	fmt.Printf("tmux:    %s\n", tmuxName)
 	fmt.Printf("trace:   %s\n", tracePath)
 	return 0
+}
+
+// tmuxReexecArgv builds the pane command for a tmux-backed run: the same
+// binary, re-entered in --tmux-child mode with the resolved trace-file path,
+// followed by every execution-mode flag the parent was given and then
+// `<harness> -- <harness args...>`.
+//
+// It is a pure function (mirroring pkg/env.buildRunnerArgv) so the forwarding
+// set is unit-testable without spawning tmux. That matters: this argv is
+// hand-rebuilt rather than derived from the original os.Args, so a flag that is
+// added to harnessWrapperArgs but forgotten HERE is silently dropped — and for
+// --permission-mode a silent drop means the pane runs an UNRESTRICTED harness
+// after the user explicitly asked for a restriction. tmux_test.go freezes the
+// set so that regression cannot land quietly.
+func tmuxReexecArgv(a harnessWrapperArgs, self, tracePath string) []string {
+	argv := []string{
+		self,
+		"--tmux-child", a.TmuxSession,
+		"--trace-file", tracePath,
+	}
+	if a.Effort != "" {
+		argv = append(argv, "--effort", a.Effort)
+	}
+	if a.Model != "" {
+		argv = append(argv, "--model", a.Model)
+	}
+	if a.PermissionMode != "" {
+		argv = append(argv, "--permission-mode", a.PermissionMode)
+	}
+	argv = append(argv, a.HarnessName, "--")
+	return append(argv, a.HarnessArgs...)
 }
 
 // resolveTracePath picks the NDJSON trace path. If the caller passed
