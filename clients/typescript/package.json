@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build": "tsc",
-    "example": "tsx examples/basic.ts"
+    "example": "tsx examples/basic.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc -p tsconfig.test.json"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.19"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

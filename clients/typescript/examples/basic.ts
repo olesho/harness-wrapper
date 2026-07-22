@@ -16,6 +16,7 @@ async function main() {
       const turnId = await conv.send("hello");
       console.log(`sent turn ${turnId}`);
       for await (const ev of conv.events()) {
+        if (ev.type !== "turn" || !ev.turn) continue;
         console.log(`  event: turn=${ev.turn.id} state=${ev.turn.state}`);
         if (ev.turn.id === turnId && (ev.turn.state === "complete" || ev.turn.state === "errored")) {
           break;
