@@ -237,10 +237,12 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`.
+(release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100**
+under the identical observer signature `obs-sig:1bf9fcd2c6` — see the amendment at
+the end of this section.
 
 **How this differs from every entry above.** The other out-of-scope tickets here
 are observer *false positives* — the anomaly did not exist. This one is
@@ -283,6 +285,21 @@ already carries the sibling tickets ORCHE-14/15/26 on this subsystem; (2)
 this is the only thing that restores promotion, it is not a code change, and it
 kills every in-flight agent in the fleet, so it must be scheduled; (3) file a
 separate ticket for the 46 retained `agent-release-*` worktrees.
+
+**Amendment — re-fired as HARNESS-WRAPPER-100 (2026-07-22).** The signature
+re-fired unchanged (`obs-sig:1bf9fcd2c6`) because **operator action (2) above has
+not happened**: supervisor **pid 65669** is still alive (started 11:32:51, same
+process), still holding the sole cron slot, and the lag has grown **27 → 52 → 57**
+commits (`git -C /Users/oleh/repos/harness-wrapper.git rev-list --count main..dev`
+= 57; `dev..main` = 0, so `main` remains a clean ancestor — the gate would simply
+promote if it ran). The re-fire is expected behaviour, not new information: this
+signature will keep re-firing on every observer sweep until the supervisor is
+restarted, regardless of what is merged here. HARNESS-WRAPPER-100 is therefore a
+duplicate with **no in-repo deliverable** beyond this amendment — the triage, the
+five-part root cause, the A–E fix plan and its tests are already recorded in
+[`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) and were
+re-verified against orche HEAD `737ea45` and the live fleet on 2026-07-22. **Do not
+open a second triage document for this signature**; amend this section instead.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
