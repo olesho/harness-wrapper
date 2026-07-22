@@ -18,9 +18,9 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/healthz` | — | `{"ok": true}` |
-| `POST` | `/v1/turns` | `{harness, binary_path, prompt, cols?, rows?, input_policy?, timeout_seconds?}` | one-shot turn result |
-| `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?, input_policy?}` | `{id}` |
-| `GET` | `/v1/conversations` | — | `[{id, harness, session_id?}]` |
+| `POST` | `/v1/turns` | `{harness, turn_harness?, binary_path, prompt, args?, working_dir?, env?, exit_after_turn, cols?, rows?, input_policy?, timeout_seconds?, effort?, model?, permission_mode?}` | one-shot turn result |
+| `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?, input_policy?, effort?, model?, permission_mode?, disable_codex_auto_dismiss?, auto_skip_codex_update_notice?}` | `{id}` |
+| `GET` | `/v1/conversations` | — | `[{id, harness, session_id?, permission_mode?}]` |
 | `DELETE` | `/v1/conversations/{id}` | — | `204` |
 | `POST` | `/v1/conversations/{id}/control` | — | `{token}` |
 | `DELETE` | `/v1/conversations/{id}/control/{token}` | — | `204` |
@@ -30,10 +30,47 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 | `GET` | `/v1/conversations/{id}/history` | — | `{turns: [...]}` |
 | `GET` | `/v1/conversations/{id}/screen` | — | `{text, cols, rows, cursor_col, cursor_row, generation}` |
 
+`exit_after_turn` on `/v1/turns` is **required in effect**: it defaults to `true` when omitted, and an
+explicit `false` is rejected with 400 `unsupported` — the route is one-shot by construction.
+
 Errors come back as `{error, code}` with the HTTP status mapped from the `pkg/chat`
 [sentinel errors](chat.md#sentinel-errors) (e.g. `ErrNoControl` → 409, `ErrInputPending` → 409,
-`ErrUnknownHarness` → 400). The routes and wire DTOs are frozen as golden snapshots (Layer 0 of the
-[testing tiers](../internal/testing/README.md)).
+`ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig` → 400 `invalid_config` — the first
+non-`pkg/chat` sentinel in that map. The routes and wire DTOs are frozen as golden snapshots (Layer 0
+of the [testing tiers](../internal/testing/README.md)).
+
+### `permission_mode` semantics
+
+**Requested-at-open, not observed.** The `permission_mode` in the conversation listing reports the
+mode the conversation was **opened with**, not a mode read back out of the harness. For every value
+chatd accepts, requested == effective at launch, because `pkg/wrapper`'s `validateConfig` *rejects*
+(rather than silently no-ops) an unknown mode, a cross-harness native spelling, `plan` on codex, a
+non-empty mode on a harness that has no permission axis, and mode/argv contradictions — all surfaced
+as 400 `invalid_config`. Two residual gaps remain:
+
+1. **Explicit-flag-wins.** An explicit permission-axis flag in `args` wins over `permission_mode`, in
+   any of the three spellings the harnesses accept (bare token `-s`, attached long
+   `--sandbox=read-only`, clap's attached short `-sread-only`); the summary still reports what was
+   *requested*. The suppression sets are claude/claude-code = `--permission-mode` and
+   `--dangerously-skip-permissions`; codex = `-s`, `--sandbox`, `-a`, `--ask-for-approval`, and
+   `--dangerously-bypass-approvals-and-sandbox`. The two `--dangerously-*` arms are reachable only for
+   a bypass-class mode — any other mode paired with them is rejected with 400 rather than dropped.
+2. **In-band mutation.** A client holding the control token can send arbitrary text via
+   `POST /v1/conversations/{id}/messages` (claude's `/permissions`, codex's `/approvals`) and flip the
+   mode inside the TUI. Nothing validates or observes that; the listing keeps reporting the open-time
+   value.
+
+The one-shot response does not echo the mode; only the conversation listing reports it.
+
+**`bypass` over the wire has no `IS_SANDBOX=1`.** The `--sandbox-defaults` [CLI flag](cli.md)
+contributes args **and** env — notably `IS_SANDBOX=1`, which suppresses claude-code's *Bypass
+Permissions mode* acceptance screen and allows running as root. chatd has no `--sandbox-defaults`
+equivalent and no `--auto-accept`; its only levers are the request's `env` and `input_policy`. So a
+chatd caller asking for `bypass` must either pass `IS_SANDBOX=1` in `env`, or supply an `input_policy`
+with `by_kind: {"trust_prompt": …}` (the same lever documented below for the folder-trust dialog) —
+otherwise the harness stops on the acceptance screen, surfaced as a `trust_prompt` input request, and
+root is disallowed. chatd is precisely the containerized/remote entry point where this bites, so use
+one of the two levers explicitly.
 
 ### The event stream
 

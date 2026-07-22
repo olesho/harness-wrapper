@@ -1,5 +1,7 @@
 # HARNESS-WRAPPER-66 — cross-repo deliverable for meta-harness
 
+> This file covers **HARNESS-WRAPPER-66 only**; the permission-mode cross-repo handoff is its sibling file [`HARNESS-WRAPPER-77-permission-mode.md`](HARNESS-WRAPPER-77-permission-mode.md) — neither is the other's bundle.
+
 This directory is a **byte-exact, ready-to-apply bundle** for the sibling
 `meta-harness` repo (`~/Work/aether/meta-harness`, override with
 `META_HARNESS_DIR`). It is staged here in the canonical `harness-wrapper`
