@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Client, type OpenOptions } from "../src/index.js";
+import { Client, type Effort, type OpenOptions } from "../src/index.js";
 import { startStub } from "./stub.js";
 
 /** The seven keys `open()` has always posted, before effort/model existed. */
@@ -37,6 +37,13 @@ test("effort/model are posted alongside the seven keys and nothing else", async 
 });
 
 test("an explicit empty effort is sent as \"\" (presence, not truthiness)", async () => {
-  const body = await openBody({ harness: "codex", binaryPath: "/bin/codex", effort: "" as never });
+  // The cast is the point: "" is outside the Effort enum, but the client is a
+  // thin transport with no runtime validation, so it forwards it verbatim —
+  // matching the Python client, which keys on presence rather than truthiness.
+  const body = await openBody({
+    harness: "codex",
+    binaryPath: "/bin/codex",
+    effort: "" as Effort,
+  });
   assert.equal(body.effort, "");
 });

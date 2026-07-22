@@ -14,11 +14,13 @@ test("input_request frames carry no turn; turn frames do", async () => {
   try {
     const evs: TurnEvent[] = [];
     for await (const ev of new Conversation(new Client(stub.url), "c1").events()) evs.push(ev);
+    // Guard rail: must stay above the assertions below, whose assertion
+    // signatures narrow `turn` and would make the directive itself unused.
+    // @ts-expect-error `turn` is optional on the envelope — this must never compile.
+    void evs[1].turn.id;
     assert.equal(evs[0].type, "input_request");
     assert.equal(evs[0].turn, undefined);
     assert.equal(evs[1].turn?.id, "t1");
-    // @ts-expect-error `turn` is optional on the envelope — this must never compile.
-    void evs[1].turn.id;
   } finally {
     await stub.close();
   }
