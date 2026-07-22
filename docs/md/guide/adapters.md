@@ -5,16 +5,33 @@ detection on the rendered screen) plus an optional [transcript reader](../intern
 wrapper-level classifier. Capabilities vary by how much of the harness's TUI and on-disk format we've
 mapped. This page is the honest, code-grounded snapshot of **what works today**.
 
-| Harness | Status | Turn detection | Session-ID | Transcript | Interactive input |
-|---|:--:|---|:--:|---|:--:|
-| **codex** | ✅ | ✅ `Token usage:` footer | ✅ | ✅ `~/.codex/sessions/` | ✅ startup interstitials |
-| **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass |
-| **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — |
-| **pi** | ✅ | ⏳ idle + `Busy` | ⏳ headless | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` |
-| **generic** | ✅ | — maps wrapper status | — | — | — |
+| Harness | Status | Turn detection | Session-ID | Transcript | Interactive input | Permission knob | Permission detect |
+|---|:--:|---|:--:|---|:--:|:--:|:--:|
+| **codex** | ✅ | ✅ `Token usage:` footer | ✅ | ✅ `~/.codex/sessions/` | ✅ startup interstitials | ✅ ¹ | ✅ ² |
+| **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass | ✅ | ✅ |
+| **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — | — | — |
+| **pi** | ✅ | ⏳ idle + `Busy` | ⏳ headless | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` | — | — |
+| **generic** | ✅ | — maps wrapper status | — | — | — | — | — |
 
 **Legend** — ✅ implemented · ⏳ partial / pending a real on-screen marker (turn completion falls back
 to the wrapper's `waiting_for_input` signal) · ❌ not yet / deferred · — not applicable.
+
+**Permission knob** — whether the harness accepts a launch-time permission rung, from
+`wrapper.harnessSupportsPermissionMode`. **Permission detect** — whether the adapter implements
+[`turns.PermissionModeDetector`](../internal/turns.md#capability-interfaces), i.e. can read a
+permission posture back off the rendered screen. These are two independent facts, decided in two
+different packages by two different functions: "accepts a launch rung" (`pkg/wrapper`) and "can read
+the posture back" (`pkg/turns`). They happen to cover the same harnesses today; do not collapse them
+or describe either as "the same set as" the other column.
+
+¹ codex rejects the `plan` rung — it has no launch-time flag for it (use `/plan` after launch); every
+other rung is accepted. ² The two detectors do not report the same *kind* of value — claude-code
+returns a canonical rung, codex returns a COLLABORATION-axis value that is not a rung. See the
+[capability table](../internal/turns.md#capability-interfaces).
+
+The row keys are **adapter** names. The CLI and the gateway spell the harness differently: see the
+CLI's harness registry in [cli.md](cli.md) (which takes `claude`, not `claude-code`) and the
+gateway's adapter lookup in [gateway.md](gateway.md) (which requires `claude-code`).
 
 Pinned & verified upstream versions live in [`versions.json`](../internal/versions-drift.md): codex
 `0.142.5`, claude-code `2.1.201` (verified 2026-07-05), pi `0.76.0` (verified 2026-06-27).

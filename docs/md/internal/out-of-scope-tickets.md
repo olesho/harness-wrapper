@@ -446,7 +446,11 @@ human at the `review` gate:
    perform unilaterally.
 2. **Consider decomposing HARNESS-WRAPPER-79.** It is an oversized plan
    (permission-mode detection *and* mid-session switching, spanning
-   `pkg/turns`, `pkg/chat`, `pkg/discovery`, plus corpus verification). Two
+   `pkg/turns`, `pkg/chat`, `pkg/discovery`, plus corpus verification — and
+   partly overtaken since: the launch-time knob shipped in HW-95/96
+   (`--permission-mode` / `permission_mode`) and detection shipped in HW-105
+   (claude-code) and HW-106 (codex), leaving **mid-session switching** as the
+   open half, which is what still makes decomposing it worthwhile). Two
    reviewers have now exceeded the run deadline on it; a third will hit the
    same wall and burn the third `timeout-attempt` slot, parking it at
    `blocked`/`stuck`.

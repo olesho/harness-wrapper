@@ -69,9 +69,9 @@ never validated (an unsupported harness is a silent no-op), and `PermissionMode`
 
 Alongside those, the package exports helpers for reasoning about the rungs themselves:
 `PermissionRungs()` (the canonical rungs, least→most permissive, a fresh slice per call),
-`MorePermissive()` and `BypassEnablingFlags()`. Their full signatures and godoc live in
-[MODULES.md](../../MODULES.md), regenerated from the AST by `harness docs markdown` — consult it there
-rather than duplicating a signature list that would drift.
+`MorePermissive()` and `BypassEnablingFlags()`. Their full signatures and godoc live in the generated
+`docs/MODULES.md`, which `harness docs markdown` regenerates from the AST — consult it there rather
+than duplicating a signature list here that would drift against it.
 
 ## Status
 

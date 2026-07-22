@@ -24,14 +24,22 @@ each is defined in full.
 - **Trace** — diagnostic-only observations (`wrapper_started`, `output_quiet`, …). **Not** an API
   surface; never drive control flow on it — use `Status`/events.
 - **Effort** — reasoning-effort hint (`low`…`max`) passed to harnesses that support it.
+- **Model** — the model requested for a run. Never validated: on a harness with no model flag it is
+  silently dropped rather than rejected.
+- **Permission mode** — a launch-time permission rung (`plan`, `manual`, `ask`, `auto`, `bypass`;
+  canonical set from `wrapper.PermissionRungs()`) translated into the target harness's native flags.
+  Unlike Effort it is validated on three axes — harness, value, and contradiction with a
+  bypass-enabling flag already in `Args`. It binds at **launch**; the restrictive rungs bind fully
+  only with a human at the TUI, so unattended paths enforce less than the rung name implies — see
+  [runtime enforcement per path](wrapper.md#runtime-enforcement-per-path).
 
 ## Screen & turns
 
 - **Screen / Snapshot** — [`pkg/screen`](screen.md): a vt100 emulator turning PTY bytes into a
   queryable `Snapshot` (rendered text + cursor + a monotonic `Generation`).
 - **Adapter** (`turns.Adapter`) — the per-harness contract: `OnScreen` + `OnWrapperStatus` → turn
-  [events](turns.md). Optional capabilities: `SessionIDExtractor`, `TranscriptReader`, `Quitter`,
-  `MessageExtractor`, `BusyDetector`.
+  [events](turns.md). Optional capabilities: `SessionIDExtractor`, `RawSessionIDExtractor`,
+  `TranscriptReader`, `Quitter`, `MessageExtractor`, `BusyDetector`, `PermissionModeDetector`.
 - **Marker** — the on-screen string an adapter keys on for turn completion (claude-code `✻ Verb for Ns`;
   codex `Token usage:`). The fragile, version-dependent part — see [drift](versions-drift.md).
 - **`Busy()`** — an adapter capability reporting "still working" vs "idle at the prompt", so the chat
