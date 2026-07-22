@@ -94,6 +94,47 @@ Wrapper flags go *before* the harness name:
 | `--model ID` | Model id for harnesses that support it (`claude --model`, `codex -c model`). |
 | `--auto-accept` | `run` only: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human. |
 | `--sandbox-defaults` | `run` and `structured-run` only; **dangerous**. For `claude`, injects `--dangerously-skip-permissions` into the harness args and sets `IS_SANDBOX=1` in the harness env (parity with meta-harness; see the [wrapper spec note](../internal/wrapper.md#sandbox-defaults-injection)). No-op for every other harness. The default passthrough mode **rejects** it with an error — an interactive session should make that policy call in the harness itself. |
+| `--permission-mode RUNG` | Launch-time permission posture for `claude` / `codex`: `plan`, `manual`, `ask`, `auto`, `bypass` (per-harness native spellings also pass through). Accepted in **every** mode **including passthrough**, unlike `--sandbox-defaults` — see the composition rule below. `plan` is **rejected** for `codex` (no launch-time flag exists; use `/plan` after launch). Unsupported for `opencode` and `pi`. |
+
+### `--permission-mode` rungs
+
+The canonical rungs are harness-independent; the wrapper translates each one into the harness's own
+launch-time flags before the harness starts:
+
+| Rung | `claude` / `claude-code` | `codex` |
+|---|---|---|
+| `plan` | `--permission-mode plan` | rejected (no launch-time flag; use `/plan` after launch) |
+| `manual` | `--permission-mode manual` | `-s read-only -a untrusted` |
+| `ask` | `--permission-mode acceptEdits` | `-s workspace-write -a on-request` |
+| `auto` | `--permission-mode auto` | `-s workspace-write -a never` |
+| `bypass` | `--permission-mode bypassPermissions` | `-s danger-full-access -a never` |
+
+**`--permission-mode bypass` is not a drop-in for `--sandbox-defaults`.** `--sandbox-defaults`
+contributes two halves — the args half (`--dangerously-skip-permissions`) and the env half
+(`IS_SANDBOX=1`, which is what allows running as **root** and suppresses claude-code's "Bypass
+Permissions mode" acceptance screen). The `bypass` rung delivers only the args half, so with `bypass`
+alone the acceptance screen comes back and root is disallowed.
+
+**Composition rule.** The two flags compose in exactly one combination: `--sandbox-defaults
+--permission-mode bypass` (or `... bypassPermissions`) is accepted, with `--sandbox-defaults`
+contributing the env half only. `--sandbox-defaults` paired with **any other** mode — including
+codex's native `danger-full-access` — exits 2 with:
+
+```
+--sandbox-defaults is incompatible with --permission-mode <mode> (only --permission-mode bypass composes with it)
+```
+
+In an interactive `run` the acceptance screen reaches the human on the tty; **`--auto-accept`** is the
+escape hatch that answers it unattended. Reach for that rather than `--sandbox-defaults` unless you
+actually want root semantics.
+
+> Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a human is at the TUI
+> (passthrough, or `run` from a terminal for codex). Under `structured-run` and unattended `run`,
+> claude's permission dialogs are not detected (the turn stalls to the deadline) and codex's approval
+> prompts are auto-approved (only the `-s` sandbox axis still binds).
+
+See the [wrapper spec](../internal/wrapper.md#sandbox-defaults-injection) for the per-path
+enforcement table and the known limitations behind that caveat.
 
 `--tmux-child` is an internal in-pane re-exec marker; never set it by hand. `-h` / `--help` / `help`
 print usage.

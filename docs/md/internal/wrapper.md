@@ -184,7 +184,76 @@ For every other harness it is a documented no-op. `IS_SANDBOX=1` is what suppres
 container workspaces under `internal/env`. (An explicitly passed `--dangerously-skip-permissions`
 already works unattended without the env var: the acceptance screen is detected as a `trust_prompt`
 and auto-answered, so the flag's value is cross-implementation parity plus the `IS_SANDBOX` effects,
-not an un-hang fix.)
+not an un-hang fix. The same holds for `--permission-mode bypass`, which reaches claude as
+`--permission-mode bypassPermissions`: unattended it is auto-answered, but an interactive `run`
+surfaces the screen to the human and passthrough hands it straight to their terminal.)
+
+### Two halves, and how `--permission-mode` composes
+
+The flag's two contributions are **not** interchangeable, which is why the pairing composes rather
+than being mutually excluded:
+
+- the **args half** — `--dangerously-skip-permissions` — is also what the `bypass` rung delivers
+  (`pkg/wrapper` emits `--permission-mode bypassPermissions`);
+- the **env half** — `IS_SANDBOX=1`, the piece that permits running as root and suppresses the
+  acceptance screen — is delivered by `--sandbox-defaults` and by nothing else.
+
+So `--permission-mode bypass` alone is **not** a drop-in for `--sandbox-defaults`: the acceptance
+screen comes back and root is disallowed. `--sandbox-defaults --permission-mode bypass` is exactly the
+recipe a root container needs; a blanket mutual exclusion would have outlawed the one legitimate
+combination. When the mode is bypass-class, `applySandboxDefaults` contributes the **env half only** —
+it skips the arg append and lets `pkg/wrapper` own the single permission directive in argv (the
+injected env is byte-identical either way).
+
+Every other pairing is rejected up front in `parseHarnessWrapperArgs`, exit 2:
+
+```
+harness-wrapper: --sandbox-defaults is incompatible with --permission-mode <mode> (only --permission-mode bypass composes with it)
+```
+
+| Paired mode | Result |
+|---|---|
+| `bypass`, `bypassPermissions` | accepted — `--sandbox-defaults` contributes the env half only |
+| `plan`, `manual`, `ask`, `auto`, `acceptEdits`, `dontAsk` | rejected, exit 2 |
+| `danger-full-access` (codex's bypass-equivalent) | **rejected**, exit 2 |
+
+The `danger-full-access` row is not an oversight. The exclusion check runs in flag parsing, **before
+the harness name is known**, so it must be harness-independent: `wrapper.IsBypassPermissionMode`
+recognizes only `bypass` and claude's `bypassPermissions`. Admitting codex's spelling there would let
+`--sandbox-defaults --permission-mode danger-full-access codex --` slip past a check that exists to
+gate the root-enabling env half. codex's own bypass handling lives in the unexported
+`isCodexBypassMode`, which keeps codex vocabulary out of `cmd/`.
+
+The exclusion check also runs **before** the passthrough rejection of `--sandbox-defaults`, so
+`--sandbox-defaults --permission-mode manual claude --` reports the incompatibility, not the mode
+policy. `--permission-mode` on its own is accepted in every mode, passthrough included — it is argv
+the user could have typed at the harness themselves, and without `IS_SANDBOX=1` claude still shows the
+acceptance screen, which passthrough has no input machinery to answer and therefore hands to the
+human's own terminal.
+
+### Runtime enforcement per path
+
+> Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a human is at the TUI
+> (passthrough, or `run` from a terminal for codex). Under `structured-run` and unattended `run`,
+> claude's permission dialogs are not detected (the turn stalls to the deadline) and codex's approval
+> prompts are auto-approved (only the `-s` sandbox axis still binds).
+
+| Axis | passthrough | interactive `run` (tty) | unattended `run` / `structured-run` |
+|---|---|---|---|
+| claude per-tool permission dialog (`plan`/`manual`/`ask`) | human answers | **not surfaced** (no detector) → stalls to deadline (exit 124) | **not surfaced** → stalls to deadline (124) |
+| claude bypass-acceptance screen (`bypass`) | human answers | surfaced (`bypassAnchor` → `trust_prompt`, nil policy) → tty chooser | auto-accepted by the `trust_prompt` policy |
+| codex `-s` sandbox axis | enforced by codex | enforced by codex | **enforced by codex** |
+| codex `-a` approval axis | human answers | surfaced → tty chooser | **auto-approved** by `oneshot.AutoAcceptAnswer` |
+
+Known limitations behind that table, all tracked as follow-ups and deliberately **not** addressed
+here:
+
+- no detector for claude-code's per-tool permission dialog, so `plan` / `manual` / `ask` stall
+  unattended turns to the deadline;
+- `pkg/oneshot.AutoAcceptAnswer` is wired unconditionally, so it auto-approves `codex.KindApproval`
+  even when a restrictive rung was requested (an approval policy would have to be kind-aware);
+- the bypass acceptance screen shares the `trust_prompt` kind with folder trust, so no policy can
+  target it independently (it would need its own `bypass_acceptance` kind).
 
 Dedup rules make the injection idempotent against caller-supplied values:
 
@@ -198,6 +267,14 @@ The injection lives in `cmd/harness-wrapper` (`applySandboxDefaults`), **not** i
 `pkg/harness.RunTurn`: `TurnConfig.Args` keeps its documented verbatim passthrough, and the
 danger-carrying policy toggle stays auditable at the CLI boundary. There is **no silent injection
 anywhere** — without the flag, nothing is added.
+
+That env/args split is load-bearing and deliberate: the **arg** half must be reachable by every
+`wrapper.Start` caller — passthrough included — so it lives in `pkg/wrapper`; the **env** half grants
+root and must stay auditable in one CLI file, so it lives in `applySandboxDefaults` and nowhere else.
+For the same reason the compose path guards on the literal harness name `"claude"` with no
+`normHarness` normalization (unlike `pkg/wrapper`, which does normalize): the CLI's supported names
+are exactly `claude`, `codex`, `opencode`, `pi`, so the `claude-code` alias never reaches it from the
+CLI, and normalizing would quietly widen the set of invocations receiving the root-enabling env half.
 
 ## PTY execution & attach
 
