@@ -61,6 +61,19 @@ type Config struct {
 	// Effort and Model are optional execution-mode knobs.
 	Effort string
 	Model  string
+	// PermissionMode is the optional launch-time permission rung forwarded to
+	// harness.TurnConfig → chat.Options → wrapper.Config, which translates it
+	// into the harness's native flag (claude --permission-mode, codex -s/-a).
+	// The canonical rungs are "plan", "manual", "ask", "auto" and "bypass";
+	// per-harness native spellings are also accepted. Empty leaves the harness
+	// default. Values are validated by wrapper.Config, not here.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a
+	// human is at the TUI (passthrough, or `run` from a terminal for codex).
+	// Under `structured-run` and unattended `run`, claude's permission dialogs
+	// are not detected (the turn stalls to the deadline) and codex's approval
+	// prompts are auto-approved (only the `-s` sandbox axis still binds).
+	PermissionMode string
 	// WorkingDir is the directory the turn runs in.
 	WorkingDir string
 	// Env is the harness process environment. The caller has already stripped
@@ -172,15 +185,16 @@ func validateConfig(cfg Config) error {
 // sandbox axis is enforced by codex itself, independent of this loop.)
 func turnConfig(cfg Config) harness.TurnConfig {
 	return harness.TurnConfig{
-		Harness:       cfg.Harness,
-		BinaryPath:    cfg.BinaryPath,
-		Args:          cfg.Args,
-		Effort:        cfg.Effort,
-		Model:         cfg.Model,
-		WorkingDir:    cfg.WorkingDir,
-		Env:           cfg.Env,
-		Prompt:        cfg.Prompt,
-		ExitAfterTurn: true,
+		Harness:        cfg.Harness,
+		BinaryPath:     cfg.BinaryPath,
+		Args:           cfg.Args,
+		Effort:         cfg.Effort,
+		Model:          cfg.Model,
+		PermissionMode: cfg.PermissionMode,
+		WorkingDir:     cfg.WorkingDir,
+		Env:            cfg.Env,
+		Prompt:         cfg.Prompt,
+		ExitAfterTurn:  true,
 		// Headless: no live client to answer Codex's update menu, so auto-Skip it
 		// rather than wedge the run on the pending prompt.
 		AutoSkipCodexUpdateNotice: true,

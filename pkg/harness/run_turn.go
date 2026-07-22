@@ -81,11 +81,25 @@ type TurnConfig struct {
 	WorkingDir string
 	Env        []string
 
-	// Effort and Model are execution-mode knobs forwarded to chat.Options →
-	// wrapper.Config (Claude Code --effort/--model, Codex config overrides).
-	// Empty leaves the harness default.
+	// Effort, Model and PermissionMode are execution-mode knobs forwarded to
+	// chat.Options → wrapper.Config (Claude Code --effort/--model, Codex config
+	// overrides). Empty leaves the harness default.
 	Effort string
 	Model  string
+
+	// PermissionMode is the launch-time permission rung forwarded to
+	// chat.Options → wrapper.Config, which translates it into the harness's
+	// native flag (claude --permission-mode, codex -s/-a). The canonical rungs
+	// are "plan", "manual", "ask", "auto" and "bypass"; per-harness native
+	// spellings are also accepted. Empty leaves the harness default. Values are
+	// validated by wrapper.Config, not here.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when
+	// a human is at the TUI (passthrough, or `run` from a terminal for codex).
+	// Under `structured-run` and unattended `run`, claude's permission dialogs
+	// are not detected (the turn stalls to the deadline) and codex's approval
+	// prompts are auto-approved (only the `-s` sandbox axis still binds).
+	PermissionMode string
 
 	// Prompt is submitted as one user message.
 	Prompt string
@@ -195,6 +209,7 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 		Env:            cfg.Env,
 		Effort:         cfg.Effort,
 		Model:          cfg.Model,
+		PermissionMode: cfg.PermissionMode,
 		Cols:           cfg.Cols,
 		Rows:           cfg.Rows,
 		Store:          store,

@@ -46,10 +46,25 @@ type Options struct {
 	// process's environment.
 	Env []string
 
-	// Effort and Model are execution-mode knobs forwarded to wrapper.Config; see
-	// harness-wrapper wrapper.Config. Empty leaves the harness default.
+	// Effort, Model and PermissionMode are execution-mode knobs forwarded to
+	// wrapper.Config; see harness-wrapper wrapper.Config. Empty leaves the
+	// harness default.
 	Effort string
 	Model  string
+
+	// PermissionMode is the launch-time permission rung forwarded to
+	// wrapper.Config, which translates it into the harness's native flag
+	// (claude --permission-mode, codex -s/-a). The canonical rungs are "plan",
+	// "manual", "ask", "auto" and "bypass"; per-harness native spellings are
+	// also accepted. Empty leaves the harness default. All value validation
+	// lives in wrapper.Config — this layer only carries the string.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when
+	// a human is at the TUI (passthrough, or `run` from a terminal for codex).
+	// Under `structured-run` and unattended `run`, claude's permission dialogs
+	// are not detected (the turn stalls to the deadline) and codex's approval
+	// prompts are auto-approved (only the `-s` sandbox axis still binds).
+	PermissionMode string
 
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
@@ -196,6 +211,7 @@ type ReopenOptions struct {
 	Env                     []string
 	Effort                  string
 	Model                   string
+	PermissionMode          string
 	Cols, Rows              int
 	Store                   Store
 	EventBuffer             int
@@ -234,6 +250,7 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 		Resume:                  rec.HarnessSessionID,
 		Effort:                  opts.Effort,
 		Model:                   opts.Model,
+		PermissionMode:          opts.PermissionMode,
 		Cols:                    opts.Cols,
 		Rows:                    opts.Rows,
 		Store:                   opts.Store,
@@ -329,15 +346,16 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	}
 
 	cfg := wrapper.Config{
-		BinaryPath: opts.BinaryPath,
-		Args:       launchArgs,
-		WorkingDir: opts.WorkingDir,
-		Env:        opts.Env,
-		Stdin:      nil,
-		Stdout:     scr,
-		Harness:    opts.Harness,
-		Effort:     opts.Effort,
-		Model:      opts.Model,
+		BinaryPath:     opts.BinaryPath,
+		Args:           launchArgs,
+		WorkingDir:     opts.WorkingDir,
+		Env:            opts.Env,
+		Stdin:          nil,
+		Stdout:         scr,
+		Harness:        opts.Harness,
+		Effort:         opts.Effort,
+		Model:          opts.Model,
+		PermissionMode: opts.PermissionMode,
 	}
 	// When the adapter can recover the harness's own session id from a raw
 	// output line, tap the wrapper's durable, no-drop line stream to capture
