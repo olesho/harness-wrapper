@@ -101,11 +101,13 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 		}
 	}
 
-	// Blocking startup interstitial (update notice, model migration, …) —
-	// transition on the request ID. A new interstitial emits InputRequested;
-	// it clearing emits InputResolved. The chat layer auto-dismisses these by
-	// default; codex's real approval prompts are not detected here and so are
-	// never auto-confirmed.
+	// Blocking input dialog (update notice, model migration, … and genuine
+	// command / apply-patch approvals) — transition on the request ID. A new
+	// dialog emits InputRequested; it clearing emits InputResolved. The chat
+	// layer auto-dismisses the INTERSTITIAL kinds by default; a real approval is
+	// classified here as KindApproval and is excluded from auto-dismiss by kind
+	// (AutoDismissKeys' default arm; tryAutoDismissCodex in pkg/chat/input.go),
+	// so it is surfaced to the client and never auto-confirmed.
 	if req, ok := DetectInput(snap.Text); ok {
 		if req.ID != a.lastInputID {
 			// A different interstitial replaced the one we were tracking without

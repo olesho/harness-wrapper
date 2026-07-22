@@ -33,14 +33,30 @@ const (
 	continueAnchor  = "Press enter to continue"
 )
 
-// Interstitial request kinds. These are the only kinds the chat layer
-// auto-dismisses; codex's real approval prompts (apply patch?, approve
-// change?) are classified by the wrapper detector, never here, so they are
-// never auto-confirmed.
+// approvalAnchors are the full-sentence questions codex renders at the top of a
+// genuine command / apply-patch approval dialog. Captured live from codex-cli
+// 0.144.4 (test/corpus/codex/approval-command, approval-patch). Full sentences,
+// not prose fragments, so the ready-side gate (pkg/chat/ready.go) stays tight.
+var approvalAnchors = []string{
+	"Would you like to run the following command?",
+	"Would you like to make the following edits?",
+}
+
+// Interstitial request kinds. These three are the only kinds the chat layer
+// auto-dismisses; codex's real approval prompts are classified HERE as
+// KindApproval (see detectApproval) and are excluded from auto-dismiss by kind
+// — AutoDismissKeys' default arm returns (nil, false) for them, and
+// tryAutoDismissCodex in pkg/chat/input.go matches only the interstitial kinds
+// — so they are never auto-confirmed.
 const (
 	KindUpdateNotice   = "codex_update_notice"
 	KindModelMigration = "codex_model_migration"
 	KindNotice         = "codex_notice"
+	// KindApproval marks a genuine command / apply-patch approval prompt. This
+	// exact string is pinned by the chat contract fixture
+	// (pkg/chat/codex_dismiss_test.go) and by orche's default handler contract
+	// — do not rename.
+	KindApproval = "approval_prompt"
 )
 
 // signinWallRE identifies Codex's logged-out onboarding / sign-in screens.
@@ -58,7 +74,9 @@ var signinWallRE = regexp.MustCompile(`(?i)sign in with chatgpt|finish signing i
 // menuRE matches a Codex numbered menu row: an optional "›" highlight marker,
 // then "N. Label", anchored to its own screen line. The label runs to the
 // end of the line (trailing emulator padding is trimmed by cleanLabel).
-var menuRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(?:›[^\S\r\n]*)?(\d+)\.[^\S\r\n]+(.+?)[^\S\r\n]*$`)
+// Group 1 captures the "›" marker on the currently-selected row (empty when
+// absent), group 2 the digit, group 3 the label.
+var menuRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(›)?[^\S\r\n]*(\d+)\.[^\S\r\n]+(.+?)[^\S\r\n]*$`)
 
 // promptRE matches the idle composer prompt indicator on its own line — the
 // "›" Codex prints at the start of the input box once it is ready for input.
@@ -76,6 +94,22 @@ var promptRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›`)
 // share it as the single source of truth for what counts as a blocking
 // codex interstitial.
 func DetectInput(text string) (*turns.InputRequest, bool) {
+	// KindApproval is checked FIRST — before updateAnchor / migration / continue
+	// — for two safety reasons (both would otherwise mis-handle an approval
+	// dialog whose body incidentally quotes an interstitial anchor):
+	//  1. continueAnchor→KindNotice and migrationAnchor→KindModelMigration both
+	//     AUTO-DISMISS with a bare "\r", which on an approval dialog would press
+	//     Enter on the highlighted "Yes" — i.e. auto-approve. The approval footer
+	//     is "Press enter to confirm or esc to cancel" (not "…continue"), so no
+	//     real dialog collides today, but the ordering makes that guarantee
+	//     independent of codex's exact footer wording.
+	//  2. The updateAnchor branch `return nil, false`s the WHOLE function when
+	//     its skip gate fails — an approval body mentioning "Update available!"
+	//     would be swallowed entirely, silently reviving the false-readiness
+	//     failure this detection exists to kill.
+	if req, ok := detectApproval(text); ok {
+		return req, true
+	}
 	// The logged-out sign-in wall renders "Press enter to continue" but is an
 	// auth wall handled by the auth-required path — never a dismissable
 	// interstitial (see signinWallRE).
@@ -121,6 +155,71 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// detectApproval recognizes a genuine command / apply-patch approval dialog and
+// returns the structured request, or (nil, false).
+//
+// The gate is MANDATORY-STRICT, not best-effort: once this surfaces, the chat
+// readiness gate (pkg/chat/ready.go) blocks sends and idle-completion, so a
+// false positive DEADLOCKS the turn — strictly worse than the false-readiness
+// miss it replaces. Beyond the anchor it therefore requires ALL of:
+//   - a proceed-aliased parsed row,
+//   - a deny-aliased parsed row (mirrors the update dialog's skip-row gate), and
+//   - the "›" highlight marker on at least one PARSED menu row.
+//
+// The highlight is a per-row property (parseMenuOptions records it from menuRE's
+// marker group), NOT a screen-wide regex: scrollback prompt echoes render past
+// prompts as "› <text>" rows, so a user prompt that began with "1. " echoes as
+// "› 1. …" and a screen-wide scan would match it anywhere on screen — combined
+// with a quoted anchor and a proceed/deny-shaped enumeration the whole gate
+// would false-positive into a deadlocked turn.
+//
+// The per-row flag alone is NOT sufficient either, because parseMenuOptions
+// reads the WHOLE screen: an echo row is itself a parsed row, so
+// "› 4. Deploy the thing" above a prose spoof lends its highlight to the gate
+// (digit dedup only saves the case where the echo's digit collides with a real
+// menu digit). So the rows are parsed from the text AFTER the anchor — codex
+// renders scrollback above the dialog, so a past-prompt echo can never sit
+// inside that tail. Verified against the corpus: the live dialogs' menus follow
+// their anchor, so this does not perturb their parsed options or their inputID.
+//
+// Residual (accepted, documented): a highlighted numbered row rendered BELOW a
+// prose-quoted anchor — e.g. the user typing "4. something" into the composer
+// while such a reply is on screen — is still counted. Codex replaces the
+// composer with the dialog while a real approval is up, so this shape is
+// contrived; the ready-side gate is independent of it.
+func detectApproval(text string) (*turns.InputRequest, bool) {
+	idx, anchor := -1, ""
+	for _, a := range approvalAnchors {
+		if i := strings.Index(text, a); i >= 0 {
+			idx, anchor = i, a
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, false
+	}
+	opts := parseMenuOptions(text[idx+len(anchor):])
+	req := &turns.InputRequest{Kind: KindApproval, Prompt: anchor, Options: opts}
+	if findByAlias(req, "proceed") == nil {
+		return nil, false
+	}
+	if findByAlias(req, "deny") == nil {
+		return nil, false
+	}
+	highlighted := false
+	for _, o := range opts {
+		if o.Highlighted {
+			highlighted = true
+			break
+		}
+	}
+	if !highlighted {
+		return nil, false
+	}
+	req.ID = inputID(req)
+	return req, true
 }
 
 // PromptReady reports whether the idle composer prompt is on screen. Callers
@@ -178,16 +277,22 @@ func parseMenuOptions(text string) []turns.InputOption {
 	var opts []turns.InputOption
 	seen := make(map[string]bool)
 	for _, m := range menuRE.FindAllStringSubmatch(text, -1) {
-		num, label := m[1], cleanLabel(m[2])
+		highlighted, num, label := m[1] != "", m[2], cleanLabel(m[3])
+		// Dedup keeps the FIRST occurrence of a digit, so a scrollback echo that
+		// collides with an already-parsed menu digit is dropped. Note this is NOT
+		// by itself a defense against echoes lending a spurious "›" highlight to
+		// the approval gate (a non-colliding digit survives) — detectApproval
+		// parses from the anchor tail for that; see its comment.
 		if seen[num] || label == "" {
 			continue
 		}
 		seen[num] = true
 		opts = append(opts, turns.InputOption{
-			ID:    num,
-			Alias: aliasForLabel(label),
-			Label: label,
-			Keys:  []byte(num + "\r"),
+			ID:          num,
+			Alias:       aliasForLabel(label),
+			Label:       label,
+			Keys:        []byte(num + "\r"),
+			Highlighted: highlighted,
 		})
 	}
 	return opts
@@ -205,6 +310,12 @@ func cleanLabel(s string) string {
 // policies can target "skip" without knowing the concrete wording. "Skip until
 // next version" and "Skip" both map to "skip"; "Update now" maps to "update"
 // so it is never selected by the safe auto-dismiss.
+//
+// ORDER MATTERS. The interstitial tokens are tested first so classification of
+// update / notice menus is byte-identical to before the approval vocabulary was
+// added ("Skip" must not become deny-adjacent). Notice/menu option aliases may
+// shift (a "Continue" row now aliases "proceed" where it had ""), but nothing
+// downstream acts on notice option aliases.
 func aliasForLabel(label string) string {
 	l := strings.ToLower(label)
 	switch {
@@ -212,9 +323,30 @@ func aliasForLabel(label string) string {
 		return "skip"
 	case strings.Contains(l, "update"):
 		return "update"
+	// Yes/No approval vocabulary, mirroring the claude-code adapter.
+	case containsAny(l, "proceed", "accept", "trust", "yes", "continue"):
+		return "proceed"
+	// The deny tokens below are comma/space-suffixed ("no,", "no ") on purpose
+	// so they never match "now"/"notice"; that leaves a bare "No" (lowercasing
+	// to exactly "no") matching neither, so this exact-match case is required —
+	// the approval gate DEMANDS a deny row, and real dialogs render a bare
+	// "2. No".
+	case l == "no":
+		return "deny"
+	case containsAny(l, "exit", "deny", "reject", "cancel", "no,", "no ", "don't", "do not"):
+		return "deny"
 	default:
 		return ""
 	}
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 func findByAlias(req *turns.InputRequest, alias string) *turns.InputOption {

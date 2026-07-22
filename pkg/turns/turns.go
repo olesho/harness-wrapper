@@ -170,6 +170,12 @@ type InputOption struct {
 	// path emits multi-select prompts, the ONLY guard is the multi-select
 	// answer unit test in pkg/chat.
 	Keys []byte
+
+	// Highlighted is true when the menu rendered this row as the currently
+	// selected choice (codex's "›" marker). SERVER-SIDE ONLY — never surfaced
+	// to a client and excluded from the request id hash. The codex approval
+	// gate requires it so a quoted-prose spoof cannot false-positive.
+	Highlighted bool
 }
 
 // Adapter is the per-harness contract that translates raw signals

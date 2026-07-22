@@ -1,0 +1,8 @@
+{
+  "harness": "codex",
+  "binary_version": "0.144.4",
+  "recorded_at": "2026-07-15T13:37:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "Live codex-cli 0.144.4 shell-command approval dialog (`codex --ask-for-approval untrusted`). Anchor: 'Would you like to run the following command?'. Menu: '› 1. Yes, proceed (y)' (highlighted with the '›' marker), '2. Yes, and don't ask again ... (p)', '3. No, and tell Codex what to do differently (esc)'. Footer 'Press enter to confirm or esc to cancel'. The '›' highlight IS present on the selected row (row 1) — the step-2/step-3 gates depend on it."
+}

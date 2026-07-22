@@ -1,0 +1,8 @@
+{
+  "harness": "codex",
+  "binary_version": "0.144.4",
+  "recorded_at": "2026-07-15T13:38:00Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "Live codex-cli 0.144.4 apply-patch / edit approval dialog (`codex --ask-for-approval untrusted --sandbox read-only`). Anchor: 'Would you like to make the following edits?'. Menu: '› 1. Yes, proceed (y)' (highlighted with the '›' marker), '2. Yes, and don't ask again for these files (a)', '3. No, and tell Codex what to do differently (esc)'. Footer 'Press enter to confirm or esc to cancel'. The '›' highlight IS present on the selected row (row 1)."
+}
