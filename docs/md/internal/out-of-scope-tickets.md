@@ -804,7 +804,7 @@ HARNESS-WRAPPER-24 (2026-07-16) already directed that this class not be re-filed
 this workspace. Carried forward for a human: the drain-to-empty fix is now on its
 **fifth** consecutive re-derivation and is still unfiled in `ORCHE`, and no agent in
 this worktree can file there.
-=======
+
 ## HARNESS-WRAPPER-115 — dead-spawner false positive (7th): the agent had *finished*, not died
 
 **Filed as:** `[observer] crashed/dead spawner bug-reviewer left HARNESS-WRAPPER-113
