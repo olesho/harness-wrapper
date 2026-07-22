@@ -2223,6 +2223,20 @@ which case the caller falls back to the raw snapshot text.
 
 - `ExtractMessage(snap screen.Snapshot) (string, bool)`
 
+#### `PermissionModeDetector`
+
+> PermissionModeDetector is an optional capability adapters may implement to
+report the harness's permission posture as painted on the rendered screen.
+It is the same shape of question as BusyDetector — a per-screen
+"ask the adapter, if it knows how to answer" consult, in the mould of
+pkg/chat/conversation.go:798's
+`if bd, ok := c.adapter.(turns.BusyDetector); ok && bd.Busy(snap)`.
+
+Implemented by the claude-code and codex adapters; deliberately absent on
+opencode, pi and generic, which paint no marker this can read.
+
+- `PermissionMode(snap screen.Snapshot) (string, bool)`
+
 #### `Quitter`
 Optional adapter capability surfacing the key sequence that makes the interactive harness exit gracefully instead of being SIGTERM'd.
 
