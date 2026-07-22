@@ -3,8 +3,9 @@
 Sibling repo: `meta-harness` (`~/Work/aether/meta-harness`, override with
 `META_HARNESS_DIR`). Paired consume-side ticket: **META-HARNESS-101**.
 
-Unlike [`APPLY.md`](APPLY.md) (HARNESS-WRAPPER-66), this is a **note, not a
-byte-exact bundle**: everything meta-harness must change here lives in MH-owned
+Unlike [`APPLY.md`](APPLY.md) (HARNESS-WRAPPER-66) — and like its other sibling
+[`HARNESS-WRAPPER-78-sandbox-defaults-argv.md`](HARNESS-WRAPPER-78-sandbox-defaults-argv.md) —
+this is a **note, not a byte-exact bundle**: everything meta-harness must change here lives in MH-owned
 TypeScript, and the conformance corpus reaches MH through its own vendoring
 script rather than through files staged in this directory. It is staged in the
 canonical `harness-wrapper` worktree for the same reason APPLY.md is — that is

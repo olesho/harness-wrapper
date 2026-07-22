@@ -25,11 +25,28 @@ const sandboxEnvKey = "IS_SANDBOX"
 // implementations).
 //
 // The injection lives HERE, at the CLI boundary, and deliberately NOT in
-// pkg/harness.RunTurn: TurnConfig.Args documents verbatim passthrough, and a
-// danger-carrying policy toggle stays trivially auditable when it is confined
-// to cmd/harness-wrapper. The cost is this small duplicated harness-name
-// check — the library's canonical dispatch is turnHarnessName
-// (pkg/harness/run_turn.go).
+// pkg/harness.RunTurn: TurnConfig.Args documents verbatim passthrough, and this
+// file is the ONE place that can add the root-enabling env var FOR you. That is
+// a NO-SILENT-INJECTION property, not a containment one. cmd/harness-chatd
+// forwards caller-supplied Args and Env verbatim (runTurnRequest/openRequest ->
+// harness.RunTurn / chat.Open in server.go) with no auth at all (main.go: "v1
+// has no auth; bind to localhost"), so a chatd client can always send
+// --dangerously-skip-permissions plus IS_SANDBOX=1 itself. That lever is
+// SUPPORTED AND DOCUMENTED, not a hole: see "permission_mode semantics" in
+// docs/md/guide/gateway.md. (chatd's control token is no counter-argument —
+// Conversation.AcquireControl is a FIFO writer mutex, not authentication;
+// anyone who can reach the port can take it.)
+//
+// What holds is: harness-wrapper never adds a permission-weakening token or env
+// var the caller did not explicitly ask for. IS_SANDBOX=1 is never implied by a
+// bypass rung arriving from pkg/wrapper, pkg/chat, pkg/oneshot or the chatd
+// wire — only --sandbox-defaults adds it, and this file is its only writer
+// (grep IS_SANDBOX: every other hit is a comment). Pinned end-to-end by
+// TestStructuredRun_SandboxDefaultsInjection and, at the wire, by
+// TestPermissionModeEnv_OpenBypassAddsNoSandboxEnv.
+//
+// The cost is this small duplicated harness-name check — the library's
+// canonical dispatch is turnHarnessName (pkg/harness/run_turn.go).
 //
 // Idempotence:
 //   - Args: nothing is appended when the caller already passed the flag —

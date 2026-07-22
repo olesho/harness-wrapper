@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -292,4 +295,95 @@ func TestPermissionModeArgv_ListingPresenceAndAbsence(t *testing.T) {
 	if v, ok := absent["permission_mode"]; ok {
 		t.Fatalf("permission_mode key present (= %s) for a conversation opened without one; omitempty should drop it: %s", v, raw)
 	}
+}
+
+// TestPermissionModeEnv_OpenBypassAddsNoSandboxEnv is the WIRE-altitude half of
+// harness-wrapper's no-silent-injection property (cmd/harness-wrapper/sandbox_defaults.go):
+// a `permission_mode: "bypass"` arriving over the chatd wire delivers the ARG
+// half only. The spawned harness must see `--permission-mode bypassPermissions`
+// in argv and IS_SANDBOX **unset** — chatd has no --sandbox-defaults equivalent,
+// so a caller wanting the env half must put IS_SANDBOX=1 in `env` itself. That
+// is the documented contract, not a gap: see "permission_mode semantics" in
+// docs/md/guide/gateway.md and the same caveat on openRequest.PermissionMode
+// (types.go).
+//
+// Why a shell shim rather than the fake's argv dump: the fake records argv but
+// not its environment. openRequest.BinaryPath and .Env are caller-supplied, so
+// the structured_run_test.go recording-shim idiom drops straight in — the shim
+// dumps "$@" and IS_SANDBOX, then EXECs the fake (exec, not fork, keeps the
+// harness a direct child of the PTY).
+func TestPermissionModeEnv_OpenBypassAddsNoSandboxEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script recording shim is Unix-only")
+	}
+	// Ambient-IS_SANDBOX hygiene: fakeScriptEnv folds in os.Environ(), so
+	// without this the assertion below would read the TEST HOST's environment
+	// and invert on any box (or container) that already exports IS_SANDBOX.
+	// Unset rather than t.Setenv("IS_SANDBOX", "") — the latter DEFINES the key.
+	if prev, ok := os.LookupEnv("IS_SANDBOX"); ok {
+		if err := os.Unsetenv("IS_SANDBOX"); err != nil {
+			t.Fatalf("unset IS_SANDBOX: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := os.Setenv("IS_SANDBOX", prev); err != nil {
+				t.Errorf("restore IS_SANDBOX: %v", err)
+			}
+		})
+	}
+
+	bin := fakeHarnessBin(t)
+	dir := t.TempDir()
+	recordPath := filepath.Join(dir, "record.txt")
+	shimPath := filepath.Join(dir, "claude-shim")
+	shim := fmt.Sprintf(`#!/bin/sh
+{
+  printf 'ARGS:'
+  for a in "$@"; do printf ' %%s' "$a"; done
+  printf '\n'
+  printf 'IS_SANDBOX=%%s\n' "${IS_SANDBOX-unset}"
+} > %q
+exec %q "$@"
+`, recordPath, bin)
+	if err := os.WriteFile(shimPath, []byte(shim), 0o700); err != nil {
+		t.Fatalf("write shim: %v", err)
+	}
+
+	srv := NewServer()
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	openConversation(t, ts, openRequest{
+		Harness:    "claude-code",
+		BinaryPath: shimPath,
+		Env: fakeScriptEnv(t, fakeharness.New("claude-code").
+			Idle().
+			StayAliveUntilStopped().
+			Build()),
+		PermissionMode: "bypass",
+	})
+
+	rec := readShimRecord(t, recordPath)
+	// Whole recorded line, not a bare substring: "IS_SANDBOX=1" would also match
+	// an ambient IS_SANDBOX=10.
+	if !strings.Contains(rec, "\nIS_SANDBOX=unset\n") {
+		t.Fatalf("bypass over the wire set IS_SANDBOX; want it unset; record:\n%s", rec)
+	}
+	if !strings.Contains(rec, "--permission-mode bypassPermissions") {
+		t.Fatalf("argv missing `--permission-mode bypassPermissions`; record:\n%s", rec)
+	}
+}
+
+// readShimRecord polls for the recording shim's dump on the same budget and for
+// the same reason as readArgvDump: the shim writes at launch, which races the
+// HTTP response.
+func readShimRecord(t *testing.T, path string) string {
+	t.Helper()
+	for i := 0; i < 400; i++ {
+		if raw, err := os.ReadFile(path); err == nil && bytes.Contains(raw, []byte("IS_SANDBOX=")) {
+			return string(raw)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("shim record never appeared at %s", path)
+	return ""
 }
