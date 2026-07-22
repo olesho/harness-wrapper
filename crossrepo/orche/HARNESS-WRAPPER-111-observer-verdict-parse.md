@@ -43,8 +43,11 @@ produces the ticket.
 ## Layout
 
     packages/agent/examples/observer.ts          Patch A — verdictFor(), used at :181 and :237
+                                                 Patch C — gateByPersistence(), used at :163-166
     packages/agent/src/observer.ts               Patch B — dead-spawner ownership grounding
     packages/agent/test/observer-verdict.unit.test.ts   new — Patch A regression matrix
+    packages/agent/test/observer-example.unit.test.ts   new — Patch C; FIRST coverage of the
+                                                 deployed makeObserver path (today: zero tests)
     packages/agent/test/observer.unit.test.ts    Patch B cases + one fixture fix at :725-736
 
 ## Patch A — read the verdict by line, not by substring (the actual fix)
@@ -102,13 +105,106 @@ if (a.kind === 'dead-spawner' && task.assignee !== a.facts.agentId) {
 }
 ```
 
-A strict-subset guard; it alone would have suppressed this signature. It keys on `assignee` —
+A strict-subset guard; it alone would have suppressed this signature — and, on the same
+`assignee` comparison, `dead-spawner:bug-reviewer:HARNESS-WRAPPER-112`
+(**HARNESS-WRAPPER-114**, `in_progress` · reassigned to `agent:integrator:362767ce`) beside the
+HARNESS-WRAPPER-113 signature. It keys on `assignee` —
 **not** on `PROGRESSED_STATUSES`, **not** on progress labels. See the rationale at
 `packages/agent/src/observer.ts:120-130` on why label-based convergence hid the ORCHE-67 stall.
 
 **Required companion.** The fixture at `packages/agent/test/observer.unit.test.ts:725-736` stubs
 `getTask` with **no `assignee`**, so it starts failing under this guard. Give it an `assignee`
 matching the seeded agent id. (Verified: this is a real break, not a hypothetical.)
+
+## Patch C — the deployed example tick has no persistence gate (HARNESS-WRAPPER-114)
+
+**The fleet does not run `observe()`.** The deployed chain is
+`$ORCHE_PROJECT_DIR/.orche/agents/observer.ts` →
+`packages/agent/examples/.orche/agents/observer.ts:16-18` → `makeObserver`
+(`packages/agent/examples/observer.ts:62`). `makeObserver` reimplements the tick in `onPrepared`
+(`:113-167`) over the same detection helpers rather than calling `observe()`, and that second
+implementation silently lacks the library's consecutive-tick persistence gate
+(`packages/agent/src/observer.ts:215`, `:221`, `:294-304` — *"A one-tick blip never reaches the
+filing stage."*). `handled` (`examples/observer.ts:89`) is a **dedup TTL for already-filed
+signatures**, not a streak counter; nothing gates the *first* filing. `grep -n
+'persistence\|persistTicks' packages/agent/examples/observer.ts` returns nothing.
+
+Smallest correct edit — port the one gate that matters, as an **exported pure helper** so the
+deployed path becomes testable at all (symmetric with Patch A's `verdictFor`). In
+`packages/agent/examples/observer.ts`:
+
+```ts
+/** Consecutive ticks a signature must persist before it may be filed. Mirrors
+ *  observe()'s persistTicks (src/observer.ts:215): the deployed example path is a
+ *  SECOND tick implementation and silently lacked this gate, so a one-tick window
+ *  blip amplified straight into a ticket (HARNESS-WRAPPER-114). Exported and pure
+ *  so it is testable without booting the hooks. Mutates `streaks` in place:
+ *  advances every signature seen this tick, deletes any not seen (recovery ⇒ reset). */
+export const PERSIST_TICKS = 2;
+
+export function gateByPersistence(
+  anomalies: Anomaly[],
+  streaks: Map<string, number>,
+  persistTicks = PERSIST_TICKS,
+): Anomaly[] {
+  const seen = new Set(anomalies.map(anomalySignature));
+  for (const sig of [...streaks.keys()]) if (!seen.has(sig)) streaks.delete(sig);
+  return anomalies.filter((a) => {
+    const sig = anomalySignature(a);
+    const streak = (streaks.get(sig) ?? 0) + 1;
+    streaks.set(sig, streak);
+    return streak >= persistTicks;
+  });
+}
+```
+
+Add `const persistence = new Map<string, number>();` to the `makeObserver` closure beside
+`handled` (`:89`), and at `:163-166` gate after the `handled` filter:
+
+```ts
+const fresh = gateByPersistence(
+  detectAnomalies(digest, { releaseLagMinMs: releaseLagFloorMs() })
+    .filter((a) => !handled.has(anomalySignature(a))),
+  persistence,
+);
+```
+
+Gating **before** the digest write at `:167` is deliberate: a one-tick blip then costs no Claude
+investigation either — the saving `handled`'s comment at `:83-88` already reasons about. The
+considered alternative — show all anomalies in the digest and gate only the filing in
+`onComplete` — buys an earlier human-readable verdict at the cost of a Claude run per blip and
+split bookkeeping across the two hooks. Considered and rejected, not silently dropped.
+
+**Honest scoping.** This is a *mitigation*, not a cure: it suppresses HARNESS-WRAPPER-114 only if
+the signature is absent on the following tick, which requires the drain to have caught up. It is
+strictly complementary to the drain fix, and it costs up to 300 s of extra latency on a *genuine*
+dead-spawner — a trade `observe()` already made deliberately.
+
+**Out of scope for this patch, and the reason this class has survived six triages.** The durable
+fix is to make `makeObserver` consume `observe()`'s tick so there is **one** implementation. The
+example path has drifted in three further ways, each of which the merge would also repair —
+named here so the follow-up is scoped rather than rediscovered a seventh time:
+
+- **probe filter / `ignoreSpawners`** — `isObserverProbe(ev.spawner)` and the `ignoreSpawners`
+  ingestion filter exist only in the library (`src/observer.ts:212`, `:259`). Synthetic probe
+  traffic can therefore enter the deployed `windowEvents`, and the operator-facing mute knob is
+  **unreachable on the path that actually runs**.
+- **`incidentId` correlation** (`src/observer.ts:311`) is absent — `fileAnomaly(client, a)` is
+  called two-arg at `examples/observer.ts:187`, so co-firing signatures in one digest cannot be
+  grouped into a single incident.
+- **single-page drain** at `examples/observer.ts:117` mirrors `src/observer.ts:242`; both need
+  the drain-to-empty loop described below.
+
+Merging the two implementations is an architectural change requiring a human decision on the
+hook/`observe()` boundary. Patch C is the minimal port of the single gate this ticket proves is
+load-bearing.
+
+**And note what this implies for Patch A.** Patch B lands in `src/` and reaches production
+through the shared `fileAnomaly`. Patches A and C do not: they live in `examples/`, which **no
+test loads** — `grep -rn 'makeObserver' packages/agent/test/` and
+`grep -rln 'examples/observer' packages/agent/test/` both return nothing, and all 35 `observe(`
+call sites in `observer.unit.test.ts` drive the library. That is why both patches are specified
+as exported pure helpers.
 
 ## Explicitly NOT in this bundle
 
@@ -152,9 +248,31 @@ fleet's `f.created`:
 - a `dead-spawner` whose re-fetched task is `{status:'open', assignee: undefined}` is **dropped**;
 - a `dead-spawner` reassigned to a different agent (`assignee: 'agent:worker:other'`) is
   **dropped**;
+- a `dead-spawner` whose re-fetched task is `{status:'in_progress', assignee:'agent:worker:other'}`
+  — **`in_progress` *and* owned by someone else** — is **dropped**. This is the
+  **HARNESS-WRAPPER-114 anchor** and the row that proves the guard **cannot be approximated by
+  any status check**: it has the *same* status as the "still files" case below, and only the
+  assignee comparison separates them. (Live instance: `-112` was `in_progress` ·
+  `agent:integrator:362767ce` when the observer accused the already-released
+  `agent:bug-reviewer:9231a24f`.) Note that `src/observer.ts:836-841` deliberately forbids
+  applying `PROGRESSED_STATUSES` here — this row is why that comment and this guard coexist.
 - a `dead-spawner` that is `in_progress` **and still assigned to the accused agent** **still
   files** — the over-suppression guard, and the reason the `:725` fixture must gain a matching
   `assignee`.
+
+### `packages/agent/test/observer-example.unit.test.ts` (new — Patch C)
+
+The **first** test coverage of the deployed path; today `grep -rn 'makeObserver'
+packages/agent/test/` returns nothing. Against the exported `gateByPersistence` (and
+`verdictFor`, if Patch A lands in the same pass):
+
+- a signature seen on **one** tick is not eligible; seen on **two consecutive** ticks is eligible
+  — *the direct HARNESS-WRAPPER-114 regression anchor; there is no test today that fails.*
+- a signature absent on tick 2 has its streak **deleted**, so tick 3 alone does not file —
+  recovery resets, no accumulation across a gap.
+- one signature's presence never advances another's streak — independent counters.
+- `persistTicks = 1` reproduces today's behaviour exactly — the escape hatch for anyone who wants
+  first-tick filing back.
 
 ## Apply
 
@@ -164,11 +282,16 @@ There is no script: read each anchor, apply the change, run the suite.
     # Patch A: packages/agent/examples/observer.ts  (add verdictFor; use at :181 and :237)
     # Patch B: packages/agent/src/observer.ts       (ownership drop after the :852 terminal drop)
     #          packages/agent/test/observer.unit.test.ts:725-736  (fixture gains `assignee`)
+    # Patch C: packages/agent/examples/observer.ts  (add gateByPersistence + the closure Map;
+    #                                                gate at :163-166, before the digest write)
     pnpm vitest run packages/agent/test/observer-verdict.unit.test.ts \
+                    packages/agent/test/observer-example.unit.test.ts \
                     packages/agent/test/observer.unit.test.ts
 
-Acceptance: the ``**DISMISS `<sig>`**`` case files nothing, the no-verdict case still files, and
-the `in_progress`-and-still-assigned case still files.
+Acceptance: the ``**DISMISS `<sig>`**`` case files nothing and the no-verdict case still files
+(A); an `in_progress` task assigned to a *different* agent is dropped while an `in_progress` task
+still assigned to the accused agent still files (B); a first-tick anomaly files nothing and a
+second consecutive tick does (C).
 
 ## Paired ticket
 
