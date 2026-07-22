@@ -410,11 +410,13 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	}
 
 	// Persist the session record on the create path only. Reopen (persist=false)
-	// skips this — the record already exists. Pass a copy: the PTY read loop is
-	// already live, so the tap may touch c.session (under c.mu) concurrently —
-	// the store must not alias it.
+	// skips this — the record already exists. Pass a copy taken under c.mu: the
+	// PTY read loop is already live, so the tap may write c.session (under c.mu)
+	// concurrently — the read must be synchronized and the store must not alias it.
 	if persist {
+		c.mu.Lock()
 		sessionRec := c.session
+		c.mu.Unlock()
 		if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
 			releaseWriter()
 			_ = sess.Stop(context.Background())
