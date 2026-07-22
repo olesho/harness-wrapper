@@ -21,6 +21,18 @@ type runTurnRequest struct {
 	InputPolicy    *chat.InputPolicy `json:"input_policy,omitempty"`
 	Effort         string            `json:"effort,omitempty"`
 	Model          string            `json:"model,omitempty"`
+	// PermissionMode is the launch-time permission rung threaded to
+	// wrapper.Config (claude --permission-mode, codex -s/-a). Canonical
+	// rungs: "plan", "manual", "ask", "auto", "bypass" (per-harness native
+	// spellings also accepted). Empty leaves the harness default.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only
+	// when a human is at the TUI (passthrough, or `run` from a terminal for
+	// codex). Under `structured-run` and unattended `run`, claude's
+	// permission dialogs are not detected (the turn stalls to the deadline)
+	// and codex's approval prompts are auto-approved (only the `-s` sandbox
+	// axis still binds).
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 type sessionDTO struct {
@@ -50,11 +62,22 @@ type openRequest struct {
 	Cols        int               `json:"cols,omitempty"`
 	Rows        int               `json:"rows,omitempty"`
 	InputPolicy *chat.InputPolicy `json:"input_policy,omitempty"`
-	// Effort / Model are execution-mode controls threaded to wrapper.Config
-	// (claude --effort/--model, codex config overrides). Omitted leaves the
-	// harness default.
+	// Effort / Model / PermissionMode are execution-mode controls threaded to
+	// wrapper.Config (claude --effort/--model/--permission-mode, codex config
+	// overrides and -s/-a). Omitted leaves the harness default.
 	Effort string `json:"effort,omitempty"`
 	Model  string `json:"model,omitempty"`
+	// PermissionMode's canonical rungs are "plan", "manual", "ask", "auto",
+	// "bypass" (per-harness native spellings also accepted). Empty leaves the
+	// harness default.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only
+	// when a human is at the TUI (passthrough, or `run` from a terminal for
+	// codex). Under `structured-run` and unattended `run`, claude's
+	// permission dialogs are not detected (the turn stalls to the deadline)
+	// and codex's approval prompts are auto-approved (only the `-s` sandbox
+	// axis still binds).
+	PermissionMode string `json:"permission_mode,omitempty"`
 	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
 	// choice-free startup interstitials (model migration, menu-less notices).
 	// Omitted/false keeps auto-dismiss on.
