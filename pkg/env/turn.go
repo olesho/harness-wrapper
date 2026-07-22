@@ -24,6 +24,7 @@ import (
 
 	ienv "github.com/olesho/harness-wrapper/internal/env"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // defaultRunner is the guest command that invokes the structured-run subcommand
@@ -50,9 +51,20 @@ type StructuredTurnConfig struct {
 	Harness string
 	// HarnessArgs are passed verbatim to the harness after the "--" separator.
 	HarnessArgs []string
-	// Effort / Model are optional wrapper flags (`--effort` / `--model`).
-	Effort string
-	Model  string
+	// Effort / Model / PermissionMode are optional wrapper flags
+	// (`--effort` / `--model` / `--permission-mode`). PermissionMode takes a
+	// canonical rung — "plan" / "manual" / "ask" / "auto" / "bypass" — or a
+	// per-harness native spelling; value validation belongs to
+	// wrapper.validateConfig in the guest, not here.
+	//
+	// Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when
+	// a human is at the TUI (passthrough, or `run` from a terminal for codex).
+	// Under `structured-run` and unattended `run`, claude's permission dialogs
+	// are not detected (the turn stalls to the deadline) and codex's approval
+	// prompts are auto-approved (only the `-s` sandbox axis still binds).
+	Effort         string
+	Model          string
+	PermissionMode string
 	// SandboxDefaults, when true, passes `--sandbox-defaults` to the guest
 	// runner: claude only — the wrapper injects
 	// --dangerously-skip-permissions into the harness args and IS_SANDBOX=1
@@ -102,6 +114,28 @@ type StructuredTurnConfig struct {
 func RunStructuredTurn(ctx context.Context, ws ienv.Workspace, cfg StructuredTurnConfig) (*turnproto.StructuredTurnResult, error) {
 	if strings.TrimSpace(cfg.Harness) == "" {
 		return nil, fmt.Errorf("env.RunStructuredTurn: empty harness name")
+	}
+	// Mirror of the CLI's --sandbox-defaults exclusion, hoisted host-side so a
+	// contradictory config never stages a prompt file or spends a container
+	// round-trip. --sandbox-defaults contributes BOTH halves (the
+	// --dangerously-skip-permissions arg AND IS_SANDBOX=1, which is what
+	// permits running as root); the `bypass` rung delivers only the args half,
+	// so bypass + --sandbox-defaults composes and every other rung contradicts
+	// it. wrapper.IsBypassPermissionMode is reused verbatim so the host and the
+	// CLI cannot drift.
+	//
+	// Mode-VALUE validation is deliberately NOT duplicated here — that is
+	// wrapper.validateConfig's job, and the guest does not swallow value errors
+	// either: runStructuredRun routes a parseHarnessWrapperArgs failure through
+	// emitStartupError, so a bad value comes back as a well-formed
+	// status:"startup_error" payload (message in reason, exit 1), not the
+	// generic "no structured result on stdout" path. This check is a
+	// latency/clarity win, not a correctness backstop.
+	if cfg.SandboxDefaults && cfg.PermissionMode != "" && !wrapper.IsBypassPermissionMode(cfg.PermissionMode) {
+		return nil, fmt.Errorf(
+			"env.RunStructuredTurn: --sandbox-defaults is incompatible with --permission-mode %s (only --permission-mode bypass composes with it)",
+			cfg.PermissionMode,
+		)
 	}
 
 	guestPrompt := cfg.PromptGuestPath
@@ -161,7 +195,7 @@ func uploadPrompt(ctx context.Context, ws ienv.Workspace, prompt, guestPath stri
 
 // buildRunnerArgv assembles the guest argv:
 //
-//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] [--sandbox-defaults] <harness> -- <harnessArgs...>
+//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] [--permission-mode P] [--sandbox-defaults] <harness> -- <harnessArgs...>
 //
 // mirroring the structured-run subcommand's own extractPromptFile +
 // parseHarnessWrapperArgs contract (`[wrapper flags] <name> -- <args>`).
@@ -178,6 +212,9 @@ func buildRunnerArgv(cfg StructuredTurnConfig, guestPrompt string) []string {
 	}
 	if cfg.Model != "" {
 		argv = append(argv, "--model", cfg.Model)
+	}
+	if cfg.PermissionMode != "" {
+		argv = append(argv, "--permission-mode", cfg.PermissionMode)
 	}
 	if cfg.SandboxDefaults {
 		argv = append(argv, "--sandbox-defaults")
