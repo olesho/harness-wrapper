@@ -14,6 +14,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/transcript/codex"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // runStructuredRun is the STRUCTURED SIBLING of runOneShot: it drives ONE turn
@@ -102,6 +103,24 @@ func runStructuredRun(args []string) int {
 	}
 	if status == turnproto.StatusCompleted {
 		result.Reply = outcome.Reply
+	}
+
+	// A startup_error means no harness was launched, so there is no rung to
+	// report; deadline/errored DID launch and the rung is exactly the record an
+	// orchestrator wants. One guard is SUFFICIENT, not merely conservative: a
+	// pre-turn failure returns a ZERO TurnResult, so res.Session.ID == "" and
+	// oneshot.Classify's default arm can only classify it as startup_error
+	// (pkg/oneshot/oneshot.go:243-251) — a rejected config can never surface as
+	// errored. harnessArgs is read AFTER applySandboxDefaults so the injected
+	// --dangerously-skip-permissions is in scope, and pre-pkg/wrapper injection,
+	// which is exactly the input EffectiveLaunchRung expects (it is idempotent
+	// over injection either way). See
+	// turnproto.StructuredTurnResult.PermissionMode for what the value promises
+	// — in particular that a restrictive rung is NOT an enforcement claim here.
+	if status != turnproto.StatusStartupError {
+		result.PermissionMode = wrapper.EffectiveLaunchRung(
+			parsed.HarnessName, harnessArgs, parsed.PermissionMode,
+		)
 	}
 
 	// Read the canonical transcript back in-guest — best-effort, so a Reader
@@ -235,6 +254,9 @@ func emitStructured(res turnproto.StructuredTurnResult) {
 	if err != nil {
 		// Marshaling a fixed-shape struct cannot realistically fail; fall back to
 		// a minimal hand-rolled object so the host still sees a parseable line.
+		// This path emits a FIXED, hand-rolled minimal startup_error shape
+		// regardless of what it was handed — it is a last-resort parseable line,
+		// not a second copy of the result shape. Do not add optional keys to it.
 		_, _ = fmt.Fprintf(os.Stdout, `{"status":"startup_error","reply":"","harnessSessionID":"","transcript_entries":[],"working_dir":%q,"reason":%q}`+"\n",
 			res.WorkingDir, err.Error())
 		return

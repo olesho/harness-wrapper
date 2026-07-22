@@ -109,6 +109,12 @@
       "json_tag": "usage",
       "type": "ref",
       "optional": true
+    },
+    {
+      "name": "PermissionMode",
+      "json_tag": "permission_mode",
+      "type": "string",
+      "optional": true
     }
   ],
   "Usage": [

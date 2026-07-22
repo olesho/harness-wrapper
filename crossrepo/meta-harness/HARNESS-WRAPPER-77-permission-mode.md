@@ -22,6 +22,18 @@ Go's snake_case"*.
 indistinguishable on the wire, which is the intended *"leave the harness
 default"* semantics — identical to how `effort` and `model` already behave.
 
+> **Scope of "response" here, and the sibling note.** In this document "response"
+> means `ConversationSummaryDTO` — the **requested-at-open** reading, whose
+> vocabulary includes harness-native spellings (`acceptEdits`, `dontAsk`,
+> `read-only`). A **second, different** field reuses this key name:
+> `StructuredTurnResult.permission_mode`, the `structured-run` result, which
+> reports the **effective canonical rung** and never a native spelling. It is
+> specified in
+> [`HARNESS-WRAPPER-101-structured-result-permission-mode.md`](HARNESS-WRAPPER-101-structured-result-permission-mode.md)
+> — the authority for that direction, as this note is for this one. The name and
+> the omitempty rule above are shared; the **semantics are not**. Do not map both
+> onto one TypeScript type or zod schema.
+
 ## What changes (paths are `$META_HARNESS_DIR`-relative)
 
 ### 1. `src/gateway/dto.ts` — `ConversationSummaryDTO` + its constructor

@@ -60,6 +60,32 @@ with quotes, newlines, or leading dashes can never corrupt argv. The same
 `pkg/env.RunStructuredTurn`, which mirrors this invocation shape (including `--sandbox-defaults` via
 `StructuredTurnConfig.SandboxDefaults`).
 
+### The reported `permission_mode`
+
+The result carries an optional `permission_mode`: the **canonical rung the turn was launched at**
+(`plan` | `manual` | `ask` | `auto` | `bypass`), resolved from the final launch arguments plus the
+requested `--permission-mode` — never a harness-native spelling like `acceptEdits` or `read-only`.
+
+The promise is **one-directional**:
+
+- **Presence of `bypass` is trustworthy** for a turn that reached the harness. Every unrestricted
+  launch path reports it, including the ones that carry no canonical `--permission-mode` at all:
+  `--sandbox-defaults` (which injects `--dangerously-skip-permissions`), a raw
+  `--dangerously-skip-permissions` after `--`, and codex's `-s danger-full-access` in every spelling.
+- **Absence never means "safe."** An absent key means no canonical rung could be *named*: the harness
+  default, an unsupported harness, a native spelling with no canonical equivalent (claude's
+  `dontAsk`), a codex argv setting only the `-a` approval axis, or a present-but-unreadable flag.
+- **A restrictive rung is a launch argument, not a gate.** On this path claude's per-tool permission
+  dialog is not detected at all (so `plan` / `manual` / `ask` stall an unattended turn to the
+  deadline) and codex approvals are auto-answered, so only codex's `-s` sandbox axis is actually
+  enforced. Do not read `"permission_mode": "manual"` off a structured run as "this turn was
+  supervised" — see [Runtime enforcement per path](../internal/wrapper.md).
+- **`startup_error` never carries it.** No harness was launched, so there is no rung to report;
+  `deadline` and `errored` *do* carry it, because those turns reached the harness.
+
+It reports the argv half only: the `IS_SANDBOX=1` environment half that `--sandbox-defaults` also
+sets is not representable in a rung string and is not reflected here.
+
 ## Detached (tmux)
 
 For shell users who want to start a run, walk away, and reconnect later, the CLI ships a tmux-backed

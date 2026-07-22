@@ -154,8 +154,8 @@ func checkRoundTrip(t *testing.T, status TurnStatus) {
 }
 
 // TestJSONTagSpellings asserts the exact frozen JSON key spellings and that the
-// two optional keys are absent when unset while the five required keys are always
-// present.
+// four optional keys are absent when unset while the five required keys are
+// always present.
 func TestJSONTagSpellings(t *testing.T) {
 	data, err := json.Marshal(StructuredTurnResult{Status: StatusCompleted})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestJSONTagSpellings(t *testing.T) {
 			t.Errorf("required key %q missing from %s", k, data)
 		}
 	}
-	for _, k := range []string{"reason", "transcript_error", "usage"} {
+	for _, k := range []string{"reason", "transcript_error", "usage", "permission_mode"} {
 		if _, ok := raw[k]; ok {
 			t.Errorf("optional key %q must be absent when unset, got %s", k, data)
 		}
@@ -189,6 +189,7 @@ func TestOptionalKeysPresentWhenSet(t *testing.T) {
 		Status:          StatusErrored,
 		Reason:          "boom",
 		TranscriptError: "read failed",
+		PermissionMode:  "bypass",
 	})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -202,6 +203,26 @@ func TestOptionalKeysPresentWhenSet(t *testing.T) {
 	}
 	if _, ok := raw["transcript_error"]; !ok {
 		t.Errorf("transcript_error missing when set: %s", data)
+	}
+	if got, ok := raw["permission_mode"]; !ok {
+		t.Errorf("permission_mode missing when set: %s", data)
+	} else if string(got) != `"bypass"` {
+		t.Errorf("permission_mode = %s, want %q", got, "bypass")
+	}
+}
+
+// A result line from an OLD producer — one that predates permission_mode — must
+// still parse, with the field recovering as "" (the "no canonical rung could be
+// named" reading, NOT "safe"). The backward-compatible direction is cheap, but
+// it is the one a host upgrade depends on.
+func TestParseLastJSONLineOmittedPermissionMode(t *testing.T) {
+	const line = `{"status":"completed","reply":"hi","harnessSessionID":"s1","transcript_entries":[],"working_dir":"/w"}`
+	got, ok := ParseLastJSONLine([]byte(line))
+	if !ok || got == nil {
+		t.Fatalf("ParseLastJSONLine failed on a pre-permission_mode line")
+	}
+	if got.PermissionMode != "" {
+		t.Errorf("PermissionMode = %q, want \"\" for a line that omits the key", got.PermissionMode)
 	}
 }
 
