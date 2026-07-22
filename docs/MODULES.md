@@ -2635,11 +2635,13 @@ IsBypassPermissionMode reports whether mode resolves to claude-code's
 bypassPermissions directive — the canonical rung "bypass" and its
 claude-native spelling "bypassPermissions", and NOTHING else.
 
-Three call sites, all of which need exactly this question:
+Four call sites, all of which need exactly this question:
  1. cmd/harness-wrapper.applySandboxDefaults — compose (env half only).
  2. cmd/harness-wrapper.parseHarnessWrapperArgs — the --sandbox-defaults
     exclusion check, which is deliberately harness-INDEPENDENT.
  3. pkg/wrapper.validateConfig — the contradictory-argv rejection.
+ 4. pkg/env.RunStructuredTurn — the host-side mirror of call site 2,
+    hoisted so a contradictory config never spends a container round-trip.
 
 codex's "danger-full-access" is deliberately NOT included even though it is
 codex's bypass-equivalent: call site 2 runs before the harness is known, so
