@@ -303,26 +303,30 @@ open a second triage document for this signature**; amend this section instead.
 
 **Amendment — re-fired a third time as HARNESS-WRAPPER-110 (2026-07-22 21:53).**
 Operator action (2) *still* has not happened, so the signature fired again,
-unchanged. Live state re-verified in the -110 worktree (not carried over from the
-ticket): supervisor **pid 65669** is alive and has never been restarted (`ps -p
-65669` → start **Wed Jul 22 11:32:51**, elapsed **10:20:06**, `agent-cli.ts up
---workspace HARNESS-WRAPPER`); `main` is still at **`6281927`** (10:15:03, the last
-promotion); the lag has grown to **78 total / 40 first-parent** commits
-(`rev-list --count main..dev` = 78, `--first-parent` = 40 — was 27 → 32 → 52/57
-across the prior filings), while `dev..main` = **0**, so `main` remains a clean
-ancestor and the gate would simply promote if it ran. A tree-wide grep for
-`runTick` / `at_capacity` / `maxRunMs` over `*.go` still returns **zero** hits.
+unchanged. Live state re-verified in the -110 worktree at **21:55** (measured here,
+not carried over from the ticket): supervisor **pid 65669** is alive and has never
+been restarted (`ps -p 65669` → start **Wed Jul 22 11:32:51**, elapsed **10:22**,
+`agent-cli.ts up --dir …/.orche --workspace HARNESS-WRAPPER`); `main` is still at
+**`6281927`** (10:15:03, the last promotion); the lag is **82 total / 41
+first-parent** commits (`rev-list --count main..dev` = 82, `--first-parent` = 41),
+while `dev..main` = **0**, so `main` remains a clean ancestor and the gate would
+simply promote if it ran. The progression across filings is **27 → 32 → 52/57 →
+78/40 (ticket, 21:53) → 82/41 (verified, 21:55)** — it grows between the ticket
+being written and the work being done, which is itself the point: nothing is
+draining. A tree-wide grep for `runTick` / `at_capacity` / `maxRunMs` over `*.go`
+still returns **zero** hits.
 
 Two findings are genuinely new to this filing:
 
-- **No `ORCHE` ticket covers Fix A–D.** Resolving the sibling tickets that share
-  this signature label (`orche resolve fleet-db://ORCHE/ORCHE-31` and `…/ORCHE-40`)
-  shows both **closed** and both fixing the *detector* (first-parent commit count;
-  clamped `oldestUnpromotedMs`) — neither touches the wedged cron slot. The
+- **No `ORCHE` ticket covers Fix A–D.** The sibling tickets that share this
+  signature label — `fleet-db://ORCHE/ORCHE-31` and `…/ORCHE-40`, resolved during
+  -110 triage — are both **closed** and both fix the *detector* (first-parent
+  commit count; clamped `oldestUnpromotedMs`); neither touches the wedged cron
+  slot. (Not re-run here: a worker must not issue `orche` commands.) The
   wedged-slot defect is therefore still **unfiled anywhere**, and operator action
   (1) above remains outstanding. A useful corollary: because ORCHE-31/-40 already
   removed the two known phantom-fire paths, this fire cannot be a detector
-  artifact — the 40-commit first-parent count and the 210-minute oldest-unpromoted
+  artifact — the 41-commit first-parent count and the 210-minute oldest-unpromoted
   age are post-fix, trustworthy values.
 - **Worktree accumulation is still untracked** — **46** retained `agent-release-*`
   directories under `cleanup: 'on-success'`, including the wedged 15:40 tick
