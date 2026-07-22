@@ -123,6 +123,14 @@ type Options struct {
 	// "use the package default". Set once at Open and never mutated, so the
 	// idleCompletionWatcher goroutine reads them race-free.
 	idleGap, markerGap time.Duration
+
+	// permModeRenderTimeout optionally overrides the per-press repaint budget
+	// SetPermissionMode waits on (defaultPermissionModeRenderTimeout). Same
+	// rationale as idleGap/markerGap and unexported for the same reason: only
+	// same-package tests set it, so a deliberately-stuck fake exhausts the press
+	// bound in milliseconds instead of tens of seconds. Zero means "use the
+	// package default".
+	permModeRenderTimeout time.Duration
 }
 
 // Conversation owns one supervised harness process and serves the
