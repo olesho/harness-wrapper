@@ -22,8 +22,13 @@ import (
 // rejected earlier by parseHarnessWrapperArgs and never reaches this function.
 func TestApplySandboxDefaults(t *testing.T) {
 	tests := []struct {
-		name     string
-		harness  string
+		name    string
+		harness string
+		// mode is written out as "" on the pre-composition rows rather than
+		// left to the zero value: those rows are the cross-repo argv tripwire
+		// (crossrepo/meta-harness/HARNESS-WRAPPER-78-sandbox-defaults-argv.md),
+		// so if this field ever gains a non-empty default they must fail loudly
+		// instead of quietly changing meaning.
 		mode     string
 		args     []string
 		env      []string
@@ -33,6 +38,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "claude injects flag and env",
 			harness:  "claude",
+			mode:     "",
 			args:     []string{"--model", "opus"},
 			env:      []string{"PATH=/usr/bin"},
 			wantArgs: []string{"--model", "opus", "--dangerously-skip-permissions"},
@@ -41,6 +47,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "codex is a no-op",
 			harness:  "codex",
+			mode:     "",
 			args:     []string{"--model", "o3"},
 			env:      []string{"PATH=/usr/bin"},
 			wantArgs: []string{"--model", "o3"},
@@ -49,6 +56,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "dedup exact flag token",
 			harness:  "claude",
+			mode:     "",
 			args:     []string{"--dangerously-skip-permissions"},
 			env:      []string{},
 			wantArgs: []string{"--dangerously-skip-permissions"},
@@ -57,6 +65,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "dedup =value flag form",
 			harness:  "claude",
+			mode:     "",
 			args:     []string{"--dangerously-skip-permissions=true"},
 			env:      []string{},
 			wantArgs: []string{"--dangerously-skip-permissions=true"},
@@ -65,6 +74,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "existing IS_SANDBOX value is left untouched",
 			harness:  "claude",
+			mode:     "",
 			args:     []string{},
 			env:      []string{"IS_SANDBOX=0"},
 			wantArgs: []string{"--dangerously-skip-permissions"},
@@ -73,6 +83,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "prefix-sharing key does not suppress injection",
 			harness:  "claude",
+			mode:     "",
 			args:     []string{},
 			env:      []string{"IS_SANDBOXED=1"},
 			wantArgs: []string{"--dangerously-skip-permissions"},
@@ -81,6 +92,7 @@ func TestApplySandboxDefaults(t *testing.T) {
 		{
 			name:     "empty inputs still inject for claude",
 			harness:  "claude",
+			mode:     "",
 			args:     nil,
 			env:      nil,
 			wantArgs: []string{"--dangerously-skip-permissions"},

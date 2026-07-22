@@ -102,13 +102,37 @@ func TestStructuredRun_SandboxDefaultsInjection(t *testing.T) {
 		t.Skipf("fakeharness unavailable: %v", err)
 	}
 
+	// Ambient-IS_SANDBOX hygiene, required for the two negative rows to mean
+	// anything: cleanedEnv() starts from os.Environ() and strips only
+	// CLAUDECODE / CLAUDE_CODE_*, so the shim's ${IS_SANDBOX-unset} otherwise
+	// reflects the TEST HOST. In a guest that already exports IS_SANDBOX=1 —
+	// exactly the deployment this feature targets — the bypass-alone row would
+	// fail spuriously and the sandbox-defaults row would pass for the WRONG
+	// reason (hasEnvKey suppresses the injection, yet IS_SANDBOX=1 still shows
+	// up in the record). Unset, don't t.Setenv("IS_SANDBOX", ""): that DEFINES
+	// the key, which hasEnvKey treats as present.
+	if prev, ok := os.LookupEnv("IS_SANDBOX"); ok {
+		os.Unsetenv("IS_SANDBOX")
+		t.Cleanup(func() { os.Setenv("IS_SANDBOX", prev) })
+	}
+
 	for _, tc := range []struct {
-		name       string
-		args       []string
-		wantInject bool
+		name string
+		args []string
+		// The three expectations are independent on purpose: a regression that
+		// swaps one permission spelling for the other must not be able to pass.
+		wantSkipFlag   bool // --dangerously-skip-permissions in argv
+		wantRungFlag   bool // --permission-mode bypassPermissions in argv
+		wantSandboxEnv bool // IS_SANDBOX=1 in the spawned env
 	}{
-		{"with sandbox-defaults", []string{"--sandbox-defaults", "claude", "--"}, true},
-		{"without sandbox-defaults", []string{"claude", "--"}, false},
+		{"with sandbox-defaults", []string{"--sandbox-defaults", "claude", "--"}, true, false, true},
+		{"without sandbox-defaults", []string{"claude", "--"}, false, false, false},
+		// The headline invariant: a RUNG NEVER IMPLIES THE ENV HALF. Observed on
+		// a really spawned process, not inferred from a parse result.
+		{"bypass alone adds no sandbox env", []string{"--permission-mode", "bypass", "claude", "--"}, false, true, false},
+		// Compose: env half from --sandbox-defaults, arg half from pkg/wrapper,
+		// and exactly one permission directive between them.
+		{"compose: env half plus the rung", []string{"--sandbox-defaults", "--permission-mode", "bypass", "claude", "--"}, false, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const prompt = "ship the turn API"
@@ -159,13 +183,33 @@ exec %q "$@"
 				t.Fatalf("read shim record: %v", err)
 			}
 			recorded := string(rec)
-			if got := strings.Contains(recorded, "--dangerously-skip-permissions"); got != tc.wantInject {
+			if got := strings.Contains(recorded, "--dangerously-skip-permissions"); got != tc.wantSkipFlag {
 				t.Errorf("argv has --dangerously-skip-permissions = %v, want %v; record:\n%s",
-					got, tc.wantInject, recorded)
+					got, tc.wantSkipFlag, recorded)
 			}
-			if got := strings.Contains(recorded, "IS_SANDBOX=1"); got != tc.wantInject {
-				t.Errorf("env has IS_SANDBOX=1 = %v, want %v; record:\n%s",
-					got, tc.wantInject, recorded)
+			if got := strings.Contains(recorded, "--permission-mode bypassPermissions"); got != tc.wantRungFlag {
+				t.Errorf("argv has --permission-mode bypassPermissions = %v, want %v; record:\n%s",
+					got, tc.wantRungFlag, recorded)
+			}
+			// Whole recorded LINES, not bare substrings: the record is exactly
+			// one "ARGS: …\n" line followed by one "IS_SANDBOX=…\n" line, and a
+			// bare Contains("IS_SANDBOX=1") would also match an ambient
+			// IS_SANDBOX=10.
+			wantLine, otherLine := "\nIS_SANDBOX=1\n", "\nIS_SANDBOX=unset\n"
+			if !tc.wantSandboxEnv {
+				wantLine, otherLine = otherLine, wantLine
+			}
+			if !strings.Contains(recorded, wantLine) || strings.Contains(recorded, otherLine) {
+				t.Errorf("env: want %q in the record and not %q; record:\n%s",
+					strings.TrimSpace(wantLine), strings.TrimSpace(otherLine), recorded)
+			}
+			// Presence booleans alone do not establish "exactly one permission
+			// directive" — count it.
+			if tc.wantRungFlag {
+				if n := strings.Count(recorded, "--permission-mode "); n != 1 {
+					t.Errorf("argv has %d occurrences of --permission-mode, want exactly 1; record:\n%s",
+						n, recorded)
+				}
 			}
 		})
 	}
