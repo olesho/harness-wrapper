@@ -397,11 +397,11 @@ func submitKeyForHarness(harness, screenText string) []byte {
 // form cannot be — the same trade submitKeyForHarness already makes for Enter,
 // where CR genuinely does nothing and CSI 13u is the only thing that submits.
 //
-// screenText is accepted to mirror submitKeyForHarness's shape (and to leave
-// room for a future screen-sensitive variant); today's encoding does not depend
-// on what is rendered.
+// screenText is accepted to mirror submitKeyForHarness's shape — which takes it
+// for the same reason and likewise does not branch on it today, leaving room for
+// a screen-sensitive variant. Neither harness's Shift+Tab encoding depends on
+// what is rendered.
 func shiftTabForHarness(harness, screenText string) []byte {
-	_ = screenText
 	switch harness {
 	case "claude", chatClaudeCode:
 		// Verified live on 2.1.217: cycles auto → manual in the status line.
