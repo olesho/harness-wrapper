@@ -581,3 +581,79 @@ class not be re-filed here. One item is carried forward for a human and is not a
 defect: HARNESS-WRAPPER-79's decomposition children keep exceeding run deadlines
 (`-79` twice, `-109` once), and two more park the task at `blocked`/`stuck` per
 `MAX_CONSECUTIVE_TIMEOUTS` (`packages/agent/src/finalize.ts:60`).
+
+## HARNESS-WRAPPER-112 — dead-spawner false positive, measured: the heartbeats existed
+
+**Filed as:** `[observer] crashed/dead spawner plan-reviewer left HARNESS-WRAPPER-103
+working (dead-spawner:plan-reviewer:HARNESS-WRAPPER-103)`.
+
+**Why it landed here:** unchanged from §HARNESS-WRAPPER-23, §HARNESS-WRAPPER-26,
+§HARNESS-WRAPPER-98, §HARNESS-WRAPPER-99 and §HARNESS-WRAPPER-111 — the observer
+files a `dead-spawner` against the *task* it is watching (`HARNESS-WRAPPER-103`, in
+this repo's fleet-db workspace), so the ticket lands in this workspace even though
+every line of the defect lives in `orche`. This is the **fifth** recurrence of the
+class.
+
+**The observer itself dismissed this signature.** As on §HARNESS-WRAPPER-111, the
+verdict was written and the anomaly was filed anyway — so this ticket is a second
+instance of the verdict-parse defect bundled in
+[`crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md`](../../../crossrepo/orche/HARNESS-WRAPPER-111-observer-verdict-parse.md),
+not just of the drain defect.
+
+**What is new: the false positive is now measured, not asserted.** Every prior record
+in this class argued from source that the observer's cursor lags. This one proves it
+from 69 local trace spans for `agent:plan-reviewer:20f348b0-…`. The `agent.run_task`
+span is **706,435 ms** and its `onComplete` comment POSTs at **19:57:35.781Z**, fixing
+the run window at ≈**19:45:49Z → 19:57:36Z**. Inside that window the agent issued
+**17** lock heartbeats at the 40 s interval implied by `heartbeatMs = ttlSeconds*1000/3`
+(`spec.ts:628`, `ttlSeconds ?? 120` at `spec.ts:589`) — ≈**680 s of the 706 s run**.
+The lock heartbeat and the 30 s screen heartbeat that feeds `lastSeen`
+(`SCREEN_HEARTBEAT_MS`, `spawner.ts:109`/`:824-831`) are cleared in the **same**
+`finally` (`spawner.ts:1105-1108`), so the 17 lock beats prove `screenBeat` was still
+firing every 30 s through 19:56. The digest's claimed 287 s of silence at ≈19:56:05Z
+puts the observer's `lastSeen` at ≈19:51:18Z — **roughly five minutes behind the bus**.
+Two `dead-spawner` signatures fired in that one digest (this one and
+`:worker:HARNESS-WRAPPER-109`), which is systemic view staleness, not coincident
+crashes.
+
+**Correction to the record: the assignee guard would NOT have suppressed this one.**
+The observer's comment on this ticket claims §-99 Fix #1 would have caught 4 of 5
+signatures. It does not catch this one. HARNESS-WRAPPER-103 was `in_progress` and
+assigned to `agent:plan-reviewer:20f348b0-…` at file time and *is still*
+`status: blocked · assignee: agent:plan-reviewer:20f348b0-…`, so
+`task.assignee !== a.facts.agentId` is `false` and the guard is a no-op. Only the
+drain fix suppresses this signature. Fix #1 stays sound and worth landing — it is just
+not the fix here.
+
+**Actual defect location:** `orche` — `packages/agent/src/observer.ts:242`, the
+un-looped, un-limited single `pull()` per 300 s tick, against a backend whose `pull` is
+single-page by construction (`packages/queue/src/fleet.ts:256-261`, cap
+`MAX_PAGE_LIMIT = 1000` at `fleet.ts:63`). `lastSeen` is a max over *drained* events
+(`apps/screen/src/state.ts:346`) and the predicate at `observer.ts:537` compares it to
+wall-clock `now`, so what it actually measures is **agent silence + observer lag**.
+Secondary: `fileAnomaly` (`observer.ts:816-857`) grounds only on
+`DEAD_SPAWNER_TERMINAL_STATUSES` (`observer.ts:111`, `:852`), never on ownership.
+Tertiary: `emitScreen` (`spawner.ts:1828-1830`) swallows failed heartbeat publishes
+with a bare `.catch(() => {})` — no log, no retry, no counter.
+
+**Confirmed:** none of those files exist here — this is a Go module
+(`module github.com/olesho/harness-wrapper`, no `packages/` or `apps/` tree).
+`git grep -niE "dead-spawner|fileAnomaly|task_released|agent_stopped|obs-sig|deadSpawnerMs|lastSeen"`
+over tracked source, excluding these docs, returns exactly four hits, all in
+`pkg/wrapper/session.go:521-557` — a `classifierState.lastSeen` **byte counter** for
+PTY output-change detection, unrelated to fleet liveness. No bus, queue, lease,
+anomaly detector, or `fileAnomaly` exists in this repo.
+
+**Resolution:** no source change made in this repo — documentation only, and no human
+gate requested. The drain-to-empty fix (`observer.ts:242`: loop `pull` → fold →
+`ackThrough` until empty, bounded cap, `stderr` warn on cap; gate the `dead-spawner`
+scan on **drain state**, never on §-99's rejected event-age guard) is now on its
+**fourth consecutive re-derivation** — §-99, §-111, the observer's own comment here,
+and this record — and is **still unfiled in `ORCHE`**; `orche list --workspace ORCHE
+--limit 500` carries no open observer/drain ticket and ORCHE-130 is closed/merged.
+Filing that follow-up is the outstanding action, and no worker in this worktree can
+perform it. Full evidence chain, arithmetic and test plan in
+[`docs/triage/HARNESS-WRAPPER-112.md`](../../triage/HARNESS-WRAPPER-112.md). Once the
+follow-up is filed, the correct disposition for this ticket in this workspace is
+**close-as-invalid** — HARNESS-WRAPPER-24 (2026-07-16) already directed that this class
+not be re-filed here.
