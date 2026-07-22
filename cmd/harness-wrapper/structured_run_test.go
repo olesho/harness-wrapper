@@ -13,6 +13,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // TestStructuredRun_GoldenCompleted drives a scripted fake claude turn through
@@ -451,6 +452,55 @@ func TestStructuredRun_UsageAbsentOnUnreadableTranscript(t *testing.T) {
 	}
 	if strings.Contains(out, `"usage"`) {
 		t.Errorf("usage key present, want omitted; stdout:\n%s", out)
+	}
+}
+
+// TestStructuredRun_InvalidPermissionModeIsStartupError freezes the
+// structured-run surface for a bad --permission-mode: a normal
+// turnproto.StructuredTurnResult line with status "startup_error", the
+// wrapper.ErrInvalidConfig text in reason, and exit turnproto.ExitError.
+//
+// emitStartupError is deliberately NOT the mechanism here, and the payload is
+// asserted rather than just the exit code because of it. The error propagates
+// wrapper.Start -> chat.Open -> harness.RunTurn -> oneshot.RunOneShotDetailed,
+// where Classify's default: arm sees res.Session.ID == "" and returns
+// (StatusStartupError, err.Error()) with a NIL error — so structured_run.go's
+// `if oerr != nil` guard never fires and the result travels the ordinary
+// emitStructured path. Mode-VALUE validation itself lives in
+// wrapper.validateConfig; the CLI never duplicates it.
+//
+// HARNESS_BINARY_CLAUDE points at an unexecutable placeholder on purpose:
+// validation must reject the config BEFORE anything is spawned, so this test
+// would fail loudly if that ordering ever inverted.
+func TestStructuredRun_InvalidPermissionModeIsStartupError(t *testing.T) {
+	placeholder := filepath.Join(t.TempDir(), "never-executed-claude")
+	if err := os.WriteFile(placeholder, []byte("#!/bin/sh\nexit 99\n"), 0o600); err != nil {
+		t.Fatalf("write placeholder: %v", err)
+	}
+	t.Setenv("HARNESS_BINARY_CLAUDE", placeholder)
+	t.Setenv("HARNESS_WRAPPER_RUN_TIMEOUT", "30s")
+	t.Chdir(t.TempDir())
+
+	out, code := captureStructuredRun(t, "a prompt", []string{"--permission-mode", "not-a-rung", "claude", "--"})
+
+	res, ok := turnproto.ParseLastJSONLine([]byte(out))
+	if !ok {
+		t.Fatalf("no JSON result line in stdout:\n%s", out)
+	}
+	if res.Status != turnproto.StatusStartupError {
+		t.Errorf("status = %q, want %q; stdout:\n%s", res.Status, turnproto.StatusStartupError, out)
+	}
+	if !strings.Contains(res.Reason, wrapper.ErrInvalidConfig.Error()) {
+		t.Errorf("reason = %q, want it to contain %q", res.Reason, wrapper.ErrInvalidConfig.Error())
+	}
+	if !strings.Contains(res.Reason, "not-a-rung") {
+		t.Errorf("reason = %q, want it to name the rejected mode", res.Reason)
+	}
+	if code != turnproto.ExitError {
+		t.Errorf("exit code = %d, want %d", code, turnproto.ExitError)
+	}
+	if res.Reply != "" {
+		t.Errorf("reply = %q, want empty for a startup error", res.Reply)
 	}
 }
 

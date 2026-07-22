@@ -135,6 +135,103 @@ func TestParseHarnessWrapperArgs_EffortFlagPropagated(t *testing.T) {
 	}
 }
 
+func TestParseHarnessWrapperArgs_PermissionModeFlagPropagated(t *testing.T) {
+	parsed, err := parseHarnessWrapperArgs([]string{"--permission-mode", "ask", "claude", "--", "-p", "prompt"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if parsed.PermissionMode != "ask" {
+		t.Errorf("PermissionMode = %q, want ask", parsed.PermissionMode)
+	}
+	if parsed.HarnessName != "claude" {
+		t.Errorf("HarnessName = %q, want claude", parsed.HarnessName)
+	}
+	if !reflect.DeepEqual(parsed.HarnessArgs, []string{"-p", "prompt"}) {
+		t.Errorf("HarnessArgs = %v, want [-p prompt]", parsed.HarnessArgs)
+	}
+}
+
+// TestParseHarnessWrapperArgs_SandboxDefaultsPermissionModeComposition freezes
+// the composition rule. Only a bypass-class rung composes with
+// --sandbox-defaults; every other value is contradictory (it asks for a
+// restriction while --sandbox-defaults asks for none) and is rejected at parse
+// time with exit 2.
+//
+// The check is asserted HERE, at parseHarnessWrapperArgs, precisely because it
+// touches neither PATH nor a harness binary: like the --trace-file and
+// --tmux-session exclusions it is deterministic on any machine, and it fires
+// before resolveHarness and before any tmux session could be spawned. No test
+// here sets HARNESS_BINARY_* or installs a fake harness.
+func TestParseHarnessWrapperArgs_SandboxDefaultsPermissionModeComposition(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		wantErr bool
+	}{
+		{
+			// A restrictive rung contradicts --sandbox-defaults outright.
+			name: "manual is rejected", mode: "manual", wantErr: true,
+		},
+		{
+			// The hole the NARROWED predicate closes: danger-full-access is
+			// codex's native bypass spelling, and wrapper.IsBypassPermissionMode
+			// deliberately returns false for it. A looser "does this look like
+			// bypass?" test would have accepted it, pairing --sandbox-defaults
+			// with a mode that can never reach the claude-only compose path.
+			name: "danger-full-access is rejected", mode: "danger-full-access", wantErr: true,
+		},
+		{"plan is rejected", "plan", true},
+		{"auto is rejected", "auto", true},
+		{
+			// PARSE-LEVEL ONLY. A clean parse here says the flag pair is
+			// coherent; it does NOT say this invocation runs. Passthrough
+			// still rejects --sandbox-defaults later at main.go's
+			// SandboxDefaults check — see main_test.go. Under run /
+			// structured-run the same parse proceeds to the compose path.
+			name: "bypass parses cleanly", mode: "bypass", wantErr: false,
+		},
+		{
+			// Same, for claude's native spelling of the bypass rung.
+			// Parse-level only, as above.
+			name: "bypassPermissions parses cleanly", mode: "bypassPermissions", wantErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := parseHarnessWrapperArgs([]string{"--sandbox-defaults", "--permission-mode", tc.mode, "claude", "--"})
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if parsed.PermissionMode != tc.mode || !parsed.SandboxDefaults {
+					t.Fatalf("parsed = {mode:%q sandbox:%v}, want {%q true}", parsed.PermissionMode, parsed.SandboxDefaults, tc.mode)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected rejection of --sandbox-defaults with --permission-mode %s", tc.mode)
+			}
+			want := "harness-wrapper: --sandbox-defaults is incompatible with --permission-mode " + tc.mode +
+				" (only --permission-mode bypass composes with it)"
+			if err.Error() != want {
+				t.Errorf("error = %q, want %q", err.Error(), want)
+			}
+		})
+	}
+}
+
+// TestParseHarnessWrapperArgs_SandboxDefaultsAloneStillParses guards the
+// composition check against over-reach: --sandbox-defaults with no
+// --permission-mode at all is the pre-existing, untouched invocation.
+func TestParseHarnessWrapperArgs_SandboxDefaultsAloneStillParses(t *testing.T) {
+	parsed, err := parseHarnessWrapperArgs([]string{"--sandbox-defaults", "claude", "--"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !parsed.SandboxDefaults || parsed.PermissionMode != "" {
+		t.Errorf("parsed = {sandbox:%v mode:%q}, want {true \"\"}", parsed.SandboxDefaults, parsed.PermissionMode)
+	}
+}
+
 func TestParseHarnessWrapperArgs_TraceStderrFlagPropagated(t *testing.T) {
 	parsed, err := parseHarnessWrapperArgs([]string{"--trace-stderr", "codex", "--"})
 	if err != nil {

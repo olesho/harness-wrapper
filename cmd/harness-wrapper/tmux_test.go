@@ -84,6 +84,55 @@ func TestParseHarnessWrapperArgs_TmuxSessionAndChildMutuallyExclusive(t *testing
 	}
 }
 
+// TestTmuxReexecArgv freezes the set of flags the tmux parent forwards into the
+// pane. The argv is hand-rebuilt rather than derived from os.Args, so a flag
+// added to harnessWrapperArgs but forgotten here is silently dropped — and for
+// --permission-mode a silent drop means the pane runs an UNRESTRICTED harness
+// after the user explicitly asked for a restriction. --tmux-child /
+// --trace-file are always present; --effort / --model / --permission-mode are
+// forwarded only when set, and the harness name + `--` + harness args always
+// come last.
+func TestTmuxReexecArgv(t *testing.T) {
+	tests := []struct {
+		name string
+		args harnessWrapperArgs
+		want []string
+	}{
+		{
+			name: "bare run forwards only the tmux child marker and trace path",
+			args: harnessWrapperArgs{TmuxSession: "s", HarnessName: "claude", HarnessArgs: []string{"-p", "hi"}},
+			want: []string{"/self", "--tmux-child", "s", "--trace-file", "/t.ndjson", "claude", "--", "-p", "hi"},
+		},
+		{
+			// The regression this helper exists for: --permission-mode must
+			// ride along beside the pre-existing --effort / --model forwards.
+			name: "permission-mode is forwarded alongside effort and model",
+			args: harnessWrapperArgs{
+				TmuxSession: "s", Effort: "high", Model: "opus", PermissionMode: "manual",
+				HarnessName: "claude", HarnessArgs: []string{"-p", "hi"},
+			},
+			want: []string{
+				"/self", "--tmux-child", "s", "--trace-file", "/t.ndjson",
+				"--effort", "high", "--model", "opus", "--permission-mode", "manual",
+				"claude", "--", "-p", "hi",
+			},
+		},
+		{
+			name: "permission-mode alone",
+			args: harnessWrapperArgs{TmuxSession: "s", PermissionMode: "bypass", HarnessName: "codex"},
+			want: []string{"/self", "--tmux-child", "s", "--trace-file", "/t.ndjson", "--permission-mode", "bypass", "codex", "--"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tmuxReexecArgv(tc.args, "/self", "/t.ndjson")
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("tmuxReexecArgv = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveTracePath_DefaultLocation(t *testing.T) {
 	got, err := resolveTracePath("", "myrun")
 	if err != nil {

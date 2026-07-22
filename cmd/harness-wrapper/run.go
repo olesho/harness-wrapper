@@ -93,23 +93,27 @@ func runOneShot(args []string) int {
 	// harness-wrapper itself runs inside a Claude Code session, a nested
 	// `claude` disables session persistence and never writes the JSONL
 	// transcript we read back. A top-level env makes it persist normally.
-	// Then apply the opt-in --sandbox-defaults injection on top.
+	// Then apply the opt-in --sandbox-defaults injection on top. The permission
+	// mode is passed in so a bypass rung composes: applySandboxDefaults then
+	// contributes the IS_SANDBOX=1 env half only and pkg/wrapper owns the
+	// permission directive in argv.
 	harnessArgs, env := parsed.HarnessArgs, cleanedEnv()
 	if parsed.SandboxDefaults {
-		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, harnessArgs, env)
+		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, parsed.PermissionMode, harnessArgs, env)
 	}
 
 	wd, _ := os.Getwd()
 	cfg := harness.TurnConfig{
-		Harness:       parsed.HarnessName,
-		BinaryPath:    binPath,
-		Args:          harnessArgs,
-		Effort:        parsed.Effort,
-		Model:         parsed.Model,
-		WorkingDir:    wd,
-		Env:           env,
-		Prompt:        string(prompt),
-		ExitAfterTurn: true, // stop after the turn (graceful) → clean, bounded run
+		Harness:        parsed.HarnessName,
+		BinaryPath:     binPath,
+		Args:           harnessArgs,
+		Effort:         parsed.Effort,
+		Model:          parsed.Model,
+		PermissionMode: parsed.PermissionMode,
+		WorkingDir:     wd,
+		Env:            env,
+		Prompt:         string(prompt),
+		ExitAfterTurn:  true, // stop after the turn (graceful) → clean, bounded run
 	}
 
 	cfg.InputPolicy, cfg.OnInputRequest = inputHandling(ctx, interactive, tty)

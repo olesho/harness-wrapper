@@ -132,6 +132,64 @@ func TestRunHarnessWrapper_RejectsSandboxDefaults(t *testing.T) {
 	}
 }
 
+// TestRunHarnessWrapper_AllowsPermissionMode freezes the OTHER half of the
+// passthrough policy: --permission-mode is NOT rejected the way
+// --sandbox-defaults is, bypass rungs included. The divergence is a consent
+// argument — --permission-mode bypassPermissions is argv the user could type at
+// `claude` themselves (passthrough already forwards --effort / --model on the
+// same footing), and without IS_SANDBOX=1 claude still shows the Bypass
+// Permissions acceptance screen, which passthrough has no machinery to answer,
+// so the human consents in their own terminal. --sandbox-defaults is rejected
+// precisely because its env half removes that step and enables root.
+//
+// Asserted hermetically: with no `claude` on PATH the invocation gets PAST the
+// point where the sandbox-defaults rejection would have fired and dies in
+// resolveHarness instead. Both exit 2, so the stderr text — not the code — is
+// what distinguishes "accepted the flag" from "rejected the flag".
+func TestRunHarnessWrapper_AllowsPermissionMode(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("HARNESS_BINARY_CLAUDE", "")
+	t.Setenv("HARNESS_BINARY", "")
+	for _, mode := range []string{"bypass", "bypassPermissions", "manual"} {
+		t.Run(mode, func(t *testing.T) {
+			stderr, code := captureRunStderr(t, []string{"--permission-mode", mode, "claude", "--"})
+			if code != 2 {
+				t.Errorf("exit code = %d, want 2 (resolveHarness failure); stderr:\n%s", code, stderr)
+			}
+			if !strings.Contains(stderr, "not found in PATH") {
+				t.Errorf("expected the run to reach resolveHarness (proving the flag was accepted); stderr = %q", stderr)
+			}
+			if strings.Contains(stderr, "--sandbox-defaults") {
+				t.Errorf("--permission-mode must not be rejected by the sandbox-defaults policy; stderr = %q", stderr)
+			}
+			if strings.Contains(stderr, "--permission-mode") {
+				t.Errorf("--permission-mode must not be rejected by passthrough at all; stderr = %q", stderr)
+			}
+		})
+	}
+}
+
+// TestRunHarnessWrapper_SandboxDefaultsWithModeReportsComposition pins the
+// ORDERING between the two exit-2 rejections. parseHarnessWrapperArgs runs
+// first, so `--sandbox-defaults --permission-mode manual claude --` reports the
+// COMPOSITION error, not the frozen "only supported by run and structured-run"
+// message. Harmless — both are exit 2 and both are accurate — but asserted so
+// nobody later "fixes" the ordering and silently changes which diagnostic a
+// user sees.
+func TestRunHarnessWrapper_SandboxDefaultsWithModeReportsComposition(t *testing.T) {
+	stderr, code := captureRunStderr(t, []string{"--sandbox-defaults", "--permission-mode", "manual", "claude", "--"})
+	if code != 2 {
+		t.Errorf("exit code = %d, want 2; stderr:\n%s", code, stderr)
+	}
+	const want = "--sandbox-defaults is incompatible with --permission-mode manual"
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+	}
+	if strings.Contains(stderr, "only supported by run and structured-run") {
+		t.Errorf("expected the composition error, got the sandbox-defaults-mode one: %q", stderr)
+	}
+}
+
 // captureRunStderr runs run(args) with os.Stderr captured, returning the
 // stderr text and the exit code.
 func captureRunStderr(t *testing.T, args []string) (string, int) {

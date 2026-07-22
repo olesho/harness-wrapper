@@ -66,6 +66,23 @@ func runHarnessWrapper(args []string) int {
 	// resolveHarness so the rejection is deterministic on machines without the
 	// harness binary on PATH, and before the tmux branch so no session is ever
 	// spawned for a rejected invocation.
+	//
+	// --permission-mode is deliberately NOT rejected alongside it, bypass rungs
+	// included. The divergence is a consent argument, not an oversight:
+	//   - --permission-mode bypassPermissions is argv the user could type at
+	//     `claude` themselves, and passthrough already forwards --effort and
+	//     --model verbatim on the same footing (see the Config literal below).
+	//   - Without IS_SANDBOX=1 claude-code still shows the Bypass Permissions
+	//     acceptance screen, and passthrough has no input machinery to answer
+	//     it — so the human consents in their own terminal before anything runs.
+	//     --sandbox-defaults is rejected precisely because its env half REMOVES
+	//     that consent step and silently enables running as root.
+	//
+	// Ordering: parseHarnessWrapperArgs already rejected --sandbox-defaults
+	// paired with a non-bypass --permission-mode, so an invocation like
+	// `--sandbox-defaults --permission-mode manual claude --` reports the
+	// COMPOSITION error, not the message below. Both exit 2; the divergence is
+	// asserted in main_test.go so it cannot be "fixed" away unnoticed.
 	if parsed.SandboxDefaults {
 		fmt.Fprintln(os.Stderr, "harness-wrapper: --sandbox-defaults is only supported by run and structured-run")
 		return 2
@@ -94,14 +111,15 @@ func runHarnessWrapper(args []string) int {
 	defer stopSignalWatcher()
 
 	res, err := wrapper.Run(ctx, wrapper.Config{
-		BinaryPath: binPath,
-		Args:       parsed.HarnessArgs,
-		Stdin:      os.Stdin,
-		Stdout:     os.Stdout,
-		Trace:      traceEmitter,
-		Harness:    parsed.HarnessName,
-		Effort:     parsed.Effort,
-		Model:      parsed.Model,
+		BinaryPath:     binPath,
+		Args:           parsed.HarnessArgs,
+		Stdin:          os.Stdin,
+		Stdout:         os.Stdout,
+		Trace:          traceEmitter,
+		Harness:        parsed.HarnessName,
+		Effort:         parsed.Effort,
+		Model:          parsed.Model,
+		PermissionMode: parsed.PermissionMode,
 	})
 	if err != nil {
 		emitCLIExitTrace(traceEmitter, res, err)
@@ -248,9 +266,28 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          named hw-<NAME> and exit immediately")
 	_, _ = fmt.Fprintln(w, "  --auto-accept           run: auto-answer blocking prompts (affirmative)")
 	_, _ = fmt.Fprintln(w, "                          even with a terminal attached, instead of asking")
+	_, _ = fmt.Fprintln(w, "  --effort LEVEL          reasoning effort for supported harnesses")
+	_, _ = fmt.Fprintln(w, "                          (low, medium, high, xhigh, max)")
+	_, _ = fmt.Fprintln(w, "  --model ID              model id for supported harnesses")
+	_, _ = fmt.Fprintln(w, "                          (claude --model, codex -c model)")
 	_, _ = fmt.Fprintln(w, "  --sandbox-defaults      run/structured-run, claude only (DANGEROUS): inject")
 	_, _ = fmt.Fprintln(w, "                          --dangerously-skip-permissions and IS_SANDBOX=1;")
 	_, _ = fmt.Fprintln(w, "                          no-op for other harnesses; rejected by passthrough")
+	_, _ = fmt.Fprintln(w, "  --permission-mode RUNG  launch-time permission posture for claude/codex:")
+	_, _ = fmt.Fprintln(w, "                          plan, manual, ask, auto, bypass (per-harness native")
+	_, _ = fmt.Fprintln(w, "                          spellings also pass through). NOT a drop-in for")
+	_, _ = fmt.Fprintln(w, "                          --sandbox-defaults: bypass sets no IS_SANDBOX=1, so")
+	_, _ = fmt.Fprintln(w, "                          claude still shows the acceptance screen and still")
+	_, _ = fmt.Fprintln(w, "                          refuses to run as root. Combine the two for that")
+	_, _ = fmt.Fprintln(w, "                          (bypass is the ONLY rung --sandbox-defaults accepts),")
+	_, _ = fmt.Fprintln(w, "                          or pass --auto-accept to answer the screen in an")
+	_, _ = fmt.Fprintln(w, "                          interactive run.")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a")
+	_, _ = fmt.Fprintln(w, "human is at the TUI (passthrough, or `run` from a terminal for codex). Under")
+	_, _ = fmt.Fprintln(w, "`structured-run` and unattended `run`, claude's permission dialogs are not")
+	_, _ = fmt.Fprintln(w, "detected (the turn stalls to the deadline) and codex's approval prompts are")
+	_, _ = fmt.Fprintln(w, "auto-approved (only the `-s` sandbox axis still binds).")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "supported harness names: claude, codex, opencode, pi")
 	_, _ = fmt.Fprintln(w, "")

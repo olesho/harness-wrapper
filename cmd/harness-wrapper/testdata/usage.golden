@@ -1,0 +1,58 @@
+usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
+       harness-wrapper run [wrapper-flags] <name> -- <harness args>   (prompt on stdin)
+       harness-wrapper attach <session>
+       harness-wrapper status <session> [--json]
+       harness-wrapper kill <session>
+       harness-wrapper list
+
+wrapper flags (must come BEFORE the harness name):
+  --trace-file PATH       write trace events as NDJSON to PATH
+  --trace-stderr          write trace events as NDJSON to stderr
+  --tmux-session NAME     spawn the run inside a detached tmux session
+                          named hw-<NAME> and exit immediately
+  --auto-accept           run: auto-answer blocking prompts (affirmative)
+                          even with a terminal attached, instead of asking
+  --effort LEVEL          reasoning effort for supported harnesses
+                          (low, medium, high, xhigh, max)
+  --model ID              model id for supported harnesses
+                          (claude --model, codex -c model)
+  --sandbox-defaults      run/structured-run, claude only (DANGEROUS): inject
+                          --dangerously-skip-permissions and IS_SANDBOX=1;
+                          no-op for other harnesses; rejected by passthrough
+  --permission-mode RUNG  launch-time permission posture for claude/codex:
+                          plan, manual, ask, auto, bypass (per-harness native
+                          spellings also pass through). NOT a drop-in for
+                          --sandbox-defaults: bypass sets no IS_SANDBOX=1, so
+                          claude still shows the acceptance screen and still
+                          refuses to run as root. Combine the two for that
+                          (bypass is the ONLY rung --sandbox-defaults accepts),
+                          or pass --auto-accept to answer the screen in an
+                          interactive run.
+
+Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a
+human is at the TUI (passthrough, or `run` from a terminal for codex). Under
+`structured-run` and unattended `run`, claude's permission dialogs are not
+detected (the turn stalls to the deadline) and codex's approval prompts are
+auto-approved (only the `-s` sandbox axis still binds).
+
+supported harness names: claude, codex, opencode, pi
+
+By default trace events are dropped, since stderr would corrupt an
+interactive harness TUI. Pass --trace-file or --trace-stderr to enable.
+
+`run` is the one-shot mode — the proper substitution for `claude -p` /
+`codex exec`. It reads the prompt from stdin, drives ONE turn through the
+real harness (PTY + turn detection), prints the reply to stdout, and exits
+non-zero if the turn errors. --timeout via the HARNESS_WRAPPER_RUN_TIMEOUT
+env var (default 15m).
+
+When `run` is invoked from an attached terminal it is interactive by
+default: a blocking trust/permission prompt is surfaced to the human on
+/dev/tty (bounded by the run deadline, with an auto-accept fallback). With
+no controlling terminal (CI, pipes, nohup) it stays fully unattended.
+Pass --auto-accept to force the always-auto behavior even with a terminal.
+
+Tmux mode lets you detach from a long-running agent: the harness
+keeps running inside the tmux session, and `harness-wrapper attach`
+(or `tmux attach -t hw-<NAME>`) reconnects you. Trace events go to
+~/.harness-wrapper/sessions/<NAME>.trace.ndjson by default.

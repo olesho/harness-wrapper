@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // harnessWrapperArgs is the parsed form of `harness-wrapper` invocation.
@@ -34,8 +36,16 @@ type harnessWrapperArgs struct {
 	// passthrough mode rejects it (a human session should make that policy
 	// call in the harness itself).
 	SandboxDefaults bool
-	HarnessName     string
-	HarnessArgs     []string
+	// PermissionMode is the launch-time permission rung forwarded verbatim to
+	// pkg/wrapper (Config.PermissionMode), which owns BOTH the value validation
+	// and the per-harness argv translation. The canonical rungs are plan,
+	// manual, ask, auto, bypass; per-harness native spellings pass through too.
+	// The CLI deliberately does not validate the value — a bad mode surfaces as
+	// wrapper.ErrInvalidConfig from wrapper.Start, in one place, for every
+	// entry point (passthrough, run, structured-run, tmux child).
+	PermissionMode string
+	HarnessName    string
+	HarnessArgs    []string
 }
 
 // parseHarnessWrapperArgs splits the args after the "harness-wrapper"
@@ -69,6 +79,30 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 	if args.TmuxSession != "" && args.TmuxChild != "" {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: --tmux-session and --tmux-child are mutually exclusive")
 	}
+	// --sandbox-defaults composes with exactly ONE permission rung: bypass (and
+	// its claude-native spelling bypassPermissions). Both express "no permission
+	// gate", so the pair is coherent — and it is the recipe a root container
+	// needs, since only --sandbox-defaults carries the IS_SANDBOX=1 env half
+	// that permits root and suppresses claude's acceptance screen. Any other
+	// rung asks for a RESTRICTION while --sandbox-defaults asks for none, so the
+	// combination is contradictory and rejected rather than silently resolved.
+	//
+	// Like its --trace-file/--tmux-session neighbours the check is deliberately
+	// harness-INDEPENDENT: it must never depend on a harness binary being on
+	// PATH, so it sits before resolveHarness and before any tmux session can be
+	// spawned. That it also fires for codex — where --sandbox-defaults is a
+	// documented no-op — is the accepted cost of that determinism.
+	//
+	// This is exactly why wrapper.IsBypassPermissionMode excludes codex's
+	// "danger-full-access": that value never reaches the claude-only
+	// applySandboxDefaults compose path, so accepting it here would wave through
+	// a pairing whose composition semantics do not exist.
+	if args.SandboxDefaults && args.PermissionMode != "" && !wrapper.IsBypassPermissionMode(args.PermissionMode) {
+		return harnessWrapperArgs{}, fmt.Errorf(
+			"harness-wrapper: --sandbox-defaults is incompatible with --permission-mode %s (only --permission-mode bypass composes with it)",
+			args.PermissionMode,
+		)
+	}
 	if fs.NArg() == 0 {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: missing harness name before --")
 	}
@@ -96,6 +130,7 @@ func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
 	fs.StringVar(&a.TmuxSession, "tmux-session", "", "spawn the run inside a detached tmux session named hw-<value> and exit immediately")
 	fs.StringVar(&a.TmuxChild, "tmux-child", "", "internal: in-pane re-exec marker; do not set manually")
 	fs.BoolVar(&a.AutoAccept, "auto-accept", false, "run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human")
+	fs.StringVar(&a.PermissionMode, "permission-mode", "", "launch-time permission rung for claude/codex: plan, manual, ask, auto, bypass (per-harness native spellings also pass through); bypass does NOT set IS_SANDBOX=1 (acceptance screen appears, root disallowed); combine with --sandbox-defaults for that, or --auto-accept to answer the screen in an interactive run; restrictive rungs bind fully only with a human at the TUI")
 	fs.BoolVar(&a.SandboxDefaults, "sandbox-defaults", false, "run/structured-run: claude only — DANGEROUS: inject --dangerously-skip-permissions into harness args and set IS_SANDBOX=1 in the harness env (meta-harness parity; IS_SANDBOX=1 also suppresses the bypass-permissions acceptance screen and allows root); no-op for other harnesses; rejected by the default passthrough mode")
 	return fs
 }
