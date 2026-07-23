@@ -298,7 +298,8 @@ append**, not a new essay, because the marginal information per filing is one ro
 are the next triager, add your row and stop; only add prose if you measured something that is
 not already in the table.
 
-**What the fourteen filings actually added.** Everything not listed here was restatement:
+**What the filings actually added.** Everything not listed here was restatement; filings after -126
+add nothing to this list beyond their ledger row and the two sections below it:
 
 - **-97** — the canonical triage
   ([`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md)): root cause, fix
