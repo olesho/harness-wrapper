@@ -237,7 +237,7 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
 (release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
@@ -479,7 +479,7 @@ idempotent `settle()` at `:700`), the `maxRunMs > 0`-gated watchdog at `:1437-14
 installed after `sandbox.open()` (`:1404`) and cleared at `:1495-1497` *before* the
 `onComplete` dispatch (`:1214`) that holds the whole promotion gate
 (`release.ts:570-680`), the unabortable `HarnessSession.open()` signature at
-`session.ts:215`, and `release.ts:558-569` declaring **no `liveness` block** (only
+`harness/session.ts:215`, and `release.ts:558-569` declaring **no `liveness` block** (only
 `maxConcurrent: 1` at `:564`). The patch bundle from -118,
 [`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md),
 therefore needs **no revision** and still applies cleanly against `orche` HEAD.
@@ -538,7 +538,7 @@ already does `this.tracked.delete(taskId)` before `resolveDone()` under a `settl
 the `maxRunMs > 0`-gated watchdog at `spawner.ts:1437-1445`, `spec.test.ts:68` still
 asserting `maxRunMs` defaults to **0**, `release.ts` declaring `maxConcurrent: 1` at `:564`
 and **no `liveness` block anywhere** (grep finds only the two prose mentions at `:16` and
-`:544`), and `HarnessSession.open()` at `session.ts:215` still taking no `AbortSignal`. The
+`:544`), and `HarnessSession.open()` at `harness/session.ts:215` still taking no `AbortSignal`. The
 bundle
 [`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md)
 therefore needs **no revision** and still applies cleanly.
@@ -555,6 +555,56 @@ closed ORCHE-130, alongside the sibling tickets ORCHE-14/15/26 on this subsystem
 filings the wedged-slot defect is **still unfiled in any workspace** — that, not any
 missing analysis, is what has kept it unlanded, and it is why this signature will re-fire
 on every observer sweep no matter what is merged here.
+
+**Amendment — re-fired a tenth time as HARNESS-WRAPPER-122** (the **eleventh** filing of
+`obs-sig:1bf9fcd2c6` counting the -56 false positive; tenth counting from -97). Re-measured
+in the -122 worktree on **2026-07-23 at 02:12 local** — every figure below was measured
+here, not carried over from the ticket:
+
+- Hub `/Users/oleh/repos/harness-wrapper.git`: **61** first-parent commits `main..dev`
+  (**127** total), `dev..main` = **0** — still a *stopped promoter*, not a diverged branch.
+- `main` still frozen at **`6281927`** (2026-07-22 10:15:03 +0200) — **~16 h**, zero
+  promotions. `dev` at **`2b336a7`** (2026-07-23 01:37:24). Oldest unpromoted commit still
+  **`40e7251`** (2026-07-22 18:16:09) → **~476 min**.
+- `agents.log` (`/Users/oleh/Work/aether/harness-wrapper/.orche/run/HARNESS-WRAPPER/`,
+  the supervisor's `--dir`) has grown 4523 → **4542** lines, yet the `[release@…]` count is
+  **still 456** and the last two release lines are still **3780–3781**
+  (`cron:release:1784725803650: success` at **15:10:03**). Everything added since belongs to
+  other agents — `[observer@…]` is at `cron:observer:1784765478423`.
+- Newest release transcript is still the 15:10 one
+  (`agent_release_5d7d11ee-…__cron_release_1784725803650.txt`); the 15:40 tick wrote none.
+- Wedged worktree `agent-release-8df3c501-aa2b-412a-87b7-6d1decccb39e` still present, dir
+  mtime frozen at **Jul 22 15:40:04**, sidecar `.pid` = **65669**. Supervisor **pid 65669**
+  alive since **Wed Jul 22 11:32:51**, elapsed **14:39** — never restarted.
+
+First-parent progression across the ten filings since -97: **27 → 32 → 57 → 41 → 51 → 56 →
+58 → 59 → 60 → 61**.
+
+**`orche` is still at HEAD `737ea45`** — the same commit -121 verified against — so the
+anchors cannot have moved; spot-checked anyway: `at_capacity` returned at
+`spawner.ts:641` before `track()`, the slot released only by `.finally(() => settle())` at
+`:647`, the watchdog still gated on `maxRunMs > 0` at `:1437`, and `release.ts:558-569`
+declaring `maxConcurrent: 1` at `:564` with **no `liveness` block** anywhere in the file.
+The bundle
+[`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md)
+needs **no revision**.
+
+**One correction, applied above.** The -119 and -121 amendments abbreviated the
+`HarnessSession.open()` anchor as `session.ts:215`; there is no
+`packages/agent/src/session.ts` — the file is `packages/agent/src/harness/session.ts`
+(verified at HEAD `737ea45`: `static async open(opts: HarnessSessionOptions)` at `:215`,
+no `AbortSignal` parameter). Both occurrences in this section now read
+`harness/session.ts:215`, matching the bundle's Layout section, which already had it right.
+
+Per the standing instruction **no twelfth triage document was created**, and no source
+change was made — [`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md)
+remains canonical. Ten automated cycles have produced ten documentation amendments and zero
+resolution, and each lands on `dev`, incrementing the very `main..dev` count the observer
+reports. **Both blocking actions are human-only and both are still outstanding**: restart
+**pid 65669** (the only thing that restores promotion now — irreversible, kills every
+in-flight fleet agent, so schedule it deliberately) and **file the `ORCHE` ticket** carrying
+Patches A–D, as a follow-up to the closed ORCHE-130 and alongside ORCHE-14/15/26. After
+eleven filings the wedged-slot defect is **still unfiled in any workspace**.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
