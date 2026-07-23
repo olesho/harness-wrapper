@@ -1058,25 +1058,57 @@ const permModeBoundTimeout = 250 * time.Millisecond
 // This is deliberately a BOUND assertion rather than an equality — the point is
 // that the overrun is capped by one poll body, not that the timing is exact.
 func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
-	conv, _ := newPermModeConv(t, Options{
-		Harness:               chatClaudeCode,
-		permModeRenderTimeout: permModeBoundTimeout,
-	}, claudeRing4, 0) // start: plan, and nothing ever repaints it
+	// At a budget comfortably larger than one poll body the deadline arm alone
+	// still wins, so this case is a GUARD (it passes with or without the expiry
+	// check) — it pins the contract at the scale real callers run at.
+	t.Run("budget", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0) // start: plan, and nothing ever repaints it
 
-	start := time.Now()
-	observed, err := conv.awaitPostureChange(testCtx(t), "plan")
-	elapsed := time.Since(start)
+		start := time.Now()
+		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
-	}
-	if observed != "plan" {
-		t.Errorf("observed = %q, want the unchanged posture plan", observed)
-	}
-	if elapsed >= 2*permModeBoundTimeout {
-		t.Errorf("awaitPostureChange took %v against a %v budget; the budget is not bounding the wait",
-			elapsed, permModeBoundTimeout)
-	}
+		if err != nil {
+			t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
+		}
+		if observed != "plan" {
+			t.Errorf("observed = %q, want the unchanged posture plan", observed)
+		}
+		if elapsed >= 2*permModeBoundTimeout {
+			t.Errorf("awaitPostureChange took %v against a %v budget; the budget is not bounding the wait",
+				elapsed, permModeBoundTimeout)
+		}
+	})
+
+	// The DEGENERATE regime — a budget smaller than one poll body — is where the
+	// expiry check is load-bearing, and it is reachable deterministically: 1µs is
+	// orders of magnitude under one 120×40 ScreenSnapshot plus detector run, so
+	// the check at the END of the first body is already past it and the call
+	// returns without entering the select at all.
+	//
+	// Honest about what this does and does not pin. It exercises the expiry
+	// branch, whose return is by design IDENTICAL to the deadline arm's, so the
+	// two are not distinguishable from the outside; and without the check the
+	// select would still terminate (the deadline arm merely loses a coin flip to
+	// the ticker on each pass, which is the overrun, not a hang). What it pins is
+	// that a budget under one poll body still yields one poll and one return.
+	t.Run("budget-smaller-than-one-poll", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: time.Microsecond,
+		}, claudeRing4, 0) // start: plan
+
+		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		if err != nil {
+			t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
+		}
+		if observed != "plan" {
+			t.Errorf("observed = %q, want the unchanged posture plan", observed)
+		}
+	})
 }
 
 // pendingInputRequest is a plausible unsurfaced request for the pressGate cases:
@@ -1127,6 +1159,36 @@ func TestPressGate_PendingNeverClears(t *testing.T) {
 		if elapsed >= 2*permModeBoundTimeout {
 			t.Errorf("pressGate took %v against a %v budget; the budget is not bounding the wait",
 				elapsed, permModeBoundTimeout)
+		}
+	})
+
+	// The SURFACED variant never waits at all: a modal the client must answer is
+	// up, the ring is unreachable through it, and Shift+Tab must never be typed
+	// into it. Clock-free, and the arm had no coverage either.
+	t.Run("surfaced", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0)
+
+		conv.mu.Lock()
+		conv.currentInput = pendingInputRequest()
+		conv.inputSurfaced = true
+		conv.mu.Unlock()
+
+		start := time.Now()
+		err := conv.pressGate(testCtx(t), "plan")
+		elapsed := time.Since(start)
+
+		var blocked *PermissionModeBlockedError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("pressGate = %v, want *PermissionModeBlockedError for a surfaced request", err)
+		}
+		if blocked.Request.ID != "req-1" {
+			t.Errorf("blocked.Request.ID = %q, want the pending request req-1", blocked.Request.ID)
+		}
+		if elapsed >= permModeBoundTimeout {
+			t.Errorf("pressGate waited %v on a SURFACED request; it must not wait for a modal the client owns", elapsed)
 		}
 	})
 
