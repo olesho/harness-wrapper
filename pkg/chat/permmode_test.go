@@ -765,9 +765,15 @@ func TestSetPermissionMode_CodexPlanRefusalThenClears(t *testing.T) {
 	}
 }
 
-// A refusal that never clears exhausts the retry budget and surfaces as
+// A refusal that never clears exhausts the retry ATTEMPTS and surfaces as
 // ErrCodexPlanRefusedBusy — distinct from a plain switch failure, because the
 // remedy is "wait for the task to finish", not "try a different mode".
+//
+// This pins the attempt bound FROM ABOVE ("never more than
+// codexPlanRetryAttempts"); TestSetPermissionMode_CodexPlanRefusalNearBound pins
+// it from below. Under the old wall-clock bound the count here was a variable
+// 2–3 and the assertion had to be a loose `plans < 2`; that looseness was the
+// same root cause as the sibling test's flake, so the exact count is the point.
 func TestSetPermissionMode_CodexPlanRefusedBusy(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
 		[]string{codexCollabDefault, codexCollabPlan}, 0)
@@ -778,20 +784,102 @@ func TestSetPermissionMode_CodexPlanRefusedBusy(t *testing.T) {
 		return false
 	}
 
-	// Shrink the retry budget by bounding the context instead of the clock: the
-	// budget is a package constant, so the assertion here is that a permanently
-	// refusing codex never reports success and never silently switches.
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
-	mode, err := conv.SetPermissionMode(ctx, codexCollabPlan)
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
 	if !errors.Is(err, ErrCodexPlanRefusedBusy) {
 		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want ErrCodexPlanRefusedBusy", mode, err)
 	}
 	if mode == codexCollabPlan {
 		t.Errorf("final mode = plan although codex refused every /plan")
 	}
-	if _, plans := fake.counts(); plans < 2 {
-		t.Errorf("submitted /plan %d times, want at least 2 retries under the budget", plans)
+	if _, plans := fake.counts(); plans != codexPlanRetryAttempts {
+		t.Errorf("submitted /plan %d times, want exactly the %d-attempt bound", plans, codexPlanRetryAttempts)
+	}
+}
+
+// The boundary from the other side: a refusal window one attempt short of the
+// bound still resolves. This is the "refusal window longer than the old 200ms
+// budget" case expressed in STEPS rather than milliseconds — the exact property
+// the wall-clock bound could not provide — and it is what catches an
+// `n+2 >= attempts` off-by-one that the refuse-forever test above cannot see.
+func TestSetPermissionMode_CodexPlanRefusalNearBound(t *testing.T) {
+	// Deliberately NOT derived from codexPlanRetryAttempts: a self-referential
+	// count would silently go vacuous if the constant were lowered, so state it
+	// and guard it instead.
+	const refusals = 4 // one short of codexPlanRetryAttempts; keep in sync
+	if refusals+1 > codexPlanRetryAttempts {
+		t.Fatalf("test is vacuous: %d refusals exceed the %d-attempt bound", refusals, codexPlanRetryAttempts)
+	}
+
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	seen := 0
+	fake.onPlan = func(f *permModeFake) bool {
+		seen++
+		if seen <= refusals {
+			paint(f.sc, codexPlanRefusalScreen())
+			return false
+		}
+		f.mu.Lock()
+		f.idx = 1 // plan
+		f.mu.Unlock()
+		return true
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
+	if err != nil {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want success on the last attempt", mode, err)
+	}
+	if mode != codexCollabPlan {
+		t.Errorf("final mode = %q, want plan", mode)
+	}
+	// Compared against refusals+1, not the constant, so raising the constant
+	// leaves this meaningful rather than trivially true.
+	if _, plans := fake.counts(); plans != refusals+1 {
+		t.Errorf("submitted /plan %d times, want %d (retry per refusal)", plans, refusals+1)
+	}
+}
+
+// The caller's ctx is the ONLY wall clock once the bound counts attempts, so a
+// ctx that ends the drive mid-refusal must not erase ErrCodexPlanRefusedBusy —
+// the one error whose documented remedy is "wait for the task to finish".
+//
+// Clock-free by construction: `refused` is set at the END of the previous
+// iteration and the fake's write runs on the DRIVER's goroutine, so cancelling
+// during the second submission guarantees refused == true before
+// awaitPostureChange observes ctx.Done() on its first pass — where neither the
+// ticker nor the render deadline is ready yet.
+func TestSetPermissionMode_CodexPlanRefusalCtxAbortKeepsSentinel(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seen := 0
+	fake.onPlan = func(f *permModeFake) bool {
+		seen++
+		paint(f.sc, codexPlanRefusalScreen())
+		if seen == 2 {
+			cancel()
+		}
+		return false
+	}
+
+	mode, err := conv.SetPermissionMode(ctx, codexCollabPlan)
+	if !errors.Is(err, ErrCodexPlanRefusedBusy) {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want the refusal sentinel wrapped around the ctx error", mode, err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("errors.Is(err, context.Canceled) = false for %v; a deliberate cancellation must stay visible", err)
+	}
+	if mode == codexCollabPlan {
+		t.Errorf("final mode = plan although codex refused every /plan")
+	}
+	if _, plans := fake.counts(); plans != 2 {
+		t.Errorf("submitted /plan %d times, want 2 (cancelled during the second)", plans)
 	}
 }
 
@@ -948,6 +1036,119 @@ func TestSetPermissionMode_ReadinessSplit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- the repaint budget is a real bound ----------------------------------
+
+// permModeBoundTimeout sizes the two bound tests below. It is deliberately NOT
+// the suite's 40ms default: under -race a single poll body (a 120×40
+// ScreenSnapshot plus the detector) is already >50% of 40ms, so any "small
+// multiple of the budget" assertion at that scale would be either meaningless or
+// CI-flaky — exactly the class of test this ticket exists to remove. At 250ms
+// the poll interval is 62.5ms (permModePollInterval's quarter rule) and
+// scheduler noise is a small fraction of the bound.
+const permModeBoundTimeout = 250 * time.Millisecond
+
+// A screen that never changes must make awaitPostureChange return AT the budget,
+// not a random multiple of it. The deadline arm alone does not guarantee that:
+// select picks uniformly among ready cases, so once the poll body outlasts the
+// tick, deadline.C loses a coin flip on every pass and the wait becomes a
+// geometric random variable.
+//
+// This is deliberately a BOUND assertion rather than an equality — the point is
+// that the overrun is capped by one poll body, not that the timing is exact.
+func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
+	conv, _ := newPermModeConv(t, Options{
+		Harness:               chatClaudeCode,
+		permModeRenderTimeout: permModeBoundTimeout,
+	}, claudeRing4, 0) // start: plan, and nothing ever repaints it
+
+	start := time.Now()
+	observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
+	}
+	if observed != "plan" {
+		t.Errorf("observed = %q, want the unchanged posture plan", observed)
+	}
+	if elapsed >= 2*permModeBoundTimeout {
+		t.Errorf("awaitPostureChange took %v against a %v budget; the budget is not bounding the wait",
+			elapsed, permModeBoundTimeout)
+	}
+}
+
+// pendingInputRequest is a plausible unsurfaced request for the pressGate cases:
+// a policy/handler is notionally mid-resolve, and nothing ever clears it.
+func pendingInputRequest() *turns.InputRequest {
+	return &turns.InputRequest{
+		ID:     "req-1",
+		Kind:   "trust_prompt",
+		Prompt: "Do you trust the files in this folder?",
+		Options: []turns.InputOption{
+			{ID: "1", Label: "Yes, proceed"},
+			{ID: "2", Label: "No, exit"},
+		},
+	}
+}
+
+// pressGate's pending-but-NOT-surfaced arm: a policy that never finishes
+// resolving must be reported as blocked at the budget rather than waited on for
+// a random multiple of it. Both cases here cover select arms that had no
+// coverage at all — the existing dialog test resolves synchronously inside the
+// fake's write, so the gate never reaches its select with a request pending.
+func TestPressGate_PendingNeverClears(t *testing.T) {
+	t.Run("bound", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0)
+
+		conv.mu.Lock()
+		conv.currentInput = pendingInputRequest()
+		conv.inputSurfaced = false
+		conv.mu.Unlock()
+
+		start := time.Now()
+		err := conv.pressGate(testCtx(t), "plan")
+		elapsed := time.Since(start)
+
+		var blocked *PermissionModeBlockedError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("pressGate = %v, want *PermissionModeBlockedError once the budget elapses", err)
+		}
+		if blocked.Request.ID != "req-1" {
+			t.Errorf("blocked.Request.ID = %q, want the pending request req-1", blocked.Request.ID)
+		}
+		if blocked.Observed != "plan" {
+			t.Errorf("blocked.Observed = %q, want the posture passed in", blocked.Observed)
+		}
+		if elapsed >= 2*permModeBoundTimeout {
+			t.Errorf("pressGate took %v against a %v budget; the budget is not bounding the wait",
+				elapsed, permModeBoundTimeout)
+		}
+	})
+
+	// Clock-free: with a request pending and unsurfaced the loop reaches the
+	// select on its first pass, where neither the ticker nor the deadline is
+	// ready, so c.closed is the only ready case.
+	t.Run("closed", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0)
+
+		conv.mu.Lock()
+		conv.currentInput = pendingInputRequest()
+		conv.inputSurfaced = false
+		conv.mu.Unlock()
+		close(conv.closed)
+
+		if err := conv.pressGate(testCtx(t), "plan"); !errors.Is(err, ErrClosed) {
+			t.Fatalf("pressGate on a closed conversation = %v, want ErrClosed", err)
+		}
+	})
 }
 
 // --- helpers -------------------------------------------------------------
