@@ -540,6 +540,16 @@ const (
 	codexSandboxDangerFullAccess = "danger-full-access"
 )
 
+// codex's native -a/--ask-for-approval values (codex-cli 0.144.5). Named for
+// the same reason the sandbox values are: they are an upstream vocabulary that
+// permission_conformance_test.go probes the real binary for, and a live drift
+// report must name the anchor it compared against rather than a bare literal.
+const (
+	codexApprovalUntrusted = "untrusted"
+	codexApprovalOnRequest = "on-request"
+	codexApprovalNever     = "never"
+)
+
 func harnessSupportsPermissionMode(harness string) bool {
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode, "codex":
@@ -674,13 +684,13 @@ func claudePermissionMode(mode string) string {
 func codexPermissionMode(mode string) (sandbox, approval string) {
 	switch mode {
 	case permissionModeManual:
-		return codexSandboxReadOnly, "untrusted"
+		return codexSandboxReadOnly, codexApprovalUntrusted
 	case permissionModeAsk:
-		return codexSandboxWorkspaceWrite, "on-request"
+		return codexSandboxWorkspaceWrite, codexApprovalOnRequest
 	case permissionModeAuto:
-		return codexSandboxWorkspaceWrite, "never"
+		return codexSandboxWorkspaceWrite, codexApprovalNever
 	case permissionModeBypass:
-		return codexSandboxDangerFullAccess, "never"
+		return codexSandboxDangerFullAccess, codexApprovalNever
 	default:
 		return mode, ""
 	}
