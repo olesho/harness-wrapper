@@ -237,7 +237,7 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
 (release-lag:dev..main)`, escalated to `review`. **Re-fired as HARNESS-WRAPPER-100
@@ -605,6 +605,73 @@ reports. **Both blocking actions are human-only and both are still outstanding**
 in-flight fleet agent, so schedule it deliberately) and **file the `ORCHE` ticket** carrying
 Patches A–D, as a follow-up to the closed ORCHE-130 and alongside ORCHE-14/15/26. After
 eleven filings the wedged-slot defect is **still unfiled in any workspace**.
+
+**Amendment — re-fired an eleventh time as HARNESS-WRAPPER-123** (the **twelfth** filing of
+`obs-sig:1bf9fcd2c6` counting the -56 false positive; eleventh counting from -97). Re-measured in
+the -123 worktree on **2026-07-23 between 03:25 and 03:52 local**. Unlike the ten amendments above
+this one is **not** a restatement: it carries one genuinely new fact — a live differential control
+— and that fact has been folded into the bundle, where an implementer will actually see it.
+
+**The new fact: the same agent is running *unwedged* in a second workspace.** Supervisor **pid
+7802** (`agent-cli.ts up --workspace META-HARNESS`, `--dir …/aether/meta-harness/.orche`) has been
+up since **Wed Jul 22 09:46:47**, elapsed **18:05** — **older** than the wedged pid 65669 — and its
+`release` agent is still ticking on the 30-minute cadence, last `cron:release:1784769929485:
+success` at **2026-07-23 03:25:29**, **1396** `[release@…]` lines and climbing, with
+`--first-parent main..dev` = **0** (fully promoted, `main` at `266bf5c`, 2026-07-22 22:56:59).
+Both workspaces' `.orche/agents/release.ts` are **byte-identical** (392 B, md5
+`f3f1421393818760af0449c3d9f2133b`) and both are one-line re-exports of the *same* on-disk file,
+`file:///Users/oleh/Work/new/orche/packages/agent/examples/.orche/agents/release.ts`; both log the
+same build tag `release@0.1.0+737ea45*`.
+
+That control **rules out** a regression in `737ea45`, a machine-wide resource/clock/cron failure, a
+defect in the `release` definition or its `maxConcurrent: 1`, and supervisor ageing. It
+**confirms** the premise Patch A is built on: this was **one** tick that hung and then owned the
+process-lifetime slot forever, not a per-fire crash loop — a repeating per-tick fault would have
+taken META-HARNESS down too. It also **bounds the operator restart**: only **pid 65669** needs
+restarting; **pid 7802 must be left alone**. Full table and the consequences for implementers are
+in the bundle under *“A live differential control”*.
+
+Re-measured figures for this workspace, measured here rather than carried over:
+
+- Hub `/Users/oleh/repos/harness-wrapper.git`: **63** first-parent commits `main..dev` (**129**
+  total), `dev..main` = **0** — still a *stopped promoter*, not a diverged branch.
+- `main` still frozen at **`6281927`** (2026-07-22 10:15:03 +0200) — **~17.6 h**, zero promotions.
+  `dev` at **`7d50534`** (2026-07-23 02:14:20). Oldest unpromoted commit still **`40e7251`**
+  (2026-07-22 18:16:09) → **~576 min**.
+- `agents.log` has grown 4542 → **4569** lines, the `[release@…]` count is **still 456**, and the
+  last two release lines are **still 3780–3781** (`cron:release:1784725803650: success` at
+  **15:10:03**). Everything added since belongs to other agents — `[observer@…]` is at
+  `cron:observer:1784771535807` (**03:52:15**), i.e. the 5-minute observer cadence is unbroken
+  while the 30-minute release cadence has been dead for **~12.2 h** of wall clock.
+- Newest release transcript is still the 15:10 one
+  (`agent_release_5d7d11ee-…__cron_release_1784725803650.txt`); the 15:40 tick wrote none.
+- Wedged worktree `agent-release-8df3c501-aa2b-412a-87b7-6d1decccb39e` still present, dir mtime
+  frozen at **Jul 22 15:40:04**, sidecar `.pid` = **65669**. Supervisor **pid 65669** alive since
+  **Wed Jul 22 11:32:51**, elapsed **16:18** — never restarted. The second retained tick worktree
+  `agent-release-3a870b7e-…` (mtime Jul 22 13:40:04, same pid) is likewise still there; both are
+  still awaiting the operator prune.
+
+First-parent progression across the eleven filings since -97: **27 → 32 → 57 → 41 → 51 → 56 → 58 →
+59 → 60 → 61 → 63**.
+
+**Still nothing implementable here, re-checked not assumed:**
+`grep -rln 'runTick\|maxRunMs\|at_capacity' --include='*.go' .` returns **0** files; the only
+tree-wide matches remain this file, [`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md)
+and the bundle. **`orche` is still at HEAD `737ea45`** (2026-07-22 09:45:02) and all four anchors
+were re-read verbatim, not spot-checked: the `at_capacity` return at `spawner.ts:641` before
+`track()` is ever called and the sole slot release at `:647` (`.finally(() => settle())`),
+`release.ts` with `maxConcurrent: 1` and **no `liveness` block**, and
+`HarnessSession.open(opts: HarnessSessionOptions)` at `harness/session.ts:215` with **no
+`AbortSignal` parameter**. The bundle needed no revision to its analysis — only the new control
+section.
+
+Per the standing instruction **no thirteenth triage document was created** and no source change was
+made. Eleven automated cycles have produced eleven amendments and zero resolution, and each lands
+on `dev`, incrementing the very `main..dev` count the observer reports. **Both blocking actions
+remain human-only and outstanding**: restart **pid 65669** (irreversible, kills every in-flight
+fleet agent — schedule it deliberately; do *not* touch pid 7802) and **file the `ORCHE` ticket**
+carrying Patches A–D. After twelve filings the wedged-slot defect is **still unfiled in any
+workspace**.
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 

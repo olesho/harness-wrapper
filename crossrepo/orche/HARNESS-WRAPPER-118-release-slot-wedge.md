@@ -16,7 +16,7 @@ Triage record and the full evidence chain, in `harness-wrapper`:
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../docs/triage/HARNESS-WRAPPER-97.md) — the canonical
 record for observer signature `obs-sig:1bf9fcd2c6`, plus the running amendment log in
 [`docs/md/internal/out-of-scope-tickets.md`](../../docs/md/internal/out-of-scope-tickets.md)
-(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122`).
+(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123`).
 
 **This bundle exists because five prior filings produced no patch.** HARNESS-WRAPPER-97, -100,
 -110, -116 and -117 all re-derived the same root cause, all correctly concluded "not this repo",
@@ -100,6 +100,53 @@ the analysis; it exists so a reader can tell this bundle is still describing a l
 - `HarnessSession.open()` is at **`packages/agent/src/harness/session.ts:215`** — there is no
   `packages/agent/src/session.ts`. The Layout section below already used the correct path; the
   abbreviated form in the `harness-wrapper` amendment log has been corrected to match.
+
+### A live differential control — the same agent, unwedged, in a second workspace (new at the twelfth filing, HARNESS-WRAPPER-123)
+
+Measured **2026-07-23 03:25–03:52 local**. This is the first filing to establish a *control*, and it
+is the single most useful new fact for whoever implements these patches: a second supervisor is
+running the **byte-identical** `release` agent out of the **same** `orche` process image and has
+never wedged.
+
+| | HARNESS-WRAPPER (wedged) | META-HARNESS (healthy control) |
+| --- | --- | --- |
+| Supervisor | pid **65669**, started Wed Jul 22 **11:32:51**, elapsed **16:18** | pid **7802**, started Wed Jul 22 **09:46:47**, elapsed **18:05** — *older* |
+| `--dir` | `…/aether/harness-wrapper/.orche` | `…/aether/meta-harness/.orche` |
+| Agent definition | `.orche/agents/release.ts`, 392 B, md5 **`f3f1421393818760af0449c3d9f2133b`** | **byte-identical** — same size, same md5 |
+| Both re-export | `file:///Users/oleh/Work/new/orche/packages/agent/examples/.orche/agents/release.ts` | same file — one on-disk definition, two supervisors |
+| Build tag in `agents.log` | `release@0.1.0+737ea45*` | `release@0.1.0+737ea45*` — same commit |
+| Last successful release tick | `cron:release:1784725803650` → **2026-07-22 15:10:03** | `cron:release:1784769929485` → **2026-07-23 03:25:29** |
+| Release ticks logged | **456**, frozen since 15:10 | **1396**, still advancing on the 30-min cadence, every recent tick `success` |
+| `--first-parent main..dev` | **63** | **0** — fully promoted (`main` `266bf5c`, 2026-07-22 22:56:59) |
+
+**What this rules out.** Not a regression in `737ea45` (the control runs the same commit); not a
+machine-wide resource, clock, or cron-scheduler failure (the control fires on schedule through the
+whole wedge window); not a defect in the `release` agent definition or its `maxConcurrent: 1`
+declaration (the two workspaces share one file, byte for byte); and not supervisor ageing — the
+healthy supervisor is the **older** of the two by 1 h 46 m.
+
+**What this confirms.** Exactly the premise Patch A is built on: the failure is **one** tick that
+hung and then owned the process-lifetime slot forever, *not* a per-fire crash loop. A repeating
+per-tick fault would have taken the control down too. So the trigger was workspace-local state
+inside that one `sandbox.open()` at 15:40:04, and the defect that turned a single local hang into
+18 hours of dead promotion is the missing deadline at `spawner.ts:640-648` — nothing else.
+
+**Consequences for implementers.**
+
+- **Do not** rework the cron accept path broadly or make `at_capacity` itself the target; on the
+  control that path is behaving correctly ~48 times a day. Patch A's per-tick deadline is the
+  minimal correct edit, and it is a no-op for a workspace that never hangs.
+- The deadline **must** force-`settle()` even when the hung call cannot be aborted. Whatever hung
+  at 15:40 was below `HarnessSession.open()` (`harness/session.ts:215`, no `AbortSignal`), so
+  Patch C's signal plumbing alone would not have recovered this exact wedge — as the bundle already
+  states, C is not a substitute for A's force path.
+- Patch D's escalation is what makes the two columns of the table above distinguishable **from the
+  log alone**. Today the only difference visible in `agents.log` is the *absence* of `[release@…]`
+  lines in one file and their presence in the other — a difference no detector reads, which is why
+  this signature survived eleven filings with no operator ever seeing a cause.
+- The control also bounds the blast radius of the operator restart: only pid **65669** needs
+  restarting. **Do not restart pid 7802** — META-HARNESS is healthy, and restarting it would kill
+  its in-flight agents for nothing.
 
 ### Deterministic reproduction (unit level, in `orche`)
 
