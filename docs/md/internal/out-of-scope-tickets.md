@@ -367,13 +367,20 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 | 12 | -124 | 04:28 | **64** / 130 | ~611 min | 16:54 | 456 (4586) | **Restart cannot be self-serviced** — worker's own `.pid` = 65669 |
 | 13 | -125 | 05:11 | **66** / 132 | ~655 min | 17:38 | 456 (4604) | This ledger; the `8df3c501` transcript test has rotted (below) |
 | 14 | -126 | 05:44 | **68** / 134 | ~688 min | 18:11 | 456 (4621) | Self-service impossibility reproduced a **third** time; the content-grep poisoning quantified (12 → **39**, exactly 13 × 3, zero `agent_release_*`) |
+| 15 | -127 | 06:31 | — ² | — ² | — ² | — ² | The **ready-to-file `ORCHE` ticket body** (`crossrepo/orche/ORCHE-release-slot-wedge.ticket.md`), plus pointers to it from the bundle and the canonical triage |
+| 16 | -128 | 07:00 | **74** / 140 | ~764 min | 19:28 | 456 (4657) | Self-service impossibility reproduced a **fourth** time; the control caught *failing* a tick and still re-firing (below) |
 
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
 record. The previously published progression `27 → 32 → 57 → 41 → …` silently mixed the two bases —
-the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68**, a
-straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather than
-slow.
+the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74**,
+a straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather
+than slow.
+
+² -127 deliberately took no measurements: it was a documentation-only filing that added the `ORCHE`
+ticket body and two pointers to it, and its brief (correctly) told it not to re-derive the analysis.
+Its row is kept so the filing count and the commit history line up; the blanks are *not measured and
+unknown*, and must not be interpolated from the neighbouring rows.
 
 The `[release@…]` count has been pinned at **456** since 15:10:03 on 2026-07-22 — the last two
 release lines are still `agents.log:3780-3781` (`cron:release:1784725803650: success`, then a
@@ -449,19 +456,70 @@ main..dev` = **0**. `orche` is still at HEAD **`737ea45`**, so no bundle anchor 
 tree-wide grep for `runTick|maxRunMs|at_capacity|maxConcurrent` over `*.go`/`*.ts`/`*.py` still
 returns **0** source files here.
 
-### Standing conclusion — unchanged across all fifteen filings
+### Filing 17 — HARNESS-WRAPPER-128 (2026-07-23, 06:58–07:04 local)
+
+Measured in the -128 worktree. (**Filing 16 = -127** wrote no section of its own: it added
+[`crossrepo/orche/ORCHE-release-slot-wedge.ticket.md`](../../../crossrepo/orche/ORCHE-release-slot-wedge.ticket.md)
+— the ready-to-file `ORCHE` ticket body, which closes the last *content* gap in operator action 2 —
+and pointed the bundle and the canonical triage at it. Its ledger row is blank by design; see
+footnote ². Filing the ticket is still outstanding: writing the body is not filing it.)
+
+Nothing in the wedge has moved in the 76 minutes since -126, and nothing in it is new. What this
+filing adds is two data points, both of which sharpen the case for the operator actions rather than
+restating it.
+
+**1. The self-service impossibility now has four independent reproductions.** This worktree's
+sidecar `agent-worker-95cae684-….pid` reads **65669** — after -124 (`agent-bug-reviewer-2518dae8`),
+-125 (`agent-worker-2bdba54c`) and -126 (`agent-worker-fb459ffe`). Four dispatches, three agent
+kinds, one parent. Treat this as settled and stop re-measuring it: the restart is a human action
+because *every* agent this signature can reach dies with the process that has to be restarted.
+
+**2. The control shows that a tick which merely *fails* still returns its slot.** pid **7802**
+(META-HARNESS) is at **1407** `[release@…]` lines (1404 → 1407 since -126) and its last three ticks
+are `cron:release:1784777690796: success`, `…1784779491153: success`, `…1784781291396: **failed**`
+— exactly 1800 s apart. The failure is incidental; the point is what follows it. A failing `runTick`
+rejects, `.finally(() => settle())` runs, the slot is freed, and the next fire happens on cadence.
+This is the direct experimental complement to the wedge: `spawner.ts:640-648` recovers from every
+outcome a tick can *reach*, and from none that it cannot. Only a tick that never settles — the
+`HarnessSession.open()` hang — takes the slot out of circulation for the life of the process. Patch
+A (a hard slot deadline that aborts and settles unconditionally) is aimed at precisely the gap this
+comparison isolates; Patch D would have made the difference visible from the log alone.
+
+Re-verified and unchanged at 07:00–07:04: `--first-parent main..dev` = **74** (140 total),
+`dev..main` = **0**; `main` still **`6281927`** (2026-07-22 10:15:03), `dev` at **`0131bdc`**
+(06:31:21); oldest unpromoted still **`40e7251`** (2026-07-22 18:16:09) — **~764 min**, i.e. **~12 h
+44 m** with zero promotions and **15 h 50 m** since the 15:40 tick hung. `[release@…]` still **456**,
+last two lines still `agents.log:3780-3781`; the observer is at `cron:observer:1784782840046`
+(**07:00:40**, `agents.log:4657`), so the 5-minute cadence remains unbroken. Supervisor **65669**
+alive since Wed Jul 22 11:32:51, elapsed **19:28**, never restarted. Both dead tick worktrees still
+present and still awaiting the prune (`agent-release-8df3c501-…` mtime **Jul 22 15:40**,
+`agent-release-3a870b7e-…` **13:40**, both `.pid` = 65669). `orche` still at HEAD **`737ea45`** — no
+bundle anchor has moved. The tree-wide grep for `runTick|maxRunMs|at_capacity|maxConcurrent` over
+`*.go`/`*.ts`/`*.py` still returns **0** source files here; the only matches are this file, the
+triage, the bundle and the `ORCHE` ticket body.
+
+**The poisoning rate held exactly.** -126 predicted +3 per filing from 39 = 13 × 3. The content grep
+over `.orche/run/queue/transcripts/HARNESS-WRAPPER/` now returns **45 = 15 × 3** (15
+`agent_bug-reviewer`, 15 `agent_observer`, 15 `agent_worker`, **0** `agent_release_*`) across the two
+filings since. The filename test still returns **0** and the newest release transcript by mtime is
+still `agent_release_5d7d11ee-…__cron_release_1784725803650.txt` (**Jul 22 15:10**), so the
+conclusion is untouched — but a prediction that lands twice is a measurement, and it prices action
+2 below: each fire suppressed is 3 fewer false positives in the corpus this section's own evidence
+commands run over.
+
+### Standing conclusion — unchanged across all seventeen filings
 
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
-process in another repo. Fourteen automated cycles have produced fourteen documentation commits and
-zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count the
-observer reports** — this filing's own commits included, pushing the count past the **68** measured
+process in another repo. Sixteen automated cycles have produced sixteen documentation commit sets
+and zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count the
+observer reports** — this filing's own commits included, pushing the count past the **74** measured
 in its row above. (Pinning the post-merge figure is itself self-defeating: -126 tried, and the
 correction commit invalidated the number it was correcting. Record the count you *measured*, in the
 row; do not predict where it lands.) That loop is closed by
 measurement, not by argument: the worker dispatched at this signature is a child of the wedged
-supervisor (-124, reproduced at -125 and again at -126), so it holds the wrong end of the lever.
+supervisor (-124, reproduced at -125, -126 and -128), so it holds the wrong end of the lever.
 
-Both blocking actions are **human-only** and both are still outstanding after fifteen filings:
+Both blocking actions are **human-only** and both are still outstanding after seventeen filings:
 
 1. **Restart supervisor pid 65669** — the only thing that restores promotion today. Irreversible;
    kills every in-flight fleet agent, including any worker sent at this ticket. Schedule it
