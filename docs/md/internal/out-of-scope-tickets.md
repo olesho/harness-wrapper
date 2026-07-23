@@ -454,7 +454,8 @@ returns **0** source files here.
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
 process in another repo. Fourteen automated cycles have produced fourteen documentation commits and
 zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count the
-observer reports** — this ledger commit included, taking the count to 69. That loop is closed by
+observer reports** — this filing's own commits included, taking the count from 68 to **70**. That
+loop is closed by
 measurement, not by argument: the worker dispatched at this signature is a child of the wedged
 supervisor (-124, reproduced at -125 and again at -126), so it holds the wrong end of the lever.
 
