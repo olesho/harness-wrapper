@@ -29,7 +29,7 @@ version breaks every real user. That's what layers 3 and 4 exist to catch.
 | 1 · Pattern units | the adapter regexes / markers | yes | per-commit | `pkg/turns/harness/**` |
 | 2 · Corpus replay | recorded byte-streams → adapter → boundaries + text | yes | per-commit | `pkg/turns/harness/**/*_test.go`, [`test/corpus/**`](corpus.md) |
 | 3 · [Fake-harness integration](fakeharness.md) | full PTY→screen→turns→chat→HTTP against a scriptable fake | yes | per-commit | `internal/fakeharness`, `cmd/fakeharness`, `pkg/chat/integration_test.go` |
-| 4 · Live conformance + drift | real installed binaries: [version drift](../versions-drift.md) + sentinel round-trip | no | nightly | `pkg/harness/conformance_test.go` |
+| 4 · Live conformance + drift | real installed binaries: [version drift](../versions-drift.md) + sentinel round-trip + permission flag surface | no | nightly | `pkg/harness/conformance_test.go`, `pkg/wrapper/permission_conformance_test.go` |
 
 Layers 1–2 verify the adapter in isolation. Layer 3 is the one that exercises the **timing** machinery
 — the idle-completion watcher, the marker-confirm gap, `Busy()` flicker — which adapter-level replay
@@ -48,13 +48,26 @@ Four outward surfaces are frozen and regenerated after an **intentional** change
 
 ## Layer 4: live conformance
 
-`pkg/harness/conformance_test.go` is gated behind `HARNESS_WRAPPER_CONFORMANCE=1` and skips any harness
-whose binary is absent, so it's safe in normal runs and meant for a nightly job.
+`pkg/harness/conformance_test.go` and `pkg/wrapper/permission_conformance_test.go` are both gated behind
+`HARNESS_WRAPPER_CONFORMANCE=1` and skip any harness whose binary is absent, so they're safe in normal
+runs and meant for a nightly job.
 `TestConformance_VersionDrift` compares each installed binary's `--version` against the
 [`versions.json`](../versions-drift.md) pin; `TestConformance_SentinelRoundTrip` drives one real turn
 per harness and asserts the sentinel survives. The drift check earned its keep immediately — it caught
 codex sitting at `0.140.0` after the adapter had moved to `0.141.0`, and a claude-code drift
 `2.1.141 → 2.1.185`. Both are resolved; conformance now reports zero drift.
+
+Layer 4 also covers the **permission flag surface**. `pkg/wrapper/permission_conformance_test.go` lives
+in `package wrapper` (not `wrapper_test`) because the rung consts, the native spellings, both mappers
+and `validatePermissionMode` are all unexported — from outside, the only option would be a second
+hardcoded copy of the mode list, which says nothing about what we actually *emit*. It probes the
+installed binaries with `<flag…> --version` (never a subcommand's `--help`, which short-circuits clap's
+validation and would pass for any value) and asserts three things: every mode production's predicate
+accepts produces argv the real binary accepts; each binary's own allowed-value enumeration matches ours
+in **both** directions (a value upstream *added* is drift too — a posture we can't express); and the two
+blanket bypass flags production hardcodes still exist. These probes deliberately ignore the
+`versions.json` pins — they check the *installed* binary, so they stay green through pin skew. Whole
+run: under two seconds, no session, no turn, no quota, no config mutation.
 
 ## Invariants worth asserting (any layer, version-independent)
 
@@ -80,7 +93,7 @@ sub-agent-flicker sentinel test; it must FAIL. Then revert.
 
 ```bash
 make test   # go vet + gofmt + go test -race ./...  (hermetic: layers 0–3)
-HARNESS_WRAPPER_CONFORMANCE=1 go test ./pkg/harness/ -run Conformance   # layer 4 (nightly)
+HARNESS_WRAPPER_CONFORMANCE=1 go test ./pkg/harness/ ./pkg/wrapper/ -run Conformance   # layer 4 (nightly)
 ```
 
 See [Corpus](corpus.md) for the recording workflow and [Fake Harness](fakeharness.md) for the

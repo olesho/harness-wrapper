@@ -365,6 +365,75 @@ func TestConformance_BypassFlagsExist(t *testing.T) {
 	}
 }
 
+// TestPermissionConformanceParsers is the one HERMETIC test in this file: it
+// pins the two enumeration parsers against the exact upstream error text
+// recorded from claude 2.1.217 / codex-cli 0.144.5. Without it a parser
+// regression would only ever surface as an "unparseable enumeration" failure on
+// a gated nightly, long after the commit that caused it. Ungated on purpose —
+// no binary is involved.
+func TestPermissionConformanceParsers(t *testing.T) {
+	t.Run("claude", func(t *testing.T) {
+		const out = "error: option '--permission-mode <mode>' argument 'zzz' is invalid. " +
+			"Allowed choices are acceptEdits, auto, bypassPermissions, manual, dontAsk, plan.\n"
+		m := claudeAllowedRE.FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("claudeAllowedRE did not match %q", out)
+		}
+		want := []string{claudeModeAcceptEdits, permissionModeAuto, claudeModeBypassPermissions, permissionModeManual, claudeModeDontAsk, permissionModePlan}
+		if missing, extra := diffSets(want, splitAllowedValues(m[1])); len(missing) > 0 || len(extra) > 0 {
+			t.Errorf("parsed set mismatch: missing=%v extra=%v", missing, extra)
+		}
+	})
+	t.Run("clap", func(t *testing.T) {
+		const out = "error: invalid value 'zzz' for '--sandbox <SANDBOX_MODE>'\n" +
+			"  [possible values: read-only, workspace-write, danger-full-access]\n"
+		m := clapAllowedRE.FindStringSubmatch(out)
+		if m == nil {
+			t.Fatalf("clapAllowedRE did not match %q", out)
+		}
+		want := []string{codexSandboxReadOnly, codexSandboxWorkspaceWrite, codexSandboxDangerFullAccess}
+		if missing, extra := diffSets(want, splitAllowedValues(m[1])); len(missing) > 0 || len(extra) > 0 {
+			t.Errorf("parsed set mismatch: missing=%v extra=%v", missing, extra)
+		}
+	})
+	t.Run("unparseable", func(t *testing.T) {
+		// The failure the gated tests must report loudly rather than skip.
+		if m := clapAllowedRE.FindStringSubmatch("error: invalid value 'zzz'"); m != nil {
+			t.Errorf("clapAllowedRE matched an enumeration-free message: %q", m)
+		}
+		if m := claudeAllowedRE.FindStringSubmatch("error: unknown option '--permission-mode'"); m != nil {
+			t.Errorf("claudeAllowedRE matched an enumeration-free message: %q", m)
+		}
+	})
+	t.Run("both directions", func(t *testing.T) {
+		missing, extra := diffSets([]string{"a", "b"}, []string{"b", "c"})
+		if len(missing) != 1 || missing[0] != "a" {
+			t.Errorf("missing = %v, want [a]", missing)
+		}
+		if len(extra) != 1 || extra[0] != "c" {
+			t.Errorf("extra = %v, want [c]", extra)
+		}
+	})
+	t.Run("probe sets derive the codex+plan exclusion", func(t *testing.T) {
+		for _, h := range permissionConformanceHarnesses() {
+			modes := h.probeModes()
+			if len(modes) == 0 {
+				t.Fatalf("%s: probeModes is empty", h.wrapper)
+			}
+			hasPlan := false
+			for _, m := range modes {
+				if m == permissionModePlan {
+					hasPlan = true
+				}
+			}
+			if want := h.wrapper != "codex"; hasPlan != want {
+				t.Errorf("%s: probeModes contains %q = %v, want %v (validatePermissionMode decides, not a hardcoded list)",
+					h.wrapper, permissionModePlan, hasPlan, want)
+			}
+		}
+	})
+}
+
 // splitAllowedValues turns a captured enumeration body ("a, b, c") into trimmed
 // values, dropping empties so a trailing comma cannot fabricate a member.
 func splitAllowedValues(s string) []string {
