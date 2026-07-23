@@ -16,7 +16,7 @@ Triage record and the full evidence chain, in `harness-wrapper`:
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../docs/triage/HARNESS-WRAPPER-97.md) — the canonical
 record for observer signature `obs-sig:1bf9fcd2c6`, plus the running amendment log in
 [`docs/md/internal/out-of-scope-tickets.md`](../../docs/md/internal/out-of-scope-tickets.md)
-(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119`).
+(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122`).
 
 **This bundle exists because five prior filings produced no patch.** HARNESS-WRAPPER-97, -100,
 -110, -116 and -117 all re-derived the same root cause, all correctly concluded "not this repo",
@@ -78,6 +78,28 @@ still live rather than a historical record. Measured in the HARNESS-WRAPPER-120 
 - Every `orche` anchor cited in this bundle was re-read against `orche` HEAD and is **unchanged**.
   The one substantive correction found is folded into [Patch A](#patch-a--hard-slot-deadline-load-bearing)
   (`forceSettle()` is redundant — `track()`'s `settle()` already deletes from `this.tracked`).
+
+### Still live at the eleventh filing (HARNESS-WRAPPER-122)
+
+Measured in the HARNESS-WRAPPER-122 worktree, **2026-07-23 02:12 local** — nothing below revises
+the analysis; it exists so a reader can tell this bundle is still describing a live wedge:
+
+- Same supervisor, still never restarted: **pid 65669**, start Wed Jul 22 11:32:51, elapsed
+  **14:39**. Wedged worktree `agent-release-8df3c501-…` still frozen at mtime **Jul 22 15:40:04**,
+  sidecar `.pid` = **65669**, still no transcript for that tick.
+- `main` still **`6281927`** — **~16 h, zero promotions**. `--first-parent main..dev` = **61**
+  (127 total), `dev..main` = **0**. Oldest unpromoted `40e7251` (2026-07-22 18:16:09), ~476 min.
+- `agents.log` (under the supervisor's `--dir`,
+  `/Users/oleh/Work/aether/harness-wrapper/.orche/run/HARNESS-WRAPPER/`) has grown to **4542**
+  lines while the `[release@…]` count is **still 456**, last two release lines still **3780–3781**.
+- First-parent lag across all eleven filings: **27 → 32 → 57 → 41 → 51 → 56 → 58 → 59 → 60 → 61**.
+- `orche` is still at HEAD **`737ea45`** — the same commit the -120/-121 re-reads used — and the
+  four anchors were spot-checked unchanged: `at_capacity` at `spawner.ts:641`, the sole slot
+  release at `spawner.ts:647` (`.finally(() => settle())`), the `maxRunMs > 0` watchdog gate at
+  `spawner.ts:1437`, and `release.ts:564` (`maxConcurrent: 1`, no `liveness` block).
+- `HarnessSession.open()` is at **`packages/agent/src/harness/session.ts:215`** — there is no
+  `packages/agent/src/session.ts`. The Layout section below already used the correct path; the
+  abbreviated form in the `harness-wrapper` amendment log has been corrected to match.
 
 ### Deterministic reproduction (unit level, in `orche`)
 
