@@ -14,9 +14,12 @@ survive in the ticket history.
 prose analysis gave no `orche` implementer anything to pick up. It carries Patches A–D (hard slot
 deadline; `liveness.maxRunMs` on `release`; watchdog scope + `AbortSignal` into
 `HarnessSession.open()`; observable `at_capacity`) and their tests against pinned `orche` file:line
-anchors. This record remains the canonical evidence chain for `obs-sig:1bf9fcd2c6`; the amendment
-log for each re-fire lives in
-[`docs/md/internal/out-of-scope-tickets.md`](../md/internal/out-of-scope-tickets.md).
+anchors. This record remains the canonical evidence chain for `obs-sig:1bf9fcd2c6`; each re-fire is
+recorded as **one row in the filing ledger** in
+[`docs/md/internal/out-of-scope-tickets.md`](../md/internal/out-of-scope-tickets.md) (the twelve
+prose amendments that preceded it were collapsed into that ledger at the fourteenth filing, with no
+measured figure discarded). If you are triaging a fresh fire: add your row there, and add prose only
+for something the table does not already carry.
 
 Two things a worker in this worktree cannot do, and which this record exists to hand off:
 

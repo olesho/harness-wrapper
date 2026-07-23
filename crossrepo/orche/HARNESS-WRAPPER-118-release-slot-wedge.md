@@ -178,12 +178,22 @@ State re-confirmed at this filing (unchanged analysis; figures re-measured, not 
 supervisor pid 65669 elapsed **16:54**, never restarted; `main` still **`6281927`** — **~18.2 h**,
 zero promotions; `--first-parent main..dev` = **64** (130 total), `dev..main` = **0**; `agents.log`
 **4586** lines with the `[release@…]` count **still 456** and last release lines still **3780–3781**;
-a grep for `8df3c501` across `.orche/run/queue/transcripts/HARNESS-WRAPPER/` returns **0** files, so
-the 15:40 tick still wrote no transcript at all — it hung at or before its first harness turn, which
-is what puts the hang at/inside `HarnessSession.open()`. The control (pid 7802) is at **1400**
+no `agent_release_*` transcript exists for `8df3c501`, so the 15:40 tick still wrote no transcript
+at all — it hung at or before its first harness turn, which is what puts the hang at/inside
+`HarnessSession.open()`. The control (pid 7802) is at **1400**
 release lines, last tick `cron:release:1784773530044` → **04:25:30**, `main..dev` = **0** — still
 healthy 18 h 40 m in. First-parent lag across all thirteen filings: **27 → 32 → 57 → 41 → 51 → 56 →
 58 → 59 → 60 → 61 → 63 → 64**.
+
+**How to re-verify the "no transcript" premise (corrected at the fourteenth filing).** Do **not**
+use a content grep for `8df3c501` over the transcripts directory — that was the wording here and in
+the out-of-scope log through the thirteenth filing, and it is now wrong: at the fourteenth filing it
+matched **12** files, all of them `agent_worker_*` triage transcripts that merely *quote* the
+worktree id, and **0** `agent_release_*` transcripts. The check self-poisons, because every filing
+that names the id adds another false hit. Use the filename test —
+`ls .orche/run/queue/transcripts/HARNESS-WRAPPER | grep 8df3c501` → **0**, newest release transcript
+still `agent_release_5d7d11ee-…__cron_release_1784725803650.txt` (15:10:03). The premise itself is
+unchanged and still holds.
 
 ### Deterministic reproduction (unit level, in `orche`)
 
