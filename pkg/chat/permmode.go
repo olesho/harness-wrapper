@@ -89,11 +89,21 @@ var (
 
 	// ErrCodexPlanRefusedBusy is returned by SetPermissionMode(ctx, "plan") on
 	// codex when codex kept refusing the `/plan` command with
-	// "'/plan' is disabled while a task is in progress." for the whole retry
-	// budget. Startup MCP-server boot counts as "a task in progress" while the
-	// `›` composer is already painted, so prompt-readiness is not a sufficient
-	// gate and this refusal — not ErrTurnInFlight — is the load-bearing guard
-	// on codex.
+	// "'/plan' is disabled while a task is in progress." for every one of
+	// codexPlanRetryAttempts submissions. Startup MCP-server boot counts as "a
+	// task in progress" while the `›` composer is already painted, so
+	// prompt-readiness is not a sufficient gate and this refusal — not
+	// ErrTurnInFlight — is the load-bearing guard on codex.
+	//
+	// It is ALSO returned, wrapped around ctx.Err(), when the CALLER'S ctx ended
+	// the drive after at least one refusal had been seen. The retry bound is an
+	// attempt count, so ctx is the only wall clock left (see codexEnterPlan): a
+	// caller whose ctx is shorter than the worst-case drive would otherwise get a
+	// bare context error and lose the one diagnosis whose remedy is "wait". Both
+	// sentinels match under errors.Is, so a caller should check ctx.Err() /
+	// errors.Is(err, context.Canceled) FIRST — a deliberate cancellation is not a
+	// busy codex, and the "wait for the task to finish, then retry" remedy does
+	// not apply to it.
 	ErrCodexPlanRefusedBusy = errors.New("chat: codex refused /plan while a task is in progress")
 )
 
@@ -140,14 +150,27 @@ const permissionRungBypass = "bypass"
 // because a footer redraw is a single frame, not a picker screen build.
 const defaultPermissionModeRenderTimeout = 2 * time.Second
 
-// codexPlanRetryBudgetFactor expresses the `/plan` retry budget as a multiple of
-// the per-press repaint budget: five repaints' worth of patience, i.e. 10s at
-// the default. MCP-server boot is the common cause of the refusal and clears on
-// its own within a few seconds; past the budget the caller gets
-// ErrCodexPlanRefusedBusy. Deriving it (rather than fixing a second constant)
-// means the hermetic tests' shrunken repaint budget shrinks this in proportion,
-// so a permanently-refusing codex is exercised in milliseconds.
-const codexPlanRetryBudgetFactor = 5
+// codexPlanRetryAttempts is how many times codexEnterPlan SUBMITS `/plan`
+// before giving up with ErrCodexPlanRefusedBusy. MCP-server boot is the common
+// cause of the refusal and clears on its own within a few seconds.
+//
+// It is an ATTEMPT COUNT, not a wall clock, and that is the whole point: it
+// matches cyclePermissionMode's already-attempt-based bound (which likewise
+// treats the ring length as "only a bound" and settles the outcome by
+// re-reading, never by arithmetic), so both drive paths bound the same way. A
+// wall clock could not do this job, because a refused `/plan` produces NO
+// posture change, so every attempt necessarily spends one whole repaint budget
+// inside awaitPostureChange — a clock would buy budget/(write+await) attempts
+// rather than the documented five, and under the hermetic tests' shrunken
+// repaint budget that degrades to a random 1–3. Counting attempts makes the
+// shrunken budget make each attempt FAST without making the loop SHORTER.
+//
+// The invariant this rests on: a refusal never changes the observed posture, so
+// no attempt can return early and every one of the five is a real submission.
+// (awaitPostureChange does return early on ANY posture change, but reaching that
+// with a refusal requires an unreadable seed posture, which waitReadyForSend
+// already excludes on codex — see codexEnterPlan.)
+const codexPlanRetryAttempts = 5
 
 // codexPlanRefusalRE matches codex's refusal banner for `/plan`:
 //
@@ -423,17 +446,61 @@ func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, b
 
 // codexEnterPlan writes `/plan` + codex's submit key and waits for the
 // collaboration axis to report "plan", retrying while codex answers with the
-// "disabled while a task is in progress" refusal banner. On budget exhaustion it
-// returns ErrCodexPlanRefusedBusy if a refusal was ever seen, and the ordinary
-// bound-exhausted marker otherwise (so the caller's restore path runs).
+// "disabled while a task is in progress" refusal banner. The retry bound is
+// codexPlanRetryAttempts SUBMISSIONS, never a wall clock — see that constant for
+// why. On exhaustion it returns ErrCodexPlanRefusedBusy if a refusal was ever
+// seen, and the ordinary bound-exhausted marker otherwise (so the caller's
+// restore path runs).
+//
+// # ctx is the only wall clock
+//
+// Because the bound counts attempts, the CALLER'S ctx is the sole time limit.
+// Worst-case wall time is therefore worth stating, and it is NOT parity with the
+// old clock: every iteration also runs pressGate, which carries its own full
+// permModeRenderBudget().
+//
+//   - typical refusal path (nothing pending, so pressGate returns immediately):
+//     5 × 2s ≈ 10s at the default, which is the documented intent, and now exact
+//     rather than approximate;
+//   - worst case (a pending-but-unsurfaced request on every iteration):
+//     5 × (2s pressGate + 2s await) ≈ 20s, up from the old ≈ 14s.
+//
+// Exhaustion costs no restore time on top of that: SetPermissionMode returns the
+// refusal sentinel WITHOUT restoring, and in the no-refusal case cyclePermissionMode
+// returns at its loop-top check because a refusal never moved the posture.
+//
+// A ctx shorter than that ends the drive early, which is why both raw
+// error returns below re-wrap a ctx abort in ErrCodexPlanRefusedBusy once a
+// refusal has been seen: the sentinel is the one error whose remedy is "wait for
+// the task to finish", and a tight ctx must not erase it.
+//
+// # Why every attempt is a real submission
+//
+// A refused `/plan` produces NO posture change — codex paints no Plan marker and
+// its detector reports the absence as ("default", true), never as unknown — so
+// awaitPostureChange always runs to its full budget and the attempt count cannot
+// be spent by cheap iterations. awaitPostureChange DOES return early on any
+// posture change, and the one way to combine that with a refusal is an
+// unreadable seed (`last == ""`, after which the first await returns the moment a
+// posture becomes readable). On codex that is effectively unreachable:
+// waitReadyForSend must pass first, which needs a painted composer, while the
+// detector answers ("", false) only for a screen with no readable signal at all —
+// mutually exclusive. And `last` never returns to "" afterwards, since only
+// non-empty observations are assigned. So no "don't count cheap attempts" guard
+// is added here: it would trade a hard, provably-terminating bound for a
+// conditional one, to prevent a loss of precision (one of five attempts) rather
+// than of termination. If codex's detector ever starts reporting unknown on a
+// ready screen, the guard to add is "skip the increment when the iteration
+// observed a posture change and matched no refusal, at most once per call".
 func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
-	budget := codexPlanRetryBudgetFactor * c.permModeRenderBudget()
-	deadline := time.Now().Add(budget)
 	refused := false
 	last, _ := c.PermissionMode()
 
-	for {
+	for n := 0; ; n++ {
 		if err := c.pressGate(ctx, last); err != nil {
+			if refused && ctxAborted(err) {
+				return last, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
+			}
 			return last, err
 		}
 		screenText := c.screen.Snapshot().Text
@@ -447,6 +514,9 @@ func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
 			last = observed
 		}
 		if err != nil {
+			if refused && ctxAborted(err) {
+				return last, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
+			}
 			return last, err
 		}
 		if last == codexCollabPlan {
@@ -455,13 +525,26 @@ func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
 		if codexPlanRefusalRE.MatchString(c.screen.Snapshot().Text) {
 			refused = true
 		}
-		if time.Now().After(deadline) {
+		if n+1 >= codexPlanRetryAttempts {
 			if refused {
-				return last, fmt.Errorf("%w (retried for %s)", ErrCodexPlanRefusedBusy, budget)
+				return last, fmt.Errorf("%w (retried %d times)", ErrCodexPlanRefusedBusy, codexPlanRetryAttempts)
 			}
 			return last, errPermissionModeBoundExhausted
 		}
 	}
+}
+
+// ctxAborted reports whether err is the caller's ctx ending the drive, in either
+// spelling. codexEnterPlan uses it to keep ErrCodexPlanRefusedBusy visible when
+// the caller's ctx is tighter than the attempt bound: after the attempt bound
+// replaced the wall clock, ctx is the ONLY clock left, and a sub-20s ctx would
+// otherwise erase the one error whose remedy is "wait".
+//
+// It deliberately tests the RETURNED ERROR rather than ctx.Err(), which is the
+// narrow form: a *PermissionModeBlockedError landing in the same instant as ctx
+// expiry is then never mislabelled as a refusal.
+func ctxAborted(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // pressGate reports whether it is safe to write a cycle keystroke NOW.
@@ -475,8 +558,12 @@ func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
 //   - pending, NOT surfaced     → a policy/handler is mid-resolve. Wait for it to
 //     clear rather than racing its keystrokes; if it never clears within the
 //     render budget, report it as blocked with the request in hand.
+//
+// The budget is a HARD bound: see the expiry check below for why the deadline
+// arm alone is not one.
 func (c *Conversation) pressGate(ctx context.Context, observed string) error {
 	budget := c.permModeRenderBudget()
+	expiry := time.Now().Add(budget)
 	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	ticker := time.NewTicker(permModePollInterval(budget))
@@ -492,6 +579,17 @@ func (c *Conversation) pressGate(ctx context.Context, observed string) error {
 			return nil
 		}
 		if surfaced {
+			return &PermissionModeBlockedError{Request: toClientInputRequest(pending), Observed: observed}
+		}
+
+		// The deadline arm below WAKES the loop at the budget but does not BOUND
+		// it: select picks uniformly among ready cases, so once the poll body
+		// costs more than the tick, ticker.C is always ready too and the deadline
+		// loses a coin flip on every pass — a geometric tail, not a bound.
+		// Testing expiry here — after the body, not before it — makes the budget
+		// hard while deliberately preserving the final read, so a policy that
+		// resolves the request on the very last tick still clears the gate.
+		if time.Now().After(expiry) {
 			return &PermissionModeBlockedError{Request: toClientInputRequest(pending), Observed: observed}
 		}
 
@@ -517,8 +615,12 @@ func (c *Conversation) pressGate(ctx context.Context, observed string) error {
 // A budget that elapses WITHOUT a change is NOT an error: the loop simply presses
 // again, and the outer bound is what stops it. That is the cycle-and-CHECK
 // contract — never assume a press landed, never assume it did not.
+//
+// The budget is a HARD bound: see the expiry check below for why the deadline
+// arm alone is not one.
 func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (string, error) {
 	budget := c.permModeRenderBudget()
+	expiry := time.Now().Add(budget)
 	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	ticker := time.NewTicker(permModePollInterval(budget))
@@ -535,6 +637,18 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (str
 			}
 		}
 		if observed, ok := c.PermissionMode(); ok && observed != prev {
+			return observed, nil
+		}
+
+		// Hard-bound the budget. select picks uniformly among ready cases, so
+		// once one poll body (a 120×40 ScreenSnapshot plus the detector) costs
+		// more than the tick — which permModePollInterval's quarter-of-budget
+		// rule makes true at the hermetic scale — the deadline arm loses a coin
+		// flip on every pass and the "bounded" wait overruns by a random
+		// multiple. Testing expiry AFTER the body preserves the final read, so a
+		// repaint that lands on the last tick is still honored.
+		if time.Now().After(expiry) {
+			observed, _ := c.PermissionMode()
 			return observed, nil
 		}
 

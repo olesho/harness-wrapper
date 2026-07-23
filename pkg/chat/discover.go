@@ -155,6 +155,7 @@ func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.I
 	if renderTimeout <= 0 {
 		renderTimeout = defaultPickerRenderTimeout
 	}
+	expiry := time.Now().Add(renderTimeout)
 	deadline := time.NewTimer(renderTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(pickerPollInterval)
@@ -163,6 +164,22 @@ func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.I
 	for {
 		if found := models.ParseModelPicker(conv.screen.Snapshot().Text, opts.Harness); len(found) > 0 {
 			return found, nil
+		}
+		// Hard-bound the render budget: select picks uniformly among ready cases,
+		// so a poll body costing more than the tick would let deadline.C lose a
+		// coin flip on every pass. Testing expiry AFTER the body preserves the
+		// final read, so a picker that renders on the last tick is still returned.
+		//
+		// This is IDIOM PARITY with permmode.go's two poll loops, not a fix for a
+		// reachable race here: pickerPollInterval is a fixed 150ms regardless of
+		// RenderTimeout, an order of magnitude over this body's cost, so reaching
+		// the race needs a ~10× loaded box. (For RenderTimeout < 150ms the ticker
+		// never fires at all and deadline.C is already the only exit, which makes
+		// the check inert on that path.) permmode.go documents that it borrows
+		// this file's polling idiom; fixing the shape in one and not the other
+		// would silently fork it.
+		if time.Now().After(expiry) {
+			return nil, ErrPickerTimeout
 		}
 		select {
 		case <-ctx.Done():
