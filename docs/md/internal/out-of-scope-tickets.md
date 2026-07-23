@@ -361,6 +361,7 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 | 11 | -123 | 03:52 | **63** / 129 | ~576 min | 16:18 | 456 (4569) | **Live differential control** (META-HARNESS pid 7802 healthy, identical build) |
 | 12 | -124 | 04:28 | **64** / 130 | ~611 min | 16:54 | 456 (4586) | **Restart cannot be self-serviced** — worker's own `.pid` = 65669 |
 | 13 | -125 | 05:11 | **66** / 132 | ~655 min | 17:38 | 456 (4604) | This ledger; the `8df3c501` transcript test has rotted (below) |
+| 14 | -126 | 05:44 | **68** / 134 | ~688 min | 18:11 | 456 (4621) | Self-service impossibility reproduced a **third** time; the content-grep poisoning quantified (12 → **39**, exactly 13 × 3, zero `agent_release_*`) |
 
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
