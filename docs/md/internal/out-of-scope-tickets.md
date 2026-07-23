@@ -237,11 +237,11 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`. Re-fired **thirteen times** under
-the identical observer signature `obs-sig:1bf9fcd2c6` (fourteen counting the
+(release-lag:dev..main)`, escalated to `review`. Re-fired **fourteen times** under
+the identical observer signature `obs-sig:1bf9fcd2c6` (fifteen counting the
 [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md) false positive) — see the
 **filing ledger** at the end of this section, which is where new fires are recorded.
 
@@ -298,7 +298,7 @@ append**, not a new essay, because the marginal information per filing is one ro
 are the next triager, add your row and stop; only add prose if you measured something that is
 not already in the table.
 
-**What the thirteen filings actually added.** Everything not listed here was restatement:
+**What the fourteen filings actually added.** Everything not listed here was restatement:
 
 - **-97** — the canonical triage
   ([`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md)): root cause, fix
@@ -337,6 +337,11 @@ not already in the table.
   the triage worker's own worktree sidecar reads `.pid` = **65669**. The restart that clears
   the wedge terminates the process that spawned the agent assigned to clear it.
 - **-125** — this ledger, plus the evidence-test correction below.
+- **-126** — the self-service impossibility reproduced a **third** time on a third independently
+  dispatched worker (`agent-worker-fb459ffe-….pid` = **65669**), and -125's self-poisoning
+  correction turned into a *rate*: the content grep is now **39** files = **13 × 3**, one per
+  filing per agent kind that reads the ticket (`agent_bug-reviewer`, `agent_observer`,
+  `agent_worker`), still **zero** `agent_release_*`. See filing 15 below.
 
 ### Filing ledger — `obs-sig:1bf9fcd2c6`
 
@@ -366,7 +371,7 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
 record. The previously published progression `27 → 32 → 57 → 41 → …` silently mixed the two bases —
-the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66**, a
+the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68**, a
 straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather than
 slow.
 
@@ -406,16 +411,54 @@ the newest release transcript is still
 content grep over a corpus that includes triage output is self-poisoning — scope such checks to the
 producing agent's filenames.
 
-### Standing conclusion — unchanged across all fourteen filings
+### Filing 15 — HARNESS-WRAPPER-126 (2026-07-23, 05:41–05:44 local)
+
+Measured in the -126 worktree. The row above is the filing; only two things were not already in
+the table.
+
+**1. The self-service impossibility now has three independent reproductions.** This worktree's own
+sidecar `agent-worker-fb459ffe-….pid` reads **65669** — after -124 (`agent-bug-reviewer-2518dae8`)
+and -125 (`agent-worker-2bdba54c`). Three separate dispatches, three different agent kinds, same
+parent. This is not an artifact of one unlucky spawn: every agent this signature can reach is a
+child of the process whose restart is the fix.
+
+**2. The self-poisoning has a rate, and it is one hit per agent kind per filing.** -125 recorded
+the content grep over `.orche/run/queue/transcripts/HARNESS-WRAPPER/` returning **12** files where
+it once returned 0. It now returns **39**, and the breakdown is exact:
+
+```
+13 agent_bug-reviewer   13 agent_observer   13 agent_worker   0 agent_release
+```
+
+13 filings × the 3 agent kinds that read the ticket. Each fire adds one transcript per kind, each
+quoting the worktree id, so the "0 files" evidence degrades by **+3 per filing** — deterministically,
+not incidentally. The conclusion is still unchanged (the 15:40 tick wrote **no** transcript, so it
+hung at or before its first harness turn, inside `HarnessSession.open()`); use -125's filename test,
+which still returns **0**. Two hygiene notes for whoever re-runs it: sort candidates by **mtime**,
+not by name — `ls … | tail -1` sorts lexicographically and names the wrong "newest" file; by mtime
+the newest release transcript is still
+`agent_release_5d7d11ee-…__cron_release_1784725803650.txt`, **Jul 22 15:10**.
+
+Everything else re-verified and unchanged: `main` still **`6281927`**; oldest unpromoted still
+**`40e7251`** (2026-07-22 18:16:09, **~688 min**); `dev..main` = **0**; supervisor **65669** alive
+since Wed Jul 22 11:32:51, elapsed **18:11**, never restarted; both dead tick worktrees still
+present (`agent-release-8df3c501-…`, dir mtime **Jul 22 15:40**, `.pid` = 65669); observer cadence
+unbroken (`cron:observer:1784777991792`, `agents.log:4617`). The control is still healthy: **pid
+7802**, up **19:57**, **1404** `[release@…]` lines (1402 → 1404 since -125), `--first-parent
+main..dev` = **0**. `orche` is still at HEAD **`737ea45`**, so no bundle anchor has moved, and the
+tree-wide grep for `runTick|maxRunMs|at_capacity|maxConcurrent` over `*.go`/`*.ts`/`*.py` still
+returns **0** source files here.
+
+### Standing conclusion — unchanged across all fifteen filings
 
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
-process in another repo. Thirteen automated cycles have produced thirteen documentation commits and
+process in another repo. Fourteen automated cycles have produced fourteen documentation commits and
 zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count the
-observer reports** — this ledger commit included, taking the count to 67. That loop is closed by
+observer reports** — this ledger commit included, taking the count to 69. That loop is closed by
 measurement, not by argument: the worker dispatched at this signature is a child of the wedged
-supervisor (-124, reproduced at -125), so it holds the wrong end of the lever.
+supervisor (-124, reproduced at -125 and again at -126), so it holds the wrong end of the lever.
 
-Both blocking actions are **human-only** and both are still outstanding after fourteen filings:
+Both blocking actions are **human-only** and both are still outstanding after fifteen filings:
 
 1. **Restart supervisor pid 65669** — the only thing that restores promotion today. Irreversible;
    kills every in-flight fleet agent, including any worker sent at this ticket. Schedule it
@@ -429,7 +472,9 @@ Both blocking actions are **human-only** and both are still outstanding after fo
    retained by `cleanup: 'on-success'` (`release.ts:569`).
 
 Worth a human decision alongside them: suppressing or auto-closing this signature at the detector,
-so the fifteenth fire does not consume a worker. That is also an `orche` change.
+so the sixteenth fire does not consume a worker. That is also an `orche` change — and note that
+each fire it prevents also removes 3 more transcripts from the corpus that is degrading this
+section's own evidence commands (filing 15).
 
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 

@@ -161,10 +161,17 @@ became a direct measurement rather than an inference:
   dead release-tick worktrees (`agent-release-8df3c501-…` wedged 15:40, `agent-release-3a870b7e-…`
   failed 13:40) and that worker. The other 26 belong to three unrelated supervisors.
 
+**Reproduced twice since.** At the fourteenth filing (-125) the sidecar was
+`agent-worker-2bdba54c-….pid` = `65669`; at the fifteenth (-126) it was
+`agent-worker-fb459ffe-….pid` = `65669`, with the census re-counted as **3 of 28** tree-wide
+sidecars naming 65669 — the same two dead release-tick worktrees plus whichever worker is currently
+dispatched here. Three independent dispatches, three agent kinds, one parent: this is structural,
+not an unlucky spawn.
+
 So the wedged supervisor is the parent of the agent sent to unwedge it: **the restart that clears
 the wedge terminates the process that spawned the agent assigned to clear it.** Any worker routed at
 `obs-sig:1bf9fcd2c6` is, by construction, holding the wrong end of the lever — which is the
-mechanical reason twelve dispatches produced twelve documentation amendments and zero resolutions,
+mechanical reason fourteen dispatches produced fourteen documentation amendments and zero resolutions,
 each amendment landing on `dev` and incrementing the very `main..dev` count that re-fires the
 signature.
 
@@ -175,25 +182,28 @@ fleet. Until A lands, the only exit is the human restart, and it must be schedul
 precisely because no agent can survive issuing it.
 
 State re-confirmed at this filing (unchanged analysis; figures re-measured, not carried over):
-supervisor pid 65669 elapsed **16:54**, never restarted; `main` still **`6281927`** — **~18.2 h**,
-zero promotions; `--first-parent main..dev` = **64** (130 total), `dev..main` = **0**; `agents.log`
-**4586** lines with the `[release@…]` count **still 456** and last release lines still **3780–3781**;
+supervisor pid 65669 elapsed **18:11**, never restarted; `main` still **`6281927`** — **~19.5 h**,
+zero promotions; `--first-parent main..dev` = **68** (134 total), `dev..main` = **0**; `agents.log`
+**4621** lines with the `[release@…]` count **still 456** and last release lines still **3780–3781**;
 no `agent_release_*` transcript exists for `8df3c501`, so the 15:40 tick still wrote no transcript
 at all — it hung at or before its first harness turn, which is what puts the hang at/inside
-`HarnessSession.open()`. The control (pid 7802) is at **1400**
-release lines, last tick `cron:release:1784773530044` → **04:25:30**, `main..dev` = **0** — still
-healthy 18 h 40 m in. First-parent lag across all thirteen filings: **27 → 32 → 57 → 41 → 51 → 56 →
-58 → 59 → 60 → 61 → 63 → 64**.
+`HarnessSession.open()`. The control (pid 7802) is at **1404**
+release lines, `main..dev` = **0** — still healthy 19 h 57 m in. First-parent lag across all
+fifteen filings: **27 → 32 → 57 → 41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68**
+(the first two values predate the `ORCHE-31` detector fix and are total-commit counts on a
+different basis).
 
 **How to re-verify the "no transcript" premise (corrected at the fourteenth filing).** Do **not**
 use a content grep for `8df3c501` over the transcripts directory — that was the wording here and in
 the out-of-scope log through the thirteenth filing, and it is now wrong: at the fourteenth filing it
-matched **12** files, all of them `agent_worker_*` triage transcripts that merely *quote* the
-worktree id, and **0** `agent_release_*` transcripts. The check self-poisons, because every filing
-that names the id adds another false hit. Use the filename test —
+matched **12** files, all triage transcripts that merely *quote* the worktree id, and **0**
+`agent_release_*` transcripts. At the fifteenth it matched **39** — exactly **13 × 3**
+(`agent_bug-reviewer`, `agent_observer`, `agent_worker`), still 0 release — so the check degrades by
+**+3 per filing**, one per agent kind that reads the ticket. Use the filename test —
 `ls .orche/run/queue/transcripts/HARNESS-WRAPPER | grep 8df3c501` → **0**, newest release transcript
-still `agent_release_5d7d11ee-…__cron_release_1784725803650.txt` (15:10:03). The premise itself is
-unchanged and still holds.
+still `agent_release_5d7d11ee-…__cron_release_1784725803650.txt` (15:10:03). Pick that "newest" by
+**mtime**, not by name: `ls … | tail -1` sorts lexicographically and names a different, older file.
+The premise itself is unchanged and still holds.
 
 ### Deterministic reproduction (unit level, in `orche`)
 
@@ -465,8 +475,8 @@ Priority if only part ships:
 1. **Restart supervisor `pid 65669`.** It is the **only** thing that restores promotion now. It
    kills every in-flight fleet agent (including any agent implementing this ticket), so it must be
    scheduled by a human. Optionally follow with `POST http://127.0.0.1:53998/release/fire`.
-   This is not a theoretical caveat: at the thirteenth filing the worker dispatched at this
-   signature was itself a child of 65669 (its worktree sidecar reads `65669`) — see
+   This is not a theoretical caveat: at the thirteenth, fourteenth and fifteenth filings the worker
+   dispatched at this signature was itself a child of 65669 (its worktree sidecar reads `65669`) — see
    [Why this cannot be self-serviced](#why-this-cannot-be-self-serviced--measured-not-argued-new-at-the-thirteenth-filing-harness-wrapper-124).
    **Do not restart pid 7802** (META-HARNESS, the healthy control).
 2. **File the `ORCHE` ticket** carrying Patches A–D (see above).
@@ -479,9 +489,9 @@ Priority if only part ships:
    `7802`×5 (the `META-HARNESS` fleet, whose worktrees are `orche`-repo checkouts, not this
    project's) and only **2** to `65669`. Earlier filings reported "46 retained worktrees" for this
    workspace; the HARNESS-WRAPPER retention is just the two named above. Re-counted at the
-   thirteenth filing: **29** `.pid` sidecars now exist tree-wide and **3** name `65669` — the same
-   two dead tick worktrees plus the live worker dispatched at this ticket, which is transient and
-   needs no prune.
+   fifteenth filing: **28** `.pid` sidecars exist tree-wide and **3** name `65669` — the same two
+   dead tick worktrees plus the live worker dispatched at this ticket, which is transient and needs
+   no prune.
 
 **Until the supervisor is restarted or Patch A lands in `orche`, `obs-sig:1bf9fcd2c6` re-fires on
 every observer sweep regardless of what merges in `harness-wrapper`.** No change in this repository
