@@ -16,7 +16,8 @@ Triage record and the full evidence chain, in `harness-wrapper`:
 [`docs/triage/HARNESS-WRAPPER-97.md`](../../docs/triage/HARNESS-WRAPPER-97.md) — the canonical
 record for observer signature `obs-sig:1bf9fcd2c6`, plus the running amendment log in
 [`docs/md/internal/out-of-scope-tickets.md`](../../docs/md/internal/out-of-scope-tickets.md)
-(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123`).
+(section `HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 /
+-124`).
 
 **This bundle exists because five prior filings produced no patch.** HARNESS-WRAPPER-97, -100,
 -110, -116 and -117 all re-derived the same root cause, all correctly concluded "not this repo",
@@ -147,6 +148,42 @@ inside that one `sandbox.open()` at 15:40:04, and the defect that turned a singl
 - The control also bounds the blast radius of the operator restart: only pid **65669** needs
   restarting. **Do not restart pid 7802** — META-HARNESS is healthy, and restarting it would kill
   its in-flight agents for nothing.
+
+### Why this cannot be self-serviced — measured, not argued (new at the thirteenth filing, HARNESS-WRAPPER-124)
+
+Measured **2026-07-23 04:20–04:28 local**. Every prior filing asserted that the operator restart of
+pid 65669 "kills every in-flight fleet agent, so it cannot be self-serviced". At this filing that
+became a direct measurement rather than an inference:
+
+- The sidecar for the worktree of the worker dispatched at this very ticket,
+  `~/.orche/worktrees/agent-worker-02f2c763-82a8-4282-a782-77645b7f3892.pid`, contains **`65669`**.
+- Exactly **3** of the **29** `.pid` sidecars under `~/.orche/worktrees/` name pid 65669: the two
+  dead release-tick worktrees (`agent-release-8df3c501-…` wedged 15:40, `agent-release-3a870b7e-…`
+  failed 13:40) and that worker. The other 26 belong to three unrelated supervisors.
+
+So the wedged supervisor is the parent of the agent sent to unwedge it: **the restart that clears
+the wedge terminates the process that spawned the agent assigned to clear it.** Any worker routed at
+`obs-sig:1bf9fcd2c6` is, by construction, holding the wrong end of the lever — which is the
+mechanical reason twelve dispatches produced twelve documentation amendments and zero resolutions,
+each amendment landing on `dev` and incrementing the very `main..dev` count that re-fires the
+signature.
+
+**Consequence for whoever picks this bundle up:** the loop is closed and will not open by itself.
+Patch A is what breaks it *in software* — a slot that force-`settle()`s past a deadline means the
+next cron fire recovers promotion without any process restart, and therefore without killing the
+fleet. Until A lands, the only exit is the human restart, and it must be scheduled by a human
+precisely because no agent can survive issuing it.
+
+State re-confirmed at this filing (unchanged analysis; figures re-measured, not carried over):
+supervisor pid 65669 elapsed **16:54**, never restarted; `main` still **`6281927`** — **~18.2 h**,
+zero promotions; `--first-parent main..dev` = **64** (130 total), `dev..main` = **0**; `agents.log`
+**4586** lines with the `[release@…]` count **still 456** and last release lines still **3780–3781**;
+a grep for `8df3c501` across `.orche/run/queue/transcripts/HARNESS-WRAPPER/` returns **0** files, so
+the 15:40 tick still wrote no transcript at all — it hung at or before its first harness turn, which
+is what puts the hang at/inside `HarnessSession.open()`. The control (pid 7802) is at **1400**
+release lines, last tick `cron:release:1784773530044` → **04:25:30**, `main..dev` = **0** — still
+healthy 18 h 40 m in. First-parent lag across all thirteen filings: **27 → 32 → 57 → 41 → 51 → 56 →
+58 → 59 → 60 → 61 → 63 → 64**.
 
 ### Deterministic reproduction (unit level, in `orche`)
 
@@ -418,6 +455,10 @@ Priority if only part ships:
 1. **Restart supervisor `pid 65669`.** It is the **only** thing that restores promotion now. It
    kills every in-flight fleet agent (including any agent implementing this ticket), so it must be
    scheduled by a human. Optionally follow with `POST http://127.0.0.1:53998/release/fire`.
+   This is not a theoretical caveat: at the thirteenth filing the worker dispatched at this
+   signature was itself a child of 65669 (its worktree sidecar reads `65669`) — see
+   [Why this cannot be self-serviced](#why-this-cannot-be-self-serviced--measured-not-argued-new-at-the-thirteenth-filing-harness-wrapper-124).
+   **Do not restart pid 7802** (META-HARNESS, the healthy control).
 2. **File the `ORCHE` ticket** carrying Patches A–D (see above).
 3. **Prune the two dead HARNESS-WRAPPER tick worktrees** —
    `agent-release-8df3c501-aa2b-412a-87b7-6d1decccb39e` (wedged 15:40) and
@@ -427,7 +468,10 @@ Priority if only part ships:
    `.pid` sidecars**, and those sidecars belong to **four** supervisors — `93479`×12, `8348`×8,
    `7802`×5 (the `META-HARNESS` fleet, whose worktrees are `orche`-repo checkouts, not this
    project's) and only **2** to `65669`. Earlier filings reported "46 retained worktrees" for this
-   workspace; the HARNESS-WRAPPER retention is just the two named above.
+   workspace; the HARNESS-WRAPPER retention is just the two named above. Re-counted at the
+   thirteenth filing: **29** `.pid` sidecars now exist tree-wide and **3** name `65669` — the same
+   two dead tick worktrees plus the live worker dispatched at this ticket, which is transient and
+   needs no prune.
 
 **Until the supervisor is restarted or Patch A lands in `orche`, `obs-sig:1bf9fcd2c6` re-fires on
 every observer sweep regardless of what merges in `harness-wrapper`.** No change in this repository
