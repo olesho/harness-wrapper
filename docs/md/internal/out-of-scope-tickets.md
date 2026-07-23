@@ -237,11 +237,11 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 / -127 / -128 / -132 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`. Re-fired **fourteen times** under
-the identical observer signature `obs-sig:1bf9fcd2c6` (fifteen counting the
+(release-lag:dev..main)`, escalated to `review`. Re-fired **seventeen times** under
+the identical observer signature `obs-sig:1bf9fcd2c6` (eighteen counting the
 [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md) false positive) — see the
 **filing ledger** at the end of this section, which is where new fires are recorded.
 
@@ -369,11 +369,12 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 | 14 | -126 | 05:44 | **68** / 134 | ~688 min | 18:11 | 456 (4621) | Self-service impossibility reproduced a **third** time; the content-grep poisoning quantified (12 → **39**, exactly 13 × 3, zero `agent_release_*`) |
 | 15 | -127 | 06:31 | — ² | — ² | — ² | — ² | The **ready-to-file `ORCHE` ticket body** (`crossrepo/orche/ORCHE-release-slot-wedge.ticket.md`), plus pointers to it from the bundle and the canonical triage |
 | 16 | -128 | 07:00 | **74** / 140 | ~764 min | 19:28 | 456 (4657) | Self-service impossibility reproduced a **fourth** time; the control caught *failing* a tick and still re-firing (below) |
+| 17 | -132 | 07:37 | **78** / 146 | ~800 min | 20:04 | 456 (4699) | Self-service impossibility reproduced a **fifth** time; control now at **three consecutive failed** ticks, still re-firing exactly 1800 s apart; poisoning increment is **staggered per agent kind**, not simultaneous (below) |
 
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
 record. The previously published progression `27 → 32 → 57 → 41 → …` silently mixed the two bases —
-the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74**,
+the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74 → 78**,
 a straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather
 than slow.
 
@@ -507,19 +508,28 @@ conclusion is untouched — but a prediction that lands twice is a measurement, 
 2 below: each fire suppressed is 3 fewer false positives in the corpus this section's own evidence
 commands run over.
 
-### Standing conclusion — unchanged across all seventeen filings
+**Correction (-132) — the +3 is a convergent total, not a clean step at any instant.** Sampled
+twice during this filing, the same content grep returned **46** at 07:34 (15 `agent_bug-reviewer`,
+**16** `agent_observer`, 15 `agent_worker`, 0 `agent_release_*`) and **48 = 16 × 3** three minutes
+later. The kinds do not land together: the observer's investigation transcript is written when the
+ticket is filed, the bug-reviewer's and the worker's only once each is dispatched, so an unbalanced
+breakdown means a filing in flight, not a broken model. Read the total, not the per-kind columns,
+and re-sample before treating a skew as new information. The filename test is unaffected and still
+returns **0**.
+
+### Standing conclusion — unchanged across all eighteen filings
 
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
-process in another repo. Sixteen automated cycles have produced sixteen documentation commit sets
-and zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count the
-observer reports** — this filing's own commits included, pushing the count past the **74** measured
+process in another repo. Seventeen automated cycles have produced seventeen documentation commit
+sets and zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count
+the observer reports** — this filing's own commits included, pushing the count past the **78** measured
 in its row above. (Pinning the post-merge figure is itself self-defeating: -126 tried, and the
 correction commit invalidated the number it was correcting. Record the count you *measured*, in the
 row; do not predict where it lands.) That loop is closed by
 measurement, not by argument: the worker dispatched at this signature is a child of the wedged
-supervisor (-124, reproduced at -125, -126 and -128), so it holds the wrong end of the lever.
+supervisor (-124, reproduced at -125, -126, -128 and -132), so it holds the wrong end of the lever.
 
-Both blocking actions are **human-only** and both are still outstanding after seventeen filings:
+Both blocking actions are **human-only** and both are still outstanding after eighteen filings:
 
 1. **Restart supervisor pid 65669** — the only thing that restores promotion today. Irreversible;
    kills every in-flight fleet agent, including any worker sent at this ticket. Schedule it
