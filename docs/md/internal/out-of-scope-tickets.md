@@ -673,6 +673,81 @@ fleet agent — schedule it deliberately; do *not* touch pid 7802) and **file th
 carrying Patches A–D. After twelve filings the wedged-slot defect is **still unfiled in any
 workspace**.
 
+**Amendment — re-fired a twelfth time as HARNESS-WRAPPER-124** (the **thirteenth** filing of
+`obs-sig:1bf9fcd2c6` counting the -56 false positive; twelfth counting from -97). Re-measured in the
+-124 worktree on **2026-07-23 between 04:20 and 04:28 local**. Like -123 this one carries one fact
+that is new and not a restatement — and this time the fact is about the *dispatch loop itself*.
+
+**The new fact: the worker sent to implement this ticket is a child of the wedged supervisor.** The
+sidecar for this very worktree,
+`~/.orche/worktrees/agent-worker-02f2c763-82a8-4282-a782-77645b7f3892.pid`, contains **`65669`**.
+Exactly **three** of the 29 `.pid` sidecars under `~/.orche/worktrees/` name pid 65669: the two dead
+release-tick worktrees (`agent-release-8df3c501-…`, `agent-release-3a870b7e-…`) and this worker. So
+the claim that human action #1 "cannot be self-serviced" is no longer an inference from the restart
+being fleet-wide — it is **measured**: the restart that clears the wedge terminates the process that
+spawned the agent assigned to clear it. Any worker routed at this signature is, by construction,
+holding the wrong end of the lever. This is the mechanical reason twelve dispatches produced twelve
+amendments and zero resolutions, and it is folded into the bundle under *"Why this cannot be
+self-serviced"*.
+
+Re-measured figures for this workspace, measured here rather than carried over:
+
+- Hub `/Users/oleh/repos/harness-wrapper.git`: **64** first-parent commits `main..dev` (**130**
+  total), `dev..main` = **0** — still a *stopped promoter*, not a diverged branch.
+- `main` still frozen at **`6281927`** (2026-07-22 10:15:03 +0200) — **~18.2 h**, zero promotions.
+  `dev` at **`e48bd6f`** (2026-07-23 03:54:48). Oldest unpromoted commit still **`40e7251`**
+  (2026-07-22 18:16:09) → **~611 min**.
+- `agents.log` (`.orche/run/HARNESS-WRAPPER/agents.log`) has grown 4569 → **4586** lines, the
+  `[release@…]` count is **still 456**, and the last two release lines are **still 3780–3781**
+  (`cron:release:1784725803650: success` at **15:10:03**). The observer is at
+  `cron:observer:1784773336804` (**04:22:16**) — the 5-minute observer cadence is unbroken while
+  the 30-minute release cadence has now been dead for **~13.3 h** of wall clock (**~12.8 h** since
+  the 15:40 tick hung).
+- Newest release transcript is still the 15:10 one
+  (`agent_release_5d7d11ee-…__cron_release_1784725803650.txt`); a grep for `8df3c501` across
+  `.orche/run/queue/transcripts/HARNESS-WRAPPER/` returns **0** files — the 15:40 tick still wrote
+  none, i.e. it hung at or before the first harness turn.
+- Wedged worktree `agent-release-8df3c501-aa2b-412a-87b7-6d1decccb39e` still present, dir mtime
+  frozen at **Jul 22 15:40:04**, sidecar `.pid` = **65669**. Supervisor **pid 65669** alive since
+  **Wed Jul 22 11:32:51**, elapsed **16:54** — never restarted. The second retained tick worktree
+  `agent-release-3a870b7e-…` (mtime Jul 22 13:40:04, same pid) is likewise still there; both are
+  still awaiting the operator prune.
+- **Differential control still healthy.** Supervisor **pid 7802** (META-HARNESS, `--dir
+  …/aether/meta-harness/.orche`), up since **Wed Jul 22 09:46:47**, elapsed **18:40** — still the
+  *older* process — is at **1400** `[release@…]` lines (1396 → 1398 → 1400 across the last three
+  filings), last `cron:release:1784773530044: success` at **04:25:30**, `--first-parent main..dev`
+  = **0**, `main` at `266bf5c`. Both workspaces' `.orche/agents/release.ts` remain byte-identical
+  (392 B, md5 `f3f1421393818760af0449c3d9f2133b`). A healthy control 18.6 h into the same build
+  still rules out a `737ea45` regression, a machine-wide cron/clock fault, a defect in the shared
+  agent definition, and supervisor ageing.
+
+First-parent progression across the twelve filings since -97: **27 → 32 → 57 → 41 → 51 → 56 → 58 →
+59 → 60 → 61 → 63 → 64**.
+
+**Still nothing implementable here, re-checked not assumed:**
+`grep -rln 'runTick\|maxRunMs\|at_capacity\|maxConcurrent' --include='*.go' --include='*.ts'
+--include='*.py' .` returns **0** files; the only tree-wide matches remain this file,
+[`docs/triage/HARNESS-WRAPPER-97.md`](../../triage/HARNESS-WRAPPER-97.md) and the bundle. **`orche`
+is still at HEAD `737ea45`** (2026-07-22 09:45:02) and all four anchors were re-read verbatim:
+`if (this.tracked.size >= this.spec.maxConcurrent) return decide('at_capacity', false)` at
+`spawner.ts:641` (still no log line) with the sole slot release at `:647`
+(`.finally(() => settle())`); `track()`'s idempotent `settle()` at `spawner.ts:708-713`, which
+already does `this.tracked.delete(taskId)` before `resolveDone()` — so Patch A still needs no
+separate `forceSettle()`; the watchdog still gated on `this.spec.maxRunMs > 0` at
+`spawner.ts:1437`; `release.ts` at `:558-570` with `maxConcurrent: 1` and **no `liveness` block**;
+and `static async open(opts: HarnessSessionOptions)` at `harness/session.ts:215` with **no
+`AbortSignal` parameter**, still lazily importing `InProcClient` before delegating to `fromClient`.
+The bundle needed no revision to its analysis — only the new self-service section.
+
+Per the standing instruction **no fourteenth triage document was created** and no source change was
+made. Twelve automated cycles have produced twelve amendments and zero resolution, and each lands on
+`dev`, incrementing the very `main..dev` count the observer reports — a loop now shown to be closed
+by measurement, not just by argument. **Both blocking actions remain human-only and outstanding**:
+restart **pid 65669** (irreversible, kills every in-flight fleet agent *including any worker sent at
+this ticket* — schedule it deliberately; do *not* touch pid 7802) and **file the `ORCHE` ticket**
+carrying Patches A–D. After thirteen filings the wedged-slot defect is **still unfiled in any
+workspace**.
+
 ## HARNESS-WRAPPER-98 — dead-spawner, genuinely wedged lease (out of repo)
 
 **Filed as:** `[observer] crashed/dead spawner plan-reviewer left
