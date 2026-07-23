@@ -237,11 +237,11 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 / -127 / -128 / -132 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 / -127 / -128 / -132 / -133 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`. Re-fired **seventeen times** under
-the identical observer signature `obs-sig:1bf9fcd2c6` (eighteen counting the
+(release-lag:dev..main)`, escalated to `review`. Re-fired **eighteen times** under
+the identical observer signature `obs-sig:1bf9fcd2c6` (nineteen counting the
 [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md) false positive) — see the
 **filing ledger** at the end of this section, which is where new fires are recorded.
 
@@ -371,11 +371,12 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 | 15 | -127 | 06:31 | — ² | — ² | — ² | — ² | The **ready-to-file `ORCHE` ticket body** (`crossrepo/orche/ORCHE-release-slot-wedge.ticket.md`), plus pointers to it from the bundle and the canonical triage |
 | 16 | -128 | 07:00 | **74** / 140 | ~764 min | 19:28 | 456 (4657) | Self-service impossibility reproduced a **fourth** time; the control caught *failing* a tick and still re-firing (below) |
 | 17 | -132 | 07:37 | **78** / 146 | ~800 min | 20:04 | 456 (4699) | Self-service impossibility reproduced a **fifth** time; control now at **three consecutive failed** ticks, still re-firing exactly 1800 s apart; poisoning increment is **staggered per agent kind**, not simultaneous (below) |
+| 18 | -133 | 08:09–08:13 | **81** / 152 | ~837 min | 20:41 | 456 (4745) | Self-service impossibility reproduced a **sixth** time; the control **self-recovered** from its failing streak with no restart; the ×3 poisoning model has **broken** (below) |
 
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
 record. The previously published progression `27 → 32 → 57 → 41 → …` silently mixed the two bases —
-the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74 → 78**,
+the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74 → 78 → 81**,
 a straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather
 than slow.
 
@@ -518,12 +519,63 @@ breakdown means a filing in flight, not a broken model. Read the total, not the 
 and re-sample before treating a skew as new information. The filename test is unaffected and still
 returns **0**.
 
-### Standing conclusion — unchanged across all eighteen filings
+### Filing 18 — HARNESS-WRAPPER-133 (2026-07-23, 08:09–08:13 local)
+
+Measured in the -133 worktree. Two facts here are genuinely new; everything else is row 18 of the
+ledger and needs no prose.
+
+**1. The differential control self-recovered from a multi-tick failure streak, with no restart.**
+pid **7802** (META-HARNESS, same `orche` build `737ea45`, byte-identical `release.ts`) is now at
+**1411** `[release@…]` lines (1407 at filing 17). Filing 17 recorded one failed tick and its
+correction recorded three consecutive failures; the last four ticks read
+`cron:release:1784781291396: failed`, `…1784783091687: failed`, `…1784784892123: failed`, then
+`…1784786692614: **success**` at **08:04:52**, sweeping **18** merged branches. A run of failing
+ticks returned its slot every time and the lane healed itself. This upgrades filing 17's point from
+"a failing tick returns its slot" to "an arbitrarily long run of failing ticks does", and is the
+sharpest experimental separation yet between a tick that *reaches* an outcome — always recoverable,
+`spawner.ts:640-648` handles it — and one that never settles, which is terminal for the process. It
+also re-confirms the wedge is not a `737ea45` regression, not a machine-wide fault, and not a defect
+in the shared agent definition. **Do not touch pid 7802.**
+
+**2. The ×3-per-filing poisoning model has broken — retire the rate, keep the zero.** The content
+grep over `.orche/run/queue/transcripts/HARNESS-WRAPPER/` now returns **77**, not the 54 the model
+predicts at 18 filings, and the breakdown is not 1:1:1 — **17** `agent_bug-reviewer`, **10**
+`agent_integrator`, **33** `agent_observer`, **17** `agent_worker`, still **0** `agent_release_*`.
+Two model errors compound: `agent_integrator` is a fourth kind that reads the ticket and was never
+in the three-kind denominator, and the observer column is decoupled from the filing count
+altogether — observer transcripts carrying the signature reference tickets that are *not* filings of
+it (e.g. `-129`, `-131`), so that column tracks **investigation ticks that re-confirm the
+still-open signature**, on the observer cadence. This skew is therefore not filing 17's
+"filing in flight" case, and re-sampling will not resolve it. Read the total and the
+`agent_release_*` zero; do not project a per-filing step. The filename test still returns **0** and
+the newest release transcript by mtime is still
+`agent_release_5d7d11ee-…__cron_release_1784725803650.txt` (**Jul 22 15:10**), so the conclusion is
+untouched — and the real poisoning rate is *higher* than filing 15 priced it, which strengthens
+operator action 3.
+
+**Sixth reproduction of the self-service impossibility — settled, stop measuring it.** This
+worktree's own sidecar `agent-worker-fa087e7f-….pid` reads **65669**, after -124, -125, -126, -128
+and -132. Six dispatches, three agent kinds, one parent. Do not re-measure in filing 19.
+
+Re-verified and unchanged at 08:09–08:13: `--first-parent main..dev` = **81** (152 total),
+`dev..main` = **0**; `main` still **`6281927`** (2026-07-22 10:15:03), `dev` at **`bd3aca7`**
+(07:46:29); oldest unpromoted still **`40e7251`** (2026-07-22 18:16:09) — **~837 min**, i.e. **~13 h
+57 m** with zero promotions and **16 h 33 m** since the 15:40 tick hung. `[release@…]` still **456**
+of **4745** lines, last two still `agents.log:3780-3781`; the observer is at **2013** lines and its
+latest tick is `cron:observer:1784787043744: success`, so the 5-minute cadence remains unbroken.
+Supervisor **65669** alive since Wed Jul 22 11:32:51, elapsed **20:41**, never restarted. Retained
+release worktrees are now **22 directories + 30 `.pid` sidecars** across four supervisors
+(`93479`×12, `7802`×8, `8348`×8, **`65669`×2**) — HARNESS-WRAPPER's share is still exactly the two
+dead ticks (`agent-release-8df3c501-…` mtime **Jul 22 15:40:04**, `agent-release-3a870b7e-…`
+**13:40:04**), both still awaiting the prune. `orche` still at HEAD **`737ea45`** — no bundle anchor
+has moved.
+
+### Standing conclusion — unchanged across all nineteen filings
 
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
-process in another repo. Seventeen automated cycles have produced seventeen documentation commit
+process in another repo. Eighteen automated cycles have produced eighteen documentation commit
 sets and zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count
-the observer reports** — this filing's own commits included, pushing the count past the **78** measured
+the observer reports** — this filing's own commits included, pushing the count past the **81** measured
 in its row above. (Pinning the post-merge figure is itself self-defeating: -126 tried, and the
 correction commit invalidated the number it was correcting. Record the count you *measured*, in the
 row; do not predict where it lands.) That loop is closed by
