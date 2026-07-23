@@ -345,13 +345,16 @@ func TestConformance_ClaudePermissionFooter(t *testing.T) {
 // teardown discipline exist in exactly one place: on t.Fatal/t.Skip the deferred
 // close still runs (both unwind through it), so a stalled launch never leaks a
 // live harness process into the next iteration.
-func openConformanceConv(t *testing.T, label string, opts chat.Options) (*chat.Conversation, func()) {
+//
+// ctx MUST outlive the probe, not just the call: chat.Open hands it to the
+// wrapper as the SESSION's context, so cancelling it kills the harness process.
+// Deriving a context inside this helper and cancelling it on return looks
+// harmless and is not — it kills the harness the moment the launch succeeds and
+// leaves every later poll reading a blank post-teardown screen.
+func openConformanceConv(t *testing.T, ctx context.Context, label string, opts chat.Options) (*chat.Conversation, func()) {
 	t.Helper()
 
-	openCtx, openCancel := context.WithTimeout(context.Background(), footerPollTimeout+30*time.Second)
-	defer openCancel()
-
-	conv, err := chat.Open(openCtx, opts)
+	conv, err := chat.Open(ctx, opts)
 	if err != nil {
 		t.Fatalf("chat.Open(%s): %v", label, err)
 	}
@@ -395,7 +398,12 @@ func pollScreen(conv *chat.Conversation, timeout time.Duration, ready func(scree
 func probeClaudeFooter(t *testing.T, bin, mode string) footerProbe {
 	t.Helper()
 
-	conv, closeConv := openConformanceConv(t, fmt.Sprintf("claude-code, permission mode %q", mode), chat.Options{
+	// Cancelled only when this probe returns: the conversation's process dies
+	// with it (see openConformanceConv).
+	ctx, cancel := context.WithTimeout(context.Background(), footerPollTimeout+30*time.Second)
+	defer cancel()
+
+	conv, closeConv := openConformanceConv(t, ctx, fmt.Sprintf("claude-code, permission mode %q", mode), chat.Options{
 		Harness:        "claude-code",
 		BinaryPath:     bin,
 		PermissionMode: mode,
@@ -589,10 +597,19 @@ const (
 	// launch that never touches shift+tab. NOT a permission rung.
 	codexStatusWantCollabMode = "default"
 
+	// codexStatusCommand is the slash command driven. It is only ever TYPED and
+	// submitted — the /status box merely prints, which is what makes this whole
+	// check safe to run against the developer's own codex.
+	codexStatusCommand = "/status"
+
 	// statusPollTimeout bounds the wait for the /status box to paint after the
 	// command is submitted. Generous because codex renders the box only after
 	// its own account/usage lookups settle.
 	statusPollTimeout = 45 * time.Second
+
+	// codexComposerEchoTimeout bounds the wait for the composer to echo the
+	// typed command, which is the gate for sending the submit key (see below).
+	codexComposerEchoTimeout = 15 * time.Second
 )
 
 // codexStatusRowRE builds the line matcher for one /status label. It matches the
@@ -607,10 +624,23 @@ var (
 	codexStatusPermissionsRowRE   = codexStatusRowRE(codexStatusPermissionsLabel)
 	codexStatusCollaborationRowRE = codexStatusRowRE(codexStatusCollaborationLabel)
 
-	// Loose value shapes, tied to the launch pair above. Deliberately not
-	// anchored and deliberately case-insensitive: what is guarded is that the
-	// row still REFLECTS the launched sandbox, not how codex punctuates it.
-	codexStatusReadOnlyValueRE = regexp.MustCompile(`(?i)read[-_ ]?only`)
+	// codexComposerEchoRE matches the idle composer row ("› ") once it carries
+	// the typed command. It gates the submit key — see probeCodexStatus.
+	codexComposerEchoRE = regexp.MustCompile(`(?m)^[^\S\r\n]*›[^\S\r\n]+` + regexp.QuoteMeta(codexStatusCommand))
+
+	// Loose value shapes, one per flag of the launch pair. Deliberately
+	// unanchored and case-insensitive: what is guarded is that the row still
+	// REFLECTS the launched flags, not how codex cases or punctuates them —
+	// codex 0.144.5 renders `-s read-only -a untrusted` as
+	// "Read Only (untrusted)", and neither the capitalisation nor the
+	// parenthesis is worth a failing test.
+	codexStatusPermissionsValueChecks = []struct {
+		flag string         // the launch flag this value must reflect
+		re   *regexp.Regexp // the loose shape asserted
+	}{
+		{flag: "-s read-only", re: regexp.MustCompile(`(?i)read[-_ ]?only`)},
+		{flag: "-a untrusted", re: regexp.MustCompile(`(?i)untrusted`)},
+	}
 
 	// The collaboration row must NOT read as Plan for a launch that never
 	// pressed shift+tab. Same "non-plan default" fact the detector reports,
@@ -689,37 +719,48 @@ func assertCodexStatusRows(t *testing.T, p codexStatusProbe) {
 		t.Errorf("STATUS ROW DRIFT: codex launched with %s (chat.Options.PermissionMode %q) rendered "+
 			"no %q row in /status within %s.\n"+
 			"  expected a row matching: %s\n"+
+			"  labels actually rendered in the box: %s\n"+
 			"  rendered screen:\n%s\n"+
 			"  the label is the anchor a future /status scraper keys on (the scrape itself is still "+
 			"a follow-up — see pkg/turns/harness/codex/codex.go:184-188). If codex renamed it, update "+
 			"this label and the follow-up's scraper together.\n"+
 			"  see docs/md/internal/versions-drift.md",
 			codexStatusLaunchFlags, codexStatusLaunchMode, codexStatusPermissionsLabel,
-			statusPollTimeout, codexStatusPermissionsRowRE, indentScreen(p.screenText))
-	} else if !codexStatusReadOnlyValueRE.MatchString(p.permissionsRow) {
-		t.Errorf("STATUS ROW DRIFT: codex launched with %s (chat.Options.PermissionMode %q) rendered "+
-			"a %q row whose value no longer reflects the launched sandbox.\n"+
-			"  status line as rendered: %q\n"+
-			"  expected value to match:  %s\n"+
-			"  the LABEL still matches, so this is value-shape drift, not a rename: either codex "+
-			"reworded the read-only sandbox, or -s read-only is no longer what "+
-			"--permission-mode %s maps to (codexPermissionMode, pkg/wrapper/wrapper.go:684).\n"+
-			"  see docs/md/internal/versions-drift.md",
-			codexStatusLaunchFlags, codexStatusLaunchMode, codexStatusPermissionsLabel,
-			strings.TrimSpace(p.permissionsRow), codexStatusReadOnlyValueRE, codexStatusLaunchMode)
+			statusPollTimeout, codexStatusPermissionsRowRE,
+			codexStatusLabelsOnScreen(p.screenText), indentScreen(p.screenText))
+	} else {
+		value := codexStatusRowValue(p.permissionsRow, codexStatusPermissionsLabel)
+		for _, check := range codexStatusPermissionsValueChecks {
+			if check.re.MatchString(value) {
+				continue
+			}
+			t.Errorf("STATUS ROW DRIFT: codex launched with %s (chat.Options.PermissionMode %q) rendered "+
+				"a %q row whose value no longer reflects %s.\n"+
+				"  status line as rendered: %q\n"+
+				"  row value: %q\n"+
+				"  expected value to match: %s\n"+
+				"  the LABEL still matches, so this is value-shape drift, not a rename: either codex "+
+				"reworded how it renders that flag, or %s is no longer what --permission-mode %s maps "+
+				"to (codexPermissionMode, pkg/wrapper/wrapper.go:684).\n"+
+				"  see docs/md/internal/versions-drift.md",
+				codexStatusLaunchFlags, codexStatusLaunchMode, codexStatusPermissionsLabel, check.flag,
+				strings.TrimSpace(p.permissionsRow), value, check.re, check.flag, codexStatusLaunchMode)
+		}
 	}
 
 	if p.collaborationRow == "" {
 		t.Errorf("STATUS ROW DRIFT: codex launched with %s (chat.Options.PermissionMode %q) rendered "+
 			"no %q row in /status within %s.\n"+
 			"  expected a row matching: %s\n"+
+			"  labels actually rendered in the box: %s\n"+
 			"  rendered screen:\n%s\n"+
 			"  this row is the /status-side view of the COLLABORATION axis that "+
 			"pkg/turns/harness/codex/permmode.go reads off the composer marker — a different axis "+
 			"from the launch-time permissions rung above. If codex renamed it, update this label.\n"+
 			"  see docs/md/internal/versions-drift.md",
 			codexStatusLaunchFlags, codexStatusLaunchMode, codexStatusCollaborationLabel,
-			statusPollTimeout, codexStatusCollaborationRowRE, indentScreen(p.screenText))
+			statusPollTimeout, codexStatusCollaborationRowRE,
+			codexStatusLabelsOnScreen(p.screenText), indentScreen(p.screenText))
 	} else if codexStatusPlanValueRE.MatchString(codexStatusRowValue(p.collaborationRow, codexStatusCollaborationLabel)) {
 		t.Errorf("STATUS ROW DRIFT: codex launched with %s (chat.Options.PermissionMode %q) — which "+
 			"never presses shift+tab — reported a PLAN collaboration mode in /status.\n"+
@@ -783,7 +824,7 @@ func probeCodexStatus(t *testing.T, bin string) codexStatusProbe {
 	ctx, cancel := context.WithTimeout(context.Background(), footerPollTimeout+statusPollTimeout+60*time.Second)
 	defer cancel()
 
-	conv, closeConv := openConformanceConv(t, "codex, /status", chat.Options{
+	conv, closeConv := openConformanceConv(t, ctx, "codex, /status", chat.Options{
 		Harness:        "codex",
 		BinaryPath:     bin,
 		PermissionMode: codexStatusLaunchMode,
@@ -826,32 +867,65 @@ func probeCodexStatus(t *testing.T, bin string) codexStatusProbe {
 			footerPollTimeout, indentScreen(ready.Text))
 	}
 
-	// 2. Submit /status. Send is forbidden here: /status produces no assistant
-	//    turn, so Send would register a turn that never completes and stall to
-	//    the deadline. Raw WriteStdin after AcquireControl is the escape hatch
-	//    pkg/chat/send.go:20-27 documents for exactly this.
+	// 2. Type /status, then submit it as a SEPARATE write. Send is forbidden
+	//    here: /status produces no assistant turn, so Send would register a turn
+	//    that never completes and stall to the deadline. Raw WriteStdin after
+	//    AcquireControl is the escape hatch pkg/chat/send.go:20-27 documents for
+	//    exactly this.
 	release, err := conv.AcquireControl(ctx)
 	if err != nil {
 		t.Fatalf("AcquireControl: %v", err)
 	}
 	defer release()
-	// "\x1b[13u" is CSI 13 u, the unmodified Enter of the kitty keyboard
-	// protocol that codex >= 0.141.0 enables at startup: a plain "\r" only
-	// inserts a newline in the composer and /status never runs. Written inline
-	// because pkg/chat's submitKeyForHarness (pkg/chat/ready.go:333, codex arm
-	// at :345-351) is unexported — that is the contract this literal mirrors.
-	if _, err := conv.Wrapper().WriteStdin([]byte("/status\x1b[13u")); err != nil {
-		t.Fatalf("WriteStdin(/status): %v", err)
+	if _, err := conv.Wrapper().WriteStdin([]byte(codexStatusCommand)); err != nil {
+		t.Fatalf("WriteStdin(%s): %v", codexStatusCommand, err)
+	}
+	// Observed live at codex 0.144.5: writing the text and the submit key in ONE
+	// WriteStdin leaves "/status" sitting unsubmitted in the composer. Typing a
+	// leading "/" opens codex's slash-command popup (it lists /status and
+	// /statusline), and the Enter that arrives in the same burst is swallowed by
+	// that popup rather than running the command. So the submit key goes out only
+	// once the composer has visibly echoed the typed command.
+	echoed, ok := pollScreen(conv, codexComposerEchoTimeout, func(snap screen.Snapshot) bool {
+		return codexComposerEchoRE.MatchString(snap.Text)
+	})
+	if !ok {
+		t.Fatalf("codex composer never echoed %q within %s — it was never submitted, so nothing "+
+			"about the status rows can be concluded.\n  rendered screen:\n%s",
+			codexStatusCommand, codexComposerEchoTimeout, indentScreen(echoed.Text))
 	}
 
-	// 3. Poll for both rows. The detector is re-read on the SAME final screen so
-	//    the two halves of this test describe one moment, not two.
+	// 3. Poll for both rows, re-sending the submit key once mid-window. The
+	//    re-send is the cheap insurance against losing the race above on a slower
+	//    machine: an Enter on an already-submitted (and therefore empty) composer
+	//    is a no-op for codex, while a swallowed first Enter would otherwise burn
+	//    the whole deadline and report drift that is not there.
+	submit := func() {
+		// CSI 13 u — the unmodified Enter of the kitty keyboard protocol codex
+		// >= 0.141.0 enables at startup. A plain "\r" only inserts a newline in
+		// the composer and /status never runs. Written inline because pkg/chat's
+		// submitKeyForHarness (pkg/chat/ready.go:333, codex arm at :345-351) is
+		// unexported — that helper is the contract this literal mirrors.
+		if _, err := conv.Wrapper().WriteStdin([]byte("\x1b[13u")); err != nil {
+			t.Fatalf("WriteStdin(submit key): %v", err)
+		}
+	}
+	submit()
+
 	var p codexStatusProbe
-	final, _ := pollScreen(conv, statusPollTimeout, func(snap screen.Snapshot) bool {
+	rowsFound := func(snap screen.Snapshot) bool {
 		p.permissionsRow = codexStatusPermissionsRowRE.FindString(snap.Text)
 		p.collaborationRow = codexStatusCollaborationRowRE.FindString(snap.Text)
 		return p.permissionsRow != "" && p.collaborationRow != ""
-	})
+	}
+	final, ok := pollScreen(conv, statusPollTimeout/2, rowsFound)
+	if !ok {
+		submit()
+		final, _ = pollScreen(conv, statusPollTimeout/2, rowsFound)
+	}
+
+	// The detector is re-read on the SAME final screen the rows were read off, so
+	// the two halves of this test describe one moment rather than two.
 	p.screenText = final.Text
 	p.collabMode, p.readable = det.PermissionMode(final)
 	return p
@@ -866,6 +940,32 @@ func codexAuthWall(text string) string {
 		}
 	}
 	return ""
+}
+
+// codexStatusRowLabelRE captures the label side of any `<Label>:  <value>` row
+// inside the /status box. Reporting only: it exists so a missing-label failure
+// can name the labels codex DID render, turning "expected X, here is a 40-line
+// screen" into "expected X, got these labels instead" — the rename is then
+// readable without diffing the screen by eye.
+var codexStatusRowLabelRE = regexp.MustCompile(`(?m)^[^\S\r\n]*│[^\S\r\n]+([A-Z][^\s│][^│]*?:)[^\S\r\n]`)
+
+// codexStatusLabelsOnScreen lists the /status box labels present in text, in
+// render order and de-duplicated.
+func codexStatusLabelsOnScreen(text string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range codexStatusRowLabelRE.FindAllStringSubmatch(text, -1) {
+		label := strings.TrimSpace(m[1])
+		if label == "" || seen[label] {
+			continue
+		}
+		seen[label] = true
+		out = append(out, label)
+	}
+	if len(out) == 0 {
+		return []string{"(none — the /status box did not render at all)"}
+	}
+	return out
 }
 
 // codexStatusRowValue returns the row's value side — everything after the label,
