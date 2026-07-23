@@ -165,29 +165,31 @@ func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.I
 		if found := models.ParseModelPicker(conv.screen.Snapshot().Text, opts.Harness); len(found) > 0 {
 			return found, nil
 		}
-		// Hard-bound the render budget: select picks uniformly among ready cases,
-		// so a poll body costing more than the tick would let deadline.C lose a
-		// coin flip on every pass. Testing expiry AFTER the body preserves the
-		// final read, so a picker that renders on the last tick is still returned.
+		// The select WAKES; the body DECIDES — see closedNow (permmode.go), which
+		// documents why a select's arms are not priorities and why every terminal
+		// decision belongs here, aborts first and the budget last.
 		//
 		// This is IDIOM PARITY with permmode.go's two poll loops, not a fix for a
 		// reachable race here: pickerPollInterval is a fixed 150ms regardless of
 		// RenderTimeout, an order of magnitude over this body's cost, so reaching
 		// the race needs a ~10× loaded box. (For RenderTimeout < 150ms the ticker
-		// never fires at all and deadline.C is already the only exit, which makes
-		// the check inert on that path.) permmode.go documents that it borrows
-		// this file's polling idiom; fixing the shape in one and not the other
-		// would silently fork it.
+		// never fires at all and the deadline is already the only exit, which
+		// makes the expiry test inert on that path.) permmode.go documents that it
+		// borrows this file's polling idiom; fixing the shape in one and not the
+		// other would silently fork it.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if closedNow(conv.closed) {
+			return nil, ErrClosed
+		}
 		if time.Now().After(expiry) {
 			return nil, ErrPickerTimeout
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
 		case <-conv.closed:
-			return nil, ErrClosed
 		case <-deadline.C:
-			return nil, ErrPickerTimeout
 		case <-ticker.C:
 		}
 	}

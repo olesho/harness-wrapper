@@ -582,28 +582,57 @@ func (c *Conversation) pressGate(ctx context.Context, observed string) error {
 			return &PermissionModeBlockedError{Request: toClientInputRequest(pending), Observed: observed}
 		}
 
-		// The deadline arm below WAKES the loop at the budget but does not BOUND
-		// it: select picks uniformly among ready cases, so once the poll body
-		// costs more than the tick, ticker.C is always ready too and the deadline
-		// loses a coin flip on every pass — a geometric tail, not a bound.
-		// Testing expiry here — after the body, not before it — makes the budget
-		// hard while deliberately preserving the final read, so a policy that
-		// resolves the request on the very last tick still clears the gate.
+		// The select WAKES; the body DECIDES — see closedNow.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if closedNow(c.closed) {
+			return ErrClosed
+		}
 		if time.Now().After(expiry) {
+			// Auto-resolution never cleared it; treat it as blocking rather than
+			// pressing into a dialog that is evidently still up.
 			return &PermissionModeBlockedError{Request: toClientInputRequest(pending), Observed: observed}
 		}
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
 		case <-c.closed:
-			return ErrClosed
 		case <-deadline.C:
-			// Auto-resolution never cleared it; treat it as blocking rather than
-			// pressing into a dialog that is evidently still up.
-			return &PermissionModeBlockedError{Request: toClientInputRequest(pending), Observed: observed}
 		case <-ticker.C:
 		}
+	}
+}
+
+// closedNow reports whether ch is already closed, without blocking. It exists
+// because of the shape shared by pressGate, awaitPostureChange and
+// DiscoverModels's render-budget loop, documented once here rather than three
+// times: the select's arms carry NO returns — they only WAKE the loop — and
+// every terminal decision is taken in the loop body, in an explicit order.
+//
+// A select picks UNIFORMLY AT RANDOM among ready cases, so arms are not
+// priorities. Once one poll body outlasts the tick — which permModePollInterval's
+// quarter-of-budget rule makes true at the hermetic scale, where a 120×40
+// ScreenSnapshot plus the detector costs more than a 10ms tick — ticker.C is
+// ready on every pass, and any other ready arm loses a coin flip to it. The
+// consequences were two live bugs: a "bounded" wait whose length was a geometric
+// random variable with an unbounded tail, and a cancelled ctx that could be
+// swallowed by the deadline arm and reported as an ordinary elapsed budget —
+// which would in turn have made ErrCodexPlanRefusedBusy's ctx-abort wrap
+// (codexEnterPlan) a coin flip.
+//
+// Deciding in the body fixes both, and fixes them in a stated ORDER: ctx and
+// close abort first (an aborted drive must never be reported as a quiet
+// success), then the budget. The checks sit at the END of the body rather than
+// the top, which deliberately preserves the final read — work that completes on
+// the last tick (a repaint that landed, a policy that resolved the request) is
+// still honored before the loop gives up.
+func closedNow(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -640,13 +669,18 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (str
 			return observed, nil
 		}
 
-		// Hard-bound the budget. select picks uniformly among ready cases, so
-		// once one poll body (a 120×40 ScreenSnapshot plus the detector) costs
-		// more than the tick — which permModePollInterval's quarter-of-budget
-		// rule makes true at the hermetic scale — the deadline arm loses a coin
-		// flip on every pass and the "bounded" wait overruns by a random
-		// multiple. Testing expiry AFTER the body preserves the final read, so a
-		// repaint that lands on the last tick is still honored.
+		// The select WAKES; the body DECIDES — see closedNow. Aborts are tested
+		// ahead of the budget: a drive the caller cancelled must never come back
+		// as a quiet "budget elapsed, no change", which is exactly what the old
+		// deadline arm reported whenever it won the coin flip against ctx.Done().
+		if ctx.Err() != nil {
+			observed, _ := c.PermissionMode()
+			return observed, ctx.Err()
+		}
+		if closedNow(c.closed) {
+			observed, _ := c.PermissionMode()
+			return observed, ErrClosed
+		}
 		if time.Now().After(expiry) {
 			observed, _ := c.PermissionMode()
 			return observed, nil
@@ -654,14 +688,8 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (str
 
 		select {
 		case <-ctx.Done():
-			observed, _ := c.PermissionMode()
-			return observed, ctx.Err()
 		case <-c.closed:
-			observed, _ := c.PermissionMode()
-			return observed, ErrClosed
 		case <-deadline.C:
-			observed, _ := c.PermissionMode()
-			return observed, nil
 		case <-ticker.C:
 		}
 	}

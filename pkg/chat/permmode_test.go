@@ -845,11 +845,14 @@ func TestSetPermissionMode_CodexPlanRefusalNearBound(t *testing.T) {
 // ctx that ends the drive mid-refusal must not erase ErrCodexPlanRefusedBusy —
 // the one error whose documented remedy is "wait for the task to finish".
 //
-// Clock-free by construction: `refused` is set at the END of the previous
-// iteration and the fake's write runs on the DRIVER's goroutine, so cancelling
-// during the second submission guarantees refused == true before
-// awaitPostureChange observes ctx.Done() on its first pass — where neither the
-// ticker nor the render deadline is ready yet.
+// Clock-free by construction, in two steps. `refused` is set at the END of the
+// previous iteration and the fake's write runs on the DRIVER's goroutine, so
+// cancelling during the second submission guarantees refused == true before the
+// next awaitPostureChange runs. And that call aborts on its FIRST pass because
+// the poll loop tests ctx in the body, ahead of the budget (see closedNow) — as
+// a select arm it merely raced the ticker, and losing that flip enough times let
+// the deadline report a quiet "no change" that resumed the loop for a third
+// submission. This test was itself flaky until that was fixed.
 func TestSetPermissionMode_CodexPlanRefusalCtxAbortKeepsSentinel(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
 		[]string{codexCollabDefault, codexCollabPlan}, 0)
@@ -1109,6 +1112,22 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 			t.Errorf("observed = %q, want the unchanged posture plan", observed)
 		}
 	})
+
+	// Aborts are decided in the body AHEAD of the budget, so a closed
+	// conversation is reported as ErrClosed rather than as a quiet "budget
+	// elapsed, no change". Clock-free: the check runs on the first pass.
+	t.Run("closed", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0) // start: plan, so the posture-change check never wins
+		close(conv.closed)
+
+		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("awaitPostureChange on a closed conversation = (%q, %v), want ErrClosed", observed, err)
+		}
+	})
 }
 
 // pendingInputRequest is a plausible unsurfaced request for the pressGate cases:
@@ -1192,25 +1211,45 @@ func TestPressGate_PendingNeverClears(t *testing.T) {
 		}
 	})
 
-	// Clock-free: with a request pending and unsurfaced the loop reaches the
-	// select on its first pass, where neither the ticker nor the deadline is
-	// ready, so c.closed is the only ready case.
-	t.Run("closed", func(t *testing.T) {
-		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
-			permModeRenderTimeout: permModeBoundTimeout,
-		}, claudeRing4, 0)
+	// The two ABORT conditions. Both are decided in the loop body ahead of the
+	// budget, so both are clock-free on the first pass, and neither may be
+	// reported as blocked-by-input: the drive ended, it was not gated.
+	for _, tc := range []struct {
+		name  string
+		setup func(conv *Conversation, ctx context.Context) context.Context
+		want  error
+	}{
+		{"closed", func(conv *Conversation, ctx context.Context) context.Context {
+			close(conv.closed)
+			return ctx
+		}, ErrClosed},
+		{"ctx", func(_ *Conversation, ctx context.Context) context.Context {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+			return ctx
+		}, context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conv, _ := newPermModeConv(t, Options{
+				Harness:               chatClaudeCode,
+				permModeRenderTimeout: permModeBoundTimeout,
+			}, claudeRing4, 0)
 
-		conv.mu.Lock()
-		conv.currentInput = pendingInputRequest()
-		conv.inputSurfaced = false
-		conv.mu.Unlock()
-		close(conv.closed)
+			conv.mu.Lock()
+			conv.currentInput = pendingInputRequest()
+			conv.inputSurfaced = false
+			conv.mu.Unlock()
 
-		if err := conv.pressGate(testCtx(t), "plan"); !errors.Is(err, ErrClosed) {
-			t.Fatalf("pressGate on a closed conversation = %v, want ErrClosed", err)
-		}
-	})
+			err := conv.pressGate(tc.setup(conv, testCtx(t)), "plan")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("pressGate = %v, want %v", err, tc.want)
+			}
+			var blocked *PermissionModeBlockedError
+			if errors.As(err, &blocked) {
+				t.Errorf("pressGate reported %v as blocked-by-input; the drive ended, it was not gated", err)
+			}
+		})
+	}
 }
 
 // --- helpers -------------------------------------------------------------
