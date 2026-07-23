@@ -237,11 +237,11 @@ architectural call with no single correct answer); (3) operationally re-queue
 `backlog:blocked` and excluding stale-blocked/foreign-signature tickets from the count.
 This dedup pointer is the only edit made here.
 
-## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 / -127 / -128 / -132 / -133 — release-slot wedge: a **real** defect, in the wrong repo
+## HARNESS-WRAPPER-97 / -100 / -110 / -116 / -117 / -118 / -119 / -120 / -121 / -122 / -123 / -124 / -125 / -126 / -127 / -128 / -132 / -133 / -134 — release-slot wedge: a **real** defect, in the wrong repo
 
 **Filed as:** `[observer] release branch behind base (dev..main) — not promoting
-(release-lag:dev..main)`, escalated to `review`. Re-fired **eighteen times** under
-the identical observer signature `obs-sig:1bf9fcd2c6` (nineteen counting the
+(release-lag:dev..main)`, escalated to `review`. Re-fired **nineteen times** under
+the identical observer signature `obs-sig:1bf9fcd2c6` (twenty counting the
 [HARNESS-WRAPPER-56](../../triage/HARNESS-WRAPPER-56.md) false positive) — see the
 **filing ledger** at the end of this section, which is where new fires are recorded.
 
@@ -372,11 +372,12 @@ is a *stopped promoter*, not a diverged branch, and the gate would simply promot
 | 16 | -128 | 07:00 | **74** / 140 | ~764 min | 19:28 | 456 (4657) | Self-service impossibility reproduced a **fourth** time; the control caught *failing* a tick and still re-firing (below) |
 | 17 | -132 | 07:37 | **78** / 146 | ~800 min | 20:04 | 456 (4699) | Self-service impossibility reproduced a **fifth** time; control now at **three consecutive failed** ticks, still re-firing exactly 1800 s apart; poisoning increment is **staggered per agent kind**, not simultaneous (below) |
 | 18 | -133 | 08:09–08:13 | **81** / 152 | ~837 min | 20:41 | 456 (4745) | Self-service impossibility reproduced a **sixth** time; the control **self-recovered** from its failing streak with no restart; the ×3 poisoning model has **broken** (below) |
+| 19 | -134 | 08:41–08:47 | **82** / 153 | ~870 min | 21:11 | 456 (4759) | Nothing new — control back to two consecutive **successes**, completing filing 18's self-recovery |
 
 ¹ The -97 and -100 counts predate the `ORCHE-31` detector fix and are **total**-commit values on a
 different basis; they are not comparable with the first-parent column and are kept only for the
 record. The previously published progression `27 → 32 → 57 → 41 → …` silently mixed the two bases —
-the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74 → 78 → 81**,
+the first-parent series proper is **41 → 51 → 55 → 56 → 58 → 59 → 60 → 61 → 63 → 64 → 66 → 68 → 74 → 78 → 81 → 82**,
 a straight line of roughly +1 per filing, which is the shape of a promoter that is stopped rather
 than slow.
 
@@ -570,19 +571,19 @@ dead ticks (`agent-release-8df3c501-…` mtime **Jul 22 15:40:04**, `agent-relea
 **13:40:04**), both still awaiting the prune. `orche` still at HEAD **`737ea45`** — no bundle anchor
 has moved.
 
-### Standing conclusion — unchanged across all nineteen filings
+### Standing conclusion — unchanged across all twenty filings
 
 Nothing merged into this repository can clear `obs-sig:1bf9fcd2c6`, because the wedge is in another
-process in another repo. Eighteen automated cycles have produced eighteen documentation commit
+process in another repo. Nineteen automated cycles have produced nineteen documentation commit
 sets and zero resolutions, and **each one lands on `dev` and increments the very `main..dev` count
-the observer reports** — this filing's own commits included, pushing the count past the **81** measured
+the observer reports** — this filing's own commits included, pushing the count past the **82** measured
 in its row above. (Pinning the post-merge figure is itself self-defeating: -126 tried, and the
 correction commit invalidated the number it was correcting. Record the count you *measured*, in the
 row; do not predict where it lands.) That loop is closed by
 measurement, not by argument: the worker dispatched at this signature is a child of the wedged
 supervisor (-124, reproduced at -125, -126, -128 and -132), so it holds the wrong end of the lever.
 
-Both blocking actions are **human-only** and both are still outstanding after eighteen filings:
+Both blocking actions are **human-only** and both are still outstanding after nineteen filings:
 
 1. **Restart supervisor pid 65669** — the only thing that restores promotion today. Irreversible;
    kills every in-flight fleet agent, including any worker sent at this ticket. Schedule it
