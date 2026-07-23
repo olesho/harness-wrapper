@@ -112,6 +112,13 @@ rejections produced zero log lines; the state was discoverable only by hand-read
 
 ## Fix plan (for the ORCHE ticket — do not apply here)
 
+> **The `ORCHE` ticket is written and ready to file** (HARNESS-WRAPPER-127):
+> [`crossrepo/orche/ORCHE-release-slot-wedge.ticket.md`](../../crossrepo/orche/ORCHE-release-slot-wedge.ticket.md)
+> is the description to ship and carries the exact `orche ship --workspace ORCHE …` command at the
+> top; [`crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md`](../../crossrepo/orche/HARNESS-WRAPPER-118-release-slot-wedge.md)
+> is the implementable patch bundle it references. Filing it is one command by a human — no agent in
+> a `harness-wrapper` worktree may issue `orche` write commands.
+
 **Fix A — make the cron slot self-healing (the real defect).** `spawner.ts:640-648`. Race the tick
 against a hard slot deadline that (a) calls `runAbort.abort()`, then (b) after a short grace period
 calls `settle()` unconditionally, so no tick can own the slot forever regardless of whether its

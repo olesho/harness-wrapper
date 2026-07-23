@@ -459,6 +459,12 @@ touches the wedged cron slot. Filing the `ORCHE` ticket that carries this bundle
 action, and **no worker in a `harness-wrapper` worktree can perform it** (an agent here must not
 issue `orche` write commands).
 
+**The ticket body is written and ready to paste** —
+[`ORCHE-release-slot-wedge.ticket.md`](./ORCHE-release-slot-wedge.ticket.md) is the description to
+ship, and carries the exact `orche ship --workspace ORCHE …` invocation at the top. It stands alone
+in the `orche` repo (own anchors, own repro, own acceptance criteria) and needs no `harness-wrapper`
+context. Filing it is a single command; nothing else about action (2) remains.
+
 Priority if only part ships:
 
 - **Patch A is the fix.** It is the only patch that makes the wedge self-healing, and it is
