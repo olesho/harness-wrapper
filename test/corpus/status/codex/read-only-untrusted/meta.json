@@ -1,0 +1,19 @@
+{
+  "harness": "codex",
+  "binary_version": "0.144.5",
+  "recorded_at": "2026-07-23T05:37:40Z",
+  "cols": 120,
+  "rows": 40,
+  "permission_mode": "manual",
+  "launch_flags": "-s read-only -a untrusted",
+  "labels": [
+    "Permissions:",
+    "Collaboration mode:"
+  ],
+  "collaboration_mode": "default",
+  "redactions": [
+    "Account: the real address was replaced with an EQUAL-LENGTH placeholder (user@example.com)",
+    "Session: the real session uuid was replaced with an EQUAL-LENGTH placeholder"
+  ],
+  "notes": "Codex 0.144.5 /status box, launched --permission-mode manual (-s read-only -a untrusted) at 120x40 and driven with /status only — no turn, no /permissions, nothing written. The two permission-relevant rows render as 'Permissions:  Read Only (untrusted)' and 'Collaboration mode:  Default'. Anchor for TestConformance_CodexStatusRows (pkg/harness/conformance_test.go) and for the deferred /status scraper (pkg/turns/harness/codex/codex.go:184-188). Working directory was a scratch /private/tmp path, so no repo or account paths are in the capture. bytes.raw is redacted with equal-length placeholders and truncated at the last synchronized-output frame end; rendering it through pkg/screen at 120x40 reproduces screen.txt exactly."
+}
