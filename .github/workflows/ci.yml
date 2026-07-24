@@ -4,18 +4,21 @@ on:
   pull_request:
 
 jobs:
-  harness-ci:
+  veracity-ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Go is always required to install the pinned veracity binary itself.
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install pinned harness
-        run: go install github.com/olesho/harness/cmd/harness@$(cat .harness-version)
+      - name: Install pinned veracity
+        run: go install github.com/olesho/veracity/cmd/veracity@$(cat .veracity-version)
+      - name: Install dependencies
+        run: veracity bootstrap
       - name: Install pinned analyzers
-        run: harness install-tools
-      - name: harness ci
-        run: harness ci
+        run: veracity install-tools
+      - name: veracity ci
+        run: veracity ci

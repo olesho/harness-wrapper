@@ -8,44 +8,12 @@
     ],
     "Stop": [
       {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/send_last_response.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh hooks/stop.sh claude"
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "sh hooks/stop.sh claude" }]
       }
     ],
     "SessionStart": [
       {
         "hooks": [{ "type": "command", "command": "sh hooks/session-start.sh claude" }]
-      }
-    ],
-    "Notification": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/send_last_response.py\""
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "AskUserQuestion|ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/send_last_response.py\""
-          }
-        ]
       }
     ]
   }
