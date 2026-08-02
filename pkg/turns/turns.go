@@ -108,8 +108,11 @@ type InputRequest struct {
 	// snapshots of one dialog collapse to a single request.
 	ID string
 
-	// Kind categorizes the prompt: "trust_prompt", "menu_select",
-	// "confirm", or "text_input". It is the key a declarative policy
+	// Kind categorizes the prompt: "trust_prompt", "menu_select", "confirm",
+	// "text_input", "question" (the harness asked the user a clarifying
+	// question mid-turn) or "question_review" (the submit/cancel confirmation
+	// after the last question of a multi-question or multi-select dialog),
+	// plus any harness-specific kinds. It is the key a declarative policy
 	// matches on.
 	Kind string
 
@@ -123,9 +126,19 @@ type InputRequest struct {
 	// MultiSelect reports whether more than one option may be chosen. When
 	// true, each option's Keys is a TOGGLE-ONLY sequence (see InputOption.Keys)
 	// and the chat layer appends a single submit key after toggling all
-	// selected options. Every prompt produced in this repo today is
-	// single-select (false).
+	// selected options — SubmitKeys when the producer supplied one, otherwise
+	// the harness's generic submit key. Claude Code's AskUserQuestion dialog
+	// (kind "question") is the only producer of multi-select prompts today.
 	MultiSelect bool
+
+	// SubmitKeys are the bytes that COMMIT a MultiSelect answer once every
+	// chosen option's Keys have been written. SERVER-SIDE ONLY — never
+	// surfaced to a client. Empty means "use the harness's generic submit
+	// key"; a producer sets it when the widget commits on something else
+	// (Claude Code's checkbox dialog commits on Tab, which moves to its
+	// review pane — a plain Enter there would toggle the highlighted row
+	// instead).
+	SubmitKeys []byte
 
 	// Options are the selectable choices for menu/confirm/trust prompts.
 	// nil for free-text ("text_input") prompts.
@@ -140,7 +153,10 @@ type InputOption struct {
 
 	// Alias is a portable, harness-agnostic intent a policy can target
 	// without knowing the concrete option id: "proceed" | "deny" | "yes" |
-	// "no". Empty when the option carries no recognized intent.
+	// "no" | "other" (the free-text escape hatch a clarifying-question dialog
+	// injects — selecting it declines the structured question and hands
+	// control back to the composer). Empty when the option carries no
+	// recognized intent.
 	Alias string
 
 	// Label is the human-readable choice text ("Yes, proceed").
@@ -156,19 +172,22 @@ type InputOption struct {
 	// semantically via ID or Alias.
 	//
 	// The meaning of Keys FORKS on the enclosing InputRequest.MultiSelect:
-	//   - MultiSelect == false (every prompt in this repo today): Keys is a
-	//     full SELECT-AND-SUBMIT sequence — it both picks this option and
-	//     confirms the menu.
+	//   - MultiSelect == false: Keys is a full SELECT-AND-SUBMIT sequence —
+	//     it both picks this option and confirms the menu. (One documented
+	//     exception: an option of a Claude Code multi-QUESTION dialog selects
+	//     and advances to the next question with the digit alone, because a
+	//     trailing confirm would land on the following question. See
+	//     pkg/turns/harness/claudecode/question.go.)
 	//   - MultiSelect == true: Keys is a TOGGLE-ONLY sequence for this one
 	//     option — it must NOT include a submit key. The chat layer toggles
-	//     each selected option's Keys and then appends the harness submit key
-	//     exactly once.
+	//     each selected option's Keys and then appends the request's
+	//     SubmitKeys (or the harness submit key) exactly once.
 	//
 	// NOTHING enforces the toggle-only invariant at runtime: a producer that
 	// bakes a submit into a multi-select option's Keys yields a corrupt
-	// toggle+submit+toggle+submit+submit stream. Until an adapter DetectInput
-	// path emits multi-select prompts, the ONLY guard is the multi-select
-	// answer unit test in pkg/chat.
+	// toggle+submit+toggle+submit+submit stream. The guards are the
+	// multi-select answer unit tests in pkg/chat and the per-option keystroke
+	// assertions in pkg/turns/harness/claudecode.
 	Keys []byte
 
 	// Highlighted is true when the menu rendered this row as the currently
