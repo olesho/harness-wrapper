@@ -162,20 +162,27 @@ size the buffer for your workload.
 
 ## Interactive input (blocking prompts)
 
-Some harnesses block at startup on a dialog the normal `Send` flow cannot satisfy — Claude Code's
-folder-trust prompt, the `--dangerously-skip-permissions` acceptance screen, Codex's update/model
-notices. The per-harness adapter detects these on the rendered screen and the `Conversation` surfaces
-them as a request/answer channel. The client answers **semantically** (an option ID or alias); the
-chat layer owns the keystrokes (see [ADR-002](../internal/decisions/adr-002-interactive-input.md)).
+Some harnesses block on a dialog the normal `Send` flow cannot satisfy — Claude Code's folder-trust
+prompt, the `--dangerously-skip-permissions` acceptance screen, Codex's update/model notices, and
+mid-turn the clarifying question Claude Code's **AskUserQuestion** tool renders. The per-harness
+adapter detects these on the rendered screen and the `Conversation` surfaces them as a request/answer
+channel. The client answers **semantically** (an option ID or alias); the chat layer owns the
+keystrokes (see [ADR-002](../internal/decisions/adr-002-interactive-input.md)).
 
 ```go
 type InputRequest struct {
-	ID      string        // stable per prompt; correlates the answer
-	Kind    string        // e.g. "trust_prompt", "update_menu", "model_migration"
-	Prompt  string        // the question text
-	Options []InputOption // menu choices (ID, Alias, Label); nil for free text
+	ID          string        // stable per prompt; correlates the answer
+	Kind        string        // e.g. "trust_prompt", "update_menu", "question"
+	Prompt      string        // the question text
+	Header      string        // short label, e.g. a question's category
+	MultiSelect bool          // answer with InputAnswer.OptionIDs, not OptionID
+	Options     []InputOption // menu choices (ID, Alias, Label, Description); nil for free text
 }
-type InputAnswer struct { OptionID, Text string }
+type InputAnswer struct {
+	OptionID  string   // single-select
+	OptionIDs []string // MultiSelect only
+	Text      string   // free text
+}
 
 func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAnswer) error
 ```
@@ -196,8 +203,15 @@ A detected prompt is resolved in this order:
    the control token). When it clears, `EventInputResolved` fires.
 
 `trust_prompt` answer aliases are `proceed` and `deny`, so a policy need not know the exact wording.
-While a prompt awaits an external answer `Send` returns `ErrInputPending`; while a policy/handler is
-auto-answering, `Send` waits for the prompt to clear.
+A `question` dialog adds `other` — the free-text escape hatch that declines the structured question
+and hands control back to the composer. While a prompt awaits an external answer `Send` returns
+`ErrInputPending`; while a policy/handler is auto-answering, `Send` waits for the prompt to clear.
+
+A clarifying question can arrive **mid-turn** rather than at startup, and a multi-question or
+multi-select dialog walks several panes (`question` → … → `question_review`) without the screen ever
+going dialog-free. Each pane is its own request: `EventInputResolved` for the outgoing one is emitted
+immediately before `EventInputRequest` for the incoming one, so a client tracking request ids sees a
+clean handover rather than a dangling id.
 
 ## History
 

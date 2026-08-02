@@ -305,11 +305,18 @@ func (c *Conversation) writeAnswer(req *turns.InputRequest, ans InputAnswer) err
 }
 
 // writeMultiSelect resolves every id in ids to a distinct option, toggles each
-// one in request order, then appends the harness submit key exactly once. All
+// one in request order, then appends the commit sequence exactly once. All
 // ids are resolved BEFORE any write, so an unknown id leaves the menu
 // untouched. Duplicates are collapsed by resolved-option identity (not by the
 // input string), so ["a","a"] or [id, matching-label] toggle the option once —
 // toggling twice would net-deselect it on a toggle UI.
+//
+// The commit sequence is the request's own SubmitKeys when the producing
+// adapter supplied one, and the harness's generic submit key otherwise. The
+// distinction matters: a checkbox widget's commit control is usually NOT the
+// composer's Enter (Claude Code's clarifying-question dialog commits on Tab —
+// see turns.InputRequest.SubmitKeys), and sending Enter there would toggle the
+// highlighted row instead of committing.
 func (c *Conversation) writeMultiSelect(req *turns.InputRequest, ids []string) error {
 	seen := make(map[string]bool, len(ids))
 	var opts []*turns.InputOption
@@ -328,7 +335,11 @@ func (c *Conversation) writeMultiSelect(req *turns.InputRequest, ids []string) e
 	for _, opt := range opts {
 		keys = append(keys, opt.Keys...)
 	}
-	keys = append(keys, submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)...)
+	submit := req.SubmitKeys
+	if len(submit) == 0 {
+		submit = submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
+	}
+	keys = append(keys, submit...)
 	return c.write(keys)
 }
 
