@@ -81,6 +81,27 @@ wrapper rejects. `ErrResumeUnsupported` is a different failure: the resolved ada
 implement `turns.SessionResumer` at all, so `Resume` cannot be honoured. Also returns
 `ErrUnknownHarness` (`Harness` not registered), or a wrapped wrapper/store error.
 
+`Open` does **not** wait for the harness to finish booting — it returns as soon as the process is
+supervised. Readiness is enforced later, inside [`Send`](#readiness-what-send-waits-for).
+
+### Reopen
+
+```go
+func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)
+```
+
+`Reopen` restarts a **stored** session: it loads the record from the `Store`, resumes the harness with
+the recorded harness session id, and returns a fresh `Conversation`. `Harness`, `WorkingDir` and the
+resume id come from the record; everything else (`BinaryPath`, `Args`, `Env`, the execution-mode knobs,
+`Cols`/`Rows`, `InputPolicy`, …) you supply again.
+
+A record with no harness session id cannot be resumed: that is `ErrNoHarnessSession`.
+
+> Two open-time knobs are **not** carried on `ReopenOptions`: the codex update-notice auto-skip and the
+> permission-mode render budget. A resumed codex session can therefore stop on the update menu where
+> the original would have skipped it — supply an `InputPolicy` for `codex_update_notice` if that
+> matters to you.
+
 ## Control acquisition
 
 ```go
@@ -100,16 +121,44 @@ is the *chat-level* token coordinating multiple chat clients sharing one convers
 func (c *Conversation) Send(ctx context.Context, text string) (turnID string, err error)
 ```
 
-`Send` records a `RoleUser` turn (immediately `TurnStateComplete`) and a `RoleAssistant` turn
-(`TurnStatePending`) in the `Store`, then writes `text + "\r"` to the harness PTY. The watcher
-advances the assistant turn as the harness works:
+`Send` waits for the harness to be ready, records a `RoleUser` turn (immediately `TurnStateComplete`)
+and a `RoleAssistant` turn (`TurnStatePending`) in the `Store`, then writes the prompt to the harness
+PTY. The watcher advances the assistant turn as the harness works:
 
 ![Turn lifecycle](../diagrams/turn-lifecycle.svg)
 
 `Send` returns `ErrNoControl` (no token held), `ErrTurnInFlight` (a prior assistant turn is still
-pending/streaming), or `ErrInputPending` (an interactive prompt is awaiting an answer). Both Codex and
-Claude Code accept `\r` as the submit keystroke; for richer input reach past the API via
-`conv.Wrapper().WriteStdin(...)`.
+pending/streaming), or `ErrInputPending` (an interactive prompt is awaiting an answer). For richer
+input — control characters, a paste sequence, a slash command you want to type by hand — reach past
+the API via `conv.Wrapper().WriteStdin(...)`.
+
+The prompt and its submit key go out in **one write**: no per-character typing, no inter-key delay, no
+retry. The submit key is per-harness, because modern TUIs enable the enhanced keyboard protocol where a
+bare carriage return only inserts a newline:
+
+| Harness | Submit key |
+|---|---|
+| claude-code, codex | `CSI 13u` (`\x1b[13u`) |
+| pi | `\r` |
+| anything else | `\n` |
+
+### Readiness: what `Send` waits for
+
+For harnesses whose composer is detectable (claude-code, codex, pi), `Send` blocks until the screen
+shows a ready prompt. This is what keeps a prompt from being typed into a boot screen or a modal and
+silently lost. While waiting it can end in three other ways:
+
+- `ErrInputPending` — a blocking prompt is waiting for **your** answer (a policy or callback that is
+  answering one itself does not count; `Send` waits for it to clear).
+- `ErrAuthRequired` — the harness is sitting on a login or onboarding wall. An onboarding wall
+  short-circuits immediately; a softer "not logged in" banner must persist briefly before it counts,
+  so a transient render cannot trip it. The prompt is deliberately **not** written — it would land in
+  a sign-in menu. `Send` records an errored assistant turn carrying `ReasonAuthRequired` and returns
+  its id with a nil error.
+- `ctx.Err()` / `ErrClosed`.
+
+There is **no internal send timeout**: your `ctx` is the only clock. Harnesses with no readiness
+marker (opencode, generic) skip the gate entirely.
 
 ### Turn model
 
@@ -131,6 +180,35 @@ type Turn struct {
 
 There is exactly **one assistant turn per `Send`**; it ends in `TurnStateComplete` (the adapter saw
 turn completion) or `TurnStateErrored` (the harness errored, was blocked, or exited).
+`TurnStateStreaming` is reserved: v1 emits no per-delta events, so turns go pending → complete.
+
+Two `Reason` values are **stable prefixes** you may match on, rather than free text:
+
+| Constant | Meaning |
+|---|---|
+| `ReasonAuthRequired` | the harness needs a login / re-authentication before it can work |
+| `ReasonUsageLimited` | a usage or session limit was hit; the harness's own message is appended in parentheses |
+
+### How a turn completes
+
+![How a turn is gated and completed](../diagrams/turn-completion.svg)
+
+Three routes end a pending turn:
+
+1. **The adapter recognises the harness's end-of-turn marker.** For a harness that streams a reply in
+   several parts (claude-code), a marker alone does not complete the turn — it arms a **short confirm
+   window**, and any repaint restarts it, so a mid-stream flicker cannot finish the turn early.
+   Harnesses whose marker is emitted once (codex) complete immediately.
+2. **Idle fallback.** With no marker, a turn completes when the composer is ready, the harness is not
+   busy (for adapters that implement a busy detector), and the screen has been quiet for a longer
+   window.
+3. **The wrapper speaks.** A status transition — exit, signal, cost/quota, API error, or
+   `waiting_for_input` — is mapped to a turn event by the [generic adapter](adapters.md#generic) that
+   every adapter embeds.
+
+Both windows are tuned per harness and are **not** part of the wire contract: treat them as
+"eventually, quickly" rather than a guaranteed latency. They are overridable only from within the
+package (tests), because a caller that needs a hard bound should use its own `ctx`.
 
 ## Events
 
@@ -203,7 +281,15 @@ auto-answering, `Send` waits for the prompt to clear.
 
 ```go
 func (c *Conversation) History(ctx context.Context) ([]Turn, error)
+func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySource, error)
+
+type HistorySource string // HistorySourceTranscript ("transcript") | HistorySourceStore ("store")
 ```
+
+`HistoryWithSource` tells you **which** source answered, which is the difference between "the model
+said little" and "we lost the transcript and fell back to the screen". Turns projected from a
+transcript carry no chat turn ID, and their start and completion timestamps are both the recorded
+message time.
 
 When the adapter implements `turns.TranscriptReader` **and** the harness session ID is known,
 `History` reads the harness's own persisted JSONL log — the higher-fidelity source, since it records
@@ -228,6 +314,39 @@ capture above, a `History` read *after* the process has exited still returns tra
 history — which is how the one-shot [`run`](cli.md) / [`POST /v1/turns`](gateway.md) paths end a turn
 yet still hand back the harness session id. Returns `ErrQuitUnsupported` when the adapter implements no
 `turns.Quitter`.
+
+## Permission mode at runtime
+
+```go
+func (c *Conversation) PermissionMode() (string, bool)
+func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (observed string, err error)
+```
+
+`PermissionMode` reads the harness's current posture off the rendered screen — no control token, no
+readiness wait, valid mid-turn. `SetPermissionMode` drives the harness to a different one and
+**returns the final observed posture on every path**, success or failure.
+
+Both are covered in full — the rung vocabulary, the gates, the cycle-and-check discipline, the
+blocked-by-modal recovery idiom, and what the resulting errors mean — in
+[Permissions & sandboxing](permissions.md#switching-on-a-live-session). Two things to carry away here:
+
+- the observed mode is **process-local and never persisted**, so `Reopen` starts from the launch rung
+  again;
+- `bypass` is reachable only if the session was *launched* bypass-enabled — you cannot cycle up to
+  unrestricted.
+
+## Model discovery
+
+```go
+func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)
+```
+
+Opens a throwaway conversation, types `/model`, and parses the picker — the only way to enumerate a
+harness's models, since neither claude-code nor codex ships a machine-readable list. It selects
+nothing and discards the session. Fails fast with `ErrPickerUnsupported` for a harness that has no
+picker, and `ErrPickerTimeout` if the picker never renders. See [Discovery](../internal/discovery.md).
+
+For an offline answer that costs no process launch, use `pkg/discovery/models` directly.
 
 ## Store interface
 
@@ -277,6 +396,12 @@ control-token guard — use it with care.
 | `ErrStaleInputRequest` | `Answer`: request ID no longer current |
 | `ErrUnknownOption` | `Answer`: option ID/alias matches no option |
 | `ErrQuitUnsupported` | `Quit`: the adapter exposes no graceful-quit sequence |
+| `ErrNotMultiSelect` | `Answer`: multiple option IDs given for a single-select request |
+| `ErrConflictingAnswer` | `Answer`: single and multiple option IDs both set |
+| `ErrAuthRequired` | `Send` / `DiscoverModels`: the harness is on a login or onboarding wall |
+| `ErrNoHarnessSession` | `Reopen`: the stored session carries no harness session id |
+| `ErrPickerUnsupported`, `ErrPickerTimeout` | `DiscoverModels`: no `/model` picker, or it never rendered |
+| `ErrPermissionModeUnsupported`, `ErrPermissionModeUnreachable`, `ErrPermissionModeSwitchFailed`, `ErrPermissionModeIndeterminate`, `ErrPermissionModeBlockedByInput`, `ErrCodexPlanRefusedBusy` | `SetPermissionMode` — see [Permissions](permissions.md#if-it-doesnt-take) |
 | `ErrClosed` | any method after `Close` |
 
 All `Conversation` methods are safe for concurrent use; `Close` is idempotent. Discriminate with

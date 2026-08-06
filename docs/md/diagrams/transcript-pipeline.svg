@@ -1,0 +1,88 @@
+<svg viewBox="0 0 800 424" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Transcript pipeline: harness JSONL to the canonical Event and its two serializations">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.4; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.5; }
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; stroke-dasharray: 5 3; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12.5px; font-weight: 700; }
+    .t { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .lbl { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+    .mono { font-family: var(--font-mono, monospace); }
+    .line { stroke: var(--d-line); stroke-width: 1.5; fill: none; }
+    .er { fill: var(--d-err); font-family: var(--font-sans, sans-serif); font-size: 10.5px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="t-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--d-line)"/>
+    </marker>
+  </defs>
+
+  <text class="lbl" x="20" y="26">HARNESS-OWNED LOGS</text>
+  <text class="lbl" x="264" y="26">PER-HARNESS READER</text>
+  <text class="lbl" x="512" y="26">ONE CANONICAL SHAPE</text>
+
+  <!-- sources -->
+  <rect class="node" x="20" y="36" width="212" height="46" rx="8"/>
+  <text class="tb" x="126" y="56" text-anchor="middle">claude-code</text>
+  <text class="ts mono" x="126" y="72" text-anchor="middle">~/.claude/projects/&lt;cwd&gt;/&lt;id&gt;.jsonl</text>
+  <rect class="node" x="20" y="90" width="212" height="46" rx="8"/>
+  <text class="tb" x="126" y="110" text-anchor="middle">codex</text>
+  <text class="ts mono" x="126" y="126" text-anchor="middle">~/.codex/sessions/Y/M/D/rollout-*.jsonl</text>
+  <rect class="node" x="20" y="144" width="212" height="46" rx="8"/>
+  <text class="tb" x="126" y="164" text-anchor="middle">pi</text>
+  <text class="ts mono" x="126" y="180" text-anchor="middle">~/.pi/agent/sessions/&lt;slug&gt;/*.jsonl</text>
+  <rect class="lane" x="20" y="198" width="212" height="46" rx="8"/>
+  <text class="tb" x="126" y="218" text-anchor="middle">opencode</text>
+  <text class="er" x="126" y="234" text-anchor="middle">deferred — store mid-migration</text>
+
+  <path class="line" marker-end="url(#t-arr)" d="M232,59 L262,100"/>
+  <path class="line" marker-end="url(#t-arr)" d="M232,113 L262,113"/>
+  <path class="line" marker-end="url(#t-arr)" d="M232,167 L262,126"/>
+
+  <!-- readers -->
+  <rect class="node" x="264" y="36" width="212" height="110" rx="8"/>
+  <text class="tb mono" x="370" y="60" text-anchor="middle">pkg/transcript/*</text>
+  <text class="ts" x="370" y="80" text-anchor="middle">locate the file for a session id</text>
+  <text class="ts" x="370" y="96" text-anchor="middle">decode line shapes, tolerate variants</text>
+  <text class="ts" x="370" y="112" text-anchor="middle">strip IDE context tags</text>
+  <text class="ts" x="370" y="132" text-anchor="middle">optional: total token usage</text>
+
+  <path class="line" marker-end="url(#t-arr)" d="M476,91 L508,91"/>
+
+  <!-- canonical -->
+  <rect class="accent" x="510" y="36" width="270" height="110" rx="8"/>
+  <text class="tb mono" x="645" y="60" text-anchor="middle">transcript.Event</text>
+  <text class="ts" x="645" y="80" text-anchor="middle">role · type · text · tool call/result</text>
+  <text class="ts" x="645" y="96" text-anchor="middle">one event per content block</text>
+  <text class="ts" x="645" y="116" text-anchor="middle">stable identity for dedup across</text>
+  <text class="ts" x="645" y="130" text-anchor="middle">the live and on-disk copies</text>
+
+  <!-- outputs -->
+  <path class="line" marker-end="url(#t-arr)" d="M645,146 L645,176"/>
+  <rect class="lane" x="264" y="178" width="516" height="106" rx="10"/>
+  <text class="lbl" x="276" y="198">TWO SERIALIZATIONS — deliberately different</text>
+  <rect class="node" x="276" y="208" width="240" height="64" rx="8"/>
+  <text class="tb" x="396" y="230" text-anchor="middle">public JSON</text>
+  <text class="ts" x="396" y="248" text-anchor="middle">what callers see — the same DTO</text>
+  <text class="ts" x="396" y="262" text-anchor="middle">shape a UI renders</text>
+  <rect class="node" x="528" y="208" width="240" height="64" rx="8"/>
+  <text class="tb" x="648" y="230" text-anchor="middle">durable wire</text>
+  <text class="ts" x="648" y="248" text-anchor="middle">adds provenance + native id, so a</text>
+  <text class="ts" x="648" y="262" text-anchor="middle">round-trip cannot corrupt dedup</text>
+
+  <!-- projection -->
+  <rect class="lane" x="20" y="298" width="760" height="110" rx="10"/>
+  <text class="lbl" x="32" y="318">WHERE IT SURFACES</text>
+  <rect class="node" x="32" y="328" width="234" height="66" rx="8"/>
+  <text class="tb mono" x="149" y="352" text-anchor="middle">chat.History</text>
+  <text class="ts" x="149" y="370" text-anchor="middle">events projected to chat turns</text>
+  <text class="ts" x="149" y="384" text-anchor="middle">preferred over screen-scraped text</text>
+  <rect class="node" x="282" y="328" width="234" height="66" rx="8"/>
+  <text class="tb mono" x="399" y="352" text-anchor="middle">transcript_entries</text>
+  <text class="ts" x="399" y="370" text-anchor="middle">the structured-run result</text>
+  <text class="ts" x="399" y="384" text-anchor="middle">plus a usage total</text>
+  <rect class="node" x="532" y="328" width="236" height="66" rx="8"/>
+  <text class="tb mono" x="650" y="352" text-anchor="middle">harness.Run sink</text>
+  <text class="ts" x="650" y="370" text-anchor="middle">envelopes streamed to a host</text>
+  <text class="ts" x="650" y="384" text-anchor="middle">as the harness works</text>
+</svg>

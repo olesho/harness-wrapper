@@ -172,8 +172,13 @@ The per-harness detail and "adding a harness" workflow are in the
 - `pkg/transcript/` — read-only harness JSONL parsers (codex, claudecode, pi)
 - `pkg/chat/` — Conversation API, Store interface
 - `pkg/chat/memstore/` — in-memory `Store` implementation
+- `pkg/harness/` — per-harness capability profiles, hook installation, `RunTurn`
+- `pkg/oneshot/` — one typed turn, headless, with an auto-accept policy
+- `pkg/turnproto/` — the frozen structured-turn wire format + exit codes
+- `pkg/env/` — run a structured turn inside a workspace (`internal/env` holds the environment core)
 - `pkg/versions/` — read API for the embedded `versions.json` (pinned upstream versions per harness)
-- `pkg/discovery/` — "is harness X installed on PATH, at what version?"
+- `pkg/discovery/` — "is harness X installed on PATH, at what version?"; `models/` adds the offline
+  model registry
 - `cmd/harness-wrapper/` — thin CLI front-end for the wrapper
 - `cmd/harness-chatd/` — HTTP + SSE gateway exposing `pkg/chat` to non-Go clients
 - `cmd/check-versions/` — offline drift check against the npm registry

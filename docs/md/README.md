@@ -27,9 +27,28 @@ two transports (an HTTP gateway and a CLI) that import the chat layer:
 
 ## Where to go next
 
+**Using it**
+
 - **[Getting Started](guide/getting-started.md)** — install, build, and drive your first conversation
   from Go, the CLI, and over HTTP.
+- **[CLI](guide/cli.md)** — passthrough, one-shot, structured, and tmux-detached modes.
 - **[Chat API](guide/chat.md)** — the `pkg/chat` Conversation reference.
-- **[HTTP Gateway](guide/gateway.md)** — `harness-chatd` endpoints + Python / TypeScript / curl clients.
+- **[HTTP Gateway](guide/gateway.md)** — `harness-chatd` endpoints and wire format.
+- **[Client libraries](guide/clients.md)** — the shipped Python and TypeScript clients.
+- **[Permissions & sandboxing](guide/permissions.md)** — the rung vocabulary, what it enforces, and
+  what it does not.
 - **[Adapter Matrix](guide/adapters.md)** — exactly what each harness supports today.
+- **[Troubleshooting](guide/troubleshooting.md)** — when a harness stalls, hangs, or won't authenticate.
+
+**How it works**
+
 - **[Architecture](internal/architecture.md)** — how PTY bytes become chat events, layer by layer.
+- **[Repository map](internal/packages.md)** — every package, what depends on what.
+- **[Wrapper & Status](internal/wrapper.md)** · **[Turns & Adapters](internal/turns.md)** ·
+  **[Screen](internal/screen.md)** · **[Transcripts](internal/transcript.md)** — the four layers.
+- **[Harness profiles & runs](internal/harness.md)** · **[One-shot turns](internal/oneshot.md)** ·
+  **[Structured turn protocol](internal/turnproto.md)** · **[Execution environments](internal/env.md)**
+  — running a single job, anywhere.
+- **[Discovery](internal/discovery.md)** · **[Versions & Drift](internal/versions-drift.md)** — what is
+  installed, and what we verified against.
+- **[Testing Tiers](internal/testing/README.md)** — how any of this stays true across upstream releases.

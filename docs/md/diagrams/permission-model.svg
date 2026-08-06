@@ -1,0 +1,97 @@
+<svg viewBox="-18 0 818 452" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Canonical permission rungs and how each harness launches them">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.3; }
+    .head { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1.3; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.5; }
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; stroke-dasharray: 5 3; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12.5px; font-weight: 700; }
+    .t { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .mono { font-family: var(--font-mono, monospace); }
+    .er { fill: var(--d-err); font-family: var(--font-sans, sans-serif); font-size: 11px; font-weight: 700; }
+    .ok { fill: var(--d-ok); font-family: var(--font-sans, sans-serif); font-size: 11px; font-weight: 700; }
+    .wn { fill: var(--d-warn); font-family: var(--font-sans, sans-serif); font-size: 11px; font-weight: 700; }
+    .line { stroke: var(--d-line); stroke-width: 1.4; fill: none; }
+  </style>
+  <defs>
+    <marker id="p-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--d-line)"/>
+    </marker>
+  </defs>
+
+  <text class="ts" x="20" y="22">one canonical vocabulary · translated to native launch flags before the harness starts</text>
+
+  <!-- header -->
+  <rect class="head" x="20" y="32" width="150" height="28" rx="6"/>
+  <text class="tb" x="95" y="51" text-anchor="middle">rung</text>
+  <rect class="head" x="176" y="32" width="296" height="28" rx="6"/>
+  <text class="tb" x="324" y="51" text-anchor="middle">claude / claude-code</text>
+  <rect class="head" x="478" y="32" width="302" height="28" rx="6"/>
+  <text class="tb" x="629" y="51" text-anchor="middle">codex</text>
+
+  <!-- plan -->
+  <rect class="node" x="20" y="66" width="150" height="34" rx="6"/>
+  <text class="tb mono" x="34" y="88">plan</text>
+  <rect class="node" x="176" y="66" width="296" height="34" rx="6"/>
+  <text class="t mono" x="190" y="88">--permission-mode plan</text>
+  <rect class="node" x="478" y="66" width="302" height="34" rx="6"/>
+  <text class="er" x="492" y="87">rejected</text>
+  <text class="ts" x="560" y="87">no launch flag — send /plan after launch</text>
+
+  <!-- manual -->
+  <rect class="node" x="20" y="104" width="150" height="34" rx="6"/>
+  <text class="tb mono" x="34" y="126">manual</text>
+  <rect class="node" x="176" y="104" width="296" height="34" rx="6"/>
+  <text class="t mono" x="190" y="126">--permission-mode manual</text>
+  <rect class="node" x="478" y="104" width="302" height="34" rx="6"/>
+  <text class="t mono" x="492" y="126">-s read-only -a untrusted</text>
+
+  <!-- ask -->
+  <rect class="node" x="20" y="142" width="150" height="34" rx="6"/>
+  <text class="tb mono" x="34" y="164">ask</text>
+  <rect class="node" x="176" y="142" width="296" height="34" rx="6"/>
+  <text class="t mono" x="190" y="164">--permission-mode acceptEdits</text>
+  <rect class="node" x="478" y="142" width="302" height="34" rx="6"/>
+  <text class="t mono" x="492" y="164">-s workspace-write -a on-request</text>
+
+  <!-- auto -->
+  <rect class="node" x="20" y="180" width="150" height="34" rx="6"/>
+  <text class="tb mono" x="34" y="202">auto</text>
+  <rect class="node" x="176" y="180" width="296" height="34" rx="6"/>
+  <text class="t mono" x="190" y="202">--permission-mode auto</text>
+  <rect class="node" x="478" y="180" width="302" height="34" rx="6"/>
+  <text class="t mono" x="492" y="202">-s workspace-write -a never</text>
+
+  <!-- bypass -->
+  <rect class="accent" x="20" y="218" width="150" height="34" rx="6"/>
+  <text class="tb mono" x="34" y="240">bypass</text>
+  <rect class="accent" x="176" y="218" width="296" height="34" rx="6"/>
+  <text class="t mono" x="190" y="240">--permission-mode bypassPermissions</text>
+  <rect class="accent" x="478" y="218" width="302" height="34" rx="6"/>
+  <text class="t mono" x="492" y="240">-s danger-full-access -a never</text>
+
+  <!-- permissiveness arrow -->
+  <path class="line" marker-end="url(#p-arr)" d="M8,70 L8,246"/>
+  <text class="ts" x="-8" y="158" text-anchor="middle" transform="rotate(-90 -8 158)">least → most permissive</text>
+
+  <!-- env half -->
+  <rect class="lane" x="20" y="266" width="760" height="46" rx="8"/>
+  <text class="tb" x="34" y="286">IS_SANDBOX=1 is a separate half</text>
+  <text class="ts" x="34" y="303">only <tspan class="mono">--sandbox-defaults</tspan> sets it (claude only): it suppresses the bypass-acceptance screen and allows root. The <tspan class="mono">bypass</tspan> rung alone never does.</text>
+
+  <!-- enforcement -->
+  <rect class="lane" x="20" y="324" width="760" height="112" rx="8"/>
+  <text class="tb" x="34" y="344">Where a restrictive rung actually binds</text>
+  <rect class="node" x="34" y="354" width="238" height="68" rx="7"/>
+  <text class="tb" x="153" y="374" text-anchor="middle">passthrough</text>
+  <text class="ok" x="153" y="392" text-anchor="middle">fully enforced</text>
+  <text class="ts" x="153" y="410" text-anchor="middle">a human answers every dialog</text>
+  <rect class="node" x="282" y="354" width="238" height="68" rx="7"/>
+  <text class="tb" x="401" y="374" text-anchor="middle">interactive run (tty)</text>
+  <text class="wn" x="401" y="392" text-anchor="middle">partly enforced</text>
+  <text class="ts" x="401" y="410" text-anchor="middle">codex prompts reach the tty</text>
+  <rect class="node" x="530" y="354" width="236" height="68" rx="7"/>
+  <text class="tb" x="648" y="374" text-anchor="middle">unattended / structured-run</text>
+  <text class="er" x="648" y="392" text-anchor="middle">argv only</text>
+  <text class="ts" x="648" y="410" text-anchor="middle">codex -s binds; dialogs auto-answered</text>
+</svg>
