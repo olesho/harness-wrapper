@@ -149,8 +149,8 @@
 
 <section class="iface-card">
   <h3>interface HookProvider <span class="path">in pkg/harness</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="141" viewBox="0 0 528 141" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="70" x2="244" y2="70" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,49)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">hookProvider</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><rect x="258" y="60" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="71" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,20)"><rect width="224" height="101" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface HookProvider</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">EnsureConfig(worktreePath strin…</text><text x="10" y="72" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">HookSpec() *HookSpec</text><text x="10" y="87" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ParseHookPayload(ctx HookContex…</text></g></svg></div>
+  <p>The contract for a harness that can report events through its own hook mechanism: it declares the hook specification, installs that configuration into a worktree, and parses a hook subprocess&#39;s payload into transcript events.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="175" viewBox="0 0 528 175" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="87" x2="244" y2="87" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,66)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">hookProvider</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><rect x="258" y="77" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="88" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,20)"><rect width="224" height="135" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface HookProvider</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="50" font-size="10" fill="#92400e">The contract for a harness that</text><text x="10" y="65" font-size="10" fill="#92400e">can report events through its own</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">EnsureConfig(worktreePath strin…</text><text x="10" y="106" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">HookSpec() *HookSpec</text><text x="10" y="121" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ParseHookPayload(ctx HookContex…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>hookProvider (claude)</code></p>
   <details><summary>methods</summary><ul><li><code>EnsureConfig(worktreePath string, loomArgv []string) error</code></li><li><code>HookSpec() *HookSpec</code></li><li><code>ParseHookPayload(ctx HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error)</code></li></ul></details>
@@ -158,8 +158,8 @@
 
 <section class="iface-card">
   <h3>interface Profile <span class="path">in pkg/harness</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="298" viewBox="0 0 528 298" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="139" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="150" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,106)"><rect width="224" height="86" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface Profile</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">Name() string</text><text x="10" y="72" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">Resolve(ctx ResolveContext) Res…</text></g></svg></div>
+  <p>A harness&#39;s capability descriptor. Resolve is called once per run with the concrete binary, arguments, environment and working directory, and returns only the capabilities confirmed for that run.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="298" viewBox="0 0 528 298" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="149" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Profile</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="139" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="150" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,89)"><rect width="224" height="120" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface Profile</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="50" font-size="10" fill="#92400e">A harness&apos;s capability descriptor.</text><text x="10" y="65" font-size="10" fill="#92400e">Resolve is called once per run</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">Name() string</text><text x="10" y="106" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">Resolve(ctx ResolveContext) Res…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>Profile (claude)</code>, <code>Profile (codex)</code>, <code>Profile (opencode)</code>, <code>Profile (pi)</code></p>
   <details><summary>methods</summary><ul><li><code>Name() string</code></li><li><code>Resolve(ctx ResolveContext) ResolvedProfile</code></li></ul></details>
@@ -167,8 +167,8 @@
 
 <section class="iface-card">
   <h3>interface Resumer <span class="path">in pkg/harness</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="514" viewBox="0 0 528 514" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><line x1="340" y1="329" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,308)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="401" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,380)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="473" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,452)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="246" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="257" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,221)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface Resumer</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ResumeArgs(sessionID string) []…</text></g></svg></div>
+  <p>Supplies the argument fragment that resumes an existing harness session for a given session id; an empty id yields no arguments.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="514" viewBox="0 0 528 514" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><line x1="340" y1="329" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,308)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="401" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,380)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="473" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,452)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="246" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="257" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,204)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface Resumer</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="50" font-size="10" fill="#92400e">Supplies the argument fragment</text><text x="10" y="65" font-size="10" fill="#92400e">that resumes an existing harness</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ResumeArgs(sessionID string) []…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>resumer (claude)</code>, <code>resumer (codex)</code>, <code>resumer (opencode)</code>, <code>resumer (pi)</code>, <code>Adapter (claudecode)</code>, <code>Adapter (codex)</code>, <code>Adapter (pi)</code></p>
   <details><summary>methods</summary><ul><li><code>ResumeArgs(sessionID string) []string</code></li></ul></details>
@@ -212,8 +212,8 @@
 
 <section class="iface-card">
   <h3>interface UsageReader <span class="path">in pkg/transcript</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="154" viewBox="0 0 528 154" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="113" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><rect x="258" y="66" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="77" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,41)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface UsageReader</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/transcript</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ReadUsage(harnessSessionID, wor…</text></g></svg></div>
+  <p>An optional capability a transcript reader may also implement: best-effort token accounting for one session, returning nothing when the transcript carried no usage.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="154" viewBox="0 0 528 154" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="113" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><rect x="258" y="66" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="77" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,24)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface UsageReader</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/transcript</text><text x="10" y="50" font-size="10" fill="#92400e">An optional capability a</text><text x="10" y="65" font-size="10" fill="#92400e">transcript reader may also</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ReadUsage(harnessSessionID, wor…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>Reader (claudecode)</code>, <code>Reader (codex)</code></p>
   <details><summary>methods</summary><ul><li><code>ReadUsage(harnessSessionID, workingDir string) (*Usage, error)</code></li></ul></details>
@@ -248,8 +248,8 @@
 
 <section class="iface-card">
   <h3>interface PermissionModeDetector <span class="path">in pkg/turns</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="226" viewBox="0 0 528 226" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Conversation</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">chat</text></g><line x1="340" y1="113" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="185" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><rect x="258" y="102" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="113" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,77)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface PermissionModeDetector</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">PermissionMode(snap screen.Snap…</text></g></svg></div>
+  <p>Reports the harness&#39;s permission posture as read off the rendered screen; a negative result means the screen carries no readable signal, never that a particular mode is absent. Implementations do not all report the same axis.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="226" viewBox="0 0 528 226" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Conversation</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">chat</text></g><line x1="340" y1="113" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="185" x2="244" y2="112" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><rect x="258" y="102" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="113" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,60)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface PermissionModeDetector</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="50" font-size="10" fill="#92400e">Reports the harness&apos;s permission</text><text x="10" y="65" font-size="10" fill="#92400e">posture as read off the rendered</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">PermissionMode(snap screen.Snap…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>Conversation (chat)</code>, <code>Adapter (claudecode)</code>, <code>Adapter (codex)</code></p>
   <details><summary>methods</summary><ul><li><code>PermissionMode(snap screen.Snapshot) (string, bool)</code></li></ul></details>
@@ -275,8 +275,8 @@
 
 <section class="iface-card">
   <h3>interface SessionControlFlags <span class="path">in pkg/turns</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="154" viewBox="0 0 528 154" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="113" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="66" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="77" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,41)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface SessionControlFlags</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">SessionControlFlags() []string</text></g></svg></div>
+  <p>Declares the session-control arguments the chat layer reserves, so a caller-supplied argument that would collide with resume handling is rejected rather than silently overridden.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="154" viewBox="0 0 528 154" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="113" x2="244" y2="76" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="66" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="77" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,24)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface SessionControlFlags</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="50" font-size="10" fill="#92400e">Declares the session-control</text><text x="10" y="65" font-size="10" fill="#92400e">arguments the chat layer reserve…</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">SessionControlFlags() []string</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>Adapter (claudecode)</code>, <code>Adapter (pi)</code></p>
   <details><summary>methods</summary><ul><li><code>SessionControlFlags() []string</code></li></ul></details>
@@ -302,8 +302,8 @@
 
 <section class="iface-card">
   <h3>interface SessionResumer <span class="path">in pkg/turns</span></h3>
-  <p class="pending">(description pending — run the veracity-docs skill)</p>
-  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="514" viewBox="0 0 528 514" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><line x1="340" y1="329" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,308)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="401" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,380)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="473" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,452)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="246" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="257" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,221)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface SessionResumer</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ResumeArgs(harnessSessionID str…</text></g></svg></div>
+  <p>Supplies the argument fragment that resumes an existing harness session; an adapter that omits it declares the harness non-resumable.</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="514" viewBox="0 0 528 514" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="41" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><line x1="340" y1="113" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="185" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">opencode</text></g><line x1="340" y1="257" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">resumer</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><line x1="340" y1="329" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,308)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="340" y1="401" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,380)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="340" y1="473" x2="244" y2="256" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,452)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Adapter</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><rect x="258" y="246" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="257" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,204)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface SessionResumer</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/turns</text><text x="10" y="50" font-size="10" fill="#92400e">Supplies the argument fragment</text><text x="10" y="65" font-size="10" fill="#92400e">that resumes an existing harness</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ResumeArgs(harnessSessionID str…</text></g></svg></div>
   <p class="rel"><b>Depends on it:</b> none</p>
   <p class="rel"><b>Implemented by:</b> <code>resumer (claude)</code>, <code>resumer (codex)</code>, <code>resumer (opencode)</code>, <code>resumer (pi)</code>, <code>Adapter (claudecode)</code>, <code>Adapter (codex)</code>, <code>Adapter (pi)</code></p>
   <details><summary>methods</summary><ul><li><code>ResumeArgs(harnessSessionID string) []string</code></li></ul></details>
@@ -345,7 +345,7 @@
 
 <section class="card">
   <h3>main <span class="path">cmd/check-versions</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Offline drift sentry: compares the upstream versions pinned in pkg/versions against the npm registry&#39;s latest published release for each declared harness package. Prints a Markdown table or JSON and exits 0 when every pin matches, 1 on drift, and 2 when the pins could not be read or the registry could not be reached.</p>
   <p><em>Command check-versions compares the upstream-version pins in
 versions.json against the npm registry&#39;s latest published version
 for each declared package. Run via `make check-versions`.
@@ -365,7 +365,7 @@ clock at ~15s for the three currently-tracked harnesses.</em></p>
 
 <section class="card">
   <h3>main <span class="path">cmd/fakeharness</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>A scriptable stand-in for an interactive coding harness, used by the PTY-driven integration tests. It reads a JSON script named by an environment variable, switches its PTY slave to raw mode like a real TUI, and replays the script&#39;s timeline of painted frames, input waits and exits. Not a product binary.</p>
   <p><em>Command fakeharness is a scriptable stand-in for an interactive coding
 harness, used by the chat package&#39;s PTY-driven integration tests. It is not a
 product binary. It reads a JSON script (path in $FAKEHARNESS_SCRIPT), switches
@@ -378,7 +378,7 @@ internal/fakeharness for the script format and builder.</em></p>
 
 <section class="card">
   <h3>main <span class="path">cmd/harness-chatd</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>HTTP &#43; Server-Sent-Events gateway that exposes pkg/chat so non-Go clients can drive multi-turn harness conversations across a process boundary. It serves conversation, control-token, message, input, history and screen routes under /v1 and streams turn and input events as SSE frames. v1 ships no authentication and is meant to be bound to localhost.</p>
   <p><em>harness-chatd exposes pkg/chat over HTTP &#43; SSE so non-Go clients
 (Python, TypeScript, …) can drive multi-turn harness conversations
 across a process boundary.
@@ -391,7 +391,7 @@ v1 has no auth; bind to localhost. See clients/ for reference clients.</em></p>
 
 <section class="card">
   <h3>main <span class="path">cmd/harness-wrapper</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The CLI front-end over pkg/wrapper and pkg/chat. It offers transparent PTY passthrough, a one-shot run that reads a prompt from stdin and prints the reply, a machine-readable structured-run that emits one turnproto JSON result line, and tmux-backed detached sessions with attach, status, kill and list subcommands. The dangerous sandbox-defaults injection is deliberately owned here, at the CLI boundary.</p>
   <p><em>Command harness-wrapper is a thin CLI front-end for pkg/wrapper.Run.
 It supervises an external CLI agent harness under a pseudoterminal and
 forwards the user&#39;s terminal to it.
@@ -406,7 +406,7 @@ Supported harness names: codex, claude.</em></p>
 
 <section class="card">
   <h3>main <span class="path">docs/gen</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The static-site generator for the documentation. It renders the canonical markdown under docs/md into themed HTML with syntax-highlighted code and inlined, theme-aware SVG diagrams, and can serve the built site locally for preview. It is a nested Go module so its rendering dependencies stay out of the main module&#39;s graph.</p>
   <p><em>Chroma syntax-highlight CSS generation.
 
 Code blocks are rendered class-based (see markdown.go), so the same HTML works
@@ -462,7 +462,7 @@ currentColor / var(--...)) and is theme-aware and crisp at any zoom.</em></p>
 
 <section class="card">
   <h3>env <span class="path">internal/env</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The execution-environment core: a Provisioner axis for where the machine comes from, a Containment axis for what the agent may touch, the Workspace contract they meet at, the Compose combinator that joins them, and the lifecycle engine covering credential injection, redaction and retention. The model is batch request/response — exec, upload, download — with degenerate local and identity implementations shipped alongside the abstractions.</p>
   <p><em>Package env is a clean-room Go re-implementation of the meta-harness
 environment-layer core (design §3–§6): the two orthogonal axes — a
 Provisioner (WHERE the machine comes from) and a Containment (WHAT the agent
@@ -485,7 +485,7 @@ avoiding a cycle.</em></p>
 
 <section class="card">
   <h3>daytona <span class="path">internal/env/daytona</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The Daytona provisioner: elastically provisioned remote sandboxes exposed through the internal/env Workspace contract. It depends only on SDK interfaces declared locally rather than on the real Daytona SDK, so unit tests inject a fake and the live client is wired in only for the live test tier.</p>
   <p><em>Package daytona is the Daytona provisioner (design §3, §4): elastically
 provisioned remote sandboxes.
 
@@ -526,7 +526,7 @@ The core imports no driver, so this child-&gt;parent import is cycle-free.</em><
 
 <section class="card">
   <h3>fakeharness <span class="path">internal/fakeharness</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The script format, fluent builder and one-time binary build behind the scriptable fake harness. It gives the chat tests a real program on a real PTY, so replays exercise the actual screen emulator, turn watcher and idle-completion timing that corpus replay alone cannot reach.</p>
   <p><em>Package fakeharness provides a scriptable stand-in for an interactive coding
 harness (claude-code, codex). It is a REAL program: cmd/fakeharness compiles
 it to a binary that chat.Open spawns over a real PTY, so replaying a script
@@ -546,7 +546,7 @@ an expected byte sequence, optionally echo the captured prompt back.</em></p>
 
 <section class="card">
   <h3>main <span class="path">internal/screenbench/cmd/screenbench</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The terminal-emulator bake-off command. It replays each recorded scenario&#39;s raw PTY bytes through every registered emulator candidate and reports fidelity against the expected snapshot, stability after settling, and throughput — the measurement behind the project&#39;s vt100 emulator choice.</p>
   <p><em>screenbench replays recorded PTY byte streams through each registered
 vt100 emulator candidate and reports fidelity, stability, and
 throughput against ground-truth expected text.
@@ -559,7 +559,7 @@ throughput against ground-truth expected text.
 
 <section class="card">
   <h3>main <span class="path">internal/screenbench/cmd/screenbench-record</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Records a live harness session under wrapper supervision, capturing the raw PTY byte stream and scenario metadata into a corpus directory. It runs interactively or unattended from a JSON script of wait, send, sleep and interrupt steps, bounded by an idle timeout and a maximum session duration.</p>
   <p><em>screenbench-record runs an interactive harness under wrapper
 supervision while capturing the raw PTY byte stream to a corpus
 scenario directory.
@@ -653,7 +653,7 @@ resulting screen snapshot against expected.txt.</em></p>
 
 <section class="card">
   <h3>chat <span class="path">pkg/chat</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The Go chat-conversation API. Each Conversation owns one PTY-supervised harness process and exposes a FIFO control token, one assistant turn per Send, an event stream, request/answer handling for blocking prompts, transcript-backed history, and live permission-mode switching. Persistence is pluggable through the Store interface, and transports deliberately live outside this package.</p>
   <p><em>Package chat is the Go-level chat-conversation API on top of
 harness-wrapper. A Conversation owns one PTY-supervised harness
 process (Codex, Claude Code, …) and exposes a small interface:
@@ -705,7 +705,7 @@ same chat.Store interface.</em></p>
 
 <section class="card">
   <h3>discovery <span class="path">pkg/discovery</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Answers whether each harness declared in the version pins is installed on PATH and at what version, probing the binary&#39;s own version flag behind a cache keyed on binary path and modification time. It is read-only with respect to the system — it never installs, writes, or alters PATH — and treats &#39;not installed&#39; and &#39;probe failed&#39; as ordinary results rather than errors.</p>
   <p><em>Package discovery answers &#34;is harness X&#39;s CLI installed on PATH,
 and at what version?&#34; for every harness declared in versions.json.
 It is the single source of truth for harness availability across
@@ -720,7 +720,7 @@ repeated lookups (e.g. in a long-running supervisor) are cheap.</em></p>
 
 <section class="card">
   <h3>models <span class="path">pkg/discovery/models</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>A curated static registry of the model identifiers each harness accepts, plus a pure parser for the interactive model-picker screen. It is deliberately offline, because no supported harness exposes a machine-readable model list, so callers can validate or offer models without launching a CLI.</p>
   <p><em>Package models is the curated static model registry for the supported
 harnesses — the offline half of meta-harness&#39;s src/discovery/models.ts.
 
@@ -747,7 +747,7 @@ Schema of models.json:
 
 <section class="card">
   <h3>env <span class="path">pkg/env</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The public host-side client for running one structured turn inside a workspace. It uploads the prompt as a file so argv can never carry it, executes the structured-run runner in the guest, parses the last JSON line of stdout into a structured result, and optionally downloads the transcript. A non-zero guest exit is returned as a parsed result rather than an error.</p>
   <p><em>Package env hosts the HOST-side structured-turn client: the analog of
 meta-harness src/env/turn.ts runStructuredTurn(ctx, ws: Workspace, cfg).
 
@@ -769,7 +769,7 @@ harness banner / log noise printed before it.</em></p>
 
 <section class="card">
   <h3>harness <span class="path">pkg/harness</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The per-harness orchestration and capability layer. Profiles resolve, once per run, which capabilities a harness actually offers — session-id extraction, resume arguments, stream parsing, hooks — while Run supervises a headless run and acquires its transcript through hooks or stream parsing, and RunTurn drives exactly one interactive turn on top of the chat layer. It is distinct from the TUI turn adapters under pkg/turns/harness.</p>
   <p><em>Package harness is the per-harness orchestration &#43; capability layer for
 harness-wrapper. It sits ABOVE the thin pkg/wrapper supervisor: a caller
 resolves a per-harness Profile to a run-specific ResolvedProfile (after any
@@ -793,7 +793,7 @@ an additive change, not a breaking re-migration of the Profile shape.</em></p>
 
 <section class="card">
   <h3>all <span class="path">pkg/harness/all</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>A side-effect-only package that blank-imports every built-in harness profile so that lookups by name resolve them. Callers who need just one harness may blank-import that subpackage instead.</p>
   <p><em>Package all blank-imports every built-in harness profile so that
 harness.For(name) resolves them. Import it for its side effects:
 
@@ -806,7 +806,7 @@ subpackage (e.g. pkg/harness/claude) instead.</em></p>
 
 <section class="card">
   <h3>claude <span class="path">pkg/harness/claude</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The harness profile for the Claude Code CLI. It extracts the session id from Claude&#39;s machine-readable init event and supplies the resume argument prefix, with later capabilities covering stream parsing and hook installation. Importing the package registers the profile.</p>
   <p><em>Package claude implements the harness.Profile for the Claude Code CLI.
 
 P1 provides the resume capabilities: line-based session-id extraction (from
@@ -944,7 +944,7 @@ pkg/harness/all to register every built-in.</em></p>
 
 <section class="card">
   <h3>oneshot <span class="path">pkg/oneshot</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The in-process library for running exactly one headless harness turn and classifying it into the frozen structured-turn status vocabulary. It owns the unattended policy — quit after the turn, auto-answer blocking prompts affirmatively, prefer the harness&#39;s own transcript for the reply — and returns every classified outcome with a nil error, reserving errors for unclassifiable failures.</p>
   <p><em>Package oneshot is the IN-PROCESS Go library for the typed one-shot turn — the
 parity sibling of meta-harness&#39;s `oneshot` library subpath
 (runOneShot / runOneShotDetailed), returning the typed outcome union under a
@@ -979,7 +979,7 @@ pkg/transcript readers). Neither omission is a parity miss.</em></p>
 
 <section class="card">
   <h3>screen <span class="path">pkg/screen</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Wraps a vt100 terminal emulator so a harness&#39;s raw PTY byte stream becomes queryable rendered state. It exposes writes, coherent point-in-time snapshots, a monotonic change generation, coalesced change subscriptions, and a resize that coordinates a fallible peer without holding the read lock.</p>
   <p><em>Package screen wraps a vt100 terminal emulator (vt10x, per ADR-001)
 behind a small concurrent-safe surface. Callers feed raw PTY bytes
 via Write and read coherent screen snapshots via Snapshot. Subscribe
@@ -996,7 +996,7 @@ generation counter for change detection.</em></p>
 
 <section class="card">
   <h3>transcript <span class="path">pkg/transcript</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The read-only view of harness-owned session logs, together with the canonical harness-agnostic event model, its public and durable serializations, normalized token accounting, and the shared JSONL line helpers. It is a leaf package that imports neither the turns nor the chat layer, so anything may parse a harness log.</p>
   <p><em>Package transcript is a read-only view of harness-owned conversation
 logs (Codex&#39;s ~/.codex/sessions/, Claude Code&#39;s ~/.claude/projects/).
 
@@ -1014,7 +1014,7 @@ pkg/chat — it&#39;s a leaf package that can be imported anywhere.</em></p>
 
 <section class="card">
   <h3>claudecode <span class="path">pkg/transcript/claudecode</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Reads Claude Code&#39;s own JSONL session logs, locating a session by encoding the working directory into its projects path, and parses them into canonical transcript events plus optional token usage.</p>
   <p><em>Package claudecode reads Claude Code session transcripts.
 
 Claude Code writes one JSONL per session at:
@@ -1048,7 +1048,7 @@ wrapper dedups events by NativeID; loom&#39;s Event had neither field).</em></p>
 
 <section class="card">
   <h3>codex <span class="path">pkg/transcript/codex</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Reads Codex&#39;s rollout JSONL sessions from its date-partitioned sessions tree, parsing response-item envelopes into canonical transcript events and usage. It can also locate the most recent session for a working directory when no session id is known.</p>
   <p><em>Package codex reads Codex CLI session transcripts.
 
 Codex writes one JSONL per session at:
@@ -1078,7 +1078,7 @@ loom can delegate to this without a serving regression.</em></p>
 
 <section class="card">
   <h3>pi <span class="path">pkg/transcript/pi</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Reads pi&#39;s JSONL agent sessions, locating a session by working-directory slug with a directory-walk fallback and confirming the match against the in-file id header before parsing its typed content blocks.</p>
   <p><em>Package pi reads pi coding-agent session transcripts
 (@earendil-works/pi-coding-agent, binary &#34;pi&#34; —
 github.com/earendil-works/pi).
@@ -1112,7 +1112,7 @@ Schema notes — pi session format v3:
 
 <section class="card">
   <h3>turnproto <span class="path">pkg/turnproto</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The neutral wire contract for one supervised turn: the status vocabulary, the canonical status-to-exit-code table, the frozen stderr deadline anchor, the structured result object, and the tolerant last-JSON-line parser hosts use to read it. Every exported name and JSON tag here is a frozen cross-repository contract.</p>
   <p><em>Package turnproto is the ONE source of truth for the neutral structured-turn
 protocol: the exit codes, the deadline anchor line, and the result-schema type
 shared by the producer (the guest structured-run subcommand) and any host-side
@@ -1128,7 +1128,7 @@ constants, so do not rename fields or change JSON tag spellings.</em></p>
 
 <section class="card">
   <h3>turns <span class="path">pkg/turns</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Defines the per-harness adapter contract that turns screen snapshots and wrapper status into a small set of turn events, the optional capability interfaces an adapter may opt into, the model for interactive input requests, and the watcher that pumps a wrapper session and a screen into one event stream.</p>
   <p><em>Package turns translates low-level harness signals — emulated screen
 state changes and wrapper-level status events — into a small
 vocabulary of chat-oriented turn events: turn complete, tool call,
@@ -1162,7 +1162,7 @@ waiting_for_input.</em></p>
 
 <section class="card">
   <h3>claudecode <span class="path">pkg/turns/harness/claudecode</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The Claude Code turn adapter. It detects end-of-turn from the thinking-summary line, reports busy from the interrupt footer and spinner, isolates the assistant reply from TUI chrome, parses trust and bypass-acceptance dialogs into structured input requests, reads the permission-mode footer, and supplies graceful quit, resume and transcript capabilities.</p>
   <p><em>Package claudecode provides a turn-detection adapter for Anthropic&#39;s
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
@@ -1191,7 +1191,7 @@ tests under test/corpus/claude-code/ are the early-warning signal.</em></p>
 
 <section class="card">
   <h3>codex <span class="path">pkg/turns/harness/codex</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The Codex turn adapter. It completes a turn on a fresh end-of-turn footer, extracts or locates the resume session id, surfaces auto-dismissable startup interstitials and strictly-recognised approval dialogs as input requests, and reports Codex&#39;s collaboration-axis mode from the rendered screen.</p>
   <p><em>Package codex provides a turn-detection adapter for the Codex CLI
 (codex-cli, github.com/openai/codex).
 
@@ -1264,7 +1264,7 @@ they&#39;re added.</em></p>
 
 <section class="card">
   <h3>pi <span class="path">pkg/turns/harness/pi</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The pi turn adapter. It has no confirmed on-screen end-of-turn marker, so completion falls back to the busy-aware idle path driven by the working spinner and the idle status line, alongside a readiness check, a graceful quit sequence, resume arguments and transcript reading.</p>
   <p><em>Package pi provides a turn-detection adapter for the pi coding agent
 (@earendil-works/pi-coding-agent, binary &#34;pi&#34; —
 github.com/earendil-works/pi).
@@ -1304,7 +1304,7 @@ test/corpus/pi/ will be the early-warning signal when they&#39;re added.</em></p
 
 <section class="card">
   <h3>versions <span class="path">pkg/versions</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The read API for the embedded version pins that bind each harness adapter to the upstream release it was last verified against. Embedding keeps lookups working under trimmed builds and from any working directory, and an equivalent file can also be read from an external path for drift comparison.</p>
   <p><em>Package versions reads the repo-root versions.json file that pins
 each supported harness CLI to a specific upstream package version.
 
@@ -1332,7 +1332,7 @@ added harnesses). Package and Binary are required for every entry.</em></p>
 
 <section class="card">
   <h3>wrapper <span class="path">pkg/wrapper</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The foundation layer: it launches a harness under a pseudoterminal, supervises the process, and classifies the run into a small normalized status vocabulary with a canonical error taxonomy. It also owns the execution-mode knobs — reasoning effort, model and permission rung — translating each into that harness&#39;s own launch arguments, and exposes a live session handle for attaching output, writing input and resizing.</p>
   <p><em>Package wrapper supervises an external CLI agent harness running under
 a pseudoterminal. It runs the harness, observes its output and
 lifecycle, and returns a normalized status when the harness exits or
@@ -1352,7 +1352,7 @@ terminal control.</em></p>
 
 <section class="card">
   <h3>detector <span class="path">pkg/wrapper/internal/detector</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Generic pattern primitives for harness classifiers: case-insensitive substring sets, trailing-prompt suffix matching, and parsers for retry-after hints and limit reset times. It is deliberately stateless — real classifiers compose these primitives with the wrapper&#39;s idle and quiet windows.</p>
   <p><em>Package detector provides generic pattern primitives for harness
 classifiers. Patterns are matched against the recent harness output
 (typically the last ~64KB), with ANSI escapes already stripped.
@@ -1401,7 +1401,7 @@ loom&#39;s residual classifier covers those cases.</em></p>
 
 <section class="card">
   <h3>opencode <span class="path">pkg/wrapper/internal/harness/opencode</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The classifier fingerprint set for the OpenCode CLI. Because OpenCode is provider-agnostic and surfaces no single anchored API-error format, it ships conservative cross-provider cost, retry and prompt patterns and leaves the API-error matcher unset until a recorded corpus exists.</p>
   <p><em>Package opencode holds the classifier patterns for the OpenCode CLI
 (opencode-ai, binary &#34;opencode&#34; — github.com/sst/opencode).
 
@@ -1418,7 +1418,7 @@ once a recorded corpus under test/corpus/opencode/ exists.</em></p>
 
 <section class="card">
   <h3>pi <span class="path">pkg/wrapper/internal/harness/pi</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>The classifier fingerprint set for the pi coding agent. Like OpenCode it is provider-agnostic, so it carries conservative cross-provider cost, retry and prompt patterns and no API-error matcher pending a recorded corpus.</p>
   <p><em>Package pi holds the classifier patterns for the pi coding agent
 (@earendil-works/pi-coding-agent, binary &#34;pi&#34; —
 github.com/earendil-works/pi).
@@ -1451,7 +1451,7 @@ vocabulary is not part of the wrapper&#39;s API stability surface.</em></p>
 
 <section class="card">
   <h3>neutral <span class="path">test/conformance/neutral</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>Reflects Go DTO structs into the language-neutral field vocabulary that the cross-language conformance corpus freezes. It is the single place the Go-to-neutral mapping lives, shared by both generators so they emit identical field descriptions, and it deliberately hides Go-only distinctions a TypeScript consumer cannot observe.</p>
   <p><em>Package neutral reflects Go DTO structs into the language-neutral field
 vocabulary the cross-language conformance corpus freezes. It is the ONE place
 the Go→neutral mapping lives, shared by the two generators (the chatd-hosted
@@ -1467,7 +1467,7 @@ the concrete Go type name behind a nested DTO. See test/conformance/README.md.</
 
 <section class="card">
   <h3>main <span class="path">test/fakeharness/mock</span></h3>
-  <p class="pending">(summary pending)</p>
+  <p>A non-PTY mock harness binary used by the wrapper&#39;s own tests. Its flags select a canned behaviour — completed, failed, stuck, waiting for input, cost-limited, API-error and similar — so supervision and classification paths can be exercised deterministically.</p>
   <p><em>Mock CLI harness for harness-wrapper tests. It behaves like an
 interactive agent CLI: prints a banner, performs a configurable
 behavior selected by --mode, and exits with a predictable code.

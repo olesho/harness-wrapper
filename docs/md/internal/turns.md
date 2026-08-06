@@ -108,10 +108,54 @@ func (w *Watcher) Close() error
 1. **status pump** — `sess.Events()` → `adapter.OnWrapperStatus(...)`.
 2. **screen pump** — `scr.Subscribe()` → `adapter.OnScreen(...)` (pass `nil` for `scr` to skip).
 
+The Watcher has **no ticker, no polling and no debounce of its own** — it is purely edge-driven. Two
+things stand in for those:
+
+- **coalescing** happens in [`screen`](screen.md): subscriber channels are buffered 1 and sends are
+  non-blocking, so a burst of writes collapses into a single wake-up;
+- **timing** — the confirm and idle windows that decide *when a turn is done* — lives one layer up, in
+  [`pkg/chat`](../guide/chat.md#how-a-turn-completes). Adapters report what they see; chat decides when
+  that is enough.
+
+Because both pumps call the adapter from independent goroutines, per-adapter state (the last
+fingerprint, the last input request) must be mutex-guarded — which is why the contract demands
+concurrency safety rather than merely suggesting it.
+
+`scr.Subscribe()` is called **synchronously inside `Watch`**, before the pump goroutine starts, so no
+snapshot can be missed in the gap.
+
 The Watcher backfills `Event.At` when the adapter leaves it zero and enriches events with `HTTPCode` /
 `RetryAfter` from the originating `SessionEvent`. `Events()` closes after both sources stop **and**
 `Close()` is called; `Close` stops the screen pump but does **not** stop the `wrapper.Session` — the
 caller owns `sess.Stop`.
+
+## What each adapter keys on
+
+The signals themselves are the part most likely to break on an upstream release, so they live in one
+place per adapter and are pinned by [corpus replay](testing/corpus.md). The shapes, as of the
+[current pins](versions-drift.md):
+
+| Adapter | Turn complete | Busy | Session id | Blocking prompts |
+|---|---|---|---|---|
+| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | the "esc to interrupt" footer + the spinner's elapsed-time form | the `--resume <uuid>` hint, captured from the **raw line stream** as the TUI tears down | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
+| `codex` | a fresh end-of-turn footer, deduped by exact text | — (no busy model) | scraped from the resume hint, plus an on-disk lookup of the latest session for the working directory | startup interstitials (update, model migration, generic notice) and **approval dialogs** |
+| `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | — | — |
+| `opencode` | — (idle fallback) | — | — | — |
+| `generic` | wrapper status only | — | — | — |
+
+Two deliberate asymmetries:
+
+- **codex emits a balancing `InputResolved` before a replacing `InputRequested`** when one interstitial
+  supersedes another, so a client's "current prompt" never silently changes identity. claude-code does
+  not, because its dialogs do not chain that way.
+- **codex's approval detection is mandatory-strict**: an anchor alone is not enough — it also requires
+  a proceed row, a deny row, and a live selector parsed from the text *after* the anchor. A false
+  positive here would deadlock a turn, so the recogniser is biased hard toward missing rather than
+  inventing one.
+
+A known gap on claude-code: its **per-tool permission dialog is not detected at all**. That is what
+makes restrictive rungs stall an unattended turn — see
+[Permissions](../guide/permissions.md#what-is-actually-enforced).
 
 ## Adding a harness
 

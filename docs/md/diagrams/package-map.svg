@@ -1,0 +1,104 @@
+<svg viewBox="0 0 820 646" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="harness-wrapper package map">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.4; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.5; }
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; stroke-dasharray: 5 3; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12.5px; font-weight: 700; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .lbl { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+    .mono { font-family: var(--font-mono, monospace); }
+  </style>
+
+  <!-- Lane 1: entry points -->
+  <rect class="lane" x="16" y="16" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="36">ENTRY POINTS — binaries you run</text>
+  <rect class="accent" x="28" y="46" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="120" y="68" text-anchor="middle">cmd/harness-wrapper</text>
+  <text class="ts" x="120" y="84" text-anchor="middle">CLI: passthrough · run · tmux</text>
+  <rect class="accent" x="224" y="46" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="316" y="68" text-anchor="middle">cmd/harness-chatd</text>
+  <text class="ts" x="316" y="84" text-anchor="middle">HTTP + SSE gateway</text>
+  <rect class="node" x="420" y="46" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="68" text-anchor="middle">cmd/check-versions</text>
+  <text class="ts" x="512" y="84" text-anchor="middle">npm drift sentry</text>
+  <rect class="node" x="616" y="46" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="708" y="68" text-anchor="middle">cmd/fakeharness</text>
+  <text class="ts" x="708" y="84" text-anchor="middle">scriptable test harness</text>
+
+  <!-- Lane 2: session + orchestration -->
+  <rect class="lane" x="16" y="118" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="138">SESSION &amp; ORCHESTRATION</text>
+  <rect class="accent" x="28" y="148" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="120" y="170" text-anchor="middle">pkg/chat</text>
+  <text class="ts" x="120" y="186" text-anchor="middle">Conversation · turns · events</text>
+  <rect class="node" x="224" y="148" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="316" y="170" text-anchor="middle">pkg/chat/memstore</text>
+  <text class="ts" x="316" y="186" text-anchor="middle">in-memory Store</text>
+  <rect class="node" x="420" y="148" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="170" text-anchor="middle">pkg/harness</text>
+  <text class="ts" x="512" y="186" text-anchor="middle">profiles · hooks · RunTurn</text>
+  <rect class="node" x="616" y="148" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="708" y="170" text-anchor="middle">pkg/oneshot</text>
+  <text class="ts" x="708" y="186" text-anchor="middle">one typed turn, headless</text>
+
+  <!-- Lane 3: interpretation -->
+  <rect class="lane" x="16" y="220" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="240">INTERPRETATION — what the harness is doing</text>
+  <rect class="node" x="28" y="250" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="120" y="272" text-anchor="middle">pkg/turns</text>
+  <text class="ts" x="120" y="288" text-anchor="middle">Adapter · Watcher · events</text>
+  <rect class="node" x="224" y="250" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="316" y="272" text-anchor="middle">pkg/turns/harness/*</text>
+  <text class="ts" x="316" y="288" text-anchor="middle">codex · claudecode · pi · …</text>
+  <rect class="node" x="420" y="250" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="272" text-anchor="middle">pkg/screen</text>
+  <text class="ts" x="512" y="288" text-anchor="middle">vt100 emulator (vt10x)</text>
+  <rect class="node" x="616" y="250" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="708" y="272" text-anchor="middle">pkg/transcript</text>
+  <text class="ts" x="708" y="288" text-anchor="middle">JSONL readers → Event</text>
+
+  <!-- Lane 4: process supervision -->
+  <rect class="lane" x="16" y="322" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="342">PROCESS SUPERVISION</text>
+  <rect class="accent" x="28" y="352" width="380" height="48" rx="8"/>
+  <text class="tb mono" x="218" y="374" text-anchor="middle">pkg/wrapper</text>
+  <text class="ts" x="218" y="390" text-anchor="middle">PTY supervisor · Status classifier · permission argv</text>
+  <rect class="node" x="420" y="352" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="374" text-anchor="middle">pkg/wrapper/trace</text>
+  <text class="ts" x="512" y="390" text-anchor="middle">diagnostic events</text>
+  <rect class="node" x="616" y="352" width="184" height="48" rx="8"/>
+  <text class="tb" x="708" y="374" text-anchor="middle">harness process</text>
+  <text class="ts" x="708" y="390" text-anchor="middle">under a real PTY</text>
+
+  <!-- Lane 5: contracts + support -->
+  <rect class="lane" x="16" y="424" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="444">CONTRACTS &amp; SUPPORT</text>
+  <rect class="node" x="28" y="454" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="120" y="476" text-anchor="middle">pkg/turnproto</text>
+  <text class="ts" x="120" y="492" text-anchor="middle">structured-turn wire format</text>
+  <rect class="node" x="224" y="454" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="316" y="476" text-anchor="middle">pkg/versions</text>
+  <text class="ts" x="316" y="492" text-anchor="middle">pinned upstream releases</text>
+  <rect class="node" x="420" y="454" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="476" text-anchor="middle">pkg/discovery</text>
+  <text class="ts" x="512" y="492" text-anchor="middle">installed? version? models</text>
+  <rect class="node" x="616" y="454" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="708" y="476" text-anchor="middle">pkg/env · internal/env</text>
+  <text class="ts" x="708" y="492" text-anchor="middle">workspaces &amp; containment</text>
+
+  <!-- Lane 6: dev tooling -->
+  <rect class="lane" x="16" y="526" width="788" height="90" rx="10"/>
+  <text class="lbl" x="28" y="546">DEVELOPMENT &amp; DOCS — not shipped to callers</text>
+  <rect class="node" x="28" y="556" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="120" y="578" text-anchor="middle">internal/fakeharness</text>
+  <text class="ts" x="120" y="594" text-anchor="middle">scripted real-PTY fake</text>
+  <rect class="node" x="224" y="556" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="316" y="578" text-anchor="middle">internal/screenbench</text>
+  <text class="ts" x="316" y="594" text-anchor="middle">emulator bake-off + recorder</text>
+  <rect class="node" x="420" y="556" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="512" y="578" text-anchor="middle">test/corpus</text>
+  <text class="ts" x="512" y="594" text-anchor="middle">recorded bytes · frozen wire</text>
+  <rect class="node" x="616" y="556" width="184" height="48" rx="8"/>
+  <text class="tb mono" x="708" y="578" text-anchor="middle">clients/ · docs/gen</text>
+  <text class="ts" x="708" y="594" text-anchor="middle">Python + TS · docs site</text>
+</svg>

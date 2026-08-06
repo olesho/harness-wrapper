@@ -179,13 +179,62 @@ Errors are mapped to a stable taxonomy (the `Class` field above), independent of
 
 ## Trace vs. events
 
-`Config.Trace` is a `trace.Emitter` — diagnostic observations (`wrapper_started`, `pty_opened`,
-`output_quiet`, `output_classify_threshold`, `harness_stale`, `harness_classified`, `harness_exited`,
-…). The trace vocabulary is **not** part of the API stability surface; never make control-flow
-decisions on it.
+`Config.Trace` is a `trace.Emitter` — diagnostic observations. The trace vocabulary is **not** part of
+the API stability surface; never make control-flow decisions on it.
+
+```go
+type Event struct {
+	At     time.Time      `json:"at"`
+	Kind   string         `json:"kind"`
+	Fields map[string]any `json:"fields,omitempty"`
+}
+type Emitter interface{ Emit(Event) }
+
+var Discard Emitter                              // the default when Config.Trace is nil
+func NewWriterEmitter(w io.Writer) Emitter        // one JSON object per line
+func NewSlogAdapter(logger *slog.Logger) Emitter  // Kind → message, Fields → attrs
+```
+
+| Phase | Kinds |
+|---|---|
+| Startup | `wrapper_started`, `pty_opened` |
+| Terminal setup (TTY passthrough only) | `winsize_initial`, `raw_mode_enabled`, `raw_mode_setup_failed`, `winsize_changed` |
+| Quiet thresholds | `output_quiet`, `output_classify_threshold`, `harness_stale` |
+| Classification | `harness_api_error`, `harness_blocked_by_cost`, `harness_retry_later`, `harness_waiting_for_input`, `harness_classified` |
+| Shutdown | `pty_closed`, `harness_exited` |
+
+The CLI adds two of its own around the supervised run: `wrapper_cli_signal` and `wrapper_cli_exited` —
+which is what makes [`harness-wrapper status --json`](../guide/cli.md#detached-tmux) able to report a
+detached session's last known state from the trace file alone.
+
+Classification traces fire on **every** dispatching tick; `SessionEvent`s do not — identical
+consecutive status/reason pairs are suppressed. So a trace stream is noisier than the event stream by
+design.
 
 `Session.Events()` is the typed contract for state transitions (the `Status` vocabulary). Use events,
 not trace, for control flow.
+
+## Buffers, cadences and drop policy
+
+Beyond the four duration defaults above, the supervisor has fixed internal bounds. They matter because
+two of them **drop rather than block** — the wrapper will never let an observer back-pressure the
+harness:
+
+| Bound | Value | Behaviour when full |
+|---|---|---|
+| Recent-output buffer | ~64 KiB tail | oldest bytes fall off; this is what `RecentOutput()` and the classifier see |
+| PTY read chunk | 32 KiB | — |
+| `Session.Events()` channel | 16 | **event dropped** |
+| Attach-sink queue (per `AttachOutput` writer) | 64 chunks | **bytes dropped for that sink only** |
+| Classifier dispatch channel | 1 | tick skipped |
+| Classifier poll cadence | `IdleQuiet / 3`, floored at 100 ms | — (5 s at the default `IdleQuiet`) |
+
+The one path that is deliberately **lossless** is `Config.OnLine`: it is called synchronously on the
+PTY read goroutine, so a slow callback back-pressures the harness rather than losing a line. That is
+what makes it safe to hang session-id capture and transcript streaming off it.
+
+Classification does not begin until the harness has emitted its first byte, and every threshold latch
+resets whenever new output arrives.
 
 ## Sandbox-defaults injection
 

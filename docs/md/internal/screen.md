@@ -46,6 +46,19 @@ type Snapshot struct {
   resize blocks (a PTY window-size ioctl can stall in the kernel behind an in-flight stdin write);
   concurrent resizes are serialized separately so the peer op and its commit never interleave.
 
+## What it deliberately does not offer
+
+There is no per-line accessor, no region or cell query, no attribute access, and no scrollback API.
+`Snapshot().Text` plus `Generation()` is the entire read surface, and adapters match against that
+text. Two consequences worth knowing before writing an adapter:
+
+- **Trailing whitespace on each row is preserved.** Rows are right-padded by the emulator, so a marker
+  regex must not anchor with `$` unless it tolerates the padding — several adapter patterns depend on
+  exactly this.
+- **Text is the contract, not the cells.** Colour and styling are dropped, so a marker that is only
+  distinguishable by attribute cannot be detected here. Find a textual signal, or fall back to the
+  harness's [transcript](transcript.md).
+
 The emulator wrapping is intentionally thin — `Write` / `Snapshot` / `Resize` / `ResizeWithPeer` /
 `Subscribe` is the whole surface. If a harness's rendering ever exceeds the emulator's fidelity, the
 fix is to bias that [adapter](turns.md) toward the harness's own [transcript](transcript.md) for text and

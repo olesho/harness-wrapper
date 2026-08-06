@@ -1,0 +1,77 @@
+<svg viewBox="0 0 800 452" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Execution environments: a Provisioner and a Containment compose into one Workspace">
+  <style>
+    .node { fill: var(--d-node); stroke: var(--d-node-stroke); stroke-width: 1.4; }
+    .accent { fill: var(--d-accent-soft); stroke: var(--d-accent); stroke-width: 1.5; }
+    .lane { fill: var(--d-lane); stroke: var(--d-node-stroke); stroke-width: 1; stroke-dasharray: 5 3; }
+    .tb { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 12.5px; font-weight: 700; }
+    .t { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; }
+    .ts { fill: var(--d-line); font-family: var(--font-sans, sans-serif); font-size: 10.5px; }
+    .lbl { fill: var(--d-node-text); font-family: var(--font-sans, sans-serif); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+    .mono { font-family: var(--font-mono, monospace); }
+    .line { stroke: var(--d-line); stroke-width: 1.5; fill: none; }
+  </style>
+  <defs>
+    <marker id="e-arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="var(--d-line)"/>
+    </marker>
+  </defs>
+
+  <!-- two axes -->
+  <rect class="lane" x="20" y="16" width="370" height="122" rx="10"/>
+  <text class="lbl" x="32" y="36">PROVISIONER — where the machine comes from</text>
+  <rect class="node" x="32" y="46" width="170" height="48" rx="8"/>
+  <text class="tb mono" x="117" y="68" text-anchor="middle">Local(root)</text>
+  <text class="ts" x="117" y="84" text-anchor="middle">host dirs, host == guest</text>
+  <rect class="node" x="212" y="46" width="166" height="48" rx="8"/>
+  <text class="tb mono" x="295" y="68" text-anchor="middle">Daytona(cfg)</text>
+  <text class="ts" x="295" y="84" text-anchor="middle">remote sandbox</text>
+  <text class="ts" x="32" y="120">Preflight → Create → a Workspace exists</text>
+
+  <rect class="lane" x="410" y="16" width="370" height="122" rx="10"/>
+  <text class="lbl" x="422" y="36">CONTAINMENT — what the agent may touch</text>
+  <rect class="node" x="422" y="46" width="170" height="48" rx="8"/>
+  <text class="tb mono" x="507" y="68" text-anchor="middle">None()</text>
+  <text class="ts" x="507" y="84" text-anchor="middle">identity layer</text>
+  <rect class="node" x="602" y="46" width="166" height="48" rx="8"/>
+  <text class="tb mono" x="685" y="68" text-anchor="middle">OpenShell(opts)</text>
+  <text class="ts" x="685" y="84" text-anchor="middle">wraps exec + transfers</text>
+  <text class="ts" x="422" y="120">Preflight → Layer(policy) → an exec / path / transfer layer</text>
+
+  <!-- compose -->
+  <path class="line" marker-end="url(#e-arr)" d="M205,138 L330,176"/>
+  <path class="line" marker-end="url(#e-arr)" d="M595,138 L470,176"/>
+  <rect class="accent" x="170" y="178" width="460" height="52" rx="8"/>
+  <text class="tb mono" x="400" y="200" text-anchor="middle">Compose(inner Workspace, layer ContainmentLayer)</text>
+  <text class="ts" x="400" y="218" text-anchor="middle">exec wrapped · transfers staged across the boundary · paths remapped</text>
+
+  <path class="line" marker-end="url(#e-arr)" d="M400,230 L400,256"/>
+
+  <!-- workspace -->
+  <rect class="node" x="140" y="258" width="520" height="66" rx="9"/>
+  <text class="tb mono" x="400" y="282" text-anchor="middle">Workspace</text>
+  <text class="ts mono" x="400" y="302" text-anchor="middle">Exec · Upload · Download · GuestPath · HostAlias · Destroy</text>
+  <text class="ts" x="400" y="317" text-anchor="middle">batch request/response — no PTY, no streaming</text>
+
+  <!-- lifecycle -->
+  <rect class="lane" x="20" y="342" width="760" height="94" rx="10"/>
+  <text class="lbl" x="32" y="362">LIFECYCLE — every failure unwinds in reverse, best-effort, aggregated</text>
+  <rect class="node" x="32" y="372" width="140" height="50" rx="7"/>
+  <text class="t" x="102" y="392" text-anchor="middle">1 · preflight</text>
+  <text class="ts" x="102" y="409" text-anchor="middle">no resources yet</text>
+  <path class="line" marker-end="url(#e-arr)" d="M172,397 L184,397"/>
+  <rect class="node" x="186" y="372" width="140" height="50" rx="7"/>
+  <text class="t" x="256" y="392" text-anchor="middle">2 · create</text>
+  <text class="ts" x="256" y="409" text-anchor="middle">teardown registered</text>
+  <path class="line" marker-end="url(#e-arr)" d="M326,397 L338,397"/>
+  <rect class="node" x="340" y="372" width="140" height="50" rx="7"/>
+  <text class="t" x="410" y="392" text-anchor="middle">3 · contain</text>
+  <text class="ts" x="410" y="409" text-anchor="middle">acquire or layer</text>
+  <path class="line" marker-end="url(#e-arr)" d="M480,397 L492,397"/>
+  <rect class="node" x="494" y="372" width="140" height="50" rx="7"/>
+  <text class="t" x="564" y="392" text-anchor="middle">4 · inject creds</text>
+  <text class="ts" x="564" y="409" text-anchor="middle">redactions first</text>
+  <path class="line" marker-end="url(#e-arr)" d="M634,397 L646,397"/>
+  <rect class="accent" x="648" y="372" width="120" height="50" rx="7"/>
+  <text class="t" x="708" y="392" text-anchor="middle">5 · run turns</text>
+  <text class="ts" x="708" y="409" text-anchor="middle">then destroy</text>
+</svg>

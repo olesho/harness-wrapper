@@ -44,12 +44,32 @@ that import `pkg/chat`:
 This keeps the conversation semantics in one place and lets new transports (a future
 [daemon](roadmap-v1.md), a gRPC service) reuse them without touching the core.
 
+## Beyond the four layers
+
+The four layers answer "how do we drive a harness?". A second group answers **"how do we run one
+job?"** — and each of them is a *consumer* of the stack above, never part of it:
+
+| Package | Question it answers |
+|---|---|
+| [`pkg/harness`](harness.md) | What can this harness binary do on this run, and how do we get its transcript out? |
+| [`pkg/oneshot`](oneshot.md) | Run one turn headlessly and classify the outcome. |
+| [`pkg/turnproto`](turnproto.md) | What does one finished turn look like on the wire, in any language? |
+| [`pkg/env`](env.md) · `internal/env` | Where does the harness run, and what may it touch? |
+
+The direction is strict: `oneshot → harness → chat → turns → screen · wrapper`. Nothing in the four
+layers knows these packages exist, which is why the chat layer can be embedded without dragging in
+workspace provisioning, and a workspace can run a turn without linking the chat layer at all.
+
 ## Supporting packages
 
 - [`pkg/versions`](versions-drift.md) — the embedded `versions.json` pinning each harness to the
   upstream version its adapter was last verified against.
-- `pkg/discovery` — "is harness X installed, at what version?" — a probe that runs `<binary> --version`
-  with an mtime-keyed cache.
+- [`pkg/discovery`](discovery.md) — "is harness X installed, at what version?" — a probe that runs
+  `<binary> --version` with an mtime-keyed cache; `pkg/discovery/models` adds the offline model
+  registry and the `/model` picker parser.
+
+A directory-by-directory index, including the test trees and the import rules, is in the
+[Repository map](packages.md).
 
 ## Design principles
 
