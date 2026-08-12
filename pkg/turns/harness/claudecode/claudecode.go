@@ -16,6 +16,11 @@
 //     instead?" line appears. The turn ended in a recoverable error
 //     state.
 //
+//   - Blocking dialogs: the startup folder-trust / bypass-acceptance
+//     screens (below), and the mid-turn AskUserQuestion dialog the model
+//     raises to ask the user a clarifying question (question.go, verified
+//     against 2.1.210). All surface as turns.InputRequest.
+//
 // This adapter embeds generic.Adapter so wrapper-level status events
 // (blocked_by_cost, retry_later, failed) keep flowing through.
 //
@@ -157,12 +162,22 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 		}
 	}
 
-	// Blocking interactive prompt (trust dialog, bypass acceptance, …) —
-	// transition on the request ID. A new dialog (or a different one
-	// replacing the current) emits InputRequested; the dialog clearing
-	// emits InputResolved.
+	// Blocking interactive prompt (trust dialog, bypass acceptance,
+	// AskUserQuestion pane, …) — transition on the request ID. A new dialog
+	// emits InputRequested; the dialog clearing emits InputResolved.
+	//
+	// A DIFFERENT request REPLACING the current one resolves the old before
+	// surfacing the new. That is not a theoretical case: a multi-question
+	// AskUserQuestion dialog walks question 1 → question 2 → review pane
+	// without the screen ever going back to a dialog-free frame, so the
+	// "dialog cleared" branch below never runs for the intermediate panes.
+	// Without the explicit resolve a client would be left waiting on a
+	// request id that never resolves.
 	if req, ok := DetectInput(snap.Text); ok {
 		if req.ID != a.lastInputID {
+			if a.lastInputID != "" && a.lastInput != nil {
+				out = append(out, turns.Event{Kind: turns.InputResolved, Reason: reasonPrefix + "input superseded", Input: a.lastInput})
+			}
 			a.lastInputID = req.ID
 			a.lastInput = req
 			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: reasonPrefix + req.Prompt, Input: req})
@@ -185,6 +200,12 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 // dialog is present. It is a pure function so the chat layer's readiness
 // check and this adapter share one source of truth about what counts as a
 // blocking prompt.
+//
+// The STARTUP dialogs (folder-trust, bypass acceptance) win over the
+// mid-turn AskUserQuestion dialog: they gate the session before a turn can
+// run at all, so the two cannot be on screen simultaneously and this
+// precedence costs nothing — it just keeps the cheap substring checks in
+// front of the line-by-line question scan.
 func DetectInput(text string) (*turns.InputRequest, bool) {
 	var prompt string
 	switch {
@@ -195,7 +216,7 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 	case strings.Contains(text, bypassAnchor):
 		prompt = bypassAnchor
 	default:
-		return nil, false
+		return DetectQuestion(text)
 	}
 	opts := parseMenuOptions(text)
 	if len(opts) == 0 {
@@ -268,6 +289,22 @@ func containsAny(s string, subs ...string) bool {
 // inputID derives a stable id from the dialog's identity (kind + prompt +
 // option labels) so consecutive redraws of one dialog collapse to a single
 // request while a genuinely different dialog gets a fresh id.
+//
+// It is a CONTENT HASH, not a nonce, and both halves of that follow:
+//
+//   - Stable across redraws. Everything that changes between two frames of the
+//     same dialog — the "❯" highlight, a toggled "[✔]" checkbox, column
+//     padding — is deliberately excluded, which is what makes OnScreen's
+//     id-transition check collapse a repainting dialog into one request
+//     instead of a storm of them. This is the property the whole dedupe rests
+//     on; anything volatile added to the hash breaks it.
+//   - COLLIDES across two identical dialogs. Asking the same question twice in
+//     a row (same kind, same prompt, same option labels) produces the same id,
+//     so OnScreen sees no transition and raises no second InputRequested — the
+//     second dialog looks like a redraw of the first. Distinguishing them would
+//     need a monotonic component, which would cost the redraw stability above,
+//     so the collision is accepted: a repeated identical question is answered
+//     by the same policy decision anyway.
 func inputID(req *turns.InputRequest) string {
 	var b strings.Builder
 	b.WriteString(req.Kind)

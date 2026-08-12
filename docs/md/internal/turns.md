@@ -78,14 +78,18 @@ which harness implements what.
 
 ```go
 type InputRequest struct {
-	ID      string        // stable across redraws of the same prompt
-	Kind    string        // "trust_prompt" | "menu_select" | "confirm" | "text_input"
-	Prompt  string
-	Options []InputOption
+	ID          string        // stable across redraws of the same prompt
+	Kind        string        // "trust_prompt" | "menu_select" | "confirm" | "text_input"
+	                          //   | "question" | "question_review"
+	Prompt      string
+	Header      string        // short chip/label, e.g. a question's category
+	MultiSelect bool          // Keys are TOGGLE-ONLY; commit with SubmitKeys
+	SubmitKeys  []byte        // commits a MultiSelect answer; SERVER-SIDE ONLY
+	Options     []InputOption
 }
 type InputOption struct {
-	ID, Alias, Label string
-	Keys             []byte // bytes to write to choose it ("1\r"); SERVER-SIDE ONLY
+	ID, Alias, Label, Description string
+	Keys                          []byte // bytes to write to choose it ("1\r"); SERVER-SIDE ONLY
 }
 ```
 
@@ -94,6 +98,12 @@ The adapter parses the on-screen dialog into options (with `Keys` and a portable
 `InputResolved`. The chat layer keeps `Keys` private and exposes only the semantic
 [`chat.InputRequest`](../guide/chat.md#interactive-input-blocking-prompts). The design is recorded in
 [ADR-002](decisions/adr-002-interactive-input.md).
+
+Beyond the startup dialogs, claude-code also detects the **AskUserQuestion** dialog the model raises
+to ask a clarifying question mid-turn (`pkg/turns/harness/claudecode/question.go`). It has two panes
+— `question` (the numbered options, optionally checkboxes) and `question_review` (the Submit/Cancel
+step after the last question) — and each pane supersedes the previous one without the screen ever
+going dialog-free, so `OnScreen` resolves the outgoing request before surfacing the incoming one.
 
 ## The Watcher
 

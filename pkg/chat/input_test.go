@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,6 +221,27 @@ func TestMultiSelect_DistinctTogglesThenSubmit(t *testing.T) {
 	}
 	if got, want := string(rec.data), "ab"+ccSubmit; got != want {
 		t.Errorf("wrote %q, want %q", got, want)
+	}
+}
+
+// A request carrying its own SubmitKeys commits with THOSE bytes, not with the
+// harness's generic submit key. Claude Code's clarifying-question dialog is the
+// live case: its checkbox widget commits on Tab (which moves to the review
+// pane), and the composer's enhanced Enter would act on the highlighted row
+// instead — see turns.InputRequest.SubmitKeys.
+func TestMultiSelect_RequestSubmitKeysOverrideHarnessSubmit(t *testing.T) {
+	rec := &keyRecorder{}
+	c := newMultiSelectConv(rec)
+	req := multiSelectRequest()
+	req.SubmitKeys = []byte("\t")
+	if err := answerHeld(t, c, req, InputAnswer{OptionIDs: []string{"1", "3"}}); err != nil {
+		t.Fatalf("Answer = %v, want nil", err)
+	}
+	if got, want := string(rec.data), "ac\t"; got != want {
+		t.Errorf("wrote %q, want %q", got, want)
+	}
+	if strings.Contains(string(rec.data), ccSubmit) {
+		t.Errorf("wrote the harness submit key %q despite SubmitKeys being set", ccSubmit)
 	}
 }
 
