@@ -1,64 +1,146 @@
 package chat
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/screen"
 )
 
-// The confirmation is a screen predicate, so it is unit-testable without a PTY.
-// These lock the two mistakes that made the field failure invisible: reading
-// the accumulated transcript instead of the live screen, and treating "the
-// harness accepted the bytes" as "the harness ran the turn".
+// The contract these lock: the submit key is written only AFTER the composer
+// has shown the text (or the bound expires). A harness that collapses a large
+// paste absorbs a submit key riding in the same burst, so "text and key in one
+// write" is the bug — and "submit, then retry until it looks sent" is the wrong
+// fix, because it can double-submit a prompt that did land.
 
-func TestComposerHoldsPaste_DetectsTheCollapsedEntry(t *testing.T) {
-	// What the composer looked like on eight consecutive silent runs.
-	screen := strings.Join([]string{
-		"────────────────────────────────────────────",
-		"❯ [Pasted text #1 +157 lines]",
-		"  ⏵⏵ bypass permissions on (shift+tab to cycle)",
-	}, "\n")
+// echoHarness drives a Conversation's screen from the test.
+func newEchoConversation(t *testing.T, harness string, idleGap time.Duration) *Conversation {
+	t.Helper()
+	c := &Conversation{
+		opts:   Options{Harness: harness, idleGap: idleGap},
+		screen: screen.New(120, 40),
+		closed: make(chan struct{}),
+	}
+	return c
+}
 
-	if !composerHoldsPaste(screen) {
-		t.Fatal("composerHoldsPaste = false for a screen whose composer is holding a collapsed paste")
+func TestAwaitComposerEcho_ReturnsWhenTheTextAppears(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	pre := c.screen.Snapshot().Text
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.screen.Write([]byte("❯ ship the turn API\r\n"))
+	}()
+
+	start := time.Now()
+	if err := c.awaitComposerEcho(context.Background(), "ship the turn API", pre); err != nil {
+		t.Fatalf("awaitComposerEcho: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= c.echoBoundDur() {
+		t.Fatalf("waited %v — it fell through to the bound instead of seeing the echo", elapsed)
 	}
 }
 
-func TestComposerHoldsPaste_EmptyComposerIsReleased(t *testing.T) {
-	// After a successful submit the placeholder is gone from the composer and
-	// the reply is on screen.
-	screen := strings.Join([]string{
-		"⏺ HARNESS_WRAPPER_LARGE_PROMPT_OK",
-		"✻ Worked for 4s",
-		"❯ ",
-	}, "\n")
+// A collapsed paste never echoes the text: the composer shows
+// "[Pasted text #1 +157 lines]" instead. The screen still CHANGES, and that is
+// the fallback this depends on — without it a large prompt would always pay the
+// full bound.
+func TestAwaitComposerEcho_CollapsedPasteCountsAsEcho(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	pre := c.screen.Snapshot().Text
 
-	if composerHoldsPaste(screen) {
-		t.Fatal("composerHoldsPaste = true for a released composer")
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.screen.Write([]byte("❯ [Pasted text #1 +157 lines]\r\n"))
+	}()
+
+	start := time.Now()
+	text := "## WORKFLOW: Planning Task\nline two\nline three\n"
+	if err := c.awaitComposerEcho(context.Background(), text, pre); err != nil {
+		t.Fatalf("awaitComposerEcho: %v", err)
+	}
+	// The needle never appears, so this must come back via the halfway
+	// screen-change arm — after bound/2, well before the full bound.
+	elapsed := time.Since(start)
+	if elapsed >= c.echoBoundDur() {
+		t.Fatalf("waited the full bound (%v); the screen-change fallback did not fire", elapsed)
 	}
 }
 
-// A small prompt is never collapsed, so confirmation must be a no-op for it —
-// otherwise every ordinary send would pay the retry budget.
-func TestComposerHoldsPaste_PlainTypedPromptIsNotAPaste(t *testing.T) {
-	screen := "Claude Code\n❯ Reply with exactly: OK\n"
+// Degrade, never hang: if the composer never shows anything, the submit is
+// still written once the bound expires.
+func TestAwaitComposerEcho_DegradesOnTheBound(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 200*time.Millisecond)
+	pre := c.screen.Snapshot().Text
 
-	if composerHoldsPaste(screen) {
-		t.Fatal("composerHoldsPaste = true for a normally typed prompt; only a COLLAPSED paste blocks submission")
+	start := time.Now()
+	if err := c.awaitComposerEcho(context.Background(), "never echoed", pre); err != nil {
+		t.Fatalf("awaitComposerEcho must degrade, not fail: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("waited %v — the bound is not being honoured", elapsed)
 	}
 }
 
-// screenTail is only used to make a failure legible; keep it honest about
-// short input so the error message is not misleading.
-func TestScreenTail_ShortScreenIsReturnedWhole(t *testing.T) {
-	if got := screenTail("  ❯ [Pasted text #1 +2 lines]  ", 200); got != "❯ [Pasted text #1 +2 lines]" {
-		t.Fatalf("screenTail = %q, want the trimmed whole string", got)
+// A cancelled run is different from a missed echo: the whole run is over, so it
+// propagates rather than writing a submit into a dead session.
+func TestAwaitComposerEcho_PropagatesRunCancellation(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 10*time.Second)
+	pre := c.screen.Snapshot().Text
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := c.awaitComposerEcho(ctx, "anything", pre); err == nil {
+		t.Fatal("awaitComposerEcho returned nil for a cancelled run; it must not submit into it")
 	}
 }
 
-func TestScreenTail_LongScreenKeepsTheEnd(t *testing.T) {
-	long := strings.Repeat("x", 50) + "THE-END"
-	got := screenTail(long, 10)
-	if len(got) != 10 || !strings.HasSuffix(got, "THE-END") {
-		t.Fatalf("screenTail = %q, want the last 10 bytes ending in THE-END", got)
+// The echo wait must finish well inside the idle-completion window, or the
+// swallowed-prompt check could judge the turn before the submit is even
+// written.
+func TestEchoBound_StaysInsideTheIdleWindow(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 600*time.Millisecond)
+	if got, max := c.echoBoundDur(), 300*time.Millisecond; got > max {
+		t.Fatalf("echoBoundDur = %v, want <= idleGap/2 (%v)", got, max)
+	}
+
+	wide := newEchoConversation(t, chatClaudeCode, time.Hour)
+	if got := wide.echoBoundDur(); got != submitEchoGap {
+		t.Fatalf("echoBoundDur = %v, want the configured gap %v when idleGap is generous", got, submitEchoGap)
+	}
+}
+
+// Harnesses with no composer to echo into keep the single combined write; the
+// echo path must not be imposed on them.
+func TestRequiresPromptReadiness_GatesTheEchoPath(t *testing.T) {
+	for _, h := range []string{chatClaudeCode, "codex", "pi"} {
+		if !requiresPromptReadiness(h) {
+			t.Fatalf("requiresPromptReadiness(%q) = false, want true", h)
+		}
+	}
+	if requiresPromptReadiness("generic") {
+		t.Fatal(`requiresPromptReadiness("generic") = true; a harness with no prompt gate must keep the single write`)
+	}
+}
+
+func TestAwaitComposerEcho_EmptyNeedleUsesScreenChange(t *testing.T) {
+	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	pre := c.screen.Snapshot().Text
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		c.screen.Write([]byte("anything at all\r\n"))
+	}()
+
+	// Leading newline: the first line is empty, so there is no needle to match.
+	if err := c.awaitComposerEcho(context.Background(), "\nbody", pre); err != nil {
+		t.Fatalf("awaitComposerEcho: %v", err)
+	}
+	if strings.TrimSpace(c.screen.Snapshot().Text) == "" {
+		t.Fatal("screen never changed; the test did not exercise the fallback")
 	}
 }

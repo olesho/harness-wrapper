@@ -2,124 +2,124 @@ package chat
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 )
 
-// Submitting a prompt used to be one write: text and the submit key appended
-// together. That works until the harness decides the burst is a PASTE.
+// Submitting used to be one write: the prompt text and the submit key
+// concatenated. That works until the harness decides the burst is a PASTE.
+// Claude Code collapses a large multi-line arrival into a single composer entry
+// ("[Pasted text #1 +157 lines]"), and while it assembles that, a submit key
+// riding in the same write is taken as pasted CONTENT rather than acted on as a
+// keypress. The prompt then sits in the composer unsent: no turn starts, and the
+// run "completes" with nothing in it — zero assistant output, zero tokens.
 //
-// Claude Code (and codex) collapse a large multi-line arrival into a single
-// composer entry — "[Pasted text #1 +157 lines]" — and while they are
-// assembling it, a submit key sitting in the same write is taken as pasted
-// CONTENT rather than acted on as a keypress. The prompt then sits in the
-// composer, unsent, and the harness looks idle. Because no turn ever starts,
-// the run ends "successfully" with an empty reply: zero assistant turns, zero
-// tokens, exit 0.
+// Reproduced in a Linux container running loom's local-mode stack: the agent
+// hung at launch on every run, while the identical code on macOS submitted
+// correctly every time. The two writes race and the environment decides the
+// winner, which is why this cannot be left to timing.
 //
-// Observed in the field 2026-08-12: a 6304-byte / 157-line agent prompt did
-// this on eight consecutive runs under load, while an 81-byte prompt on the
-// same binary in the same container worked every time. On an idle machine the
-// same large prompt usually submits — the two writes race, and load decides the
-// winner. A silent empty turn is the worst possible failure mode for a caller
-// that pays per run, so this cannot be left to timing.
-//
-// The fix is to stop racing: write the prompt, let the composer settle, send
-// the submit key as its OWN write, and then CONFIRM the composer let go of it.
+// Ported from meta-harness (Conversation.writeMessageAndSubmit /
+// awaitComposerEcho); the two implementations are kept in step. Note the
+// direction of the check: wait for the composer to ECHO the text, THEN press
+// Enter once. Submitting first and retrying — the obvious alternative — risks
+// double-submitting a prompt that did land, which is worse than the bug.
 const (
-	// submitSettle is the pause between the prompt write and the submit key,
-	// long enough for a paste-collapsing composer to finish assembling.
-	submitSettle = 200 * time.Millisecond
+	// submitEchoGap bounds the wait for the composer echo before the submit key
+	// is written anyway. Degrading to the old single-burst timing is the right
+	// failure mode: it can delay a send, never drop or duplicate one.
+	submitEchoGap = 1500 * time.Millisecond
 
-	// submitConfirmWindow is how long to wait for the composer to release the
-	// input after a submit key before trying again.
-	submitConfirmWindow = 3 * time.Second
-
-	// submitPoll is the screen-sampling interval while confirming.
-	submitPoll = 100 * time.Millisecond
-
-	// submitAttempts bounds the retries. A composer that has not accepted the
-	// input after this many tries is not going to.
-	submitAttempts = 3
-
-	// pastePlaceholder is how a collapsed paste renders in the composer. Its
-	// presence after a submit means the input is still sitting there.
-	pastePlaceholder = "[Pasted text #"
+	// echoNeedleLen is how much of the text's first line to look for on screen.
+	// Short enough to survive wrapping at any supported width.
+	echoNeedleLen = 24
 )
 
-// writeAndConfirmSubmit writes text, then submits it as a separate write, and
-// verifies the composer actually released the input.
+// writeMessageAndSubmit writes text, waits for the composer to show it, and only
+// then writes the submit key.
 //
-// For an input the harness did not collapse (the common small-prompt case)
-// there is nothing to confirm — composerHoldsPaste is false immediately — so
-// this costs one settle interval and behaves exactly as before.
-func (c *Conversation) writeAndConfirmSubmit(ctx context.Context, text string, submitKey []byte) error {
+// Harnesses that do not gate on prompt readiness keep the single combined
+// write: they have no composer to echo into, so there is nothing to wait for.
+func (c *Conversation) writeMessageAndSubmit(ctx context.Context, text, preWriteScreen string, submitKey []byte) error {
+	if !requiresPromptReadiness(c.opts.Harness) {
+		_, err := c.sess.WriteStdin(append([]byte(text), submitKey...))
+		return err
+	}
 	if _, err := c.sess.WriteStdin([]byte(text)); err != nil {
 		return err
 	}
-	var lastScreen string
-	for attempt := 1; attempt <= submitAttempts; attempt++ {
-		if err := sleepCtx(ctx, submitSettle); err != nil {
-			return err
-		}
-		if _, err := c.sess.WriteStdin(submitKey); err != nil {
-			return err
-		}
-		released, screen := c.awaitComposerReleased(ctx, submitConfirmWindow)
-		if released {
-			return nil
-		}
-		lastScreen = screen
+	if err := c.awaitComposerEcho(ctx, text, preWriteScreen); err != nil {
+		return err
 	}
-	return fmt.Errorf(
-		"chat: prompt (%d bytes, %d lines) was not submitted after %d attempts — the composer still holds it as a collapsed paste; last screen tail: %q",
-		len(text), strings.Count(text, "\n")+1, submitAttempts, screenTail(lastScreen, 200))
+	_, err := c.sess.WriteStdin(submitKey)
+	return err
 }
 
-// awaitComposerReleased polls the CURRENT screen (never an accumulated
-// transcript — the placeholder legitimately appears there when the paste first
-// renders) until the collapsed-paste entry is gone. Returns the last screen it
-// saw so a failure can say what it was looking at.
-func (c *Conversation) awaitComposerReleased(ctx context.Context, window time.Duration) (bool, string) {
-	deadline := time.Now().Add(window)
+// echoBoundDur is how long to wait for the echo.
+//
+// The submit key must land well inside the idle-completion window: an echo wait
+// outliving it would let the swallowed-prompt check judge — and error — the turn
+// before the submit was even written. That matters when a caller shrinks idleGap
+// (tests) without shrinking the echo bound to match.
+func (c *Conversation) echoBoundDur() time.Duration {
+	bound := submitEchoGap
+	if half := c.idleGapDur() / 2; half < bound {
+		bound = half
+	}
+	return bound
+}
+
+// awaitComposerEcho waits until the composer echoes the just-written text.
+//
+// Primary signal: the screen contains the first line of the text, truncated to
+// echoNeedleLen. Fallback: past the halfway mark — or immediately, when the text
+// has no matchable first line — ANY screen change since the pre-write snapshot
+// counts, which is what covers composers that TRANSFORM the echo. A collapsed
+// paste placeholder is exactly that case: the text never appears, but the screen
+// does change.
+//
+// On the local deadline it returns nil, degrading to the old single-burst
+// timing: the submit is written regardless, so this can delay a send but never
+// hang or drop it. A cancelled ctx is different — the whole run is over — so it
+// returns that error instead of degrading.
+func (c *Conversation) awaitComposerEcho(ctx context.Context, text, preWriteScreen string) error {
+	needle := text
+	if i := strings.IndexByte(needle, '\n'); i >= 0 {
+		needle = needle[:i]
+	}
+	needle = strings.TrimSpace(needle)
+	if len(needle) > echoNeedleLen {
+		needle = needle[:echoNeedleLen]
+	}
+
+	bound := c.echoBoundDur()
+	deadline := time.NewTimer(bound)
+	defer deadline.Stop()
+	half := time.NewTimer(bound / 2)
+	defer half.Stop()
+	halfDone := false
+
+	notifyCh, unsubscribe := c.screen.Subscribe()
+	defer unsubscribe()
+
 	for {
-		screen := c.screen.Snapshot().Text
-		if !composerHoldsPaste(screen) {
-			return true, screen
+		cur := c.screen.Snapshot().Text
+		if needle != "" && strings.Contains(cur, needle) {
+			return nil
 		}
-		if time.Now().After(deadline) {
-			return false, screen
+		if (halfDone || needle == "") && cur != preWriteScreen {
+			return nil
 		}
 		select {
 		case <-ctx.Done():
-			return false, screen
+			return ctx.Err()
 		case <-c.closed:
-			return false, screen
-		case <-time.After(submitPoll):
+			return nil
+		case <-deadline.C:
+			return nil
+		case <-half.C:
+			halfDone = true
+		case <-notifyCh:
 		}
 	}
-}
-
-// composerHoldsPaste reports whether the screen shows a collapsed-paste entry
-// still waiting in the composer.
-func composerHoldsPaste(screen string) bool {
-	return strings.Contains(screen, pastePlaceholder)
-}
-
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d):
-		return nil
-	}
-}
-
-func screenTail(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return s[len(s)-n:]
 }

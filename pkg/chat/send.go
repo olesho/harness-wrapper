@@ -97,10 +97,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.mu.Unlock()
 
 	submitKey := submitKeyForHarness(c.opts.Harness, sentScreen)
-	// The prompt and the submit key go out as SEPARATE writes, and the submit is
-	// confirmed rather than assumed — see submit.go for the paste-collapse
-	// failure a single combined write loses to.
-	if err := c.writeAndConfirmSubmit(ctx, text, submitKey); err != nil {
+	// The prompt and the submit key go out as SEPARATE writes, with the composer
+	// echo awaited in between — see submit.go for the paste-collapse failure a
+	// single combined write loses to.
+	if err := c.writeMessageAndSubmit(ctx, text, sentScreen, submitKey); err != nil {
 		// Roll back the in-flight pointer and mark the turn errored.
 		c.mu.Lock()
 		c.currentTurn = nil
