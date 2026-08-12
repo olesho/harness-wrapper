@@ -117,6 +117,20 @@ type Turn struct {
 	// message (e.g. "Retry after 30 seconds"). Zero when no hint was
 	// parseable. Consumers can read this to schedule their retry.
 	RetryAfter time.Duration
+
+	// NoReply marks a COMPLETE assistant turn from which the adapter extracted
+	// no reply at all.
+	//
+	// Text cannot answer this question: with no extractable reply it falls back
+	// to the whole screen (see Conversation.assistantText), so a turn where the
+	// model never answered still arrives carrying the header, the prompt glyph
+	// and a page of blanks. Callers reading Text alone cannot tell "answered"
+	// from "never ran", and the two mean opposite things — work delivered
+	// versus a run to retry or escalate.
+	//
+	// Set from the same no-fallback extraction the auth relabel already uses,
+	// so it is the adapter's own verdict rather than a new heuristic.
+	NoReply bool
 }
 
 // EventType discriminates the variants of a ConversationEvent.

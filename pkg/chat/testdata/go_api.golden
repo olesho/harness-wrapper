@@ -59,6 +59,7 @@ type Turn struct
 	field CompletedAt time.Time
 	field HTTPCode int
 	field RetryAfter time.Duration
+	field NoReply bool
 type Session struct
 	field ID string
 	field Harness string

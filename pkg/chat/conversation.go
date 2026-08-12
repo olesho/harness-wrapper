@@ -618,6 +618,7 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		turn.Reason = ev.Reason
 		if ev.Snap != nil {
 			turn.Text = c.assistantText(*ev.Snap)
+			turn.NoReply = c.turnHasNoReply(*ev.Snap)
 			// A "completed" turn that yielded no real reply on a logged-out /
 			// not-onboarded screen is not a success — relabel it ReasonAuthRequired.
 			// A turn whose "reply" is in fact the usage-limit wall is not a success
@@ -852,6 +853,7 @@ func (c *Conversation) maybeIdleComplete() {
 	// clean assistant reply rather than a full-screen dump — matching the
 	// marker-event completion path in onTurnEvent.
 	turn.Text = c.assistantText(snap)
+	turn.NoReply = c.turnHasNoReply(snap)
 	// The claude-code false-success lands HERE: a logged-out turn ends on a
 	// "✻ … for 0s" marker and would otherwise complete with the raw banner screen
 	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted —
@@ -979,6 +981,23 @@ func (c *Conversation) assistantText(snap screen.Snapshot) string {
 // whole-screen fallback: "" when the adapter has no extractor or finds no reply
 // (unlike assistantText, which returns the whole screen in that case). It is the
 // "did this turn actually produce a reply?" signal used by authRelabel.
+// turnHasNoReply reports whether the adapter, HAVING THE ABILITY to extract a
+// reply, found none.
+//
+// The distinction matters more than it looks: cleanAssistantText returns "" both
+// when an extractor found nothing AND when the harness has no extractor at all
+// (codex, today). Treating those the same would mark every turn of an
+// extractor-less harness as empty — the whole family would start failing. An
+// adapter that cannot tell must not be allowed to accuse.
+func (c *Conversation) turnHasNoReply(snap screen.Snapshot) bool {
+	ex, ok := c.adapter.(turns.MessageExtractor)
+	if !ok {
+		return false
+	}
+	msg, extracted := ex.ExtractMessage(snap)
+	return !extracted || strings.TrimSpace(msg) == ""
+}
+
 func (c *Conversation) cleanAssistantText(snap screen.Snapshot) string {
 	if ex, ok := c.adapter.(turns.MessageExtractor); ok {
 		if msg, ok := ex.ExtractMessage(snap); ok {

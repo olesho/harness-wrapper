@@ -49,6 +49,26 @@ func gracefulQuit(conv *chat.Conversation) bool {
 // carries the errored turn and any retry metadata surfaced by the adapter.
 var ErrTurnErrored = errors.New("harness: turn errored")
 
+// ErrEmptyTurn reports a turn that reached TurnStateComplete carrying no
+// assistant output at all.
+//
+// The harness accepted the prompt bytes and the turn machinery ran to a settled
+// prompt, so every signal RunTurn checks says "success" — but the model never
+// answered. A caller cannot tell that apart from a real reply that happened to
+// be empty, and the two mean opposite things: one is work delivered, the other
+// is a run that has to be retried or escalated.
+//
+// Field case (loom's daemon, 2026-08-12): an agent produced zero assistant
+// turns and zero tokens on eight consecutive runs, each a paid session, while
+// its supervisor could only infer something was wrong from an unreleased task
+// claim. The turn itself reported complete every time. Whatever prevents the
+// model from answering — a prompt that never left the composer, a harness that
+// exited early, an interrupted turn — this is the signal that says so.
+//
+// The turn is still returned alongside the error, so callers keep the history
+// and session for diagnosis.
+var ErrEmptyTurn = errors.New("harness: turn completed with no assistant output")
+
 // TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
 //
 // RunTurn starts an interactive harness, sends Prompt through the PTY, waits
@@ -311,12 +331,26 @@ func runConversationTurn(ctx context.Context, conv *chat.Conversation, store cha
 			}
 			switch ev.Turn.State {
 			case chat.TurnStateComplete:
-				return snapshotTurnResult(ctx, conv, store, ev.Turn), nil
+				res := snapshotTurnResult(ctx, conv, store, ev.Turn)
+				if turnIsEmpty(ev.Turn) {
+					return res, ErrEmptyTurn
+				}
+				return res, nil
 			case chat.TurnStateErrored:
 				return snapshotTurnResult(ctx, conv, store, ev.Turn), ErrTurnErrored
 			}
 		}
 	}
+}
+
+// turnIsEmpty reports whether a completed turn carries no assistant output.
+//
+// It reads chat.Turn.NoReply rather than testing Text, because Text falls back
+// to the whole screen when nothing could be extracted — an unanswered turn
+// arrives carrying the header, the prompt glyph and a page of blanks, so a
+// text-emptiness test can never fire.
+func turnIsEmpty(turn chat.Turn) bool {
+	return turn.NoReply
 }
 
 func snapshotTurnResult(ctx context.Context, conv *chat.Conversation, store chat.Store, turn chat.Turn) TurnResult {
