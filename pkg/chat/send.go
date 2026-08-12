@@ -89,7 +89,14 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
 	c.mu.Unlock()
 
-	submitKey := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
+	// Record the screen the prompt is being submitted on: a swallow detector
+	// answers "nothing changed at all" by comparing the settled screen to this.
+	sentScreen := c.screen.Snapshot().Text
+	c.mu.Lock()
+	c.sentScreenText = sentScreen
+	c.mu.Unlock()
+
+	submitKey := submitKeyForHarness(c.opts.Harness, sentScreen)
 	if _, err := c.sess.WriteStdin(append([]byte(text), submitKey...)); err != nil {
 		// Roll back the in-flight pointer and mark the turn errored.
 		c.mu.Lock()

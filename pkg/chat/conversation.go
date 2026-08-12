@@ -165,6 +165,11 @@ type Conversation struct {
 	// screen to quiesce at a non-busy prompt — robust against intermediate
 	// markers, which are always followed by more activity. Reset on each Send.
 	endMarkerSeen bool
+
+	// sentScreenText is the rendered screen as it looked when the current
+	// prompt was submitted. A swallow detector compares against it to answer
+	// "nothing changed at all" — see swallowed.go.
+	sentScreenText string
 	// markerArmCh wakes the idle-completion watcher to re-arm on the short gap the
 	// moment a marker lands (so a settled end-of-turn confirms promptly, not after
 	// the full fallback gap). Buffered (1), non-blocking sender.
@@ -836,6 +841,14 @@ func (c *Conversation) maybeIdleComplete() {
 	// No-op for adapters without a screen/disk extractor (e.g. claude-code, whose
 	// id arrives via the raw line tap), so this never disturbs their path.
 	c.maybeExtractSessionID()
+
+	// A settled screen the adapter says was never accepted is not a completed
+	// turn — it is a prompt the harness swallowed. Only the non-marker path can
+	// be swallowed: an end-of-turn marker is itself evidence the harness ran.
+	if !marker && c.promptWasSwallowed(snap) {
+		c.applySwallowedPromptVerdict(turn, snap)
+		return
+	}
 
 	turn.State = TurnStateComplete
 	turn.CompletedAt = time.Now()

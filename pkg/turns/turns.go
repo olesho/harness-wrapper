@@ -330,6 +330,28 @@ type BusyDetector interface {
 	Busy(snap screen.Snapshot) bool
 }
 
+// SwallowedPromptDetector is an optional capability adapters may implement to
+// report, from a settled screen, that the harness never accepted the prompt at
+// all — as opposed to accepting it and answering.
+//
+// The two are indistinguishable to the rest of the chat layer: a swallowed
+// prompt leaves the harness sitting at a ready prompt with no assistant output,
+// which is exactly what a completed turn also looks like once the reply has
+// scrolled off. Without this verdict such a run completes "successfully" with
+// the raw ready screen as its reply, and a caller that pays per run cannot tell
+// the difference (observed in loom's daemon: eight consecutive paid agent runs
+// reported complete while producing zero assistant output).
+//
+// sentScreenText is the screen as it looked when the prompt was submitted, so
+// an implementation can answer "nothing changed at all". Adapters that cannot
+// tell simply do not implement this.
+//
+// Ported from meta-harness (turns.SwallowedPromptDetector); the two
+// implementations are kept in step.
+type SwallowedPromptDetector interface {
+	PromptNotAccepted(snap screen.Snapshot, sentScreenText string) bool
+}
+
 // PermissionModeDetector is an optional capability adapters may implement to
 // report the harness's permission posture as painted on the rendered screen.
 // It is the same shape of question as BusyDetector — a per-screen

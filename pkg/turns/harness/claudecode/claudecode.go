@@ -468,6 +468,26 @@ const busyMarker = "esc to interrupt"
 // matters: a false match here would hang a genuinely-finished turn.
 var workingRE = regexp.MustCompile(`(?:…|\.\.\.)[^\S\r\n]*\(\d+[hms][^)\r\n]*·`)
 
+// PromptNotAccepted implements turns.SwallowedPromptDetector. True when a
+// settled screen shows no trace of assistant activity for the in-flight turn:
+// no "⏺" message bullet (ExtractMessage fails) and either the screen is
+// byte-identical to the one the prompt was submitted on, or it carries no
+// "✻ … for Ns" thinking marker anywhere — i.e. Claude Code never accepted the
+// prompt and merely repainted its ready screen.
+//
+// Ported from meta-harness's claude-code adapter, where the behaviour was
+// observed live on 2.1.201. The chat layer lets an on-disk transcript overturn
+// this verdict, because a repaint that lags the idle gap looks identical.
+func (a *Adapter) PromptNotAccepted(snap screen.Snapshot, sentScreenText string) bool {
+	if _, ok := a.ExtractMessage(snap); ok {
+		return false
+	}
+	if snap.Text == sentScreenText {
+		return true
+	}
+	return len(thinkingRE.FindAllString(snap.Text, -1)) == 0
+}
+
 // Busy reports whether Claude is still working on the current turn, so the chat
 // layer's idle-completion fallback (and the turn-complete gate in OnScreen) won't
 // complete a turn mid-flight (the "❯" prompt box is painted even while Claude
