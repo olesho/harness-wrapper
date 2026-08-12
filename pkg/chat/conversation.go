@@ -131,6 +131,14 @@ type Options struct {
 	// bound in milliseconds instead of tens of seconds. Zero means "use the
 	// package default".
 	permModeRenderTimeout time.Duration
+
+	// readyTimeout optionally overrides the send-readiness budget
+	// (defaultReadyTimeout). Unexported for the same reason as the fields above:
+	// only same-package tests set it, so a screen that never becomes ready
+	// exhausts the bound in milliseconds instead of two minutes. Zero means "use
+	// the package default". Callers that need a shorter bound already have one —
+	// the context they pass to Send.
+	readyTimeout time.Duration
 }
 
 // Conversation owns one supervised harness process and serves the

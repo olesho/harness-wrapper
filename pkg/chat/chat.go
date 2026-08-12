@@ -213,6 +213,21 @@ var (
 	// hanging to the run deadline.
 	ErrAuthRequired = errors.New("chat: harness requires authentication / onboarding")
 
+	// ErrNotReady is returned by waitReadyForSend when the harness never painted
+	// a usable composer within the readiness budget (see defaultReadyTimeout).
+	// It is the catch-all backstop for the readiness wait: ErrAuthRequired and
+	// ErrInputPending name the two causes we can recognize, and this covers the
+	// rest — a harness that died mid-startup, an unrecognized blocking screen, a
+	// TUI whose composer never renders under the caller's TERM.
+	//
+	// Without it the wait had no bound of its own and ran to the CALLER's
+	// deadline, which for an unattended orchestrator is the whole run budget: a
+	// harness stuck on an unanswerable dialog burned a 15-minute run and was then
+	// killed with no diagnosis, on every retry. Errors wrapping this one carry
+	// the elapsed wait, the recognized cause when there is one, and a tail of the
+	// last rendered screen, so the failure is readable from a log line.
+	ErrNotReady = errors.New("chat: harness never became ready for input")
+
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.
 	ErrNoInputPending = errors.New("chat: no input request pending")
