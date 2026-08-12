@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
@@ -19,6 +20,35 @@ import (
 // because a sign-in / device-code / login-method screen never becomes ready and
 // can flash by in a single frame as the CLI advances its own login flow.
 const authGateStabilizeGap = 2 * time.Second
+
+// defaultReadyTimeout bounds the whole readiness wait. It exists because the
+// wait previously had no bound of its own: it ended only when the composer
+// appeared or the CALLER's context expired, and an unattended caller's context
+// is its entire run budget. A harness sitting on a dialog nobody can answer
+// therefore consumed the full budget and was killed with no diagnosis — observed
+// as a supervisor burning two consecutive 15-minute runs on one task, twice
+// resetting it, with nothing in the log but the kill.
+//
+// The value trades two failure modes against each other. Too short truncates a
+// legitimately slow startup: pi has the noisiest one (model resolution plus an
+// optional ripgrep/fd download on a cold cache), which is why it needs a
+// readiness gate at all. Too long re-creates the silent burn. Two minutes is far
+// above every startup observed here (claude-code and codex paint a composer in
+// seconds) and far below any plausible run budget, so a bound this generous
+// should only ever be hit by something genuinely stuck.
+//
+// It is deliberately absolute rather than reset on each repaint: a stuck screen
+// is not a still screen. A blocked TUI keeps repainting — spinners, cursor
+// blink, a dialog redrawing — so an idle-based bound would never fire on exactly
+// the case this is for.
+const defaultReadyTimeout = 2 * time.Minute
+
+func (c *Conversation) readyTimeout() time.Duration {
+	if c.opts.readyTimeout > 0 {
+		return c.opts.readyTimeout
+	}
+	return defaultReadyTimeout
+}
 
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
@@ -93,10 +123,27 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 		return ErrAuthRequired
 	}
 
+	// Own bound, independent of the caller's deadline. Started only after the
+	// fast paths above have declined, so a composer that was already ready never
+	// allocates it.
+	started := time.Now()
+	readyTimer := time.NewTimer(c.readyTimeout())
+	defer readyTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-readyTimer.C:
+			// Re-check first: the budget can expire in the same instant a ready
+			// frame lands, and a timer that wins that race must not fail a
+			// conversation that is in fact ready.
+			if ready, wall := check(); ready {
+				return nil
+			} else if wall {
+				return ErrAuthRequired
+			}
+			return c.notReadyError(time.Since(started))
 		case <-c.closed:
 			return ErrClosed
 		case <-authCh:
@@ -131,6 +178,114 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// notReadyError builds the ErrNotReady-wrapping error for an exhausted
+// readiness budget, classifying the live screen so the log line says WHY rather
+// than only that a timer fired.
+func (c *Conversation) notReadyError(waited time.Duration) error {
+	txt := c.screen.Snapshot().Text
+	return &notReadyErr{
+		harness: c.opts.Harness,
+		waited:  waited,
+		cause:   notReadyCause(c.opts.Harness, txt),
+		tail:    screenTail(txt, notReadyTailLines),
+	}
+}
+
+// notReadyTailLines is how many trailing non-blank screen lines ride along in
+// the error. Sized to fit a whole dialog BOX, not just its last lines: the
+// question ("Do you trust the files in this folder?") is at the box's top and is
+// the line that identifies the screen, while the last lines are only its options
+// and border. Claude's trust dialog is ten lines, so eight silently cut the part
+// worth reading. The length cap keeps the entry bounded regardless, and it trims
+// from the end — so when both bind, the question survives and the border is what
+// is lost.
+const notReadyTailLines = 12
+
+type notReadyErr struct {
+	harness string
+	waited  time.Duration
+	cause   string // "" when the screen matched nothing we recognize
+	tail    string
+}
+
+func (e *notReadyErr) Error() string {
+	var b strings.Builder
+	b.WriteString(ErrNotReady.Error())
+	b.WriteString(": ")
+	b.WriteString(e.harness)
+	b.WriteString(" after ")
+	b.WriteString(e.waited.Round(time.Second).String())
+	if e.cause != "" {
+		b.WriteString("; ")
+		b.WriteString(e.cause)
+	}
+	if e.tail != "" {
+		b.WriteString("; last screen: ")
+		b.WriteString(e.tail)
+	}
+	return b.String()
+}
+
+func (e *notReadyErr) Unwrap() error { return ErrNotReady }
+
+// notReadyCause names the recognizable reasons a screen is still not ready when
+// the budget runs out. A blocking prompt is the one that matters in practice:
+// an unanswered folder-trust dialog is unanswerable by the harness itself, and
+// the remedy (an InputPolicy that allows the kind) belongs in the message,
+// because the screen alone has cost a full debugging cycle to interpret before.
+func notReadyCause(harness, text string) string {
+	if req, blocking := detectBlockingInput(harness, text); blocking && req != nil {
+		return "still blocked on a " + req.Kind +
+			" prompt nothing answered — configure Options.InputPolicy to allow it"
+	}
+	if onboardingWall(harness, text) {
+		return "sitting in a first-run onboarding / sign-in screen"
+	}
+	if authRequired(harness, text) {
+		return "showing a logged-out / re-authentication banner"
+	}
+	if strings.TrimSpace(text) == "" {
+		return "screen never painted anything — the harness may have failed to start"
+	}
+	return ""
+}
+
+// detectBlockingInput asks the per-harness detector whether the screen is a
+// blocking dialog. It mirrors readyForInput's switch — the same detectors that
+// make the screen not-ready are the ones that explain why it stayed that way.
+func detectBlockingInput(harness, text string) (*turns.InputRequest, bool) {
+	switch harness {
+	case chatClaudeCode:
+		return claudecode.DetectInput(text)
+	case "codex":
+		return codex.DetectInput(text)
+	default:
+		return nil, false
+	}
+}
+
+// screenTail renders the last n non-blank lines as a single line, so a terminal
+// screen (mostly padding) survives into a log entry without spanning it. Lines
+// are joined with " | " and each is trimmed; the whole thing is length-capped,
+// since a wide PTY can make even eight lines long.
+func screenTail(text string, n int) string {
+	var kept []string
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if ln := strings.TrimSpace(lines[i]); ln != "" {
+			kept = append([]string{ln}, kept...)
+		}
+	}
+	out := strings.Join(kept, " | ")
+	const maxTail = 400
+	if len(out) > maxTail {
+		// Trim on a rune boundary: the TUIs paint box-drawing and glyphs, and a
+		// byte-sliced multi-byte rune would put a replacement char in the log.
+		out = strings.ToValidUTF8(out[:maxTail], "") + "…"
+	}
+	return out
 }
 
 // chatClaudeCode is the adapter-style name for the Claude Code harness.

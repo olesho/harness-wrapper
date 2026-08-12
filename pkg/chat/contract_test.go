@@ -100,6 +100,10 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrClosed", ErrClosed},
 		{"ErrInputPending", ErrInputPending},
 		{"ErrAuthRequired", ErrAuthRequired},
+		// Listed for the same reason as the permission-mode set below: a caller
+		// matches this to tell "the harness never came up" apart from a genuine
+		// task failure, and decides whether to retry the run or escalate.
+		{"ErrNotReady", ErrNotReady},
 		{"ErrNoInputPending", ErrNoInputPending},
 		{"ErrStaleInputRequest", ErrStaleInputRequest},
 		{"ErrUnknownOption", ErrUnknownOption},
