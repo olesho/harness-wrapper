@@ -97,19 +97,22 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.mu.Unlock()
 
 	submitKey := submitKeyForHarness(c.opts.Harness, sentScreen)
-	if _, err := c.sess.WriteStdin(append([]byte(text), submitKey...)); err != nil {
+	// The prompt and the submit key go out as SEPARATE writes, and the submit is
+	// confirmed rather than assumed — see submit.go for the paste-collapse
+	// failure a single combined write loses to.
+	if err := c.writeAndConfirmSubmit(ctx, text, submitKey); err != nil {
 		// Roll back the in-flight pointer and mark the turn errored.
 		c.mu.Lock()
 		c.currentTurn = nil
 		c.mu.Unlock()
 		assistantTurn.State = TurnStateErrored
-		assistantTurn.Reason = "WriteStdin: " + err.Error()
+		assistantTurn.Reason = "submit: " + err.Error()
 		assistantTurn.CompletedAt = time.Now()
 		if uerr := c.store.UpdateTurn(ctx, &assistantTurn); uerr != nil {
-			return "", fmt.Errorf("chat: write stdin + update turn: write=%v update=%w", err, uerr)
+			return "", fmt.Errorf("chat: submit prompt + update turn: submit=%v update=%w", err, uerr)
 		}
 		c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn, Err: err})
-		return assistantTurn.ID, fmt.Errorf("chat: write stdin: %w", err)
+		return assistantTurn.ID, fmt.Errorf("chat: submit prompt: %w", err)
 	}
 
 	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
