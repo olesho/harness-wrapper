@@ -201,6 +201,10 @@
       "summaryHash": "94e1869994941e9466ee7ef72da5750280e4d119e33829033db39a382495d7ab",
       "summary": "The in-process library for running exactly one headless harness turn and classifying it into the frozen structured-turn status vocabulary. It owns the unattended policy — quit after the turn, auto-answer blocking prompts affirmatively, prefer the harness's own transcript for the reply — and returns every classified outcome with a nil error, reserving errors for unclassifiable failures."
     },
+    "github.com/olesho/harness-wrapper/pkg/profile": {
+      "summaryHash": "7ed54a97fa65aa551608b7af9b6d2b6cbf2c34a469b38507bcee021fe073908f",
+      "summary": "Single owner of the agent-profile contract: the .manifest.json launch-verification record, its fingerprint algorithm (sha256 over path + NUL + file bytes, in listed order, with harness_version compared separately rather than hashed), the per-harness config-root layout that decides what a provisioner copies versus what the harness owns at runtime, and the version-gated credential-slot rules as data. A pure translator — fs.FS in, values out — so a provisioner that writes and a supervisor that refuses to boot can share one implementation without either inheriting the other's side effects."
+    },
     "github.com/olesho/harness-wrapper/pkg/screen": {
       "summaryHash": "31750342e31ec04608311744f460daa52f2ab27448efad393bddba692c8313dd",
       "summary": "Wraps a vt100 terminal emulator so a harness's raw PTY byte stream becomes queryable rendered state. It exposes writes, coherent point-in-time snapshots, a monotonic change generation, coalesced change subscriptions, and a resize that coordinates a fallible peer without holding the read lock."

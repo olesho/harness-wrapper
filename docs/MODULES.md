@@ -1704,6 +1704,228 @@ RunOneShotDetailed is RunOneShot's detailed form: same error contract, but it
 also returns the clean reply (on completion), the failure reason, and the
 harness session id. See RunOneShot for the contract.
 
+## Module: profile (`pkg/profile`)
+
+Single owner of the agent-profile contract: the .manifest.json launch-verification record, its fingerprint algorithm (sha256 over path + NUL + file bytes, in listed order, with harness_version compared separately rather than hashed), the per-harness config-root layout that decides what a provisioner copies versus what the harness owns at runtime, and the version-gated credential-slot rules as data. A pure translator — fs.FS in, values out — so a provisioner that writes and a supervisor that refuses to boot can share one implementation without either inheriting the other's side effects.
+
+> Package profile owns the agent-profile contract: the `.manifest.json`
+launch-verification record, the fingerprint algorithm that record is built
+on, the per-harness config-root layout (what a provisioner copies versus what
+the harness owns at runtime), and the version-gated credential-slot rules —
+as data.
+
+# Why this package exists
+
+The contract was implemented twice, independently: once in Go inside loomcli's
+supervisor (which refuses to boot an agent whose profile does not verify) and
+once in Python-inside-bash in the PUPPET workspace's provision script (which
+writes the profile). On 2026-08-19 the two diverged on day one — the script
+folded `harness_version` into the sha256 while the supervisor hashed only
+path + NUL + bytes — producing a false boot refusal on the first profiled run.
+A contract implemented twice is a contract that drifts, so it lives here once
+and both sides become callers.
+
+# Purity boundary
+
+This package is a pure translator: `fs.FS` (or plain strings) in, values out.
+It performs no keychain access, executes no process, queries no supervisor,
+resolves no environment variable, and copies nothing of its own. BuildPlan
+returns a plan; the caller does the copying. KeychainSlot returns the service
+name and precedence rule in force; the caller talks to the keychain. That
+boundary is what makes the package safe to depend on from both a provisioner
+that writes and a supervisor that refuses to boot, and it is asserted
+mechanically by a test (see purity_test.go).
+
+Acquisition and lifecycle stay with the caller. In particular, "the manifest
+file is absent" is deliberately not an error of this package: the caller does
+the read and owns the never-provisioned distinction.
+
+# The manifest
+
+A provisioned config root carries ManifestName at its top level:
+
+	{
+	 "files": ["CLAUDE.md", "settings.json", "skills/x.md"],
+	 "fingerprint": "27fa9696...",
+	 "harness_version": "2.1.235 (Claude Code)"
+	}
+
+Files is an ALLOWLIST, and that is load-bearing. Files present in the config
+root but absent from the list are never opened, because the harness mutates
+.credentials.json, .claude.json, sessions/ and history/ at runtime by design;
+hashing them would make every profile fail verification within minutes.
+
+# The fingerprint algorithm, byte for byte
+
+Let files be the manifest's Files list, in the order listed (Validate
+requires that order to be sorted and duplicate-free, so listed order and
+sorted order are the same thing, and a builder and a verifier cannot
+disagree about it). Then:
+
+	h := sha256.New()
+	for each rel in files:
+	    h.Write(UTF-8 bytes of rel)   // slash-separated, relative, path.Clean-stable
+	    h.Write([]byte{0x00})
+	    h.Write(the file's bytes, verbatim)
+	fingerprint := lowercase hex of h.Sum(nil)
+
+Nothing else is an input. In particular harness_version is NOT hashed: it is
+a separate manifest field compared on its own. Folding it in would conflate
+two distinct repairs — "re-provision this profile" and "bless this harness
+upgrade" — into one indistinguishable mismatch, and callers depend on telling
+them apart. An empty file list is legal and hashes to the sha256 of the empty
+string. A file listed but missing on disk is an error, never a skip.
+
+A reimplementation in another language agrees with this one if it produces
+27fa969635caf3dc34026424a3bfac5b066d7b20c8e96dcc2cfc991c0e4bd99b for the tree
+{"a.txt": "A", "b/c.txt": "C"} listed as ["a.txt", "b/c.txt"].
+
+# Layout
+
+Every file under a source profile tree is provisioned (copied and manifested)
+EXCEPT the declared exceptions: seed files, which are copied only if absent at
+the destination and are never manifested or hashed because the harness
+rewrites them; excluded directories, which are never walked; and junk
+(.DS_Store). See Harness.SeedFiles and Harness.ExcludedDirs.
+
+# Version drift
+
+Drift detection is exact string equality of the trimmed harness_version — the
+first line of `<binary> --version` as the caller observed it. There is no
+semver leniency: "2.1.235 (Claude Code)" is compared whole. Semver parsing
+exists in this package for exactly one purpose, gating the auth rules below.
+
+Lineage: PUPPET-96 (profile/manifest contract), PUPPET-122 (this package).
+
+### Exported Types & Functions
+
+#### `func Fingerprint(fsys fs.FS, files []string) (string, error)`
+Fingerprint hashes the given files, IN THE ORDER GIVEN, out of fsys:
+
+	sha256( for each rel: rel-bytes || 0x00 || file bytes )
+
+The order matters and is part of the contract; Manifest.Validate requires a
+sorted, duplicate-free list, so the only legal order is the sorted one and a
+builder and a verifier cannot disagree.
+
+harness_version is not an input — see the package doc for why. Files present
+in fsys but absent from files are never opened (the allowlist rule). A file
+that is listed but missing is an error naming the path, never a skip: a
+deleted provisioned file must fail verification.
+
+An empty list is legal and yields the sha256 of the empty string.
+
+#### `func Verify(in VerifyInput) error`
+Verify checks a provisioned config root against its manifest.
+
+Order of checks, deliberately: shape first (so a malformed manifest is
+rejected before any file is opened), then the observed version's presence,
+then the fingerprint, then version drift. Fingerprint before drift because a
+tampered profile is the more serious finding of the two.
+
+Returns nil, or ErrManifestInvalid, ErrVersionUnknown, or a *MismatchError
+wrapping ErrFingerprintMismatch or ErrVersionDrift. Read errors from FS are
+returned as-is, wrapped by Fingerprint.
+
+"The manifest file is missing" is not a case here: the caller owns the read
+and the never-provisioned distinction that goes with it.
+
+#### `func VersionAtLeast(version, min string) (bool, error)`
+VersionAtLeast reports whether the leading X.Y.Z of version is greater than
+or equal to the leading X.Y.Z of min.
+
+Both sides may be noisy: "2.1.235 (Claude Code)" compares as 2.1.235. Numeric
+comparison, component by component — a string compare would put "10.0.0"
+before "9.0.0", which is precisely the bug this exists to avoid. Pre-release
+and build suffixes are IGNORED: "2.1.234-rc.1" compares equal to "2.1.234".
+
+A string with no X.Y.Z anywhere in it is an error. Callers gating a
+behaviour on a version must decide what an unparseable version means; this
+package refuses to guess.
+
+#### `type AuthSlot`
+AuthSlot describes WHERE a harness looks for credentials for one config root.
+It is data only: this package never calls security(1), never reads a
+keychain, and never acquires or refreshes a token. The caller does all of
+that with the names below.
+
+#### `func KeychainSlot(h Harness, configDir, harnessVersion string) (AuthSlot, bool)`
+KeychainSlot returns the per-config-root credential slot rule in force for
+this harness at this version.
+
+ok=false means "no per-root slot applies" — file-based auth only. That is the
+answer for claude before 2.1.234, for codex at any version, for an unknown
+harness, and, deliberately, for a version string with no parseable X.Y.Z: the
+package FAILS CLOSED to file-based auth rather than guessing a slot, because
+a wrong slot silently logs the agent out while no slot at worst reproduces
+the pre-2.1.234 behaviour.
+
+configDir must be the LITERAL value the caller injects as CLAUDE_CONFIG_DIR —
+absolute, no trailing slash, no symlink resolution — hashed with no trailing
+newline. A normalised variant hashes to a different, wrong slot, so callers
+must not normalise it here or there. Worked vector: "/tmp/p/claude" yields
+Suffix "7629796b" and Service "Claude Code-credentials-7629796b".
+
+#### `type Harness`
+Harness names a coding-agent CLI whose config root can be provisioned. The
+string values match the directory names used under a profile source tree
+(profiles/<agent>/<harness>/) and the harness names used elsewhere in this
+module.
+
+#### `func Harnesses() []Harness`
+Harnesses returns every known harness in a stable order.
+
+#### `type Manifest`
+Manifest is the launch-verification record at <configRoot>/.manifest.json.
+
+The JSON field names and the fingerprint algorithm are the frozen wire
+contract: other implementations (a shell provisioner, a supervisor in another
+repo) read and write this exact shape.
+
+#### `func BuildManifest(fsys fs.FS, files []string, harnessVersion string) (Manifest, error)`
+BuildManifest hashes an ALREADY-WRITTEN destination and returns the manifest
+to store at <configRoot>/.manifest.json.
+
+files is sorted and de-duplicated first, so the manifest's list is always in
+the one legal order, and the fingerprint is computed over that same order.
+harnessVersion is the trimmed first line of `<binary> --version`; observing
+it is the caller's job, and an empty one is rejected — an unpinned manifest
+could never drift-check.
+
+#### `func ParseManifest(data []byte) (Manifest, error)`
+ParseManifest decodes and validates manifest bytes. Reading the file is the
+caller's job: "the manifest is absent" is a lifecycle distinction this
+package deliberately does not own.
+
+#### `type MismatchError`
+MismatchError carries both sides of a comparison so callers can render their
+own message without re-deriving either. Unwrap yields ErrFingerprintMismatch
+or ErrVersionDrift, so errors.Is against the sentinels keeps working.
+
+#### `type Plan`
+Plan is what a provisioner should do with one source profile tree. It is a
+description, not an action: this package copies nothing.
+
+#### `func BuildPlan(src fs.FS, h Harness) (Plan, error)`
+BuildPlan walks a source profile tree and splits it into provisioned and
+seeded files for the harness.
+
+Everything under src is provisioned by default; the layout tables are the
+only exceptions. Seed files (top-level only) go to Seed, excluded directories
+are not walked at all, and junk (.DS_Store) is dropped entirely.
+
+An empty or absent tree yields an empty Plan and no error: whether a harness
+directory exists at all is the caller's opt-in signal, not an error here.
+
+A symlink or any other non-regular file is an ERROR naming the path, never a
+silent copy of its target. A symlinked profile file is exactly the kind of
+thing the fingerprint exists to notice, and following it would launder
+content past verification.
+
+#### `type VerifyInput`
+VerifyInput is everything Verify needs. The caller does the I/O: it opens the
+config root, reads and parses the manifest, and observes the harness version.
+
 ## Module: screen (`pkg/screen`)
 
 Wraps a vt100 terminal emulator so a harness's raw PTY byte stream becomes queryable rendered state. It exposes writes, coherent point-in-time snapshots, a monotonic change generation, coalesced change subscriptions, and a resize that coordinates a fallible peer without holding the read lock.
