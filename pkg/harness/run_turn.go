@@ -171,9 +171,12 @@ type TurnResult struct {
 
 	// WrapperResult is populated when ExitAfterTurn is true and the harness
 	// process was stopped before returning. This is the raw process-level
-	// outcome from the lower-level wrapper; StatusInterrupted is expected when
-	// RunTurn intentionally stops a still-live interactive harness after a
-	// successful turn. Callers should use Turn.State / ErrTurnErrored for the
+	// outcome from the lower-level wrapper; after RunTurn intentionally stops a
+	// still-live interactive harness following a successful turn, either
+	// StatusIdle (the harness honored the graceful quit and exited cleanly) or
+	// StatusInterrupted (it ignored the quit and was terminated) is expected —
+	// which one appears is a property of the harness build, not of the turn.
+	// Callers should use Turn.State / ErrTurnErrored for the
 	// turn-level outcome.
 	WrapperResult wrapper.Result
 

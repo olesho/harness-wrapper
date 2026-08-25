@@ -306,12 +306,26 @@ func (b *Builder) Raw(delayMs int, text string) *Builder {
 // — like a real interactive harness waiting for the next message — until the
 // wrapper terminates it. In a one-shot (ExitAfterTurn) scenario this is what
 // makes RunTurn's best-effort graceful quit time out and conv.Close SIGTERM the
-// process, so WrapperResult.Status ends up StatusInterrupted — matching real
-// Claude Code (see TestRunTurn_RealClaudeDogfood). Append it last.
+// process, so WrapperResult.Status ends up StatusInterrupted. This models a
+// harness that IGNORES the graceful quit (as claude <=2.1.217 did), one of the
+// two shapes real harnesses take; claude >=2.1.245 exits on /quit instead — see
+// QuitsOnQuit for that branch, and TestRunTurn_RealClaudeDogfood, which accepts
+// either. Append it last.
 //
 // The binary also holds this way by default once the timeline ends (see
 // cmd/fakeharness); this just states the intent explicitly at the call site.
 func (b *Builder) StayAliveUntilStopped() *Builder {
 	b.s.Steps = append(b.s.Steps, Step{Hold: &Hold{}})
 	return b
+}
+
+// QuitsOnQuit holds the fake until the wrapper's graceful quit sequence arrives,
+// then exits 0 — modelling a harness that HONORS the quit (claude >=2.1.245).
+// In an ExitAfterTurn scenario this makes RunTurn's gracefulQuit succeed before
+// gracefulQuitWait elapses, so conv.Close never needs to signal and
+// WrapperResult.Status is StatusIdle with the harness's own exit code. This is
+// the counterpart to StayAliveUntilStopped; append one or the other last, never
+// both (Hold drains stdin and would swallow the quit).
+func (b *Builder) QuitsOnQuit() *Builder {
+	return b.waitInput(`/quit`, false, "quit").Exit(0)
 }
