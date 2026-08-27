@@ -24,6 +24,16 @@ import (
 // direction of the check: wait for the composer to ECHO the text, THEN press
 // Enter once. Submitting first and retrying — the obvious alternative — risks
 // double-submitting a prompt that did land, which is worse than the bug.
+//
+// This file now guards a SECOND, independent defect of the same write. Where the
+// one above loses the SUBMIT KEY (the turn never starts), the other loses the
+// TEXT: a >2KB prompt written as one raw burst reaches claude-code truncated to
+// its last read chunk, so the turn starts and completes normally while the model
+// answers only the tail of a role prompt. Measured 2026-08-27 on claude-code
+// 2.1.247: truncation always began at byte offset 2044 of 2608, in 5 of 10 runs
+// here and 8 of 10 in the original report. The fix is to stop TYPING a large
+// payload and start declaring it as a PASTE — see pasteWrapForHarness in
+// ready.go for the framing, the corpus evidence, and the 10/10 measurement.
 const (
 	// submitEchoGap bounds the wait for the composer echo before the submit key
 	// is written anyway. Degrading to the old single-burst timing is the right
@@ -33,7 +43,59 @@ const (
 	// echoNeedleLen is how much of the text's first line to look for on screen.
 	// Short enough to survive wrapping at any supported width.
 	echoNeedleLen = 24
+
+	// pasteThreshold is the text size at or above which the write is framed as a
+	// bracketed paste. Measured loss began at 2044 of 2608 bytes on claude-code
+	// 2.1.247 — one read chunk — so 1024 leaves margin below the observed cliff
+	// while staying far above any slash command or interactive answer.
+	//
+	// A threshold rather than framing everything: framing changes how the
+	// composer RENDERS short input (claude-code collapses a paste into a
+	// "[Pasted text #1 +N lines]" placeholder), and small prompts have never
+	// been observed to truncate. Keep the blast radius on the payload that is
+	// actually broken.
+	pasteThreshold = 1024
 )
+
+// shouldPaste reports whether text should go out framed as a bracketed paste for
+// this harness, returning the framing to use.
+//
+// Three conditions, all required: the harness has a MEASURED framing
+// (pasteWrapForHarness), the text is big enough to be at risk, and it is not a
+// slash command. The slash guard preserves slash-command semantics — "/compact"
+// or "/model" typed through Send by a chatd client must still open the command
+// palette, which a PASTE does not. A >=1KB slash command is not a real shape;
+// the residual hazard is noted here rather than engineered for.
+func shouldPaste(harness, text string) (prefix, suffix []byte, framed bool) {
+	if len(text) < pasteThreshold {
+		return nil, nil, false
+	}
+	if strings.HasPrefix(strings.TrimSpace(text), "/") {
+		return nil, nil, false
+	}
+	prefix, suffix = pasteWrapForHarness(harness)
+	if prefix == nil {
+		return nil, nil, false
+	}
+	return prefix, suffix, true
+}
+
+// framePaste builds the ONE write that carries a framed payload: the opening
+// marker, the text, the closing marker.
+//
+// Any bracketed-paste marker already INSIDE text is stripped first. A prompt
+// that quotes terminal escapes would otherwise terminate the paste early and
+// dump its remainder back onto the typed path — the exact failure this change
+// exists to remove, re-entered through the payload. Cheap, and it closes an
+// injection-shaped foot-gun.
+func framePaste(prefix, suffix []byte, text string) []byte {
+	text = strings.ReplaceAll(text, pasteStartCSI200, "")
+	text = strings.ReplaceAll(text, pasteEndCSI201, "")
+	buf := make([]byte, 0, len(prefix)+len(text)+len(suffix))
+	buf = append(buf, prefix...)
+	buf = append(buf, text...)
+	return append(buf, suffix...)
+}
 
 // writeMessageAndSubmit writes text, waits for the composer to show it, and only
 // then writes the submit key.
@@ -49,10 +111,19 @@ func (c *Conversation) writeMessageAndSubmit(ctx context.Context, text, preWrite
 	if !requiresPromptReadiness(c.opts.Harness) {
 		return c.write(append([]byte(text), submitKey...))
 	}
-	if err := c.write([]byte(text)); err != nil {
+	prefix, suffix, framed := shouldPaste(c.opts.Harness, text)
+	if framed {
+		// The markers and the text go out as ONE write; the submit key stays
+		// its own, LATER write. Putting the submit key inside the paste would
+		// have it consumed as pasted CONTENT — precisely the swallowed-prompt
+		// bug the split above exists to fix.
+		if err := c.write(framePaste(prefix, suffix, text)); err != nil {
+			return err
+		}
+	} else if err := c.write([]byte(text)); err != nil {
 		return err
 	}
-	if err := c.awaitComposerEcho(ctx, text, preWriteScreen); err != nil {
+	if err := c.awaitComposerEcho(ctx, text, preWriteScreen, framed); err != nil {
 		return err
 	}
 	return c.write(submitKey)
@@ -79,13 +150,14 @@ func (c *Conversation) echoBoundDur() time.Duration {
 // has no matchable first line — ANY screen change since the pre-write snapshot
 // counts, which is what covers composers that TRANSFORM the echo. A collapsed
 // paste placeholder is exactly that case: the text never appears, but the screen
-// does change.
+// does change — and when framed is set the caller has DECLARED that case, so the
+// needle is dropped up front rather than waited out.
 //
 // On the local deadline it returns nil, degrading to the old single-burst
 // timing: the submit is written regardless, so this can delay a send but never
 // hang or drop it. A cancelled ctx is different — the whole run is over — so it
 // returns that error instead of degrading.
-func (c *Conversation) awaitComposerEcho(ctx context.Context, text, preWriteScreen string) error {
+func (c *Conversation) awaitComposerEcho(ctx context.Context, text, preWriteScreen string, framed bool) error {
 	needle := text
 	if i := strings.IndexByte(needle, '\n'); i >= 0 {
 		needle = needle[:i]
@@ -93,6 +165,14 @@ func (c *Conversation) awaitComposerEcho(ctx context.Context, text, preWriteScre
 	needle = strings.TrimSpace(needle)
 	if len(needle) > echoNeedleLen {
 		needle = needle[:echoNeedleLen]
+	}
+	// A FRAMED write is rendered as a placeholder ("[Pasted text #1 +42 lines]"),
+	// never as the text, so the primary needle can never match and every send
+	// would pay the full bound/2 before the fallback arms. Empty needle is the
+	// signal the loop below already reads as "any screen change counts" — the
+	// same branch a collapsed paste placeholder was always meant to land in.
+	if framed {
+		needle = ""
 	}
 
 	bound := c.echoBoundDur()

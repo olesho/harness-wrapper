@@ -177,10 +177,22 @@ func waitInput(in *bufio.Reader, w *fakeharness.WaitInput, captured *string) err
 	}
 	if w.Capture {
 		if loc := re.FindIndex(buf); loc != nil {
-			*captured = string(buf[:loc[0]])
+			*captured = stripPasteFraming(string(buf[:loc[0]]))
 		}
 	}
 	return nil
+}
+
+// stripPasteFraming removes the bracketed-paste markers from a captured prompt.
+//
+// chat frames a large payload as a paste (CSI 200 ~ … CSI 201 ~) so the harness
+// composer keeps it whole; a real TUI consumes those markers as FRAMING, not as
+// content, and this fake must do the same or every {{prompt}} echo round-trip
+// would see the escapes in the reply. Stripping rather than requiring them keeps
+// the below-threshold path byte-identical.
+func stripPasteFraming(s string) string {
+	s = strings.TrimPrefix(s, fakeharness.PasteStart)
+	return strings.TrimSuffix(s, fakeharness.PasteEnd)
 }
 
 // readUntil reads one byte at a time until the accumulated buffer matches re,

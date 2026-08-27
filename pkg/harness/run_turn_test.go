@@ -284,3 +284,62 @@ func requireRealClaude(t *testing.T) string {
 	}
 	return claudePath
 }
+
+// TestRunTurn_RealClaudeLargePromptIntact is the LIVE regression for PUPPET-194:
+// a >2KB multi-line prompt must reach the model WHOLE.
+//
+// It is the only test that can prove the fix. The hermetic fake has no paste
+// heuristic — it cannot lose the head of a large write — so the defect exists
+// only against a real composer, and the assertion has to read what the MODEL
+// saw. The payload's first line asks for the three words after a marker; a
+// truncated arrival starts past that line and cannot answer it, so the reply
+// itself distinguishes the two outcomes with no ambiguity. testdata carries the
+// payload so its SIZE is a fact of the repo rather than of a shell heredoc.
+//
+// Measured 2026-08-27 on claude-code 2.1.247 (macOS), 10 runs per arm:
+// unframed 5/10 intact, framed 10/10. Run it in a loop, not once — the defect
+// is probabilistic:
+//
+//	go test ./pkg/harness/ -run RealClaudeLargePromptIntact -count=10 -v
+func TestRunTurn_RealClaudeLargePromptIntact(t *testing.T) {
+	if os.Getenv("HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN") != "1" {
+		t.Skip("set HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1 to run against real Claude Code")
+	}
+	claudePath := requireRealClaude(t)
+
+	raw, err := os.ReadFile(filepath.Join("testdata", "large_prompt.txt"))
+	if err != nil {
+		t.Fatalf("read large prompt: %v", err)
+	}
+	prompt := string(raw)
+	// Guard the payload itself: shrink it below the measured cliff and the test
+	// would pass for the wrong reason.
+	if len(prompt) < 2560 || strings.Count(prompt, "\n") < 30 {
+		t.Fatalf("payload is %d bytes / %d lines, want >= 2560 bytes and >= 30 lines to clear the truncation cliff",
+			len(prompt), strings.Count(prompt, "\n"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	var out bytes.Buffer
+	res, err := harness.RunTurn(ctx, harness.TurnConfig{
+		Harness:       "claude",
+		BinaryPath:    claudePath,
+		Args:          []string{"--dangerously-skip-permissions"},
+		Prompt:        prompt,
+		ExitAfterTurn: true,
+		Output:        &out,
+	})
+	if err != nil {
+		t.Fatalf("RunTurn real Claude large prompt: %v\noutput:\n%s", err, out.String())
+	}
+	if res.Turn.State != chat.TurnStateComplete {
+		t.Fatalf("Turn.State = %q, want complete\nreason: %s\noutput:\n%s", res.Turn.State, res.Turn.Reason, out.String())
+	}
+	got := strings.ToLower(res.Turn.Text + out.String())
+	if !strings.Contains(got, "alpha bravo charlie") {
+		t.Fatalf("the model did not echo the words after the HEAD sentinel — the prompt arrived TRUNCATED at the front\nturn text:\n%s\noutput:\n%s",
+			res.Turn.Text, out.String())
+	}
+}

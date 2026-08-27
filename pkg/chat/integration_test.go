@@ -243,3 +243,49 @@ func TestIntegration_Codex_MultiTurn(t *testing.T) {
 		}
 	}
 }
+
+// TestIntegration_LargePromptRoundTrip drives the framed path end to end
+// (PUPPET-194). The prompt clears pasteThreshold, so chat wraps it in the
+// bracketed-paste markers; the fake strips them as a real TUI does and echoes
+// the captured prompt back. Both sentinels must return.
+//
+// The HEAD sentinel is the decisive one: the live defect drops everything
+// before the last read chunk, so a truncated arrival keeps the tail and loses
+// exactly this. The TAIL sentinel guards the other direction — a framing byte
+// left in the captured prompt, or a closing marker eaten as content.
+//
+// This cannot prove the LIVE fix (the fake has no paste heuristic to fool); it
+// proves the seam is wired and no byte is lost in the framing itself. The live
+// evidence is TestRunTurn_RealClaudeLargePromptIntact in pkg/harness.
+func TestIntegration_LargePromptRoundTrip(t *testing.T) {
+	const (
+		head = "HEAD-9K4Z"
+		tail = "TAIL-2M7Q"
+	)
+	prompt := head + "\n" + largeText(pasteThreshold+256) + tail
+
+	script := fakeharness.New("claude-code").
+		Idle().
+		AwaitSubmit().
+		Working(30, "Cerebrating").
+		Reply(40, fakeharness.PromptRef(), "Synthesized", "5s").
+		Build()
+
+	conv := openFake(t, script)
+	sendOneTurn(t, conv, prompt)
+
+	turn := waitForTerminalTurn(t, conv, 20*time.Second)
+	if turn.State != TurnStateComplete {
+		t.Fatalf("state = %q (reason %q), want complete", turn.State, turn.Reason)
+	}
+	if !strings.Contains(turn.Text, head) {
+		t.Errorf("reply lost the HEAD sentinel %q — the prompt arrived truncated at the front\n--- captured text ---\n%s", head, turn.Text)
+	}
+	if !strings.Contains(turn.Text, tail) {
+		t.Errorf("reply lost the TAIL sentinel %q\n--- captured text ---\n%s", tail, turn.Text)
+	}
+	// The framing is protocol, not content: no marker may survive into the reply.
+	if strings.Contains(turn.Text, pasteStartCSI200) || strings.Contains(turn.Text, pasteEndCSI201) {
+		t.Errorf("paste framing leaked into the echoed prompt; the fake did not strip it\n--- captured text ---\n%s", turn.Text)
+	}
+}
