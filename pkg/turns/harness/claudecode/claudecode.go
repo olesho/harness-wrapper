@@ -93,7 +93,8 @@ import (
 // interrupt" footer (plus the working spinner), so an in-flight frame is
 // still rejected — by the busy gate rather than by the regex.
 var thinkingRE = regexp.MustCompile(
-	`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)(?:[^\S\r\n]*·[^\S\r\n]*[^\r\n]*)?[^\S\r\n]*$`)
+	`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)(?:[^\S\r\n]*·[^\S\r\n]*[^\r\n]*)?[^\S\r\n]*$`,
+)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.
