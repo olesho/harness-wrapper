@@ -47,7 +47,10 @@ is reproduced.
 | `Raw(d, text)` | verbatim line for the wrapper's line classifier (e.g. `API Error: 429 …`) | n/a | n/a |
 
 Input / lifecycle: `AwaitSubmit()` (CSI 13u, captures the prompt), `AwaitMenuChoice()` (digit+CR),
-`Exit(code)`, `StayAliveUntilStopped()` (hold at the prompt until RunTurn's one-shot stop → `interrupted`). `PromptRef()` is the placeholder substituted
+`Exit(code)`, `StayAliveUntilStopped()` (hold at the prompt until RunTurn's one-shot stop → `interrupted`),
+`QuitsOnQuit()` (wait for the graceful `/quit`, then exit 0 → `idle`). Those last two model the two
+shapes real harnesses take — ignoring the graceful quit (claude ≤2.1.217) versus honoring it
+(claude ≥2.1.245) — so append exactly one of them, last. `PromptRef()` is the placeholder substituted
 with the captured prompt in any echoed frame.
 
 **Codex** uses a different completion model — no `Busy()`, no quiescence: the chat layer completes a
