@@ -40,19 +40,22 @@ const (
 //
 // Harnesses that do not gate on prompt readiness keep the single combined
 // write: they have no composer to echo into, so there is nothing to wait for.
+//
+// Writes go through c.write, not c.sess.WriteStdin directly, so the interactive
+// answer path (input.go) — which the same paste-collapse hazard reaches, and
+// which is tested without a live session — shares this exact code. In
+// production c.writeStdin is nil and c.write is sess.WriteStdin.
 func (c *Conversation) writeMessageAndSubmit(ctx context.Context, text, preWriteScreen string, submitKey []byte) error {
 	if !requiresPromptReadiness(c.opts.Harness) {
-		_, err := c.sess.WriteStdin(append([]byte(text), submitKey...))
-		return err
+		return c.write(append([]byte(text), submitKey...))
 	}
-	if _, err := c.sess.WriteStdin([]byte(text)); err != nil {
+	if err := c.write([]byte(text)); err != nil {
 		return err
 	}
 	if err := c.awaitComposerEcho(ctx, text, preWriteScreen); err != nil {
 		return err
 	}
-	_, err := c.sess.WriteStdin(submitKey)
-	return err
+	return c.write(submitKey)
 }
 
 // echoBoundDur is how long to wait for the echo.

@@ -32,7 +32,7 @@ func TestAwaitComposerEcho_ReturnsWhenTheTextAppears(t *testing.T) {
 
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		c.screen.Write([]byte("❯ ship the turn API\r\n"))
+		_, _ = c.screen.Write([]byte("❯ ship the turn API\r\n"))
 	}()
 
 	start := time.Now()
@@ -54,7 +54,7 @@ func TestAwaitComposerEcho_CollapsedPasteCountsAsEcho(t *testing.T) {
 
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		c.screen.Write([]byte("❯ [Pasted text #1 +157 lines]\r\n"))
+		_, _ = c.screen.Write([]byte("❯ [Pasted text #1 +157 lines]\r\n"))
 	}()
 
 	start := time.Now()
@@ -133,7 +133,7 @@ func TestAwaitComposerEcho_EmptyNeedleUsesScreenChange(t *testing.T) {
 
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		c.screen.Write([]byte("anything at all\r\n"))
+		_, _ = c.screen.Write([]byte("anything at all\r\n"))
 	}()
 
 	// Leading newline: the first line is empty, so there is no needle to match.

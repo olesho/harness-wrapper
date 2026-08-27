@@ -2,6 +2,9 @@ package chat
 
 import (
 	"context"
+	"errors"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -338,5 +341,116 @@ func TestHandleInputResolved_ClearsAndNotifies(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no EventInputResolved emitted")
+	}
+}
+
+// freeTextRequest is a free-text prompt: a request with NO options, so the
+// answer is composer text rather than a menu keystroke.
+func freeTextRequest() *turns.InputRequest {
+	return &turns.InputRequest{
+		ID:     "ft-1",
+		Kind:   "question",
+		Prompt: "What should I do next?",
+	}
+}
+
+// echoingRecorder is a composer that DOES NOT echo until a second frame: the
+// echo is written to the screen from another goroutine a beat after the text
+// write lands, exactly as a PTY would deliver it. Each PTY write is recorded as
+// its own frame, together with whether the echo was on screen at the time — so
+// a submit key riding in the same write as the text, or written before the
+// composer showed the text, is caught.
+type echoingRecorder struct {
+	mu      sync.Mutex
+	writes  []string
+	sawEcho []bool
+
+	scr      *screen.Screen
+	echoText string
+	echoDone sync.Once
+}
+
+func (e *echoingRecorder) write(p []byte) (int, error) {
+	e.mu.Lock()
+	e.writes = append(e.writes, string(p))
+	e.sawEcho = append(e.sawEcho, strings.Contains(e.scr.Snapshot().Text, e.echoText))
+	e.mu.Unlock()
+
+	// The first write is the text; the composer renders it one frame later.
+	e.echoDone.Do(func() {
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			_, _ = e.scr.Write([]byte(e.echoText))
+		}()
+	})
+	return len(p), nil
+}
+
+func (e *echoingRecorder) frames() ([]string, []bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.writes...), append([]bool(nil), e.sawEcho...)
+}
+
+// newFreeTextConv wires a real screen (the echo target) and an answer-path
+// writer that feeds it.
+func newFreeTextConv(rec *echoingRecorder) *Conversation {
+	c := newTestConv(Options{Harness: "claude-code"}, &keyRecorder{})
+	c.screen = screen.New(80, 24)
+	c.writeStdin = rec.write
+	rec.scr = c.screen
+	return c
+}
+
+// A free-text answer goes out as TWO writes — text, then the submit key — with
+// the composer echo awaited in between. One combined write is what lets Claude
+// Code collapse the arrival into a paste and swallow the submit.
+func TestAnswer_FreeTextSplitsTextFromSubmit(t *testing.T) {
+	const answer = "Ship the fleet plan review\nsecond line\nthird line"
+	rec := &echoingRecorder{echoText: "Ship the fleet plan review"}
+	c := newFreeTextConv(rec)
+
+	if err := answerHeld(t, c, freeTextRequest(), InputAnswer{Text: answer}); err != nil {
+		t.Fatalf("Answer = %v, want nil", err)
+	}
+
+	writes, sawEcho := rec.frames()
+	if len(writes) != 2 {
+		t.Fatalf("wrote %d frames (%q), want 2 (text, then submit)", len(writes), writes)
+	}
+	if writes[0] != answer {
+		t.Errorf("frame 0 = %q, want the answer text %q", writes[0], answer)
+	}
+	if writes[1] != ccSubmit {
+		t.Errorf("frame 1 = %q, want the submit key %q", writes[1], ccSubmit)
+	}
+	if sawEcho[0] {
+		t.Error("the composer had already echoed before the text was written; the fake is not exercising the wait")
+	}
+	if !sawEcho[1] {
+		t.Error("submit key written before the composer echoed the text")
+	}
+}
+
+// A cancelled context is the whole run ending: the submit must NOT be written
+// into a dead session, and the error propagates rather than degrading.
+func TestAnswer_FreeTextCancelledCtxWritesNoSubmit(t *testing.T) {
+	rec := &echoingRecorder{echoText: "never echoed"}
+	c := newFreeTextConv(rec)
+
+	release, err := c.queue.Acquire(context.Background())
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	defer release()
+	c.handleInputRequested(freeTextRequest())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.Answer(ctx, "ft-1", InputAnswer{Text: "some answer"}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Answer with cancelled ctx = %v, want context.Canceled", err)
+	}
+	if writes, _ := rec.frames(); len(writes) != 1 {
+		t.Fatalf("wrote %d frames (%q), want 1 (the text only)", len(writes), writes)
 	}
 }
