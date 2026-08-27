@@ -112,7 +112,7 @@ func TestMarker_completesOnlyWhenSettled(t *testing.T) {
 // The fallback path (no marker seen) still requires readyForInput — a settled
 // frame that lacks the prompt-readiness anchors must not idle-complete.
 func TestFallback_stillRequiresReadyForInput(t *testing.T) {
-	// No "Claude Code" header → readyForInput is false for claude-code.
+	// No composer prompt ("❯") → readyForInput is false for claude-code.
 	c := quiesceConv(t, "⏺ some output\n✻ Mused for 4s\n", 10*time.Second)
 	c.maybeIdleComplete() // endMarkerSeen is false → fallback path
 	if ev, ok := completedEvent(c); ok {

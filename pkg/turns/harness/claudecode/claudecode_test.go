@@ -116,10 +116,14 @@ func TestClaudeCodeAdapterFiresOnMinuteDurations(t *testing.T) {
 
 // TestClaudeCodeAdapter_TrailingContentNoFire locks in that a duration line
 // carrying the in-progress trailing decoration ("· ↑ tokens · esc to
-// interrupt") does NOT mis-fire TurnComplete: the end anchor must reject any
-// line with trailing non-whitespace, so completion fires only on the settled
-// bare summary line. This is what keeps the broadened minute/hour duration
-// pattern from firing mid-turn.
+// interrupt") does NOT mis-fire TurnComplete, so completion fires only on a
+// settled frame. This is what keeps the broadened minute/hour duration pattern
+// from firing mid-turn.
+//
+// Since the 2.1.247 fix, thinkingRE deliberately admits an arbitrary "· <tail>"
+// suffix (the settled summary now carries "· done <clock>"), so the rejection
+// here is made by the Busy() gate in OnScreen — which keys off exactly the "esc
+// to interrupt" footer on this line — rather than by the regex's end anchor.
 func TestClaudeCodeAdapter_TrailingContentNoFire(t *testing.T) {
 	scr := screen.New(120, 40)
 	a := New()

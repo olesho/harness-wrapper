@@ -32,6 +32,23 @@ iterates):
 5. **`tool-call`** — a turn that invokes a tool and shows its output region.
 6. **`multi-turn`** — three exchanges in one session.
 
+## Version-shape recordings
+
+Beyond the six, a harness may ship a scenario recorded specifically to pin the SHAPE a release
+renders, so upstream drift in that shape fails a test instead of hanging a run:
+
+- claude-code **`settled-after-turn`** (2.1.247) — a settled post-turn screen whose end-of-turn
+  summary carries the trailing status clause (`✻ Crunched for 2s · done 5:06 AM`) on a reply long
+  enough that the `Claude Code` startup banner has scrolled out of the viewport. Both halves matter:
+  the clause is what the end-anchored `thinkingRE` used to reject, and the missing banner is what
+  `pkg/chat.readyForInput` used to require — so a finished turn had no way to complete at all. Driven
+  by `test/scripts/claude/settled-after-turn.json`.
+
+  2.1.247 runs its TUI on the **alternate screen**, so the tail of `bytes.raw` is the alt-screen exit
+  (`CSI ?1049l`), which blanks the emulator. Replay this recording **incrementally** and read the last
+  frame carrying the clause — which is what production does anyway, since the wrapper reads frames as
+  they land and never sees the teardown. A single whole-file `Write` snapshots a blank screen.
+
 ## Adversarial recordings
 
 Alongside the canonical scenarios, `test/corpus/<harness>/adversarial/` holds **negative** recordings —
