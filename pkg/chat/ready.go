@@ -443,3 +443,56 @@ func shiftTabForHarness(harness, screenText string) []byte {
 // identical string as ShiftTabCSI9_2u so hermetic scenarios and this production
 // writer cannot drift; TestShiftTabMatchesFakeharness pins them byte-equal.
 const shiftTabCSI9_2u = "\x1b[9;2u"
+
+// pasteStartCSI200 / pasteEndCSI201 are the bracketed-paste framing markers a
+// real terminal emitter wraps pasted text in: CSI 200 ~ before, CSI 201 ~ after.
+// internal/fakeharness exports the identical strings as PasteStart / PasteEnd so
+// hermetic scenarios and this production writer cannot drift;
+// TestPasteWrapMatchesFakeharness pins them byte-equal.
+const (
+	pasteStartCSI200 = "\x1b[200~"
+	pasteEndCSI201   = "\x1b[201~"
+)
+
+// pasteWrapForHarness returns the bracketed-paste framing a synthetic PTY writer
+// must wrap a LARGE composer payload in for this harness, or (nil, nil) for a
+// harness whose composer has not been measured against one.
+//
+// It is the paste twin of submitKeyForHarness / shiftTabForHarness above, and
+// exists for a measured defect, not for tidiness. Typing a big prompt as one raw
+// burst is not what a terminal does with a paste, and claude-code's composer
+// treats each READ CHUNK of that burst as fresh typed input, keeping only the
+// last one:
+//
+// LIVE MEASUREMENT (2026-08-27, claude-code 2.1.247, macOS, driven through
+// pkg/oneshot against a 2627-byte / 43-line prompt whose FIRST line asks the
+// model to echo three marker words, so the reply reveals what actually arrived):
+//
+//   - Unframed (today's behaviour): 5 of 10 runs answered the TAIL of the
+//     prompt, every truncation starting at the same byte offset — 2044 of 2608
+//     in the original report, i.e. one 2KB read chunk. The turn STARTS and
+//     completes normally, so nothing in the wrapper notices; the run is silently
+//     wasted. Truncated runs also ran long (14-25s) against ~6s for intact ones.
+//   - Framed with CSI 200 ~ / CSI 201 ~: 10 of 10 runs echoed the FIRST words,
+//     all in 5-8s.
+//
+// Both claude-code and codex ENABLE bracketed-paste mode at startup — the byte
+// corpora in this repo open with ESC[?2004h and close with ESC[?2004l
+// (test/corpus/claude-code/*/bytes.raw:1, test/corpus/codex/*/bytes.raw:1) — so
+// the framing is the protocol-correct way to say "this is one paste, do not act
+// on the newlines inside it", not a heuristic.
+//
+// pi is deliberately LEFT OUT even though it also enables the mode (see the
+// note at readyForInput): pi's composer has never been measured against a >2KB
+// prompt, and pi is not what the fleet runs. Unmeasured harnesses keep today's
+// behaviour — that is the whole point of a per-harness table. codex is included
+// on the corpus evidence alone; if it ever proves wrong there, it comes out
+// here and nowhere else.
+func pasteWrapForHarness(harness string) (prefix, suffix []byte) {
+	switch harness {
+	case "claude", chatClaudeCode, "codex":
+		return []byte(pasteStartCSI200), []byte(pasteEndCSI201)
+	default:
+		return nil, nil
+	}
+}

@@ -51,6 +51,22 @@ const SubmitCR = "\r"
 // sending exactly this, the fake never advances and the test fails loudly.
 const ShiftTabCSI9_2u = "\x1b[9;2u"
 
+// PasteStart / PasteEnd are the bracketed-paste framing markers chat wraps a
+// LARGE composer payload in — CSI 200 ~ and CSI 201 ~, what a real terminal
+// emits around pasted text. A real TUI consumes them as FRAMING and keeps only
+// what is between them, so cmd/fakeharness strips them from the captured prompt
+// before {{prompt}} echoes it back; that strip is what lets a round-trip
+// scenario prove no byte of a >=1KB prompt was lost. The inward contract lives
+// in pkg/chat.pasteWrapForHarness, whose doc comment records the live
+// measurement behind it; these constants mirror it so the fake and this
+// production writer cannot drift, and TestPasteWrapMatchesFakeharness pins them
+// byte-equal. If the wrapper ever stops sending exactly these, the strip becomes
+// a no-op and the round-trip test fails loudly.
+const (
+	PasteStart = "\x1b[200~"
+	PasteEnd   = "\x1b[201~"
+)
+
 // promptPlaceholder is substituted with the captured prompt in any Frame whose
 // Echo is set. It lets a scenario assert a round-trip: the exact text the
 // wrapper submitted reappears verbatim in the harness's reply.

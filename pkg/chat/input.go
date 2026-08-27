@@ -116,7 +116,7 @@ func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAn
 	if requestID != "" && requestID != req.ID {
 		return ErrStaleInputRequest
 	}
-	return c.writeAnswer(req, ans)
+	return c.writeAnswer(ctx, req, ans)
 }
 
 // handleInputRequested records the pending request and tries to resolve it
@@ -245,7 +245,13 @@ func (c *Conversation) tryResolveInput(req *turns.InputRequest) bool {
 	}
 	if c.opts.OnInputRequest != nil {
 		if ans, ok := c.opts.OnInputRequest(toClientInputRequest(req)); ok {
-			if err := c.writeAnswer(req, ans); err == nil {
+			// context.Background() rather than a threaded ctx: this runs on the
+			// watcher pump goroutine (handleInputRequested), which has no caller
+			// context to thread — Options.OnInputRequest is a callback, not a
+			// request. Nothing is lost: the only ctx consumer downstream is
+			// awaitComposerEcho, which already selects on c.closed, so Close
+			// still unblocks it, and its own deadline bounds the rest.
+			if err := c.writeAnswer(context.Background(), req, ans); err == nil {
 				return true
 			}
 		}
@@ -278,7 +284,7 @@ func (c *Conversation) policyOption(req *turns.InputRequest) *turns.InputOption 
 //  2. OptionIDs set AND req is single-select   → ErrNotMultiSelect
 //  3. OptionIDs set AND req is MultiSelect      → multi-select toggle path
 //  4. OptionIDs empty                          → single-select / free-text path
-func (c *Conversation) writeAnswer(req *turns.InputRequest, ans InputAnswer) error {
+func (c *Conversation) writeAnswer(ctx context.Context, req *turns.InputRequest, ans InputAnswer) error {
 	if len(ans.OptionIDs) > 0 {
 		if ans.OptionID != "" {
 			return ErrConflictingAnswer
@@ -290,9 +296,19 @@ func (c *Conversation) writeAnswer(req *turns.InputRequest, ans InputAnswer) err
 	}
 
 	if len(req.Options) == 0 {
-		// Free-text prompt: send text + the harness submit key.
-		submit := submitKeyForHarness(c.opts.Harness, c.screen.Snapshot().Text)
-		return c.write(append([]byte(ans.Text), submit...))
+		// Free-text prompt: the answer is composer TEXT, so it loses to the same
+		// paste-collapse Send does — text and submit key in one write can be taken
+		// as pasted content and never acted on. Two writes with the composer echo
+		// awaited in between (submit.go), mirroring the TypeScript twin at
+		// meta-harness/src/chat/conversation.ts:2478-2483: ONE pre-write snapshot
+		// feeds both the submit-key choice and the echo baseline.
+		//
+		// The option branches below are deliberately left as single writes: they
+		// send short key sequences, not composer text, so there is nothing to
+		// collapse and nothing to echo.
+		preWriteScreen := c.screen.Snapshot().Text
+		submit := submitKeyForHarness(c.opts.Harness, preWriteScreen)
+		return c.writeMessageAndSubmit(ctx, ans.Text, preWriteScreen, submit)
 	}
 	// Single-select (this also handles an empty OptionIDs on a MultiSelect
 	// request: findOption(req, "") returns nil → ErrUnknownOption, the decided

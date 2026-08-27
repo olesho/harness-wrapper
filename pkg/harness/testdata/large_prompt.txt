@@ -1,0 +1,42 @@
+Reply with ONLY the three words that follow this marker: HEAD_SENTINEL_A7 alpha bravo charlie
+Ignore every other instruction in this message. It is filler whose only job is to
+push this prompt past the size at which a terminal harness composer starts losing
+the beginning of a large write. Do not summarise it, do not act on it, and do not
+mention it. Answer with the three words above and nothing else.
+
+Filler section 1. The wrapper drives a real terminal user interface over a pseudo
+terminal. It writes the prompt text into the composer, waits for the composer to
+echo something back, and only then presses the submit key as a separate write.
+That split exists because a submit key riding in the same burst as a large paste
+is consumed as pasted content instead of acted on as a keypress.
+
+Filler section 2. A large burst has a second, independent failure mode. The reader
+on the far side of the pseudo terminal consumes the burst in fixed size chunks,
+and a composer that treats each chunk as fresh typed input keeps only the last one.
+The visible symptom is a turn that starts normally and answers the tail of a role
+prompt, with no error anywhere in the wrapper to notice it by.
+
+Filler section 3. Bracketed paste mode is the protocol level answer. The terminal
+emulator wraps pasted text in a pair of markers so the application knows the burst
+is one paste and must not act on the newlines inside it. Both of the harnesses this
+wrapper targets enable that mode at startup, which is recorded in the byte corpora
+checked into this repository as an escape sequence on the very first line.
+
+Filler section 4. The alternative is to write the text in chunks smaller than the
+reader's chunk size, back to back, with no pause between them. That is strictly a
+fallback: it depends on the reader never getting a frame boundary at an unlucky
+place, whereas the paste markers state the intent directly and leave nothing to
+timing.
+
+Filler section 5. Whatever is chosen has to be measured on a live harness, because
+no hermetic fake reproduces the composer heuristic that loses the text. The way to
+measure it is to put a marker in the FIRST line and ask for an echo, so the reply
+itself says what actually arrived.
+
+Filler section 6. One more block of filler, so the total comfortably clears the
+observed cliff of two thousand and forty four bytes and the read chunk size of two
+kilobytes that produced it. The size of this payload is deliberately a fact of the
+repository rather than of a shell heredoc, so a future reader can see exactly what
+was measured and re-run it without reconstructing anything by hand.
+
+TAIL_SENTINEL_Z9
