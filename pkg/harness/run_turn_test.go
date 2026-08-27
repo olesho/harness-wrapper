@@ -96,6 +96,48 @@ func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
 	}
 }
 
+func TestRunTurn_ExitAfterTurn_HarnessQuitsCleanly(t *testing.T) {
+	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	bin := fakeBin(t)
+	env := scriptEnv(t, fakeharness.New("claude-code").
+		Session(sessionID).
+		Idle().
+		AwaitSubmit().
+		Working(30, "Working").
+		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
+		QuitsOnQuit().
+		Build())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var out bytes.Buffer
+	res, err := harness.RunTurn(ctx, harness.TurnConfig{
+		Harness:       "claude",
+		BinaryPath:    bin,
+		Env:           env,
+		Prompt:        "ship the turn API",
+		ExitAfterTurn: true,
+		Output:        &out,
+	})
+	if err != nil {
+		t.Fatalf("RunTurn: %v", err)
+	}
+
+	if res.WrapperResult.Status != wrapper.StatusIdle {
+		t.Fatalf("raw WrapperResult.Status = %q, want idle after graceful quit", res.WrapperResult.Status)
+	}
+	if res.WrapperResult.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0", res.WrapperResult.ExitCode)
+	}
+	if !res.ProcessStoppedAfterTurn {
+		t.Fatal("ProcessStoppedAfterTurn = false, want true")
+	}
+	if res.Turn.State != chat.TurnStateComplete {
+		t.Fatalf("Turn.State = %q, want complete", res.Turn.State)
+	}
+}
+
 func TestRunTurn_CanKeepConversationAlive(t *testing.T) {
 	bin := fakeBin(t)
 	env := scriptEnv(t, fakeharness.New("claude-code").
@@ -206,8 +248,17 @@ func TestRunTurn_RealClaudeDogfood(t *testing.T) {
 	if !res.ProcessStoppedAfterTurn {
 		t.Fatal("ProcessStoppedAfterTurn = false, want true")
 	}
-	if res.WrapperResult.Status != wrapper.StatusInterrupted {
-		t.Fatalf("raw WrapperResult.Status = %q, want interrupted after intentional stop", res.WrapperResult.Status)
+	// After ExitAfterTurn the process must be stopped and stopped cleanly. WHICH of
+	// the two terminal stop statuses appears depends on whether the harness honors
+	// the graceful /quit: claude <=2.1.217 ignored it and was SIGTERM'd
+	// (interrupted); 2.1.245 exits 0 on it (idle). Both satisfy the contract; only
+	// failed/blocked_by_cost/stale/unknown indicate a real problem. Each branch has
+	// exact fake-harness coverage above (see TestRunTurn_ClaudeStyleTurnStopsAfterCompletion
+	// and TestRunTurn_ExitAfterTurn_HarnessQuitsCleanly).
+	switch res.WrapperResult.Status {
+	case wrapper.StatusIdle, wrapper.StatusInterrupted:
+	default:
+		t.Fatalf("raw WrapperResult.Status = %q, want idle or interrupted after intentional stop", res.WrapperResult.Status)
 	}
 }
 

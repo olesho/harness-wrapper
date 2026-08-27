@@ -1,0 +1,28 @@
+{
+  "steps": [
+    {
+      "wait_for": "(project you created or one you trust|Yes, I trust this folder)"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "sleep": "5s"
+    },
+    {
+      "send": "List the integers from 1 to 60, one per line, nothing else."
+    },
+    {
+      "sleep": "1s"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "wait_for": "✻ [A-Z][a-zA-Zé]+ for \\d+[hms].*done"
+    },
+    {
+      "sleep": "8s"
+    }
+  ]
+}

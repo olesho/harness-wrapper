@@ -163,7 +163,24 @@ func readyForInput(harness, text string) bool {
 		if _, blocking := claudecode.DetectInput(text); blocking {
 			return false
 		}
-		return strings.Contains(text, "Claude Code") && strings.Contains(text, "❯")
+		// The "Claude Code" startup banner is deliberately NOT required. It is a
+		// scroll-position artifact, not a readiness signal: on any reply long
+		// enough to fill the viewport the banner scrolls out, so requiring it made
+		// a settled post-turn screen read as not-ready. That is what left
+		// maybeIdleComplete's fallback inert on Claude Code 2.1.247, whose settled
+		// summary ("✻ Churned for 2m 27s · done 2:26 AM") the end-of-turn marker
+		// regex was also rejecting — so a finished turn had no way at all to
+		// complete. Recorded on the real thing: test/corpus/claude-code/
+		// settled-after-turn, a settled 2.1.247 frame with the banner scrolled off.
+		//
+		// The composer prompt alone is therefore the readiness signal. The "is it
+		// actually finished" half comes from the turns.BusyDetector gate that
+		// maybeIdleComplete applies AFTER this check (conversation.go), and the
+		// send path cannot type into a live turn either: Send rejects with
+		// ErrTurnInFlight on currentTurn BEFORE waitReadyForSend is reached
+		// (send.go, pinned by TestSend_TurnInFlightRejectedBeforeReadiness). Same
+		// reasoning as the codex branch below.
+		return strings.Contains(text, "❯")
 	case "codex":
 		// The never-signed-in onboarding menu ("Sign in with ChatGPT") renders a
 		// "›"-highlighted row and would look ready; it is a stuck sign-in wall, so

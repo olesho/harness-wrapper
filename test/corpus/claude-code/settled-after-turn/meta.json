@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.247",
+  "recorded_at": "2026-08-27T03:06:36.223877Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "settled post-turn screen on Claude Code 2.1.247: the end-of-turn summary carries the trailing status clause \"· done <H:MM AM>\", and the reply is long enough that the \"Claude Code\" startup banner has scrolled out of the viewport — the frame on which end-of-turn detection failed twice over (thinkingRE rejected the clause; readyForInput demanded the banner). Recorded via `make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn`. 2.1.247 runs its TUI on the alternate screen, so the tail of bytes.raw is the alt-screen exit: replay incrementally and read the last frame carrying the clause, as production does."
+}

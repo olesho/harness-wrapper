@@ -60,11 +60,41 @@ import (
 // each on a line by itself (trailing column padding from the emulator is
 // allowed).
 //
-// Examples that do NOT match (and used to mis-fire): the same
-// pattern surrounded by non-whitespace on the same line (e.g. the in-progress
-// "✻ Cooking… (1m 22s · esc to interrupt)" indicator, which has trailing
-// content the end anchor rejects).
-var thinkingRE = regexp.MustCompile(`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)[^\S\r\n]*$`)
+// Claude Code 2.1.247 appends a trailing status clause to the settled
+// summary, separated by " · ": "✻ Churned for 2m 27s · done 2:26 AM", and it
+// may append further clauses ("✻ Sautéed for 11m 51s · done 10:47 AM · 2
+// shells still running"). The end anchor rejected every such frame, so
+// TurnComplete never fired and RunTurn hung until an external watchdog killed
+// the run — the same class of miss as the sub-minute duration bug above, and
+// undetected across ~30 releases because the recorded corpus held only the
+// bare pre-2.1.24x shape.
+//
+// The suffix is therefore matched LOOSELY on purpose: everything from the
+// first "·" to end of line is accepted without modelling the clause
+// vocabulary, so the next clause Claude Code invents cannot re-break
+// detection. The optional tail sits OUTSIDE capture group 1: group 1 stays
+// the BARE marker text, which is the adapter's de-duplication fingerprint
+// (two frames of one settled turn differ only in the "· done <clock>" tail
+// and must fingerprint identically) as well as the visible reason string.
+//
+// The line anchors are kept, so the marker shape embedded in explanatory
+// prose ("you'd see '✻ Baked for 5s · done 1:00 PM' here") still does not
+// match — the leading text before ✻ defeats the start anchor.
+//
+// Examples that do NOT match: the in-progress indicator
+// "✻ Cooking… (1m 22s · esc to interrupt)". It does contain " · ", but the
+// required "✻ <Verb> for <dur>" prefix never matches — the duration lives
+// inside the parenthetical and there is no " for " component outside it.
+//
+// The loose tail does admit the in-flight variant
+// "✻ Cooked for 1m 22s · ↑ 3.1k tokens · esc to interrupt", which the end
+// anchor used to reject. That is deliberate and safe: OnScreen acts on a
+// match only while !Busy(snap), and Busy keys off exactly that "esc to
+// interrupt" footer (plus the working spinner), so an in-flight frame is
+// still rejected — by the busy gate rather than by the regex.
+var thinkingRE = regexp.MustCompile(
+	`(?m)^[^\S\r\n]*(✻ \p{Lu}\p{L}+ for \d+[hms](?: \d+[hms])*)(?:[^\S\r\n]*·[^\S\r\n]*[^\r\n]*)?[^\S\r\n]*$`,
+)
 
 // resumeRE matches the "claude --resume <uuid>" hint Claude Code prints
 // when it ends a session. The UUID names the on-disk transcript file.
