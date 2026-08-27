@@ -279,6 +279,15 @@ func submitKeyForHarness(harness string) []byte {
 	}
 }
 
+// Bracketed-paste framing (pkg/chat.pasteWrapForHarness — CSI 200 ~ … CSI 201 ~
+// around a payload of pasteThreshold bytes or more) deliberately has NO mirror
+// here, for the same reason as Shift+Tab below. Production frames a payload only
+// at >=1KB; every recorded scenario's Send is a short line, so a mirror would be
+// dead code that no corpus exercises and that could silently drift. If a
+// scenario is ever recorded with a large prompt — which is exactly what a
+// re-baked corpus for the truncation defect would need — mirror the framing here
+// FIRST, or the recorded bytes stop matching what the wrapper actually writes.
+
 // Shift+Tab (the permission-mode cycle key) deliberately has NO mirror here.
 // Its encoding lives in pkg/chat.shiftTabForHarness — CSI 9;2u, the enhanced-
 // keyboard form rather than the legacy "\x1b[Z" — and internal/fakeharness exports it
