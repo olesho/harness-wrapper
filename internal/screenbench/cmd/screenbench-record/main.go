@@ -129,6 +129,12 @@ func run(c recorderConfig) error {
 		if err != nil {
 			return err
 		}
+		// The scenario's own timing budget wins over the flags, and must be
+		// applied BEFORE recordingContext (which bakes in MaxDuration) and
+		// launchDriver (which uses IdleTimeout for both the wait_for fallback
+		// and its post-script grace sleep — a longer scenario rightly gets a
+		// longer grace window).
+		applyScriptTiming(&c, scr)
 	}
 
 	ctx, cancel := recordingContext(c)
@@ -197,6 +203,21 @@ func resolveBinaryVersion(c recorderConfig) (string, error) {
 		return "", fmt.Errorf("auto-version: %w", err)
 	}
 	return v, nil
+}
+
+// applyScriptTiming overrides the recorder's idle-timeout and max-duration with
+// the script's own values when it declares them. Both were validated at load,
+// so a parse failure here is impossible and is ignored rather than re-reported.
+// The effective values go to stderr so a bake's provenance is visible in its log.
+func applyScriptTiming(c *recorderConfig, scr *script) {
+	if d, err := time.ParseDuration(scr.IdleTimeout); err == nil && scr.IdleTimeout != "" {
+		c.IdleTimeout = d
+	}
+	if d, err := time.ParseDuration(scr.MaxDuration); err == nil && scr.MaxDuration != "" {
+		c.MaxDuration = d
+	}
+	fmt.Fprintf(os.Stderr, "[screenbench-record] timing: idle-timeout=%s max-duration=%s\n",
+		c.IdleTimeout, c.MaxDuration)
 }
 
 // recordingContext builds the session context: interrupt/SIGTERM cancellation

@@ -19,18 +19,48 @@ import (
 // Schema:
 //
 //	{
+//	  "idle_timeout": "20s",
+//	  "max_duration": "4m",
 //	  "steps": [
-//	    {"wait_for": "> "},
+//	    {"wait_for": "❯ "},
 //	    {"send": "say hi in one word\n"},
-//	    {"wait_for": "Token usage:"},
-//	    {"send": "/exit\n"}
+//	    {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+[hms].*done"},
+//	    {"sleep": "8s"}
 //	  ]
 //	}
 //
-// Each step must populate exactly one of the WaitFor / Send / Sleep
-// fields. Empty steps and steps with more than one field error at load
-// time so misshapen scripts fail loudly rather than silently no-op.
+// Each step must populate exactly one of the WaitFor / Send / Sleep /
+// Interrupt fields (interrupt_key is a modifier on an interrupt step, not a
+// kind of its own). Empty steps and steps with more than one field error at
+// load time so misshapen scripts fail loudly rather than silently no-op.
+//
+// THE SINGLE MOST EXPENSIVE FACT ABOUT THIS FILE: wait_for matches the RAW PTY
+// BYTE STREAM, not the rendered screen. The buffer it searches holds the
+// harness's output verbatim — SGR colour changes, cursor moves and line-wrap
+// escapes interleaved with the text. Two consequences for every anchor written
+// against it:
+//
+//   - Anchors must be short and contiguous WITHIN ONE STYLED RUN. A pattern
+//     spanning a colour change (very likely across "✻ <verb> for <dur>" ->
+//     "· done <clock>", which Claude renders in different styles) can fail to
+//     match a screen that visibly shows it.
+//   - Text the emulator composes but the harness never emitted as one run —
+//     anything reflowed or overwritten — is not there to match at all.
+//
+// And an anchor that never matches does NOT fail the bake: waitFor advances on
+// the idle timeout instead (see its doc comment). A green recording is
+// therefore not proof the anchor matched; grep the captured bytes for the
+// marker before trusting a fresh corpus.
 type script struct {
+	// IdleTimeout and MaxDuration are optional per-scenario overrides for the
+	// recorder's --idle-timeout and --max-duration flags, as Go duration
+	// strings. The budget belongs with the scenario and versioned in the same
+	// file: a tool-call turn needs a far longer idle tolerance than a
+	// "what is 2+2?" turn, and rebake-corpus-all cannot pass per-scenario
+	// flags at all. Empty leaves the flag value in force.
+	IdleTimeout string `json:"idle_timeout,omitempty"`
+	MaxDuration string `json:"max_duration,omitempty"`
+
 	Steps []scriptStep `json:"steps"`
 }
 
@@ -51,10 +81,46 @@ type scriptStep struct {
 	// in pieces with no specific marker.
 	Sleep string `json:"sleep,omitempty"`
 
-	// Interrupt, when true, writes a single Ctrl-C byte (0x03) to the
-	// harness's PTY. Exists as its own step kind because JSON cannot
-	// reasonably embed a raw 0x03 in a `send` string.
+	// Interrupt, when true, writes the harness's interrupt key to its PTY.
+	// Exists as its own step kind because JSON cannot reasonably embed a raw
+	// control byte in a `send` string.
 	Interrupt bool `json:"interrupt,omitempty"`
+
+	// InterruptKey selects WHICH key an Interrupt step writes: "ctrl-c"
+	// (0x03, the default and what every recording before 2026-08-29 used) or
+	// "esc" (0x1b).
+	//
+	// Which one actually interrupts is harness- and version-specific, and it
+	// moved. Measured on Claude Code 2.1.251, 2026-08-29, by recording the
+	// same scripted turn twice and reading the captured bytes:
+	//
+	//   esc    → the turn stops and the harness paints
+	//            "⎿  Interrupted · What should Claude do instead?"
+	//   ctrl-c → the turn stops, NOTHING is painted, and the prompt is
+	//            restored into the composer — a CLEAR, not an interrupt.
+	//
+	// Ctrl-C is Claude Code's exit/clear key; Esc is its documented in-TUI
+	// interrupt. The default stays "ctrl-c" so the codex interrupted-mid-reply
+	// corpus, baked with 0x03, keeps recording identically; the claude script
+	// asks for "esc" explicitly.
+	//
+	// WHEN the key lands matters as much as which key it is. An Esc that
+	// arrives before the first token cancels the request outright and is
+	// painted the same as a clear — nothing on screen, prompt back in the
+	// composer. The busy footer ("esc to interrupt") appears while the model
+	// is still thinking, so it is not on its own enough to dwell on: wait for
+	// the reply to start streaming (the U+23FA bullet) as well, then sleep,
+	// then interrupt. That is what test/scripts/claude/interrupted-mid-reply
+	// does, and a bake without it captures an empty screen.
+	InterruptKey string `json:"interrupt_key,omitempty"`
+}
+
+// interruptBytes returns the byte sequence an Interrupt step writes.
+func (s scriptStep) interruptBytes() []byte {
+	if s.InterruptKey == "esc" {
+		return []byte{0x1b}
+	}
+	return []byte{0x03}
 }
 
 func (s scriptStep) kind() (string, error) {
@@ -104,6 +170,16 @@ func loadScript(path string) (*script, error) {
 	if len(s.Steps) == 0 {
 		return nil, fmt.Errorf("script %s has no steps", path)
 	}
+	if s.IdleTimeout != "" {
+		if _, err := time.ParseDuration(s.IdleTimeout); err != nil {
+			return nil, fmt.Errorf("script %s: invalid idle_timeout: %w", path, err)
+		}
+	}
+	if s.MaxDuration != "" {
+		if _, err := time.ParseDuration(s.MaxDuration); err != nil {
+			return nil, fmt.Errorf("script %s: invalid max_duration: %w", path, err)
+		}
+	}
 	for i, step := range s.Steps {
 		if err := validateStep(step); err != nil {
 			return nil, fmt.Errorf("script %s step %d: %w", path, i, err)
@@ -128,6 +204,14 @@ func validateStep(step scriptStep) error {
 			return fmt.Errorf("invalid sleep duration: %w", err)
 		}
 	}
+	if step.InterruptKey != "" {
+		if !step.Interrupt {
+			return errors.New("interrupt_key set on a step that is not an interrupt step")
+		}
+		if step.InterruptKey != "ctrl-c" && step.InterruptKey != "esc" {
+			return fmt.Errorf("invalid interrupt_key %q: want ctrl-c or esc", step.InterruptKey)
+		}
+	}
 	return nil
 }
 
@@ -144,6 +228,10 @@ type scriptDriver struct {
 	stdin       stdinWriter
 	idleTimeout time.Duration
 	bufCap      int
+
+	// echoGap bounds the composer-echo wait in send. Zero means submitEchoGap;
+	// tests shrink it so they do not pay the real bound on the degrade path.
+	echoGap time.Duration
 
 	// submitKey, when non-nil, replaces the trailing "\n" of a Send step.
 	// Enhanced-keyboard harnesses (claude-code, codex ≥ their enhanced
@@ -232,9 +320,9 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 	case step.WaitFor != "":
 		return d.waitFor(ctx, step.WaitFor)
 	case step.Send != "":
-		return d.send(step.Send)
+		return d.send(ctx, step.Send)
 	case step.Interrupt:
-		_, err := d.stdin.WriteStdin([]byte{0x03})
+		_, err := d.stdin.WriteStdin(step.interruptBytes())
 		return err
 	case step.Sleep != "":
 		dur, _ := time.ParseDuration(step.Sleep)
@@ -252,12 +340,24 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 // in "\n" (the script convention for "type this, then submit"), the trailing
 // newline is replaced by the harness's enhanced Enter so the turn actually
 // runs — a raw "\n" only inserts a newline in enhanced-keyboard composers.
-func (d *scriptDriver) send(s string) error {
+//
+// The body and the submit key are two separate writes with a bounded wait for
+// the composer echo between them (echo.go), mirroring pkg/chat's
+// writeMessageAndSubmit: a submit key riding in the same burst as the text is
+// consumed as pasted content and the prompt is never sent. The echo wait is
+// best-effort — on timeout the submit key is written anyway, degrading to the
+// old timing — so this can delay a send but never drop or duplicate one.
+//
+// Steps with no trailing "\n", and every step when submitKey is nil, keep the
+// verbatim single raw write. That is what lets the explicit split-step scripts
+// (send body, sleep, send "\x1b[13u") and the codex bakes record unchanged.
+func (d *scriptDriver) send(ctx context.Context, s string) error {
 	if d.submitKey != nil && strings.HasSuffix(s, "\n") {
 		if body := strings.TrimSuffix(s, "\n"); body != "" {
 			if _, err := d.stdin.WriteStdin([]byte(body)); err != nil {
 				return err
 			}
+			d.awaitComposerEcho(ctx, echoNeedle(body))
 		}
 		_, err := d.stdin.WriteStdin(d.submitKey)
 		return err

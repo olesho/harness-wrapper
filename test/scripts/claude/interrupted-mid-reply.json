@@ -1,10 +1,15 @@
 {
+  "idle_timeout": "20s",
+  "max_duration": "3m",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "(project you created or one you trust|Yes, I trust this folder|❯ )"},
+    {"sleep": "5s"},
     {"send": "tell me a long detailed story about a wizard navigating a haunted library. take at least 1500 words and include vivid descriptions of every room.\n"},
+    {"wait_for": "esc to interrupt"},
     {"wait_for": "⏺"},
-    {"sleep": "800ms"},
-    {"interrupt": true},
-    {"wait_for": "Interrupted"}
+    {"sleep": "8s"},
+    {"interrupt": true, "interrupt_key": "esc"},
+    {"wait_for": "Interrupted"},
+    {"sleep": "5s"}
   ]
 }

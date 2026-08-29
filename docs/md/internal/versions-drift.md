@@ -31,9 +31,10 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.251` as of 2026-08-29 (the release the `settled-after-turn` and
-> `multi-turn` corpus were re-baked against; the trailing `· done <clock>` clause that arrived in
-> 2.1.247 is still what the end-of-turn marker carries). meta-harness's own pin file
+> Both files carry claude-code `2.1.251` as of 2026-08-29 (the release ALL FOUR claude scenarios —
+> `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — were re-baked
+> against; the trailing `· done <clock>` clause that arrived in 2.1.247 is still what the end-of-turn
+> marker carries, and the interrupt marker is unchanged). meta-harness's own pin file
 > still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling checkout
 > reports drift by design.
 
@@ -131,9 +132,30 @@ re-run the canary.
 - **Full-screen TUIs need a sized PTY** — the recorder now calls `Session.Resize(--cols,--rows)` after
   start (scripted mode has no controlling TTY to inherit a size from). Without it a ratatui TUI (codex
   0.142) renders into a ~0×0 PTY and replays blank.
-- **Slow API** — raise `--max-duration` (default 5m) for long scenarios.
+- **Slow API** — raise `--max-duration` (default 5m) for long scenarios. Prefer the script's own
+  top-level `"idle_timeout"` / `"max_duration"` fields over the flags: the budget then travels with
+  the scenario, is versioned in the same file, and `rebake-corpus-all` — which cannot pass
+  per-scenario flags — picks it up. Both are Go duration strings and fail at load if malformed. A
+  tool-using turn needs a far longer idle tolerance than a "what is 2+2?" turn; `tool-call` asks for
+  `20s`.
+- **`wait_for` matches the RAW PTY BYTE STREAM, not the rendered screen.** The buffer it searches
+  holds SGR colour changes and cursor moves interleaved with the text, so an anchor must be short and
+  contiguous *within one styled run* — a pattern spanning a colour change can fail against a screen
+  that visibly shows it. This is why the old `wait_for "> "` composer anchor was doubly dead: the
+  prompt renders as U+276F `❯`, and the plain `>` only ever matched incidentally.
 - **Wrong `wait_for`** — the idle-timeout fallback lets the script proceed without matching, capturing
-  a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex.
+  a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex. A green bake
+  is *not* proof the anchor matched: `grep -a` the fresh `bytes.raw` for the marker before trusting it.
+- **`{"send": "…\n"}` types AND submits** — the trailing newline is replaced by the harness's
+  enhanced-keyboard Enter, written as a second PTY write after a bounded wait for the composer to echo
+  the text (mirroring `pkg/chat/submit.go`). Without that wait Claude Code reads the burst as a paste
+  and swallows the submit key, leaving the prompt sitting unsent in the composer.
+- **Interrupting claude: Esc, not Ctrl-C** — on 2.1.251 Esc (`0x1b`) interrupts a streaming reply and
+  paints `⎿  Interrupted · What should Claude do instead?`, while Ctrl-C (`0x03`) stops the turn,
+  paints nothing and restores the prompt into the composer. An `interrupt` step therefore takes an
+  `"interrupt_key"` of `"ctrl-c"` (the default, which the codex corpus was baked with) or `"esc"`.
+  Timing matters too: an Esc that lands before the first token is a cancel and is likewise painted as
+  nothing, so wait for the reply to start streaming (the `⏺` bullet) before pressing it.
 - **Quiet corruption** — a truncated/auth-screen recording that still satisfies the regex is wrong
   without failing. After a successful `rebake-corpus-all`, eyeball a sample
   (`screenbench --corpus test/corpus --format markdown | less`).
