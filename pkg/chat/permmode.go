@@ -38,8 +38,9 @@ import (
 //     against.
 
 // Permission-mode sentinels. They are the SetPermissionMode error contract;
-// ErrNoControl, ErrTurnInFlight, ErrInputPending, ErrAuthRequired and ErrClosed
-// (all in chat.go) are inherited from the preconditions and readiness gate.
+// ErrNoControl, ErrTurnInFlight, ErrInputPending, ErrAuthRequired,
+// ErrUnrecognizedDialog and ErrClosed (all in chat.go) are inherited from the
+// preconditions and readiness gate.
 var (
 	// ErrPermissionModeUnsupported is returned by SetPermissionMode for a
 	// harness with no permission-mode cycle this driver can drive — anything
@@ -262,8 +263,10 @@ func (c *Conversation) PermissionMode() (string, bool) {
 // `/plan`-refusal detection (ErrCodexPlanRefusedBusy) is the load-bearing guard.
 //
 // Readiness is gated on waitReadyForSend before the first press, which inherits
-// ErrInputPending for a request already surfaced to the client and ErrAuthRequired
-// for a real onboarding wall. Mind the readiness SPLIT: the soft logged-out
+// ErrInputPending for a request already surfaced to the client, ErrAuthRequired
+// for a real onboarding wall, and ErrUnrecognizedDialog for a blocking dialog
+// whose choices this build cannot parse (claudecode.DetectUnparseable — a state
+// no keypress can clear, so the cycle fails fast instead of pressing into it). Mind the readiness SPLIT: the soft logged-out
 // screens (test/corpus/auth/claude-code/not-logged-in-{churned,brewed}) PASS
 // readiness — readyForInput wins first, "a real composer (even with a stale banner
 // scrolled above) is never auth-gated" (ready.go:76-79) — so the switch proceeds

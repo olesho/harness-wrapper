@@ -124,9 +124,81 @@ claudecode adapter (anchored folder-trust + bypass detectors, dedup, numbered-me
 errors), `cmd/harness-chatd` (typed SSE, `POST …/input`, `input_policy`), and `harness.RunTurn`.
 Documented in the [Chat API](../../guide/chat.md#interactive-input-blocking-prompts).
 
-**One open verification:** the per-option keystroke is **digit + `\r`** (`"1\r"`), an isolated
-constant in `parseMenuOptions`. It is the one part not validated against a live Claude Code build in
-the implementing environment; confirm against a real folder-trust dialog (if a digit alone
-auto-confirms, the trailing `\r` is a harmless no-op; if the menu needs arrow navigation, adjust
-there). Later: `InputRequestTimeout`; additional detectors (onboarding/theme, text/login,
-tool-permission menus); a structured headless signal at the wrapper layer for non-chat consumers.
+**The open verification above is now closed — and it went the other way.** Confirmed live against
+claude 2.1.251 (tmux, 2026-08-29): the folder-trust dialog is rendered with **no numbers at all**,
+and the menu *does* need arrow navigation. See the amendment below. Later: `InputRequestTimeout`;
+additional detectors (onboarding/theme, text/login, tool-permission menus); a structured headless
+signal at the wrapper layer for non-chat consumers.
+
+## Amendment (2026-08-29): the unnumbered selector menu, and four detection states
+
+### What claude 2.1.251 actually renders
+
+```
+Quick safety check: Is this a project you created or one you trust? …
+Claude Code'll be able to read, edit, and execute files here.
+Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+Enter to confirm · Esc to cancel
+```
+
+Zero numbered lines, so `menuRE` yields nothing — and the default highlight is on **"No, exit"**.
+
+### Two shapes, one entry point
+
+`parseMenuOptions` now tries the **numbered** parser over the whole frame first and falls back to a
+**selector** parser over the text *after* the anchor. Numbered-first is deliberate: a numbered menu
+also paints a `❯`, and its digit keys are **absolute** (immune to a stale highlight), so it must win
+whenever it parses. Selector scanning is anchor-scoped because `❯` is also the composer glyph.
+
+A selector block is the contiguous run of lines that share the highlighted row's **label column**,
+capped at 8 rows and requiring at least 2. That column rule is what keeps `Security guide`, the
+workspace path and the `Enter to confirm · Esc to cancel` footer from becoming options — prose starts
+at the box column, choice labels start ~3 columns in. Anything else is *unparseable*, never a guess.
+
+### Positional keys
+
+There are no digits, so selection is **relative to the highlight**: the highlighted row answers with
+a bare CR, a row *below* it with `ESC [ B` repeated, one *above* with `ESC [ A`, each followed by CR.
+Three properties are load-bearing, and each has its own test:
+
+- **Never a bare CR for a non-highlighted row.** Claude highlights "No, exit", so a bare CR (or an
+  "the affirmative row comes first" assumption) *quits claude at startup*. That is the whole bug.
+- **The keys are ONE write.** `Conversation.write` passes the entire `opt.Keys` to a single
+  `WriteStdin`. `ESC [ B` in one write parses as Down; split across writes it is a lone Esc, which
+  **cancels** the dialog. Do not split it, do not sleep between arrows.
+- **The highlight never enters `inputID`.** It hashes kind + prompt + option labels only, so moving
+  the highlight does not mint a "new" request the policy answers a second time.
+
+Option ids are the 0-based row index, a distinct namespace from the numbered form's 1-based digits.
+That is fine — ids need only be unique within a request and nothing persists them — and `findOption`
+matches id, alias *and* label, so alias-based policy (`proceed` / `deny`) spans both shapes.
+
+### Four detection states, because a bool lied
+
+`DetectInput`'s `(nil, false)` conflated "no dialog" with "a dialog I cannot read", and the second is
+**permanent**: an unparseable blocking dialog was reported as no dialog at all, so no `InputRequested`
+was emitted, `readyForInput` fell through to its bare `❯`-contains and called the dialog READY, and
+`Send` typed the prompt into the menu and submitted it onto "No, exit". `DetectInputDetail` now
+returns one of:
+
+| state               | screen                                              | consumers do                        |
+| ------------------- | --------------------------------------------------- | ----------------------------------- |
+| `DetectNone`        | no anchor                                            | nothing                             |
+| `DetectPending`     | anchor, nothing choice-shaped yet (mid-render frame) | not ready; stay silent              |
+| `DetectUnparseable` | anchor **and** choice-shaped lines we cannot parse   | not ready; report loudly            |
+| `DetectOK`          | anchor and a usable option set                       | emit `InputRequested`               |
+
+`DetectInput` remains the two-value wrapper (`det == DetectOK`) for callers that only need "can I
+answer this?". The readiness gate uses the detail form — that is what keeps this ADR's "one source of
+truth" claim true — and treats **every** non-`DetectNone` state as blocking. `waitReadyForSend` adds
+`ErrUnrecognizedDialog`, following the onboarding-wall precedent with one difference: it fires only
+after the state survives a re-check of the live screen, because an unparseable frame can simply be a
+half-painted one. The adapter additionally emits one `Errored` naming the anchor and the raw
+candidate lines, deduped on a fingerprint of both.
+
+**Rejected:** emitting an `InputRequested` with labels and empty `Keys`. The policy would match
+`proceed` by alias, write zero bytes, and hang exactly as before — with a log line making it look
+handled. Silence is bad; a fake answer is worse. Also rejected: a new `turns.Kind`. That vocabulary
+is intentionally small; `Errored` plus a named `Event.Reason` is the sanctioned shape.

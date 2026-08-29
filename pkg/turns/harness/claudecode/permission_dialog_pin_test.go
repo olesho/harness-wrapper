@@ -75,8 +75,8 @@ func TestDetectInput_PerToolPermissionDialogNotDetected(t *testing.T) {
 			}
 			// The menu itself parses fine — the gap is anchor recognition, not
 			// option parsing, so a future detector only needs a new anchor.
-			if opts := parseMenuOptions(tc.screen); len(opts) != 3 {
-				t.Fatalf("parseMenuOptions found %d options, want 3 — the fixture is not a well-formed menu", len(opts))
+			if opts := parseNumberedMenu(tc.screen); len(opts) != 3 {
+				t.Fatalf("parseNumberedMenu found %d options, want 3 — the fixture is not a well-formed menu", len(opts))
 			}
 
 			req, ok := DetectInput(tc.screen)

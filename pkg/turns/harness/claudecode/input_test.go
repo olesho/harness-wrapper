@@ -127,3 +127,61 @@ func findKind(evs []turns.Event, k turns.Kind) *turns.Event {
 	}
 	return nil
 }
+
+// TestDetectInput_SelectorTrustDialog is the selector-shape twin of
+// TestDetectInput_TrustDialog above. The numbered assertions there are the
+// regression guard proving this branch did not steal the numbered path, so they
+// stay exactly as they are; this one pins the shape claude 2.1.251 actually
+// renders — unnumbered, highlight on "No, exit" — through the SAME public entry
+// point a caller uses.
+func TestDetectInput_SelectorTrustDialog(t *testing.T) {
+	req, ok := DetectInput(selectorTrustFrame)
+	if !ok {
+		t.Fatal("DetectInput did not recognize the unnumbered 2.1.251 folder-trust dialog")
+	}
+	if req.Kind != "trust_prompt" {
+		t.Errorf("Kind = %q, want trust_prompt", req.Kind)
+	}
+	if req.Prompt != trustAnchorAlt {
+		t.Errorf("Prompt = %q, want %q", req.Prompt, trustAnchorAlt)
+	}
+	if req.MultiSelect {
+		t.Error("MultiSelect = true; selector keys are select-and-submit, i.e. single-select")
+	}
+	want := []turns.InputOption{
+		{ID: "0", Alias: "deny", Label: "No, exit", Keys: []byte("\r"), Highlighted: true},
+		{ID: "1", Alias: "proceed", Label: "Yes, I trust this folder", Keys: []byte("\x1b[B\r")},
+	}
+	if len(req.Options) != len(want) {
+		t.Fatalf("len(Options) = %d, want %d (%+v)", len(req.Options), len(want), req.Options)
+	}
+	for i, w := range want {
+		o := req.Options[i]
+		if o.ID != w.ID || o.Alias != w.Alias || o.Label != w.Label ||
+			string(o.Keys) != string(w.Keys) || o.Highlighted != w.Highlighted {
+			t.Errorf("Options[%d] = {id:%q alias:%q label:%q keys:%q highlighted:%v}, "+
+				"want {id:%q alias:%q label:%q keys:%q highlighted:%v}",
+				i, o.ID, o.Alias, o.Label, o.Keys, o.Highlighted,
+				w.ID, w.Alias, w.Label, w.Keys, w.Highlighted)
+		}
+	}
+	if req.ID == "" {
+		t.Error("request ID is empty")
+	}
+}
+
+// TestDetectInput_NumberedMenuWinsWhenBothShapesPresent pins the precedence: a
+// numbered menu also carries a "❯" highlight, and its digit keys are absolute
+// (immune to a stale highlight), so it must keep winning byte-for-byte.
+func TestDetectInput_NumberedMenuWinsWhenBothShapesPresent(t *testing.T) {
+	req, ok := DetectInput(trustScreen)
+	if !ok {
+		t.Fatal("DetectInput did not recognize the numbered trust dialog")
+	}
+	for _, o := range req.Options {
+		if string(o.Keys) != o.ID+"\r" {
+			t.Errorf("option %q keys = %q, want the absolute digit form %q — the selector "+
+				"branch stole the numbered path", o.Label, o.Keys, o.ID+"\r")
+		}
+	}
+}
