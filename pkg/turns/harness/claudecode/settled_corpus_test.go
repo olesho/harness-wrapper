@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -8,14 +9,23 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
-// settledAfterTurn is the live Claude Code 2.1.247 recording of a settled
+// settledAfterTurn is the live Claude Code 2.1.251 recording of a settled
 // post-turn screen: the reply is long enough that the startup banner has
-// scrolled out of the viewport, and the end-of-turn summary carries 2.1.247's
-// trailing status clause ("✻ Crunched for 2s · done 5:06 AM"). It is the
+// scrolled out of the viewport, and the end-of-turn summary carries the
+// trailing status clause introduced in 2.1.247 ("✻ Cooked for 2s · done
+// 5:37 AM"). It is the
 // artifact that makes this regression un-reintroducible — the pre-existing
 // adversarial corpus holds only the bare pre-2.1.24x marker, which is exactly
 // why ~30 releases of drift went unnoticed.
 const settledAfterTurn = "settled-after-turn"
+
+// bareEndOfTurnReasonRE is the SHAPE the reason must have. Claude Code picks the
+// spinner verb at random per turn ("Crunched", "Cooked", "Sauteed", …), so
+// pinning the literal string would make every corpus re-bake look like a
+// regression. Anchoring the end is what carries the assertion: a reason that
+// still had the "· done <clock>" clause appended could not match.
+var bareEndOfTurnReasonRE = regexp.MustCompile(
+	`^` + regexp.QuoteMeta(reasonPrefix) + `✻ \p{L}+ for (?:\d+h )?(?:\d+m )?\d+s$`)
 
 // replaySettled feeds the recording through the screen emulator the way the
 // wrapper does in production — incrementally, snapshotting as bytes arrive —
@@ -50,7 +60,7 @@ func replaySettled(t *testing.T, a *Adapter) ([]turns.Event, screen.Snapshot) {
 	return evs, settled
 }
 
-// The recorded 2.1.247 settled frame must complete the turn exactly once, and
+// The recorded 2.1.251 settled frame must complete the turn exactly once, and
 // the reported marker must be the BARE text — the "· done <clock>" clause stays
 // out of capture group 1 because that capture is the de-duplication
 // fingerprint and the visible reason string.
@@ -67,8 +77,10 @@ func TestClaudeCodeAdapter_SettledAfterTurnCorpus(t *testing.T) {
 	if len(completes) != 1 {
 		t.Fatalf("TurnComplete count = %d, want exactly 1; events: %+v", len(completes), evs)
 	}
-	if want := reasonPrefix + "✻ Crunched for 2s"; completes[0].Reason != want {
-		t.Errorf("reason = %q, want %q (bare marker, no trailing clause)", completes[0].Reason, want)
+	if got := completes[0].Reason; !bareEndOfTurnReasonRE.MatchString(got) {
+		t.Errorf("reason = %q, want a bare end-of-turn marker such as %q — "+
+			"the \"· done <clock>\" clause must stay out of capture group 1",
+			got, reasonPrefix+"✻ Cooked for 2s")
 	}
 	if settled.Text == "" {
 		t.Fatal("recording never produced a frame carrying the \"· done\" clause")

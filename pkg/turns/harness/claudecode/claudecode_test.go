@@ -3,6 +3,7 @@ package claudecode
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
@@ -23,12 +24,51 @@ func corpusBytes(t *testing.T, scenario string) []byte {
 	return nil
 }
 
-func TestClaudeCodeAdapterFiresOnMultiTurn(t *testing.T) {
-	bytes := corpusBytes(t, "multi-turn")
+// footerAnchor is the substring every live Claude Code TUI frame carries in its
+// permission footer ("⏵⏵ auto mode on …", "⏸ manual mode on …"). It marks a
+// frame as belonging to the harness's own screen rather than to what the
+// terminal shows once the TUI is gone.
+const footerAnchor = " mode on"
+
+// lastLiveFrame replays a recording the way production reads a PTY —
+// incrementally, snapshotting as bytes land — and returns the last frame that
+// was still the harness's TUI.
+//
+// A whole-file Write is not equivalent, and stopped being equivalent at
+// 2.1.24x: Claude Code now runs its TUI on the ALTERNATE screen and emits the
+// alt-screen exit (CSI ?1049l) when the recorder stops it, after which it
+// prints its "Resume this session with: claude --resume …" epilogue on the
+// normal screen. The final snapshot of a freshly baked recording is therefore
+// that epilogue, not the turn — a whole-file assertion reads a screen the
+// adapter never sees in production. Recordings made before the alt-screen move
+// have no teardown at all and their last live frame IS their last frame, which
+// is why one helper serves both vintages of the corpus.
+func lastLiveFrame(t *testing.T, scenario string) screen.Snapshot {
+	t.Helper()
+	raw := corpusBytes(t, scenario)
 
 	scr := screen.New(120, 40)
-	_, _ = scr.Write(bytes)
-	snap := scr.Snapshot()
+	var live screen.Snapshot
+	const chunk = 64
+	for i := 0; i < len(raw); i += chunk {
+		end := i + chunk
+		if end > len(raw) {
+			end = len(raw)
+		}
+		_, _ = scr.Write(raw[i:end])
+		if snap := scr.Snapshot(); strings.Contains(snap.Text, footerAnchor) {
+			live = snap
+		}
+	}
+	if live.Text == "" {
+		t.Fatalf("%s: no frame in the recording carried the harness footer (%q); "+
+			"the recording is truncated or the footer was renamed", scenario, footerAnchor)
+	}
+	return live
+}
+
+func TestClaudeCodeAdapterFiresOnMultiTurn(t *testing.T) {
+	snap := lastLiveFrame(t, "multi-turn")
 
 	a := New()
 	evs := a.OnScreen(snap)
@@ -41,11 +81,7 @@ func TestClaudeCodeAdapterFiresOnMultiTurn(t *testing.T) {
 }
 
 func TestClaudeCodeAdapterDetectsInterrupt(t *testing.T) {
-	bytes := corpusBytes(t, "interrupted-mid-reply")
-
-	scr := screen.New(120, 40)
-	_, _ = scr.Write(bytes)
-	snap := scr.Snapshot()
+	snap := lastLiveFrame(t, "interrupted-mid-reply")
 
 	a := New()
 	evs := a.OnScreen(snap)
