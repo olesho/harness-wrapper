@@ -83,8 +83,32 @@ backwards-compatible.
    go test -race ./pkg/turns/harness/claudecode/...
    ```
 3. **Green** → it's backwards-compatible. **Red** → a marker shifted (next section).
-4. Either way, finish by setting `pinned`/`verified_at` in `versions.json`, refreshing the adapter's
+4. Re-verify the **shapes the six canonical scenarios do not cover** (below).
+5. Either way, finish by setting `pinned`/`verified_at` in `versions.json`, refreshing the adapter's
    "Verified against …" package comment, and committing `test/corpus/<harness>/**` + the version bump.
+
+### Shapes the canonical scenarios miss
+
+The six scenarios all record a harness that is *already running in a trusted directory*, so a bump can
+shift a startup screen without a single corpus test going red.
+
+- **claude's folder-trust dialog** (*"Do you trust the files in this folder?"* / *"Yes, I trust this
+  folder"*). This is the one that fails **invisibly**: nothing is reported as a dialog, the agent just
+  sits at a screen it does not recognise until the watchdog kills it. Two things move between releases
+  — the dialog's wording, and **which option is highlighted by default** (2.1.247 defaulted to *Yes, I
+  trust this folder*; 2.1.251 defaults to *No, exit*, so a script that answers with a bare Enter now
+  quits claude at startup and bakes a dead recording). Scripts answer it with Down-then-Enter
+  (`"\u001b[B\u001b[13u"`) as a **single** step — an `ESC [ B` split across two PTY writes is read as a
+  lone Esc, which cancels the dialog.
+- Reproducing it needs `screenbench-record --workdir` pointed at a freshly `git init`-ed directory
+  claude has never trusted — the Makefile runs the recorder from inside this repo, which claude already
+  trusts, so the dialog never paints:
+  ```bash
+  d=$(mktemp -d) && git -C "$d" init -q
+  make rebake-corpus HARNESS=claude SCENARIO=trust-dialog WORKDIR="$d"
+  ```
+  Record the directory used in the scenario's `meta.json` notes (the Makefile does this for you) so the
+  rebake is reproducible.
 
 ## When marker drift is real
 
@@ -130,6 +154,10 @@ re-run the canary.
 - **Full-screen TUIs need a sized PTY** — the recorder now calls `Session.Resize(--cols,--rows)` after
   start (scripted mode has no controlling TTY to inherit a size from). Without it a ratatui TUI (codex
   0.142) renders into a ~0×0 PTY and replays blank.
+- **Directory trust screens** — claude paints its folder-trust dialog only in a directory it has not
+  trusted before, and the recorder inherits its own CWD (inside this repo) unless told otherwise. Use
+  `--workdir` / `make rebake-corpus … WORKDIR=<dir>` to record it; see
+  [Shapes the canonical scenarios miss](#shapes-the-canonical-scenarios-miss).
 - **Slow API** — raise `--max-duration` (default 5m) for long scenarios.
 - **Wrong `wait_for`** — the idle-timeout fallback lets the script proceed without matching, capturing
   a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex.
