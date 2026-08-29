@@ -80,20 +80,30 @@ func TestClaudeCodeAdapterFiresOnMultiTurn(t *testing.T) {
 	}
 }
 
+// TestClaudeCodeAdapterDetectsInterrupt is the ONLY thing standing behind the
+// fleet's Errored path for claude, so it asserts the payload and not merely the
+// kind: exactly one event, of kind Errored, whose Reason is the marker the
+// adapter matched. A test that accepted "some Errored event fired" would keep
+// passing if interruptMarker drifted into matching something else on the frame.
+//
+// The corpus is a 2.1.251 recording (PUPPET-246). The marker text did NOT move
+// between 2.1.185 and 2.1.251; what moved is the key that produces it — Esc
+// interrupts, Ctrl-C clears — which is a recorder concern, documented on the
+// interrupt step in internal/screenbench/cmd/screenbench-record/script.go.
 func TestClaudeCodeAdapterDetectsInterrupt(t *testing.T) {
 	snap := lastLiveFrame(t, "interrupted-mid-reply")
 
 	a := New()
 	evs := a.OnScreen(snap)
 
-	var sawErrored bool
-	for _, ev := range evs {
-		if ev.Kind == turns.Errored {
-			sawErrored = true
-		}
+	if len(evs) != 1 {
+		t.Fatalf("expected exactly 1 event from the interrupted recording, got %d: %+v", len(evs), evs)
 	}
-	if !sawErrored {
-		t.Errorf("expected Errored event for interrupted recording, got events: %+v", evs)
+	if evs[0].Kind != turns.Errored {
+		t.Fatalf("expected Errored, got %s: %+v", evs[0].Kind, evs[0])
+	}
+	if want := reasonPrefix + interruptMarker; evs[0].Reason != want {
+		t.Errorf("Reason = %q, want %q", evs[0].Reason, want)
 	}
 }
 
