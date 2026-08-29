@@ -1,7 +1,11 @@
 {
+  "idle_timeout": "20s",
+  "max_duration": "4m",
   "steps": [
-    {"wait_for": "> "},
+    {"wait_for": "(project you created or one you trust|Yes, I trust this folder|❯ )"},
+    {"sleep": "5s"},
     {"send": "use the Bash tool to list entries in the current directory and tell me how many .go files there are\n"},
-    {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"}
+    {"wait_for": "✻ [A-Z][a-zA-Zé]+ for \\d+[hms].*done"},
+    {"sleep": "8s"}
   ]
 }

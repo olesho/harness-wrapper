@@ -2,12 +2,11 @@
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
 // Detection signals first observed on 2.1.141. Last verified against
-// 2.1.251 on 2026-08-29, which is also the pin in versions.json: the
-// settled-after-turn and multi-turn corpus were re-baked from that binary
-// (meta.json.binary_version is the recorded proof) and replayed through this
-// adapter unchanged. tool-call and interrupted-mid-reply are still the 2.1.185
-// recordings — their scripted drives no longer reach a turn on 2.1.251, which
-// is a recorder limitation and not adapter drift.
+// 2.1.251 on 2026-08-29, which is also the pin in versions.json: ALL FOUR
+// claude scenarios under test/corpus/claude-code/ — settled-after-turn,
+// multi-turn, tool-call and interrupted-mid-reply — were re-baked from that
+// binary (meta.json.binary_version is the recorded proof) and replayed
+// through this adapter unchanged. No marker below moved at 2.1.251.
 //
 // The signals:
 //
@@ -19,7 +18,11 @@
 //
 //   - User interrupt: a "⎿  Interrupted · What should Claude do
 //     instead?" line appears. The turn ended in a recoverable error
-//     state.
+//     state. Re-confirmed verbatim on 2.1.251. What changed at 2.1.24x
+//     is which KEY produces it — Esc interrupts, Ctrl-C clears the
+//     composer and paints nothing — which matters to the recorder, not
+//     to this adapter; see the interrupt step in
+//     internal/screenbench/cmd/screenbench-record/script.go.
 //
 // This adapter embeds generic.Adapter so wrapper-level status events
 // (blocked_by_cost, retry_later, failed) keep flowing through.
