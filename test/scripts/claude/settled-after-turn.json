@@ -4,7 +4,7 @@
       "wait_for": "(project you created or one you trust|Yes, I trust this folder)"
     },
     {
-      "send": "\u001b[13u"
+      "send": "\u001b[B\u001b[13u"
     },
     {
       "sleep": "5s"

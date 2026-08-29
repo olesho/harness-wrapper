@@ -27,6 +27,12 @@
 //     --auto-version \
 //     --script test/scripts/codex/short-reply.json
 //
+// --workdir runs the harness in a directory other than the recorder's
+// own CWD. Some screens only ever paint outside the repo — claude's
+// folder-trust dialog, for one, never appears in a directory claude has
+// already trusted. Whatever directory is used, record it in the
+// scenario's meta.json notes (--notes) so the rebake is reproducible.
+//
 // After the harness exits, populate expected.txt by hand or by copying
 // from the harness's session JSONL.
 package main
@@ -76,6 +82,11 @@ type recorderConfig struct {
 	MaxDuration   time.Duration
 	HarnessArgs   []string
 
+	// WorkingDir is the directory the harness runs in. Empty means
+	// inherit the recorder process's CWD, which is what every existing
+	// scenario relies on.
+	WorkingDir string
+
 	// Stdout overrides the destination for the live PTY output. Set
 	// by tests; production main() leaves it nil and run() defaults to
 	// os.Stdout in interactive mode or io.Discard in scripted mode.
@@ -97,17 +108,44 @@ func parseFlags(args []string) (recorderConfig, error) {
 	fs.StringVar(&c.ScriptPath, "script", "", "path to a JSON script of {wait_for, send, sleep} steps; enables unattended recording")
 	fs.DurationVar(&c.IdleTimeout, "idle-timeout", 3*time.Second, "treat N of no PTY output as 'screen settled' during wait_for steps")
 	fs.DurationVar(&c.MaxDuration, "max-duration", 5*time.Minute, "hard cap on session length; 0 disables")
+	fs.StringVar(&c.WorkingDir, "workdir", "", "directory to run the harness in (default: the recorder process CWD); needed to record screens that only appear in an untrusted directory, e.g. claude's folder-trust dialog. Record the value used in the scenario's --notes so the rebake is reproducible")
 	if err := fs.Parse(args); err != nil {
 		return recorderConfig{}, err
 	}
 	if c.Bin == "" || c.Out == "" || c.Harness == "" {
 		return recorderConfig{}, errors.New("usage: screenbench-record --harness NAME --bin PATH --out DIR [flags] [-- harness args]")
 	}
+	if err := validateWorkingDir(c.WorkingDir); err != nil {
+		return recorderConfig{}, err
+	}
 	c.HarnessArgs = fs.Args()
 	return c, nil
 }
 
+// validateWorkingDir rejects a --workdir that does not name an existing
+// directory. Without this the mistake surfaces as an opaque exec failure
+// deep inside the wrapper, after the output scenario directory has
+// already been created.
+func validateWorkingDir(dir string) error {
+	if dir == "" {
+		return nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("--workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("--workdir %q: not a directory", dir)
+	}
+	return nil
+}
+
 func run(c recorderConfig) error {
+	// Re-checked here as well as in parseFlags: run() is also entered
+	// directly from tests with a hand-built config.
+	if err := validateWorkingDir(c.WorkingDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(c.Out, 0o755); err != nil {
 		return fmt.Errorf("mkdir out: %w", err)
 	}
@@ -147,6 +185,7 @@ func run(c recorderConfig) error {
 		Env:        env,
 		Stdout:     stdout,
 		Harness:    c.Harness,
+		WorkingDir: c.WorkingDir,
 	}
 	if scr == nil {
 		// Interactive mode: forward the developer's keyboard.
