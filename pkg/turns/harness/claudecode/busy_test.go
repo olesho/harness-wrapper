@@ -1,8 +1,6 @@
 package claudecode
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
@@ -62,13 +60,7 @@ func TestBusy_settledSummaryIsNotWorking(t *testing.T) {
 func TestBusy_corpusFinalFramesAreIdle(t *testing.T) {
 	a := New()
 	for _, name := range []string{"tool-call", "multi-turn", "interrupted-mid-reply"} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "test", "corpus", "claude-code", name, "bytes.raw"))
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		sc := screen.New(120, 40)
-		_, _ = sc.Write(b)
-		if a.Busy(sc.Snapshot()) {
+		if a.Busy(lastLiveFrame(t, name)) {
 			t.Errorf("[%s] final frame should be idle (Busy=false), but 'esc to interrupt' was present", name)
 		}
 	}

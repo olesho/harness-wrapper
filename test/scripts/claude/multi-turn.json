@@ -1,11 +1,49 @@
 {
   "steps": [
-    {"wait_for": "> "},
-    {"send": "what is 2 plus 2?\n"},
-    {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"},
-    {"send": "what is double that?\n"},
-    {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"},
-    {"send": "and what is double that?\n"},
-    {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"}
+    {
+      "wait_for": "(project you created or one you trust|Yes, I trust this folder|❯ )"
+    },
+    {
+      "sleep": "5s"
+    },
+    {
+      "send": "what is 2 plus 2?"
+    },
+    {
+      "sleep": "1s"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "wait_for": "✻ [A-Z][a-zA-Zé]+ for \\d+[hms].*done"
+    },
+    {
+      "sleep": "2s"
+    },
+    {
+      "send": "what is double that?"
+    },
+    {
+      "sleep": "1s"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "sleep": "12s"
+    },
+    {
+      "send": "and what is double that?"
+    },
+    {
+      "sleep": "1s"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "sleep": "12s"
+    }
   ]
 }
