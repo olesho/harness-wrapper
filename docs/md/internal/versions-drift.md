@@ -13,7 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.247", "verified_at": "2026-08-27"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.251", "verified_at": "2026-08-31"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -31,10 +31,12 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.247` as of 2026-08-27 (the release whose end-of-turn shape the
-> adapter fix and `settled-after-turn` corpus were verified against). meta-harness's own pin file
-> still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling checkout
-> reports drift by design.
+> Both files carry claude-code `2.1.251` as of 2026-08-31, verified live against the installed
+> 2.1.251 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection only — the
+> `interruptMarker`, tool-call and permission-mode surfaces still rest on corpora recorded at
+> 2.1.185/2.1.217). meta-harness's own pin file is still at `2.1.218` and has to follow — until it
+> does, `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, and
+> the no-args mode would drag this repo's pin *backwards*.
 
 The read API:
 

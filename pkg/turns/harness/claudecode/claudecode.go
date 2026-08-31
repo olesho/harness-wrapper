@@ -3,8 +3,17 @@
 //
 // Detection signals first observed on 2.1.141; re-verified against 2.1.185
 // (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-// in versions.json is 2.1.201, adopted for cross-repo parity with
-// meta-harness; detection signals were last verified at 2.1.185:
+// in versions.json is 2.1.251, verified live against that binary on
+// 2026-08-31 by pkg/harness's real-claude dogfood tests, which complete a
+// turn only if thinkingRE matches a settled 2.1.251 end-of-turn summary.
+//
+// That live check covers END-OF-TURN DETECTION ONLY. The other signals this
+// adapter owns still rest on recorded corpora and have not been re-verified
+// since: interruptMarker and the tool-call rendering at 2.1.185, and the
+// permission-mode footers in permmode.go at 2.1.217. The settled-after-turn
+// corpus is recorded at 2.1.247.
+//
+// The signals:
 //
 //   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
 //     line appears, where <verb> is a colorful word like Baked, Brewed,
