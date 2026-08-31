@@ -1,12 +1,17 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals first observed on 2.1.141. Last verified against
-// 2.1.251 on 2026-08-29, which is also the pin in versions.json: ALL FOUR
-// claude scenarios under test/corpus/claude-code/ — settled-after-turn,
-// multi-turn, tool-call and interrupted-mid-reply — were re-baked from that
-// binary (meta.json.binary_version is the recorded proof) and replayed
-// through this adapter unchanged. No marker below moved at 2.1.251.
+// Detection signals first observed on 2.1.141. The pin in versions.json is
+// 2.1.251, verified live against that binary on 2026-08-31 by pkg/harness's
+// real-claude dogfood tests, which complete a turn only if thinkingRE matches
+// a settled 2.1.251 end-of-turn summary.
+//
+// That live check covers END-OF-TURN DETECTION ONLY. The permission-mode
+// footers in permmode.go are still anchored at 2.1.217. ALL FOUR claude
+// scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
+// tool-call and interrupted-mid-reply — were re-baked from 2.1.251
+// (meta.json.binary_version is the recorded proof) and replayed through this
+// adapter unchanged. No marker below moved at 2.1.251.
 //
 // The signals:
 //
