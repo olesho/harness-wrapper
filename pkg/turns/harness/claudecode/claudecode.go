@@ -1,10 +1,19 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals first observed on 2.1.141; re-verified against 2.1.185
-// (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-// in versions.json is 2.1.201, adopted for cross-repo parity with
-// meta-harness; detection signals were last verified at 2.1.185:
+// Detection signals first observed on 2.1.141. They were last verified LIVE
+// against 2.1.252 on 2026-08-31, by driving the real CLI under a PTY with
+// TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} in
+// pkg/harness; versions.json pins 2.1.252 on the strength of that run.
+//
+// The golden recordings under test/corpus/claude-code/ are OLDER than the pin
+// and deliberately so — they are frozen renderings the adapter must keep
+// handling, not evidence about the pinned release: interrupted-mid-reply,
+// multi-turn and tool-call were recorded at 2.1.185, settled-after-turn at
+// 2.1.247. Corpus replay therefore cannot confirm a new upstream version; only
+// the live tests above can.
+//
+// The signals:
 //
 //   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
 //     line appears, where <verb> is a colorful word like Baked, Brewed,
@@ -19,8 +28,9 @@
 // This adapter embeds generic.Adapter so wrapper-level status events
 // (blocked_by_cost, retry_later, failed) keep flowing through.
 //
-// Markers may shift across upstream versions; the golden-recording
-// tests under test/corpus/claude-code/ are the early-warning signal.
+// Markers may shift across upstream versions. The corpus catches a shift that
+// breaks a shape already recorded; a shift in a NEWER release shows up only in
+// the live tests. See docs/md/internal/versions-drift.md.
 package claudecode
 
 import (

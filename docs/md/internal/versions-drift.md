@@ -13,7 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.247", "verified_at": "2026-08-27"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.252", "verified_at": "2026-08-31"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -31,10 +31,12 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.247` as of 2026-08-27 (the release whose end-of-turn shape the
-> adapter fix and `settled-after-turn` corpus were verified against). meta-harness's own pin file
-> still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling checkout
-> reports drift by design.
+> Both files carry claude-code `2.1.252` as of 2026-08-31, adopted after the live `RealClaude*` tests
+> in `pkg/harness` passed against that release. meta-harness's own pin file still has to follow — it
+> is several releases back — so `scripts/sync-versions.sh --check` against a sibling checkout reports
+> drift by design, and the snapshot is a parity *target*, not a mirror of what meta-harness ships
+> today. (That script defaults to `~/Work/aether/meta-harness`; point `META_HARNESS_DIR` at the real
+> checkout.)
 
 The read API:
 
@@ -58,16 +60,27 @@ go red.
 ```bash
 make check-versions        # offline: pinned vs npm registry /latest (~2s, free)
 make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario (paid for codex/claude)
-make rebake-corpus-all     # refresh all 12 (6 scenarios × 2 harnesses), then run adapter tests
+make rebake-corpus-all     # iterate SCENARIOS × HARNESSES, then run adapter tests
 ```
 
-The canonical lists live in the `Makefile`:
-`SCENARIOS = short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn`;
-`HARNESSES = codex claude`.
+`SCENARIOS = short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn` and
+`HARNESSES = codex claude` live in the `Makefile`, but that product is **not** the corpus.
+`rebake-corpus-all` does not "refresh all 12": `SCENARIOS` is codex's list, and
+`test/corpus/claude-code/` holds a different four — `interrupted-mid-reply`, `multi-turn`,
+`tool-call`, `settled-after-turn` (plus the synthetic `adversarial`, which is hand-written and never
+re-baked). So for claude the loop would *first-time bake* three scenarios that have no recording,
+while skipping `settled-after-turn`, the only claude recording made at the pinned release.
+
+> **Do not run `make rebake-corpus-all` for claude.** Re-bake claude one scenario at a time, and read
+> the claude trust-dialog warning under [Recording gotchas](#recording-gotchas) first.
 
 `make check-versions` runs `cmd/check-versions`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
-detected, **2** registry unreachable.
+detected, **2** registry unreachable — but read the **verdict line** the command prints, not the
+status a wrapper saw. `go run` collapses a non-zero child status to 1, so anything invoking this
+through `go run` (as the target itself once did) cannot tell an outage from real drift; the program
+prints `✓ all pins match latest` / `⚠ drift detected …` / `✗ could not query the npm registry`
+itself for exactly that reason. A `✗` means **no signal** — it is not evidence the pins are fine.
 
 ## When `check-versions` shows drift
 
@@ -75,16 +88,32 @@ A new release exists; the corpus hasn't been verified against it yet — it may 
 backwards-compatible.
 
 1. Install it locally (e.g. `npm i -g @anthropic-ai/claude-code@<ver>`).
-2. Re-bake the affected harness and run its adapter regression:
+2. Run the **live** tests — this is the only step that actually observes the new release. The corpus
+   is frozen bytes and replays green against a version it has never seen, so it can neither confirm
+   nor deny a new one:
    ```bash
-   for s in short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn; do
-       make rebake-corpus HARNESS=claude SCENARIO=$s
-   done
+   export CLAUDE_CONFIG_DIR=<a config dir with folder-trust already accepted>
+   export HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1
+   go test ./pkg/harness/ -run 'RealClaude' -v -timeout 15m -count=1
+   ```
+   `-v` is not optional: these tests **skip** when `claude` is off PATH or the env gate is unset, and
+   `go test` prints `ok` for a package whose tests all skipped. An absent `--- PASS` is an
+   inconclusive run, not a pass. (A `blocked on interactive input request` failure is a stale
+   `CLAUDE_CONFIG_DIR`, not a regression — it has been mis-filed as one before.)
+3. **All `--- PASS`** → the adapter handles the new release; bump the pin, and do *not* re-bake — the
+   existing recordings are still valid renderings the adapter must keep handling.
+   **Any `--- FAIL`** → a marker shifted (next section); fix it and re-bake only the affected
+   scenario. For claude that is `settled-after-turn`:
+   ```bash
+   make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn
    go test -race ./pkg/turns/harness/claudecode/...
    ```
-3. **Green** → it's backwards-compatible. **Red** → a marker shifted (next section).
-4. Either way, finish by setting `pinned`/`verified_at` in `versions.json`, refreshing the adapter's
-   "Verified against …" package comment, and committing `test/corpus/<harness>/**` + the version bump.
+   The other three claude scripts are stale and will record garbage without failing — see the
+   trust-dialog gotcha below before touching them.
+4. Finish by setting `pinned`/`verified_at` in `versions.json` **and** the vendored
+   `pkg/versions/testdata/meta-harness-versions.json` (the hermetic parity test fails otherwise),
+   refreshing the adapter's package comment with the version and the way it was verified, and
+   committing any `test/corpus/<harness>/**` change alongside the version bump.
 
 ## When marker drift is real
 
@@ -133,6 +162,14 @@ re-run the canary.
 - **Slow API** — raise `--max-duration` (default 5m) for long scenarios.
 - **Wrong `wait_for`** — the idle-timeout fallback lets the script proceed without matching, capturing
   a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex.
+- **claude ≥2.1.251 renders no bare `>` composer prompt** — `test/scripts/claude/{tool-call,
+  multi-turn,interrupted-mid-reply}.json` open with `{"wait_for": "> "}` and have no trust-dialog
+  step, so on a current claude that wait cannot match: the recorder falls through to its idle timeout
+  and captures a markerless screen **without failing**. Their corpora are stuck at 2.1.185 for this
+  reason. Only `settled-after-turn.json` is current — it waits for the folder-trust prompt and
+  dismisses it with a kitty-encoded Enter (`\u001b[13u`). `screenbench-record` has no trust handling
+  of its own; dismissal is entirely the script's job. Port those two opening steps into a script
+  before re-baking it, and eyeball `bytes.raw` afterwards.
 - **Quiet corruption** — a truncated/auth-screen recording that still satisfies the regex is wrong
   without failing. After a successful `rebake-corpus-all`, eyeball a sample
   (`screenbench --corpus test/corpus --format markdown | less`).

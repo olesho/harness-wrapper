@@ -1,11 +1,18 @@
 .PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance test-clients
 
-# Six canonical scenarios per harness; the rebake-corpus-all loop
-# iterates these. Deliberately NOT every script under test/scripts/: a
-# version-shape recording that exists for one harness only (e.g.
-# claude/settled-after-turn, which pins Claude Code 2.1.247's "· done <clock>"
-# end-of-turn clause) is rebaked on demand via `make rebake-corpus`, not in the
-# all-harnesses loop that would try to record it for codex too.
+# SCENARIOS is CODEX's canonical list, and rebake-corpus-all iterates it for
+# both harnesses. It does NOT describe claude's corpus: test/corpus/claude-code/
+# holds four scenarios — interrupted-mid-reply, multi-turn, tool-call and
+# settled-after-turn (plus the synthetic `adversarial`, never re-baked) — so
+# three names below have no claude recording at all, and settled-after-turn,
+# claude's ONLY recording made at the pinned release, is missing from the list.
+#
+# Consequence: `make rebake-corpus-all` is wrong for claude in both directions.
+# It would try to record three scenarios claude has no corpus for, and it would
+# skip the one that matters. Re-bake claude one scenario at a time via
+# `make rebake-corpus`, and read the claude warning in
+# docs/md/internal/versions-drift.md first — only settled-after-turn.json
+# dismisses the folder-trust dialog.
 SCENARIOS := short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn
 HARNESSES := codex claude
 
@@ -63,14 +70,23 @@ docs:
 docs-serve:
 	cd docs/gen && go run . serve
 
+# check-versions: the verdict line is printed by the PROGRAM (see its package
+# comment), not decided here. It has to be: this used to `go run` the command
+# and switch on $$? , but `go run` collapses any non-zero child status to 1, so
+# the "registry unreachable" arm was unreachable code and every npm outage
+# announced "drift detected".
+#
+# Build first, then run, so the documented exit codes (1 = drift, 2 = registry
+# or read error) survive. Only 2 is propagated: drift is the expected state at
+# every new upstream release and must not fail the target — callers tell drift
+# from an outage by the verdict text, and a non-zero status here means "this
+# check produced no signal".
 check-versions:
-	@go run ./cmd/check-versions 2>/dev/null; \
-	code=$$?; \
-	case $$code in \
-		0) echo "" ; echo "✓ all pins match latest" ;; \
-		1) echo "" ; echo "⚠ drift detected — see docs/md/internal/versions-drift.md when ready" ;; \
-		2) echo "" ; echo "✗ sentry could not query the npm registry" ; exit 2 ;; \
-	esac
+	@dir="$$(mktemp -d)"; \
+	go build -o "$$dir/check-versions" ./cmd/check-versions || { rm -rf "$$dir"; exit 2; }; \
+	"$$dir/check-versions"; code=$$?; \
+	rm -rf "$$dir"; \
+	[ "$$code" = "2" ] && exit 2 || exit 0
 
 # rebake-corpus: re-record one scenario via screenbench-record --script.
 # Costs real API tokens for codex/claude.
