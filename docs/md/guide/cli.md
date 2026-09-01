@@ -104,6 +104,36 @@ Then manage it with the subcommands:
 | `harness-wrapper status <name> [--json]` | Report whether the session is alive. |
 | `harness-wrapper kill <name>` | Terminate the session. |
 | `harness-wrapper list` | List all `hw-*` sessions. |
+| `harness-wrapper reap [--dry-run]` | Kill `hw-*` sessions whose panes are **all** dead (a finished run that tmux retained). Never touches a session with a live pane, and never a session without the `hw-` prefix. |
+
+### The dedicated tmux socket
+
+Sessions live on harness-wrapper's **own** tmux server, selected with
+`tmux -L harness-wrapper` — not the default socket your interactive tmux uses.
+
+That is deliberate. A server started with `-L` begins with tmux's *default* options, so global
+options set by anything else on the machine cannot reach our sessions. The one that matters is
+`remain-on-exit`: when it is on, tmux keeps a pane after its process exits (as a *dead* pane holding
+no process at all), which leaves the session alive forever and makes a finished run look like a
+running one. Other tools set that option globally and can leave it stuck on, so before this change a
+short run could strand a session on any host where that had happened.
+
+The visible consequence: **hw sessions do not appear in a bare `tmux ls`.** The subcommands above are
+the interface; the raw escape hatch is
+
+```bash
+tmux -L harness-wrapper ls
+tmux -L harness-wrapper attach -t hw-demo
+```
+
+Set `HW_TMUX_SOCKET=<name>` to put sessions on a different socket (debugging, or sharing a socket
+with another tool). It is an environment variable rather than a flag so that it crosses the re-exec
+into the tmux pane for free.
+
+Sessions stranded on the **default** socket by a build predating this change are not visible to
+`list`/`kill`/`reap` any more — `reap` deliberately has no cross-socket reach, since a tool that goes
+hunting for sessions to kill on your own tmux server is a worse problem than the one it solves. Clear
+those once by hand with `tmux kill-session -t hw-<name>`.
 
 > The programmatic, cross-process daemon (`harness-wrapperd`) is **future work** — see the
 > [Roadmap](../internal/roadmap-v1.md) (item 3). Today's `attach` targets tmux, not a daemon.
