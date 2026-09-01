@@ -63,14 +63,23 @@ docs:
 docs-serve:
 	cd docs/gen && go run . serve
 
+# check-versions: the verdict line is printed by the PROGRAM (see its package
+# comment), not decided here. It has to be: this used to `go run` the command
+# and switch on $$? , but `go run` collapses any non-zero child status to 1, so
+# the "registry unreachable" arm was unreachable code and every npm outage
+# announced "drift detected".
+#
+# Build first, then run, so the documented exit codes (1 = drift, 2 = registry
+# or read error) survive. Only 2 is propagated: drift is the expected state at
+# every new upstream release and must not fail the target — callers tell drift
+# from an outage by the verdict text, and a non-zero status here means "this
+# check produced no signal".
 check-versions:
-	@go run ./cmd/check-versions 2>/dev/null; \
-	code=$$?; \
-	case $$code in \
-		0) echo "" ; echo "✓ all pins match latest" ;; \
-		1) echo "" ; echo "⚠ drift detected — see docs/md/internal/versions-drift.md when ready" ;; \
-		2) echo "" ; echo "✗ sentry could not query the npm registry" ; exit 2 ;; \
-	esac
+	@dir="$$(mktemp -d)"; \
+	go build -o "$$dir/check-versions" ./cmd/check-versions || { rm -rf "$$dir"; exit 2; }; \
+	"$$dir/check-versions"; code=$$?; \
+	rm -rf "$$dir"; \
+	[ "$$code" = "2" ] && exit 2 || exit 0
 
 # rebake-corpus: re-record one scenario via screenbench-record --script.
 # Costs real API tokens for codex/claude.

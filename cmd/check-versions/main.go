@@ -2,6 +2,21 @@
 // versions.json against the npm registry's latest published version
 // for each declared package. Run via `make check-versions`.
 //
+// In table mode the run ends with a one-line verdict on stdout — one of
+//
+//	✓ all pins match latest
+//	⚠ drift detected — see docs/md/internal/versions-drift.md when ready
+//	✗ could not query the npm registry
+//
+// The verdict is printed HERE rather than derived from the exit code by a
+// caller, because a caller cannot rely on seeing the exit code: `go run`
+// collapses any non-zero child status to 1, so under it a registry outage is
+// indistinguishable from real drift. `make check-versions` used to invoke this
+// through `go run` and switch on that status, which made every npm outage
+// announce "drift detected"; the target now builds the binary first so the
+// codes below survive, but the verdict stays here so any text consumer gets
+// the truth regardless of how it was launched.
+//
 // Exit codes:
 //
 //	0 — all pinned versions match latest (or are intentionally blank)
@@ -41,6 +56,9 @@ func main() {
 	all, err := versions.All()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-versions: %v\n", err)
+		if *format != "json" {
+			writeVerdict(os.Stdout, true, false)
+		}
 		os.Exit(exitCode(true, false))
 	}
 
@@ -52,6 +70,7 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 	default:
 		writeTable(os.Stdout, report)
+		writeVerdict(os.Stdout, anyErr, anyDrift)
 	}
 
 	os.Exit(exitCode(anyErr, anyDrift))
@@ -68,6 +87,23 @@ func exitCode(anyErr, anyDrift bool) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+// writeVerdict prints the one-line human verdict. It takes anyErr/anyDrift
+// directly — the two are still separable here, which is exactly what the exit
+// code loses on its way through `go run`. anyErr wins: a probe that never
+// reached the registry says nothing about whether the pins are current, so
+// "could not query" must not be reported as either drift or an all-clear.
+func writeVerdict(w io.Writer, anyErr, anyDrift bool) {
+	_, _ = fmt.Fprintln(w)
+	switch {
+	case anyErr:
+		_, _ = fmt.Fprintln(w, "✗ could not query the npm registry")
+	case anyDrift:
+		_, _ = fmt.Fprintln(w, "⚠ drift detected — see docs/md/internal/versions-drift.md when ready")
+	default:
+		_, _ = fmt.Fprintln(w, "✓ all pins match latest")
 	}
 }
 
