@@ -152,3 +152,76 @@ func TestCheckEmptyVersionField(t *testing.T) {
 		t.Fatalf("expected error for empty version, got %+v", rows)
 	}
 }
+
+// The verdict line is what text consumers (the release-check cron greps for
+// "drift detected") actually read, because `go run` collapses this command's
+// exit code. These cases drive the same path the real run takes — check()
+// against an httptest registry, then writeVerdict on its result — so a future
+// change that folds the error case back into the drift case fails here.
+
+func verdictFor(t *testing.T, registry string, client *http.Client, all map[string]versions.Entry) string {
+	t.Helper()
+	_, anyErr, anyDrift := check(client, registry, all)
+	var buf strings.Builder
+	writeVerdict(&buf, anyErr, anyDrift)
+	return buf.String()
+}
+
+func TestVerdictRegistryErrorIsNotReportedAsDrift(t *testing.T) {
+	srv := fakeRegistry(t, map[string]string{}) // every request 404s
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 2 * time.Second
+
+	got := verdictFor(t, srv.URL, client, map[string]versions.Entry{
+		"foo": {Package: "@foo/bar", Pinned: "1.0.0"},
+	})
+	if !strings.Contains(got, "✗ could not query the npm registry") {
+		t.Errorf("expected the registry-error verdict, got %q", got)
+	}
+	if strings.Contains(got, "drift detected") {
+		t.Errorf("an unreachable registry must not claim drift, got %q", got)
+	}
+	if strings.Contains(got, "all pins match") {
+		t.Errorf("an unreachable registry must not claim an all-clear, got %q", got)
+	}
+}
+
+func TestVerdictDrift(t *testing.T) {
+	srv := fakeRegistry(t, map[string]string{"@foo/bar": "1.2.4"})
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 2 * time.Second
+
+	got := verdictFor(t, srv.URL, client, map[string]versions.Entry{
+		"foo": {Package: "@foo/bar", Pinned: "1.2.3"},
+	})
+	if !strings.Contains(got, "⚠ drift detected") {
+		t.Errorf("expected the drift verdict, got %q", got)
+	}
+}
+
+func TestVerdictAllMatch(t *testing.T) {
+	srv := fakeRegistry(t, map[string]string{"@foo/bar": "1.2.3"})
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 2 * time.Second
+
+	got := verdictFor(t, srv.URL, client, map[string]versions.Entry{
+		"foo": {Package: "@foo/bar", Pinned: "1.2.3"},
+	})
+	if !strings.Contains(got, "✓ all pins match latest") {
+		t.Errorf("expected the all-clear verdict, got %q", got)
+	}
+}
+
+// An error alongside real drift still reports the error: a partial probe
+// cannot be trusted to have seen every pin, which is why exitCode() lets
+// anyErr dominate too.
+func TestVerdictErrorDominatesDrift(t *testing.T) {
+	var buf strings.Builder
+	writeVerdict(&buf, true, true)
+	if !strings.Contains(buf.String(), "✗ could not query") {
+		t.Errorf("expected the error verdict to dominate, got %q", buf.String())
+	}
+}
