@@ -13,7 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.257", "verified_at": "2026-09-01"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.258", "verified_at": "2026-09-02"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -31,14 +31,14 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.257` as of 2026-09-01, verified live against the installed
-> 2.1.257 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> Both files carry claude-code `2.1.258` as of 2026-09-02, verified live against the installed
+> 2.1.258 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
 > extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
 > permission-mode surfaces still rest on corpora recorded at 2.1.185/2.1.217, and the blocking
 > startup dialogs are seeded away by the release-check harness and stay unverified). meta-harness's
-> own pin file is still at `2.1.218` (verified 2026-09-01) and has to follow — until it does,
+> own pin file is still at `2.1.218` (verified 2026-09-02) and has to follow — until it does,
 > `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, and the
-> no-args mode would drag this repo's pin *backwards* by 39 releases.
+> no-args mode would drag this repo's pin *backwards* by 40 releases.
 
 The read API:
 
