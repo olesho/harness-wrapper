@@ -3,15 +3,19 @@
 //
 // Detection signals first observed on 2.1.141; re-verified against 2.1.185
 // (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-// in versions.json is 2.1.251, verified live against that binary on
-// 2026-08-31 by pkg/harness's real-claude dogfood tests, which complete a
-// turn only if thinkingRE matches a settled 2.1.251 end-of-turn summary.
+// in versions.json is 2.1.257, verified live against that binary on
+// 2026-09-01 by pkg/harness's real-claude dogfood tests
+// (TestRunTurn_RealClaudeDogfood{,KeepAlive}), which complete a turn only if
+// thinkingRE matches a settled 2.1.257 end-of-turn summary and Busy() gates
+// the in-flight frames.
 //
-// That live check covers END-OF-TURN DETECTION ONLY. The other signals this
-// adapter owns still rest on recorded corpora and have not been re-verified
-// since: interruptMarker and the tool-call rendering at 2.1.185, and the
+// That live check covers END-OF-TURN DETECTION, reply extraction and the
+// multi-turn keep-alive path ONLY. The other signals this adapter owns still
+// rest on recorded corpora and have NOT been re-verified since:
+// interruptMarker and the tool-call rendering at 2.1.185, and the
 // permission-mode footers in permmode.go at 2.1.217. The settled-after-turn
-// corpus is recorded at 2.1.247.
+// corpus is recorded at 2.1.247. The blocking startup dialogs are seeded away
+// by the release-check harness and are unverified at 2.1.257.
 //
 // The signals:
 //
