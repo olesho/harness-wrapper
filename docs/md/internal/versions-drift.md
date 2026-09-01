@@ -14,16 +14,17 @@ against. It is embedded into `pkg/versions` at build time.
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
 
-> Both files carry claude-code `2.1.257` as of 2026-09-01, verified live against the installed
-> 2.1.257 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> Both files carry claude-code `2.1.258` as of 2026-09-02, verified live against the installed
+> 2.1.258 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
 > extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
 > permission-mode surfaces still rest on recorded corpora, and the blocking startup dialogs are
 > seeded away by the release-check harness and stay unverified). ALL FOUR claude scenarios —
 > `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — are re-baked at
 > `2.1.251`, so the corpus trails the pin by design rather than by neglect. meta-harness's own pin
-> file still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling
-> checkout reports drift by design, and the snapshot is a parity *target* rather than a mirror of
-> what meta-harness ships today.
+> file is still at `2.1.218` and has to follow — until it does, `scripts/sync-versions.sh --check`
+> against a sibling checkout reports drift by design, the snapshot is a parity *target* rather than
+> a mirror of what meta-harness ships today, and the no-args mode would drag this repo's pin
+> *backwards* by 40 releases.
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -41,12 +42,14 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.251` as of 2026-08-29 (the release ALL FOUR claude scenarios —
-> `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — were re-baked
-> against; the trailing `· done <clock>` clause that arrived in 2.1.247 is still what the end-of-turn
-> marker carries, and the interrupt marker is unchanged). meta-harness's own pin file
-> still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling checkout
-> reports drift by design.
+> Both files carry claude-code `2.1.258` as of 2026-09-02, verified live against the installed
+> 2.1.258 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
+> permission-mode surfaces still rest on corpora recorded at 2.1.185/2.1.217, and the blocking
+> startup dialogs are seeded away by the release-check harness and stay unverified). meta-harness's
+> own pin file is still at `2.1.218` (verified 2026-09-02) and has to follow — until it does,
+> `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, and the
+> no-args mode would drag this repo's pin *backwards* by 40 releases.
 
 The read API:
 
