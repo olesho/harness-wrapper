@@ -1,6 +1,8 @@
 # HARNESS-WRAPPER-66 — cross-repo deliverable for meta-harness
 
 > This file covers **HARNESS-WRAPPER-66 only**; the permission-mode cross-repo handoff is its sibling file [`HARNESS-WRAPPER-77-permission-mode.md`](HARNESS-WRAPPER-77-permission-mode.md), and the `--sandbox-defaults` argv tripwire is [`HARNESS-WRAPPER-78-sandbox-defaults-argv.md`](HARNESS-WRAPPER-78-sandbox-defaults-argv.md) — neither sibling is this file's bundle, and neither is the other's.
+>
+> **Filename prefixes.** The `HARNESS-WRAPPER-<n>-` siblings are numbered from harness-wrapper's retired per-repo tracker. Briefs filed after the move to the fleet tracker use the `PUPPET-<n>-` prefix with the real fleet id instead — inventing a HARNESS-WRAPPER number would be a dangling reference. First of these: [`PUPPET-236-unnumbered-trust-dialog.md`](PUPPET-236-unnumbered-trust-dialog.md).
 
 This directory is a **byte-exact, ready-to-apply bundle** for the sibling
 `meta-harness` repo (`~/Work/aether/meta-harness`, override with
