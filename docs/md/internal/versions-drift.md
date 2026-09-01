@@ -67,7 +67,11 @@ The canonical lists live in the `Makefile`:
 
 `make check-versions` runs `cmd/check-versions`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
-detected, **2** registry unreachable.
+detected, **2** registry unreachable — but read the **verdict line** the command prints, not the
+status a wrapper saw. `go run` collapses a non-zero child status to 1, so anything invoking this
+through `go run` (as the target itself once did) cannot tell an outage from real drift; the program
+prints `✓ all pins match latest` / `⚠ drift detected …` / `✗ could not query the npm registry`
+itself for exactly that reason. A `✗` means **no signal** — it is not evidence the pins are fine.
 
 ## When `check-versions` shows drift
 
