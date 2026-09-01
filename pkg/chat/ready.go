@@ -20,6 +20,16 @@ import (
 // can flash by in a single frame as the CLI advances its own login flow.
 const authGateStabilizeGap = 2 * time.Second
 
+// unrecognizedDialogStabilizeGap is how long a blocking dialog this build cannot
+// parse (claudecode.DetectUnparseable) must persist before waitReadyForSend
+// short-circuits with ErrUnrecognizedDialog. It follows the onboarding-WALL
+// precedent — the condition is permanent, so waiting out the send deadline
+// gains nothing — with ONE deliberate difference: the wall fires immediately
+// because it can flash by in a single frame, whereas an unparseable frame can
+// simply be a HALF-PAINTED one, so this state must survive a re-check of the
+// live screen before it is believed. Same dwell as the auth banner above.
+const unrecognizedDialogStabilizeGap = authGateStabilizeGap
+
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
 	// its own; fail fast so the caller answers it first. (A prompt being
@@ -43,34 +53,21 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 
 	// Stabilize timer for a soft logged-out BANNER on a not-ready screen (rare on
 	// the send path). An onboarding WALL is handled separately, immediately.
-	var authTimer *time.Timer
-	var authCh <-chan time.Time
-	armAuth := func() {
-		if authTimer == nil {
-			authTimer = time.NewTimer(authGateStabilizeGap)
-			authCh = authTimer.C
-		}
-	}
-	disarmAuth := func() {
-		if authTimer != nil {
-			if !authTimer.Stop() {
-				select {
-				case <-authTimer.C:
-				default:
-				}
-			}
-			authTimer = nil
-			authCh = nil
-		}
-	}
-	defer disarmAuth()
+	var auth stabilizer
+	auth.gap = authGateStabilizeGap
+	defer auth.disarm()
+	// Stabilize timer for a blocking dialog whose choices cannot be parsed.
+	var dialog stabilizer
+	dialog.gap = unrecognizedDialogStabilizeGap
+	defer dialog.disarm()
 
 	// check classifies the current screen. An onboarding WALL (sign-in wizard /
 	// device-code / login-method screen) fires NOW: it never becomes ready, and
 	// it can appear for a single frame before the CLI advances its own login flow
-	// past it — a dwell would miss it. A softer logged-out banner arms the
-	// debounce timer instead. readyForInput wins first, so a real composer (even
-	// with a stale banner scrolled above) is never auth-gated.
+	// past it — a dwell would miss it. A softer logged-out banner, and an
+	// unparseable blocking dialog, arm their debounce timers instead.
+	// readyForInput wins first, so a real composer (even with a stale banner
+	// scrolled above) is never auth-gated.
 	check := func() (ready, wall bool) {
 		txt := c.screen.Snapshot().Text
 		if readyForInput(c.opts.Harness, txt) {
@@ -79,10 +76,15 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 		if onboardingWall(c.opts.Harness, txt) {
 			return false, true
 		}
-		if authRequired(c.opts.Harness, txt) {
-			armAuth()
+		if claudeDialogState(c.opts.Harness, txt) == claudecode.DetectUnparseable {
+			dialog.arm()
 		} else {
-			disarmAuth()
+			dialog.disarm()
+		}
+		if authRequired(c.opts.Harness, txt) {
+			auth.arm()
+		} else {
+			auth.disarm()
 		}
 		return false, false
 	}
@@ -99,7 +101,7 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			return ctx.Err()
 		case <-c.closed:
 			return ErrClosed
-		case <-authCh:
+		case <-auth.ch():
 			// Re-confirm against the live screen before committing: a frame may
 			// have changed the screen without a wake we processed, so never
 			// short-circuit on a stale banner.
@@ -107,7 +109,17 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			if !readyForInput(c.opts.Harness, txt) && authRequired(c.opts.Harness, txt) {
 				return ErrAuthRequired
 			}
-			disarmAuth()
+			auth.disarm()
+		case <-dialog.ch():
+			// Same re-check, for the same reason and one more: an unparseable
+			// frame can be a half-painted one, so the state must still hold
+			// against the LIVE screen before the run is failed on it.
+			txt := c.screen.Snapshot().Text
+			if !readyForInput(c.opts.Harness, txt) &&
+				claudeDialogState(c.opts.Harness, txt) == claudecode.DetectUnparseable {
+				return ErrUnrecognizedDialog
+			}
+			dialog.disarm()
 		case <-c.inputStateCh:
 			if c.inputAwaitingClient() {
 				return ErrInputPending
@@ -133,8 +145,60 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	}
 }
 
+// stabilizer is a one-shot dwell timer: a screen state arms it, any other state
+// disarms it, and it fires only if the state held for the whole gap. It exists
+// so waitReadyForSend can debounce several independent conditions (a logged-out
+// banner, an unparseable dialog) without a copy of the arm/disarm dance per
+// condition. Not safe for concurrent use — it is driven from the single
+// waitReadyForSend goroutine.
+type stabilizer struct {
+	gap   time.Duration
+	timer *time.Timer
+	c     <-chan time.Time
+}
+
+func (s *stabilizer) arm() {
+	if s.timer == nil {
+		s.timer = time.NewTimer(s.gap)
+		s.c = s.timer.C
+	}
+}
+
+func (s *stabilizer) disarm() {
+	if s.timer == nil {
+		return
+	}
+	if !s.timer.Stop() {
+		select {
+		case <-s.timer.C:
+		default:
+		}
+	}
+	s.timer = nil
+	s.c = nil
+}
+
+// ch returns the fire channel, nil while disarmed — a nil channel blocks
+// forever in a select, which is how an unarmed stabilizer stays inert.
+func (s *stabilizer) ch() <-chan time.Time { return s.c }
+
 // chatClaudeCode is the adapter-style name for the Claude Code harness.
 const chatClaudeCode = "claude-code"
+
+// claudeDialogState reports what claude-code's blocking-dialog detector sees on
+// this screen, and DetectNone for every other harness.
+//
+// It is the claude-only sibling of readyForInput, which returns a plain bool and
+// is shared with the codex and pi branches: widening that signature to carry a
+// claude-specific enum would push the detail into two harnesses that have no use
+// for it. Callers get the four states here and the yes/no there.
+func claudeDialogState(harness, text string) claudecode.Detection {
+	if harness != chatClaudeCode {
+		return claudecode.DetectNone
+	}
+	_, det := claudecode.DetectInputDetail(text)
+	return det
+}
 
 func requiresPromptReadiness(harness string) bool {
 	switch harness {
@@ -160,7 +224,16 @@ func readyForInput(harness, text string) bool {
 		// "❯" selector and the "Claude Code" header, which would otherwise
 		// look ready. Treat the dialog as not-ready so Send waits for it to
 		// clear instead of typing the message into the menu.
-		if _, blocking := claudecode.DetectInput(text); blocking {
+		//
+		// EVERY non-DetectNone state blocks, not just the answerable one. The
+		// two-value DetectInput would fold DetectUnparseable and DetectPending
+		// into "no dialog", and the bare "❯" test below would then call the
+		// dialog READY — which is how claude 2.1.251's unnumbered folder-trust
+		// dialog got the prompt typed into it and submitted onto the
+		// highlighted "No, exit", quitting the CLI at startup. A mid-render
+		// (DetectPending) frame is blocked for the same reason: it is a dialog,
+		// it just has not finished painting.
+		if claudeDialogState(harness, text) != claudecode.DetectNone {
 			return false
 		}
 		// The "Claude Code" startup banner is deliberately NOT required. It is a
