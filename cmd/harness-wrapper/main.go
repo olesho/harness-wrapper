@@ -39,7 +39,7 @@ func run(args []string) int {
 	// shape, so they're routed before the main parser.
 	if len(args) >= 1 {
 		switch args[0] {
-		case "attach", "status", "kill", "list":
+		case "attach", "status", "kill", "list", "reap":
 			return runTmuxSubcommand(args)
 		case "run":
 			// One-shot prompt mode: the proper substitution for `claude -p`.
@@ -105,7 +105,20 @@ func runHarnessWrapper(args []string) int {
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
 		return 1
 	}
-	defer closeTrace()
+	// NOTE: closeTrace is called EXPLICITLY on both return paths below, before
+	// tmuxSelfTeardown, and this defer is only the backstop for a panic. A
+	// deferred-only close runs too late: tmuxSelfTeardown destroys the pane this
+	// process lives in, so the final wrapper_cli_exited event has to be flushed
+	// first or it can be lost. closeTrace is idempotent-safe here because the
+	// explicit call always happens first on the normal paths.
+	closed := false
+	closeTraceOnce := func() {
+		if !closed {
+			closed = true
+			closeTrace()
+		}
+	}
+	defer closeTraceOnce()
 
 	ctx, stopSignalWatcher := signalAwareContext(context.Background(), traceEmitter)
 	defer stopSignalWatcher()
@@ -124,9 +137,17 @@ func runHarnessWrapper(args []string) int {
 	if err != nil {
 		emitCLIExitTrace(traceEmitter, res, err)
 		fmt.Fprintln(os.Stderr, "harness-wrapper:", err)
+		// Flush the trace, THEN tear the session down -- a failed run must not
+		// leave a session behind either.
+		closeTraceOnce()
+		stopSignalWatcher()
+		tmuxSelfTeardown(parsed.TmuxChild)
 		return 1
 	}
 	emitCLIExitTrace(traceEmitter, res, nil)
+	closeTraceOnce()
+	stopSignalWatcher()
+	tmuxSelfTeardown(parsed.TmuxChild)
 	return exitCodeFor(res)
 }
 
@@ -258,6 +279,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "       harness-wrapper status <session> [--json]")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper kill <session>")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper list")
+	_, _ = fmt.Fprintln(w, "       harness-wrapper reap [--dry-run]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "wrapper flags (must come BEFORE the harness name):")
 	_, _ = fmt.Fprintln(w, "  --trace-file PATH       write trace events as NDJSON to PATH")
@@ -308,6 +330,12 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Tmux mode lets you detach from a long-running agent: the harness")
 	_, _ = fmt.Fprintln(w, "keeps running inside the tmux session, and `harness-wrapper attach`")
-	_, _ = fmt.Fprintln(w, "(or `tmux attach -t hw-<NAME>`) reconnects you. Trace events go to")
-	_, _ = fmt.Fprintln(w, "~/.harness-wrapper/sessions/<NAME>.trace.ndjson by default.")
+	_, _ = fmt.Fprintln(w, "(or `tmux -L harness-wrapper attach -t hw-<NAME>`) reconnects you. Trace")
+	_, _ = fmt.Fprintln(w, "events go to ~/.harness-wrapper/sessions/<NAME>.trace.ndjson by default.")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Sessions live on a DEDICATED tmux socket (`tmux -L harness-wrapper`), not")
+	_, _ = fmt.Fprintln(w, "the default one, so ambient global tmux options -- notably remain-on-exit,")
+	_, _ = fmt.Fprintln(w, "which strands finished sessions as dead panes -- cannot reach them. They")
+	_, _ = fmt.Fprintln(w, "therefore do NOT appear in a bare `tmux ls`. Override the socket with")
+	_, _ = fmt.Fprintln(w, "HW_TMUX_SOCKET. `reap` kills hw- sessions whose panes are all dead.")
 }
