@@ -1,6 +1,6 @@
 {
   "codex":       {"package": "@openai/codex",             "binary": "codex",  "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude", "pinned": "2.1.251", "verified_at": "2026-08-29"},
+  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude", "pinned": "2.1.257", "verified_at": "2026-09-01"},
   "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",      "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi", "pinned": "0.76.0", "verified_at": "2026-06-27"}
 }

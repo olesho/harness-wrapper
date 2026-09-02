@@ -1,12 +1,27 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals first observed on 2.1.141. Last verified against
-// 2.1.251 on 2026-08-29, which is also the pin in versions.json: ALL FOUR
-// claude scenarios under test/corpus/claude-code/ — settled-after-turn,
-// multi-turn, tool-call and interrupted-mid-reply — were re-baked from that
-// binary (meta.json.binary_version is the recorded proof) and replayed
-// through this adapter unchanged. No marker below moved at 2.1.251.
+
+// Detection signals first observed on 2.1.141. The pin in versions.json is
+// 2.1.257, verified LIVE against that binary on 2026-09-01 by pkg/harness's
+// TestRunTurn_RealClaudeDogfood{,KeepAlive}, which complete a turn only if
+// thinkingRE matches a settled 2.1.257 end-of-turn summary and Busy() gates the
+// in-flight frames.
+//
+// That live check covers END-OF-TURN DETECTION, reply extraction and the
+// multi-turn keep-alive path ONLY. The other signals this adapter owns rest on
+// the recorded corpora and have NOT been re-verified at 2.1.257: interruptMarker
+// and the tool-call rendering, and the permission-mode footers in permmode.go,
+// which are still anchored at 2.1.217. The blocking startup dialogs are seeded
+// away by the release-check harness and are unverified at 2.1.257.
+//
+// ALL FOUR claude scenarios under test/corpus/claude-code/ — settled-after-turn,
+// multi-turn, tool-call and interrupted-mid-reply — are recorded at 2.1.251
+// (meta.json.binary_version is the recorded proof) and replay through this
+// adapter unchanged; no marker moved at 2.1.251. They are still OLDER than the
+// pin, and deliberately so: they are frozen renderings the adapter must keep
+// handling, not evidence about the pinned release. Corpus replay therefore
+// cannot confirm a new upstream version; only the live tests above can.
 //
 // The signals:
 //

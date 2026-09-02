@@ -13,7 +13,17 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.251", "verified_at": "2026-08-29"},
+
+> Both files carry claude-code `2.1.257` as of 2026-09-01, verified live against the installed
+> 2.1.257 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
+> permission-mode surfaces still rest on recorded corpora, and the blocking startup dialogs are
+> seeded away by the release-check harness and stay unverified). ALL FOUR claude scenarios —
+> `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — are re-baked at
+> `2.1.251`, so the corpus trails the pin by design rather than by neglect. meta-harness's own pin
+> file still has to follow — until it does, `scripts/sync-versions.sh --check` against a sibling
+> checkout reports drift by design, and the snapshot is a parity *target* rather than a mirror of
+> what meta-harness ships today.
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -60,12 +70,21 @@ go red.
 ```bash
 make check-versions        # offline: pinned vs npm registry /latest (~2s, free)
 make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario (paid for codex/claude)
-make rebake-corpus-all     # refresh all 12 (6 scenarios × 2 harnesses), then run adapter tests
+make rebake-corpus-all     # walks the Makefile cross-product, then runs adapter tests
 ```
 
 The canonical lists live in the `Makefile`:
 `SCENARIOS = short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn`;
 `HARNESSES = codex claude`.
+
+> **The cross-product is codex-shaped; `rebake-corpus-all`'s "12 live recordings (6 × 2)" banner is
+> wrong for claude.** Under `test/corpus/claude-code/` the recorded scenarios are `adversarial`,
+> `interrupted-mid-reply`, `multi-turn`, `settled-after-turn` and `tool-call`. Of those,
+> `adversarial/thinking-line-mid-reply` is a hand-authored 2.1.141 fixture with no
+> `test/scripts/claude/adversarial.json`, so it is **not** rebakeable. **A claude rebake is 4
+> scenarios, not 6:** `interrupted-mid-reply multi-turn settled-after-turn tool-call`.
+> `short-reply`, `long-markdown` and `code-block` have scripts but **no claude corpus directory** —
+> rebaking them only creates new corpora that nothing replays.
 
 `make check-versions` runs `cmd/check-versions`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
@@ -79,7 +98,7 @@ backwards-compatible.
 1. Install it locally (e.g. `npm i -g @anthropic-ai/claude-code@<ver>`).
 2. Re-bake the affected harness and run its adapter regression:
    ```bash
-   for s in short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn; do
+   for s in interrupted-mid-reply multi-turn settled-after-turn tool-call; do
        make rebake-corpus HARNESS=claude SCENARIO=$s
    done
    go test -race ./pkg/turns/harness/claudecode/...
