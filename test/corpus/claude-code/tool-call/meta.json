@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.185",
-  "recorded_at": "2026-06-21T03:04:50.119476Z",
+  "binary_version": "2.1.251",
+  "recorded_at": "2026-08-29T07:27:50.68435Z",
   "cols": 120,
   "rows": 40,
-  "notes": "rebake via Makefile on 2026-06-21T03:04:28Z"
+  "notes": "A completed TOOL-USING turn on Claude Code 2.1.251, re-baked for PUPPET-246: the prompt asks for a Bash listing of internal/screenbench, so the frame carries a \"Listed 1 directory\" tool block, the assistant's answer, and the end-of-turn summary \"✻ Crunched for 7s · done 9:27 AM\" (the trailing \"· done <H:MM AM>\" clause introduced in 2.1.247). The footer reads \"auto mode on\", which TestAdapter_PermissionMode_corpusAuto asserts and which the Bash call needed to run unattended. Recorded via `make rebake-corpus HARNESS=claude SCENARIO=tool-call`. 2.1.251 runs its TUI on the alternate screen, so the tail of bytes.raw is the alt-screen exit followed by the \"claude --resume\" epilogue: replay incrementally and read the last frame carrying the harness footer (lastLiveFrame), as production does — a whole-buffer replay snapshots the teardown instead."
 }

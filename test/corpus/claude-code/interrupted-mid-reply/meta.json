@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.185",
-  "recorded_at": "2026-06-21T03:15:52.428541Z",
+  "binary_version": "2.1.251",
+  "recorded_at": "2026-08-29T08:35:21.973918Z",
   "cols": 120,
   "rows": 40,
-  "notes": "rebake via Makefile on 2026-06-21T03:15:39Z"
+  "notes": "A reply INTERRUPTED mid-stream on Claude Code 2.1.251, re-baked for PUPPET-246. The interrupt block reads exactly \"⎿  Interrupted · What should Claude do instead?\" — U+23BF, ASCII space, U+00A0, then the text — unchanged from the 2.1.185 recording this replaces, so claudecode.interruptMarker did NOT move at 2.1.251; what moved is the KEY. Esc (0x1b) interrupts and paints that block; Ctrl-C (0x03), which the recorder wrote unconditionally before this ticket, stops the turn, paints nothing and restores the prompt into the composer — a clear, not an interrupt. The script therefore asks for \"interrupt_key\": \"esc\", and waits for the reply to actually start streaming (the ⏺ bullet) before pressing it: an Esc that lands before the first token cancels the request and is likewise painted as nothing. Recorded via `make rebake-corpus HARNESS=claude SCENARIO=interrupted-mid-reply`. 2.1.251 runs its TUI on the alternate screen, so the tail of bytes.raw is the alt-screen exit followed by the \"claude --resume\" epilogue: replay incrementally and read the last frame carrying the harness footer (lastLiveFrame), as production does."
 }
