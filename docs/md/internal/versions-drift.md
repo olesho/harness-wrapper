@@ -13,7 +13,18 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.258", "verified_at": "2026-09-02"},
+
+> Both files carry claude-code `2.1.258` as of 2026-09-02, verified live against the installed
+> 2.1.258 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
+> permission-mode surfaces still rest on recorded corpora, and the blocking startup dialogs are
+> seeded away by the release-check harness and stay unverified). ALL FOUR claude scenarios —
+> `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — are re-baked at
+> `2.1.251`, so the corpus trails the pin by design rather than by neglect. meta-harness's own pin
+> file is still at `2.1.218` and has to follow — until it does, `scripts/sync-versions.sh --check`
+> against a sibling checkout reports drift by design, the snapshot is a parity *target* rather than
+> a mirror of what meta-harness ships today, and the no-args mode would drag this repo's pin
+> *backwards* by 40 releases.
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -143,9 +154,30 @@ re-run the canary.
 - **Full-screen TUIs need a sized PTY** — the recorder now calls `Session.Resize(--cols,--rows)` after
   start (scripted mode has no controlling TTY to inherit a size from). Without it a ratatui TUI (codex
   0.142) renders into a ~0×0 PTY and replays blank.
-- **Slow API** — raise `--max-duration` (default 5m) for long scenarios.
+- **Slow API** — raise `--max-duration` (default 5m) for long scenarios. Prefer the script's own
+  top-level `"idle_timeout"` / `"max_duration"` fields over the flags: the budget then travels with
+  the scenario, is versioned in the same file, and `rebake-corpus-all` — which cannot pass
+  per-scenario flags — picks it up. Both are Go duration strings and fail at load if malformed. A
+  tool-using turn needs a far longer idle tolerance than a "what is 2+2?" turn; `tool-call` asks for
+  `20s`.
+- **`wait_for` matches the RAW PTY BYTE STREAM, not the rendered screen.** The buffer it searches
+  holds SGR colour changes and cursor moves interleaved with the text, so an anchor must be short and
+  contiguous *within one styled run* — a pattern spanning a colour change can fail against a screen
+  that visibly shows it. This is why the old `wait_for "> "` composer anchor was doubly dead: the
+  prompt renders as U+276F `❯`, and the plain `>` only ever matched incidentally.
 - **Wrong `wait_for`** — the idle-timeout fallback lets the script proceed without matching, capturing
-  a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex.
+  a screen with no marker. Inspect `bytes.raw` and tighten the script's `wait_for` regex. A green bake
+  is *not* proof the anchor matched: `grep -a` the fresh `bytes.raw` for the marker before trusting it.
+- **`{"send": "…\n"}` types AND submits** — the trailing newline is replaced by the harness's
+  enhanced-keyboard Enter, written as a second PTY write after a bounded wait for the composer to echo
+  the text (mirroring `pkg/chat/submit.go`). Without that wait Claude Code reads the burst as a paste
+  and swallows the submit key, leaving the prompt sitting unsent in the composer.
+- **Interrupting claude: Esc, not Ctrl-C** — on 2.1.251 Esc (`0x1b`) interrupts a streaming reply and
+  paints `⎿  Interrupted · What should Claude do instead?`, while Ctrl-C (`0x03`) stops the turn,
+  paints nothing and restores the prompt into the composer. An `interrupt` step therefore takes an
+  `"interrupt_key"` of `"ctrl-c"` (the default, which the codex corpus was baked with) or `"esc"`.
+  Timing matters too: an Esc that lands before the first token is a cancel and is likewise painted as
+  nothing, so wait for the reply to start streaming (the `⏺` bullet) before pressing it.
 - **Quiet corruption** — a truncated/auth-screen recording that still satisfies the regex is wrong
   without failing. After a successful `rebake-corpus-all`, eyeball a sample
   (`screenbench --corpus test/corpus --format markdown | less`).

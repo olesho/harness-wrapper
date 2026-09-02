@@ -256,6 +256,21 @@ type footerProbe struct {
 	suffix   string // the version-dependent tail after " on" (logged, never asserted)
 	rung     string // what the SHIPPED detector read
 	readable bool   // the detector's second return
+	// sawScreen distinguishes the two ways this probe comes back empty, which
+	// the reading alone cannot: a harness that painted a footer we failed to
+	// parse (real drift, the parser's problem) versus a harness we never drove
+	// far enough to paint anything (the environment's problem). Without it both
+	// report as FOOTER DRIFT and send the reader to permmode.go.
+	sawScreen bool
+	// screen is the last snapshot polled, kept ONLY for the failure message.
+	//
+	// Measured 2026-08-29 (claude 2.1.251): all five rungs reported FOOTER
+	// DRIFT with footer="" and named permmode.go, while the shipped parser read
+	// that version's real footer correctly when handed it directly. The reading
+	// alone could not tell drift from a harness stuck on some other screen, and
+	// the failure printed only what was NOT found — never what WAS on screen —
+	// so the evidence needed to tell those apart was the one thing not reported.
+	screen string
 }
 
 // TestConformance_ClaudePermissionFooter launches the real claude binary once
@@ -307,6 +322,25 @@ func TestConformance_ClaudePermissionFooter(t *testing.T) {
 			seen[rung] = p.rung
 		}
 
+		if !p.readable && !p.sawScreen {
+			// NOT drift, and deliberately not phrased as such: nothing was ever
+			// rendered, so this says nothing about the parser. Naming
+			// permmode.go here would send a fixer to edit a file the evidence
+			// does not implicate — which is exactly what happened on
+			// 2026-08-29 before this branch existed.
+			t.Errorf("COULD NOT DRIVE CLAUDE: launched with permission rung %q and polled for %s, "+
+				"but the screen never rendered any content.\n"+
+				"  This is NOT footer drift — the parser was never given anything to read, so it is\n"+
+				"  not implicated. Check that the binary starts and reaches its prompt in this\n"+
+				"  environment: an unanswered trust/onboarding dialog, a missing PTY, or a harness\n"+
+				"  that exits at once all land here.\n"+
+				"  Reproduce outside the suite:  tmux new-session -d -s probe -x 120 -y 30 '%s %s'\n"+
+				"                                sleep 25 && tmux capture-pane -t probe -p | tail -5\n"+
+				"  last screen:\n%s",
+				rung, footerPollTimeout, bin, "--dangerously-skip-permissions", indentScreen(p.screen))
+			continue
+		}
+
 		if !p.readable {
 			t.Errorf("FOOTER DRIFT: launched claude with permission rung %q, but the shipped "+
 				"parser could not read a permission mode off the rendered footer.\n"+
@@ -314,8 +348,11 @@ func TestConformance_ClaudePermissionFooter(t *testing.T) {
 				"  expected core (suffix intentionally not asserted): %s\n"+
 				"  fix the alternation in pkg/turns/harness/claudecode/permmode.go:55 (permissionModeRE) "+
 				"— a DIFFERENT package from this test, which is exactly why this message names it.\n"+
+				"  BEFORE editing that file, read the screen below: if it shows a dialog, an error or a\n"+
+				"  prompt rather than the harness at rest, this is not drift and the parser is not at fault.\n"+
+				"  last screen:\n%s\n"+
 				"  see docs/md/internal/versions-drift.md",
-				rung, p.line, claudeFooterExpectation)
+				rung, p.line, claudeFooterExpectation, indentScreen(p.screen))
 			continue
 		}
 		if p.rung != rung {
@@ -437,6 +474,10 @@ func probeClaudeFooter(t *testing.T, bin, mode string) footerProbe {
 				"an unauthenticated session paints a footer for every rung and would make this "+
 				"check lie rather than fail", wall)
 		}
+		if strings.TrimSpace(snap.Text) != "" {
+			p.sawScreen = true
+		}
+		p.screen = snap.Text
 		p.line, p.suffix = claudeFooterLine(snap.Text)
 		p.rung, p.readable = det.PermissionMode(snap)
 		return p.readable

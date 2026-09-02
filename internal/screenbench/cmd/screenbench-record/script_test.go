@@ -117,7 +117,8 @@ func TestDriver_SubmitKeyTranslation(t *testing.T) {
 		stdin := &recordingStdin{}
 		d := newScriptDriver(stdin, time.Second, 0)
 		d.submitKey = []byte("\x1b[13u")
-		if err := d.send("what is 2 plus 2?\n"); err != nil {
+		d.echoGap = 20 * time.Millisecond
+		if err := d.send(context.Background(), "what is 2 plus 2?\n"); err != nil {
 			t.Fatal(err)
 		}
 		if got, want := stdin.String(), "what is 2 plus 2?\x1b[13u"; got != want {
@@ -128,7 +129,7 @@ func TestDriver_SubmitKeyTranslation(t *testing.T) {
 	t.Run("nil submitKey stays raw", func(t *testing.T) {
 		stdin := &recordingStdin{}
 		d := newScriptDriver(stdin, time.Second, 0)
-		if err := d.send("hi\n"); err != nil {
+		if err := d.send(context.Background(), "hi\n"); err != nil {
 			t.Fatal(err)
 		}
 		if got := stdin.String(); got != "hi\n" {
@@ -140,7 +141,7 @@ func TestDriver_SubmitKeyTranslation(t *testing.T) {
 		stdin := &recordingStdin{}
 		d := newScriptDriver(stdin, time.Second, 0)
 		d.submitKey = []byte("\x1b[13u")
-		if err := d.send("partial"); err != nil {
+		if err := d.send(context.Background(), "partial"); err != nil {
 			t.Fatal(err)
 		}
 		if got := stdin.String(); got != "partial" {
@@ -473,4 +474,152 @@ func TestParseFlagsScriptPath(t *testing.T) {
 	if !c.AutoVersion {
 		t.Errorf("AutoVersion should be true")
 	}
+}
+
+// --- per-scenario timing budget (idle_timeout / max_duration) ---
+
+// TestLoadScriptTimingFields: the budget is optional, parsed at load, and a
+// typo fails the bake up front rather than silently recording with the flag
+// defaults — the failure mode that truncated tool-call, where a wrong value
+// costs a paid re-record to discover.
+func TestLoadScriptTimingFields(t *testing.T) {
+	t.Run("present and valid", func(t *testing.T) {
+		path := writeScript(t, `{
+			"idle_timeout": "20s",
+			"max_duration": "4m",
+			"steps": [{"sleep": "1ms"}]
+		}`)
+		s, err := loadScript(path)
+		if err != nil {
+			t.Fatalf("loadScript: %v", err)
+		}
+		if s.IdleTimeout != "20s" || s.MaxDuration != "4m" {
+			t.Errorf("got idle=%q max=%q, want 20s / 4m", s.IdleTimeout, s.MaxDuration)
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		path := writeScript(t, `{"steps": [{"sleep": "1ms"}]}`)
+		s, err := loadScript(path)
+		if err != nil {
+			t.Fatalf("loadScript: %v", err)
+		}
+		if s.IdleTimeout != "" || s.MaxDuration != "" {
+			t.Errorf("got idle=%q max=%q, want both empty", s.IdleTimeout, s.MaxDuration)
+		}
+	})
+
+	t.Run("malformed idle_timeout fails at load", func(t *testing.T) {
+		path := writeScript(t, `{"idle_timeout": "20 seconds", "steps": [{"sleep": "1ms"}]}`)
+		if _, err := loadScript(path); err == nil {
+			t.Fatal("expected an error for a malformed idle_timeout")
+		} else if !strings.Contains(err.Error(), "idle_timeout") {
+			t.Errorf("error %q does not name idle_timeout", err)
+		}
+	})
+
+	t.Run("malformed max_duration fails at load", func(t *testing.T) {
+		path := writeScript(t, `{"max_duration": "forever", "steps": [{"sleep": "1ms"}]}`)
+		if _, err := loadScript(path); err == nil {
+			t.Fatal("expected an error for a malformed max_duration")
+		} else if !strings.Contains(err.Error(), "max_duration") {
+			t.Errorf("error %q does not name max_duration", err)
+		}
+	})
+}
+
+// TestApplyScriptTiming: the scenario's own budget overrides the CLI flags, and
+// a scenario that declares nothing keeps them.
+func TestApplyScriptTiming(t *testing.T) {
+	t.Run("overrides the flags", func(t *testing.T) {
+		c := recorderConfig{IdleTimeout: 3 * time.Second, MaxDuration: 5 * time.Minute}
+		applyScriptTiming(&c, &script{IdleTimeout: "20s", MaxDuration: "4m"})
+		if c.IdleTimeout != 20*time.Second {
+			t.Errorf("idle timeout = %s, want 20s", c.IdleTimeout)
+		}
+		if c.MaxDuration != 4*time.Minute {
+			t.Errorf("max duration = %s, want 4m", c.MaxDuration)
+		}
+	})
+
+	t.Run("absent leaves the flags", func(t *testing.T) {
+		c := recorderConfig{IdleTimeout: 3 * time.Second, MaxDuration: 5 * time.Minute}
+		applyScriptTiming(&c, &script{})
+		if c.IdleTimeout != 3*time.Second || c.MaxDuration != 5*time.Minute {
+			t.Errorf("got idle=%s max=%s, want the flag values unchanged", c.IdleTimeout, c.MaxDuration)
+		}
+	})
+
+	t.Run("one field only", func(t *testing.T) {
+		c := recorderConfig{IdleTimeout: 3 * time.Second, MaxDuration: 5 * time.Minute}
+		applyScriptTiming(&c, &script{IdleTimeout: "15s"})
+		if c.IdleTimeout != 15*time.Second {
+			t.Errorf("idle timeout = %s, want 15s", c.IdleTimeout)
+		}
+		if c.MaxDuration != 5*time.Minute {
+			t.Errorf("max duration = %s, want the flag value 5m", c.MaxDuration)
+		}
+	})
+}
+
+// --- interrupt_key ---
+
+// TestDriver_InterruptKey pins which byte each interrupt key writes. Which one
+// actually interrupts is version-specific — measured on Claude Code 2.1.251,
+// Esc interrupts and paints "Interrupted · ...", while Ctrl-C silently CLEARS
+// and restores the prompt to the composer — so the default must stay Ctrl-C for
+// the codex corpus baked with 0x03, and claude must ask for esc explicitly.
+func TestDriver_InterruptKey(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want byte
+	}{
+		{"default is ctrl-c", "", 0x03},
+		{"explicit ctrl-c", "ctrl-c", 0x03},
+		{"esc", "esc", 0x1b},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stdin := &recordingStdin{}
+			d := newScriptDriver(stdin, time.Second, 0)
+			s := &script{Steps: []scriptStep{{Interrupt: true, InterruptKey: tt.key}}}
+			if err := d.Run(context.Background(), s); err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			stdin.mu.Lock()
+			got := stdin.sent
+			stdin.mu.Unlock()
+			if len(got) != 1 || got[0] != tt.want {
+				t.Errorf("interrupt_key %q sent % x, want %02x", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadScriptInterruptKey(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		path := writeScript(t, `{"steps": [{"interrupt": true, "interrupt_key": "esc"}]}`)
+		s, err := loadScript(path)
+		if err != nil {
+			t.Fatalf("loadScript: %v", err)
+		}
+		if s.Steps[0].InterruptKey != "esc" {
+			t.Errorf("interrupt_key = %q, want esc", s.Steps[0].InterruptKey)
+		}
+	})
+
+	t.Run("unknown key fails at load", func(t *testing.T) {
+		path := writeScript(t, `{"steps": [{"interrupt": true, "interrupt_key": "ctrl-d"}]}`)
+		if _, err := loadScript(path); err == nil {
+			t.Fatal("expected an error for an unknown interrupt_key")
+		}
+	})
+
+	t.Run("interrupt_key without interrupt fails at load", func(t *testing.T) {
+		path := writeScript(t, `{"steps": [{"sleep": "1ms", "interrupt_key": "esc"}]}`)
+		if _, err := loadScript(path); err == nil {
+			t.Fatal("expected an error for interrupt_key on a non-interrupt step")
+		}
+	})
 }

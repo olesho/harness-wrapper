@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.185",
-  "recorded_at": "2026-06-21T03:03:17.119068Z",
+  "binary_version": "2.1.251",
+  "recorded_at": "2026-08-29T03:43:29.546535Z",
   "cols": 120,
   "rows": 40,
-  "notes": "rebake via Makefile on 2026-06-21T03:02:51Z"
+  "notes": "Two consecutive completed turns on Claude Code 2.1.251, re-baked for the 2.1.251 verification pass (PUPPET-229); each ends in its own \"✻ <verb> for Ns · done <H:MM AM>\" summary, so the recording exercises per-turn re-firing and the fingerprint de-duplication between them. The scripted drive was rewritten for 2.1.251 first: the composer no longer submits on a bare \"\\n\" and no longer renders \"> \", so the script types the prompt and sends the kitty-protocol Enter (ESC[13u) as a separate step, exactly as settled-after-turn does. Alt-screen teardown applies here too — replay incrementally."
 }

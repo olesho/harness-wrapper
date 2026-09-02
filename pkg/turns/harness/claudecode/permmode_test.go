@@ -149,13 +149,7 @@ func TestPermissionModeFromFooter_corpusNoFooter(t *testing.T) {
 func TestAdapter_PermissionMode_corpusAuto(t *testing.T) {
 	a := New()
 	for _, name := range []string{"multi-turn", "tool-call", "interrupted-mid-reply"} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "test", "corpus", "claude-code", name, "bytes.raw"))
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		sc := screen.New(120, 40)
-		_, _ = sc.Write(b)
-		got, ok := a.PermissionMode(sc.Snapshot())
+		got, ok := a.PermissionMode(lastLiveFrame(t, name))
 		if !ok {
 			t.Errorf("[%s] PermissionMode = _, false; want %q, true", name, "auto")
 			continue

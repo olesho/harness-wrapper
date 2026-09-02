@@ -1,21 +1,27 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals first observed on 2.1.141; re-verified against 2.1.185
-// (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-// in versions.json is 2.1.258, verified live against that binary on
-// 2026-09-02 by pkg/harness's real-claude dogfood tests
-// (TestRunTurn_RealClaudeDogfood{,KeepAlive}), which complete a turn only if
-// thinkingRE matches a settled 2.1.258 end-of-turn summary and Busy() gates
-// the in-flight frames.
+
+// Detection signals first observed on 2.1.141. The pin in versions.json is
+// 2.1.258, verified LIVE against that binary on 2026-09-02 by pkg/harness's
+// TestRunTurn_RealClaudeDogfood{,KeepAlive}, which complete a turn only if
+// thinkingRE matches a settled 2.1.258 end-of-turn summary and Busy() gates the
+// in-flight frames.
 //
 // That live check covers END-OF-TURN DETECTION, reply extraction and the
-// multi-turn keep-alive path ONLY. The other signals this adapter owns still
-// rest on recorded corpora and have NOT been re-verified since:
-// interruptMarker and the tool-call rendering at 2.1.185, and the
-// permission-mode footers in permmode.go at 2.1.217. The settled-after-turn
-// corpus is recorded at 2.1.247. The blocking startup dialogs are seeded away
-// by the release-check harness and are unverified at 2.1.258.
+// multi-turn keep-alive path ONLY. The other signals this adapter owns rest on
+// the recorded corpora and have NOT been re-verified at 2.1.258: interruptMarker
+// and the tool-call rendering, and the permission-mode footers in permmode.go,
+// which are still anchored at 2.1.217. The blocking startup dialogs are seeded
+// away by the release-check harness and are unverified at 2.1.258.
+//
+// ALL FOUR claude scenarios under test/corpus/claude-code/ — settled-after-turn,
+// multi-turn, tool-call and interrupted-mid-reply — are recorded at 2.1.251
+// (meta.json.binary_version is the recorded proof) and replay through this
+// adapter unchanged; no marker moved at 2.1.251. They are still OLDER than the
+// pin, and deliberately so: they are frozen renderings the adapter must keep
+// handling, not evidence about the pinned release. Corpus replay therefore
+// cannot confirm a new upstream version; only the live tests above can.
 //
 // The signals:
 //
@@ -27,7 +33,11 @@
 //
 //   - User interrupt: a "⎿  Interrupted · What should Claude do
 //     instead?" line appears. The turn ended in a recoverable error
-//     state.
+//     state. Re-confirmed verbatim on 2.1.251. What changed at 2.1.24x
+//     is which KEY produces it — Esc interrupts, Ctrl-C clears the
+//     composer and paints nothing — which matters to the recorder, not
+//     to this adapter; see the interrupt step in
+//     internal/screenbench/cmd/screenbench-record/script.go.
 //
 // This adapter embeds generic.Adapter so wrapper-level status events
 // (blocked_by_cost, retry_later, failed) keep flowing through.
