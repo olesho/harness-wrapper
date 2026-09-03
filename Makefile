@@ -74,12 +74,20 @@ docs-serve:
 # every new upstream release and must not fail the target — callers tell drift
 # from an outage by the verdict text, and a non-zero status here means "this
 # check produced no signal".
+#
+# The catch-all arm is deliberate: an exit code this target does not recognise
+# (a panic, a future code) must surface as a failure rather than fall into the
+# "drift is fine" arm. Collapsing unknown into benign is the exact bug above.
 check-versions:
 	@dir="$$(mktemp -d)"; \
 	go build -o "$$dir/check-versions" ./cmd/check-versions || { rm -rf "$$dir"; exit 2; }; \
 	"$$dir/check-versions"; code=$$?; \
 	rm -rf "$$dir"; \
-	[ "$$code" = "2" ] && exit 2 || exit 0
+	case $$code in \
+		0|1) exit 0 ;; \
+		2) exit 2 ;; \
+		*) echo "✗ check-versions failed unexpectedly (exit $$code)"; exit $$code ;; \
+	esac
 
 # rebake-corpus: re-record one scenario via screenbench-record --script.
 # Costs real API tokens for codex/claude.

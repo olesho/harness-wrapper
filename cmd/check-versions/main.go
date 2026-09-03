@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/versions"
@@ -183,10 +184,44 @@ func fetchLatest(client *http.Client, registry, pkg string) (string, error) {
 	return payload.Version, nil
 }
 
-// writeTable emits a 4-column Markdown table.
+// detailCellMax caps the detail column. A registry error can be a multi-line
+// TLS chain dump; unbounded it would make the table unreadable in exactly the
+// situation the column exists for. The untruncated text stays in --format=json.
+const detailCellMax = 120
+
+// detailCell renders a row's probe error for the table. Only `error` rows have
+// one — a `match`/`drift`/`unpinned` row's cell is blank — and the text is
+// flattened first: an embedded newline or `|` would break the Markdown table's
+// own syntax and take the remaining rows with it.
+func detailCell(r Row) string {
+	if r.Status != "error" || r.Error == "" {
+		return ""
+	}
+	flat := strings.Map(func(c rune) rune {
+		if c == '|' {
+			return ' '
+		}
+		return c
+	}, r.Error)
+	// Fields splits on every kind of whitespace, so this also collapses the
+	// newlines and tabs that would otherwise escape the cell.
+	flat = strings.Join(strings.Fields(flat), " ")
+	if runes := []rune(flat); len(runes) > detailCellMax {
+		return string(runes[:detailCellMax-1]) + "…"
+	}
+	return flat
+}
+
+// writeTable emits the 6-column Markdown table.
+//
+// The `detail` column carries the probe error on `error` rows. Without it the
+// table an operator triages from read only `| … | — | error |` and the actual
+// cause was recoverable only by re-running under --format=json — which is how
+// a TLS verification failure came to be filed as a pin-drift bug. The JSON
+// shape is unchanged; it already carried `error`.
 func writeTable(w io.Writer, rows []Row) {
-	_, _ = fmt.Fprintln(w, "| harness | package | pinned | latest | status |")
-	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|")
+	_, _ = fmt.Fprintln(w, "| harness | package | pinned | latest | status | detail |")
+	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|---|")
 	for _, r := range rows {
 		latest := r.Latest
 		if latest == "" {
@@ -196,6 +231,6 @@ func writeTable(w io.Writer, rows []Row) {
 		if pinned == "" {
 			pinned = "—"
 		}
-		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status)
+		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status, detailCell(r))
 	}
 }
