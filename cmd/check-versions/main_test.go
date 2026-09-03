@@ -225,3 +225,106 @@ func TestVerdictErrorDominatesDrift(t *testing.T) {
 		t.Errorf("expected the error verdict to dominate, got %q", buf.String())
 	}
 }
+
+// A partial probe — one package answered, one did not — must still exit 2. The
+// pin that WAS compared says nothing about the one that wasn't, so reporting
+// this as a clean drift verdict (exit 1) would be the same mislabel one row
+// smaller. anyErr dominating anyDrift in exitCode() is what prevents it.
+func TestMixedSuccessAndFailureExitsTwo(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/@ok/pkg/latest", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"version":"9.9.9"}`))
+	})
+	mux.HandleFunc("/@bad/pkg/latest", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "upstream exploded", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	client := srv.Client()
+	client.Timeout = 2 * time.Second
+
+	rows, anyErr, anyDrift := check(client, srv.URL, map[string]versions.Entry{
+		"good": {Package: "@ok/pkg", Pinned: "1.0.0"},  // genuine drift
+		"bad":  {Package: "@bad/pkg", Pinned: "1.0.0"}, // unreachable
+	})
+	if !anyErr {
+		t.Fatalf("expected an error row, got %+v", rows)
+	}
+	if !anyDrift {
+		t.Fatalf("expected the reachable package to read as drift, got %+v", rows)
+	}
+	if got := exitCode(anyErr, anyDrift); got != 2 {
+		t.Errorf("a partial probe must exit 2, got %d", got)
+	}
+
+	byHarness := map[string]Row{}
+	for _, r := range rows {
+		byHarness[r.Harness] = r
+	}
+	bad := byHarness["bad"]
+	if bad.Status != "error" {
+		t.Fatalf("expected the unreachable row to be status=error, got %q", bad.Status)
+	}
+	if d := detailCell(bad); !strings.Contains(d, "500") {
+		t.Errorf("the error row's detail must carry the cause, got %q", d)
+	}
+	if d := detailCell(byHarness["good"]); d != "" {
+		t.Errorf("a non-error row must have a blank detail, got %q", d)
+	}
+}
+
+func TestWriteTableDetailColumn(t *testing.T) {
+	var buf strings.Builder
+	writeTable(&buf, []Row{
+		{Harness: "good", Package: "@ok/pkg", Pinned: "1.0.0", Latest: "1.0.0", Status: "match"},
+		{Harness: "bad", Package: "@bad/pkg", Pinned: "1.0.0", Status: "error", Error: "tls: failed to verify certificate: x509: OSStatus -26276"},
+	})
+	out := buf.String()
+
+	if !strings.Contains(out, "| harness | package | pinned | latest | status | detail |") {
+		t.Errorf("expected the 6-column header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "|---|---|---|---|---|---|") {
+		t.Errorf("expected a 6-column separator, got:\n%s", out)
+	}
+	if !strings.Contains(out, "OSStatus -26276") {
+		t.Errorf("the error row must show its cause in the table, got:\n%s", out)
+	}
+
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.HasPrefix(line, "| good ") && !strings.HasSuffix(line, "| match |  |") {
+			t.Errorf("a non-error row's detail cell must be blank, got %q", line)
+		}
+	}
+}
+
+// A long error must not escape its cell: every row of a Markdown table is one
+// line, and a stray `|` shifts every column after it.
+func TestWriteTableDetailTruncatesAndFlattens(t *testing.T) {
+	long := "line one | with a pipe\nline two\t" + strings.Repeat("x", 300)
+	var buf strings.Builder
+	writeTable(&buf, []Row{
+		{Harness: "bad", Package: "@bad/pkg", Pinned: "1.0.0", Status: "error", Error: long},
+	})
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected header, separator and one row; got %d lines:\n%s", len(lines), buf.String())
+	}
+	row := lines[2]
+	if got := strings.Count(row, "|"); got != 7 {
+		t.Errorf("a 6-column row must have exactly 7 pipes, got %d in %q", got, row)
+	}
+
+	cells := strings.Split(row, "|")
+	detail := strings.TrimSpace(cells[len(cells)-2])
+	if n := len([]rune(detail)); n > detailCellMax {
+		t.Errorf("detail cell is %d runes, want <= %d", n, detailCellMax)
+	}
+	if !strings.HasSuffix(detail, "…") {
+		t.Errorf("an over-long detail must be marked as truncated, got %q", detail)
+	}
+	if strings.Contains(detail, "\n") || strings.Contains(detail, "\t") {
+		t.Errorf("detail cell must be single-line, got %q", detail)
+	}
+}
