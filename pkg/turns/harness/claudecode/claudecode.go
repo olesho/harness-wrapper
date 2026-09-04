@@ -3,17 +3,17 @@
 //
 
 // Detection signals first observed on 2.1.141. The pin in versions.json is
-// 2.1.258, verified LIVE against that binary on 2026-09-02 by pkg/harness's
+// 2.1.259, verified LIVE against that binary on 2026-09-03 by pkg/harness's
 // TestRunTurn_RealClaudeDogfood{,KeepAlive}, which complete a turn only if
-// thinkingRE matches a settled 2.1.258 end-of-turn summary and Busy() gates the
+// thinkingRE matches a settled 2.1.259 end-of-turn summary and Busy() gates the
 // in-flight frames.
 //
 // That live check covers END-OF-TURN DETECTION, reply extraction and the
 // multi-turn keep-alive path ONLY. The other signals this adapter owns rest on
-// the recorded corpora and have NOT been re-verified at 2.1.258: interruptMarker
+// the recorded corpora and have NOT been re-verified at 2.1.259: interruptMarker
 // and the tool-call rendering, and the permission-mode footers in permmode.go,
 // which are still anchored at 2.1.217. The blocking startup dialogs are seeded
-// away by the release-check harness and are unverified at 2.1.258.
+// away by the release-check harness and are unverified at 2.1.259.
 //
 // ALL FOUR claude scenarios under test/corpus/claude-code/ — settled-after-turn,
 // multi-turn, tool-call and interrupted-mid-reply — are recorded at 2.1.251
