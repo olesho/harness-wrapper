@@ -34,6 +34,14 @@ import (
 type Reader struct {
 	// ProjectsRoot overrides the default ~/.claude/projects/ location.
 	// Empty means use the default.
+	//
+	// This reader deliberately stays ENVIRONMENT-BLIND: it never reads
+	// CLAUDE_CONFIG_DIR itself, because a library path that silently changes
+	// behaviour with the process environment would pick the wrong process's
+	// view when one process drives several profiled agents. The caller sets
+	// this instead — the turns adapter
+	// (pkg/turns/harness/claudecode.Adapter.ConfigureFromEnv) derives it from
+	// the HARNESS LAUNCH env's CLAUDE_CONFIG_DIR as <dir>/projects.
 	ProjectsRoot string
 }
 

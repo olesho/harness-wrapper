@@ -26,6 +26,7 @@ package claudecode
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -134,6 +135,15 @@ var menuRE = regexp.MustCompile(`(?m)^[^\dA-Za-z\n]*(\d)\.[^\S\n]+(\S[^\n]*)$`)
 // Adapter implements turns.Adapter for Claude Code.
 type Adapter struct {
 	generic.Adapter
+
+	// ProjectsRoot overrides the default ~/.claude/projects location the
+	// transcript reader uses. It is set by ConfigureFromEnv from the harness's
+	// launch CLAUDE_CONFIG_DIR (and by tests directly); empty means the default.
+	//
+	// It is deliberately NOT guarded by mu: the chat layer writes it once at
+	// Open, before the watcher goroutine starts, so the write happens-before
+	// every read.
+	ProjectsRoot string
 
 	mu                sync.Mutex
 	lastFingerprint   string
@@ -740,10 +750,43 @@ func (*Adapter) SessionControlFlags() []string {
 	}
 }
 
-// ReadTranscript reads the on-disk Claude Code session log. Implements
-// turns.TranscriptReader.
-func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	evs, err := transcriptcc.New().Read(harnessSessionID, workingDir)
+// ConfigureFromEnv points the transcript reader at the config root the harness
+// was launched with: CLAUDE_CONFIG_DIR/projects. Implements
+// turns.EnvConfigurable. An absent or blank value leaves ProjectsRoot empty, so
+// the reader keeps its ~/.claude/projects default — the unprofiled case is
+// byte-for-byte unchanged.
+//
+// A relative CLAUDE_CONFIG_DIR is left VERBATIM rather than made absolute
+// against the wrapper's cwd: claude itself resolves it against the harness
+// child's cwd, so resolving it here would invent a different path than the one
+// the transcript was actually written to.
+func (a *Adapter) ConfigureFromEnv(env []string) {
+	dir := strings.TrimSpace(envLookup(env, "CLAUDE_CONFIG_DIR"))
+	if dir == "" {
+		return
+	}
+	a.ProjectsRoot = filepath.Join(dir, "projects")
+}
+
+// envLookup returns the value of key in an os.Environ()-style "K=V" slice, or
+// "" if absent. LAST occurrence wins, matching exec semantics (a caller that
+// appends an override to a base env produces duplicate keys). pkg/turns cannot
+// import pkg/harness, so this mirrors harness.EnvLookup deliberately.
+func envLookup(env []string, key string) string {
+	prefix := key + "="
+	val := ""
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			val = kv[len(prefix):]
+		}
+	}
+	return val
+}
+
+// ReadTranscript reads the on-disk Claude Code session log, under ProjectsRoot
+// when ConfigureFromEnv supplied one. Implements turns.TranscriptReader.
+func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
+	evs, err := (&transcriptcc.Reader{ProjectsRoot: a.ProjectsRoot}).Read(harnessSessionID, workingDir)
 	if err != nil {
 		return nil, err
 	}
