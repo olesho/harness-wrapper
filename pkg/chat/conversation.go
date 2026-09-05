@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -306,6 +307,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	if err != nil {
 		return nil, err
 	}
+	configureAdapterEnv(adapter, opts.Env)
 
 	// Resolve resume args up front so an unsupported harness fails before launch.
 	var resumeArgs []string
@@ -1119,6 +1121,30 @@ func (c *Conversation) emit(ev ConversationEvent) {
 }
 
 // resolveAdapter maps Options.Harness to a concrete turns.Adapter.
+// configureAdapterEnv hands the harness's LAUNCH environment to an adapter whose
+// on-disk lookups depend on it (Claude Code's CLAUDE_CONFIG_DIR, Codex's
+// CODEX_HOME). Without it a profiled agent — one launched with its own config
+// root — reads the OPERATOR's transcripts or none at all, and History silently
+// degrades to the screen-scraped store fallback.
+//
+// opts.Env is the authority, not os.Environ(): one process can drive several
+// conversations with different config roots, so the wrapper process's own
+// environment is not a sound proxy. nil falls back to os.Environ(), matching
+// the documented Options.Env default (an exec with a nil Env inherits).
+//
+// Called from openWithSession on a FRESH adapter, before the watcher goroutine
+// exists, so the write happens-before every read of the configured field.
+func configureAdapterEnv(adapter turns.Adapter, env []string) {
+	ec, ok := adapter.(turns.EnvConfigurable)
+	if !ok {
+		return
+	}
+	if env == nil {
+		env = os.Environ()
+	}
+	ec.ConfigureFromEnv(env)
+}
+
 func resolveAdapter(name string) (turns.Adapter, error) {
 	switch name {
 	case "codex":
