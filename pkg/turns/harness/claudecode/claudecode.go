@@ -217,15 +217,8 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 // check and this adapter share one source of truth about what counts as a
 // blocking prompt.
 func DetectInput(text string) (*turns.InputRequest, bool) {
-	var prompt string
-	switch {
-	case strings.Contains(text, trustAnchor):
-		prompt = trustAnchor
-	case strings.Contains(text, trustAnchorAlt):
-		prompt = trustAnchorAlt
-	case strings.Contains(text, bypassAnchor):
-		prompt = bypassAnchor
-	default:
+	prompt, ok := dialogAnchor(text)
+	if !ok {
 		return nil, false
 	}
 	opts := parseMenuOptions(text)
@@ -236,6 +229,58 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 	req := &turns.InputRequest{Kind: "trust_prompt", Prompt: prompt, Options: opts}
 	req.ID = inputID(req)
 	return req, true
+}
+
+// dialogAnchor returns the blocking-dialog anchor visible in text, if any. It
+// is the ONE place the anchor list is consulted, so DetectInput and
+// AnchorPresent can never disagree about what counts as a blocking prompt.
+func dialogAnchor(text string) (string, bool) {
+	switch {
+	case strings.Contains(text, trustAnchor):
+		return trustAnchor, true
+	case strings.Contains(text, trustAnchorAlt):
+		return trustAnchorAlt, true
+	case strings.Contains(text, bypassAnchor):
+		return bypassAnchor, true
+	}
+	return "", false
+}
+
+// AnchorPresent reports whether a blocking-dialog anchor is still painted on
+// screen. It is deliberately WEAKER than DetectInput: an anchor whose menu has
+// not rendered yet is not actionable (DetectInput returns false) but the dialog
+// is very much still up, so "has my answer cleared it?" must ask this and not
+// DetectInput — otherwise a mid-paint frame reads as success.
+//
+// Exported so pkg/chat can confirm an answer landed without copying the anchor
+// list; the anchors stay the sole property of this package.
+func AnchorPresent(text string) bool {
+	_, ok := dialogAnchor(text)
+	return ok
+}
+
+// numberedLabelRE strips the "N." prefix a numbered menu row carries, so the
+// highlighted row's label is comparable with the option Labels DetectInput
+// reports (which never include the number).
+var numberedLabelRE = regexp.MustCompile(`^\d+\.[^\S\n]+`)
+
+// HighlightedLabel returns the cleaned label of the row currently carrying the
+// menu marker ("\u276f"), or ("", false) when no row is highlighted.
+//
+// This is what lets a caller confirm that NAVIGATION landed before it presses
+// Enter: the marker's row is the row Enter will select, and matching it by
+// LABEL rather than by index is required — claude-code 2.1.261 inverted the
+// folder-trust option order, so an index that was "proceed" became "exit".
+func HighlightedLabel(text string) (string, bool) {
+	m := markerRE.FindStringSubmatch(text)
+	if m == nil {
+		return "", false
+	}
+	label := cleanLabel(strings.TrimSpace(numberedLabelRE.ReplaceAllString(strings.TrimSpace(m[2]), "")))
+	if label == "" {
+		return "", false
+	}
+	return label, true
 }
 
 // parseMenuOptions extracts the numbered choices, de-duplicating by choice

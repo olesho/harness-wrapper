@@ -24,9 +24,10 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
 	// its own; fail fast so the caller answers it first. (A prompt being
 	// auto-answered by a policy/handler is not "surfaced" and we keep waiting
-	// for it to clear.)
-	if c.inputAwaitingClient() {
-		return ErrInputPending
+	// for it to clear — bounded, because answerAndConfirm gives up and latches
+	// an *InputUnresolvedError rather than letting the wait run to ctx.)
+	if err := c.inputBlocked(); err != nil {
+		return err
 	}
 	if !requiresPromptReadiness(c.opts.Harness) {
 		return nil
@@ -109,8 +110,8 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			}
 			disarmAuth()
 		case <-c.inputStateCh:
-			if c.inputAwaitingClient() {
-				return ErrInputPending
+			if err := c.inputBlocked(); err != nil {
+				return err
 			}
 			if ready, wall := check(); ready {
 				return nil
@@ -121,8 +122,8 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 			if !ok {
 				return ErrClosed
 			}
-			if c.inputAwaitingClient() {
-				return ErrInputPending
+			if err := c.inputBlocked(); err != nil {
+				return err
 			}
 			if ready, wall := check(); ready {
 				return nil
