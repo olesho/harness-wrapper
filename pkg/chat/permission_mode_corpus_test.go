@@ -151,8 +151,56 @@ func TestPermissionModeCorpusConformance(t *testing.T) {
 				t.Errorf("PermissionMode(%s) = %q, want %q\n--- screen ---\n%s",
 					c.name, got, c.meta.Mode, c.screen)
 			}
+
+			// Adapters that also report the FULL posture must agree with the
+			// rung above, and must report the right NATIVE spelling and ring
+			// membership for it — the reading SetPermissionMode decides on.
+			pd, ok := adapter.(turns.PermissionPostureDetector)
+			if !ok {
+				return
+			}
+			p, pok := pd.PermissionPosture(snap)
+			if !pok {
+				t.Fatalf("PermissionPosture(%s) reported no readable signal while PermissionMode read %q", c.name, got)
+			}
+			if p.Rung != got {
+				t.Errorf("PermissionPosture(%s).Rung = %q, but PermissionMode = %q; the two readers must not disagree",
+					c.name, p.Rung, got)
+			}
+			want, known := corpusNatives[c.name]
+			if !known {
+				t.Fatalf("%s implements turns.PermissionPostureDetector but corpusNatives has no row for %q; "+
+					"add one (see the table's comment) rather than leaving the posture unasserted", c.meta.Harness, c.name)
+			}
+			if p.Native != want.native || p.OnRing != want.onRing {
+				t.Errorf("PermissionPosture(%s) = {Native:%q OnRing:%v}, want {Native:%q OnRing:%v}",
+					c.name, p.Native, p.OnRing, want.native, want.onRing)
+			}
 		})
 	}
+}
+
+// corpusNatives is the expected NATIVE spelling and ring membership for each
+// capture, kept in Go rather than as a meta.json field on purpose: meta.json is
+// covered by MANIFEST.sha256 and mirrored byte-for-byte to meta-harness, so a
+// new field there would drag in a manifest regeneration and a re-vendor for
+// nothing — the native spelling is a property of the PARSER, not of the capture.
+//
+// claude-code/dont-ask is the row this table exists for: the only recorded
+// OFF-RING capture. It reports the manual rung truthfully while sitting in a
+// posture claude's Shift+Tab cycle cannot produce, which is exactly why
+// SetPermissionMode("manual") must press rather than return early.
+//
+// Keyed by case name (<harness>/<dir>), and REQUIRED for every case whose
+// adapter implements the capability — a missing row fails rather than skips.
+var corpusNatives = map[string]struct {
+	native string
+	onRing bool
+}{
+	"claude-code/plan":     {"plan", true},
+	"claude-code/ask":      {"acceptEdits", true},
+	"claude-code/bypass":   {"bypassPermissions", true},
+	"claude-code/dont-ask": {"dontAsk", false},
 }
 
 // TestPermissionModeCorpusManifest asserts MANIFEST.sha256 is current — the same

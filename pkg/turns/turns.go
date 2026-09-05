@@ -378,3 +378,69 @@ type PermissionModeDetector interface {
 	// this a canonical rung?" test membership in wrapper.PermissionRungs().
 	PermissionMode(snap screen.Snapshot) (string, bool)
 }
+
+// PermissionPosture is a FULL reading of the harness's permission posture: the
+// canonical rung, the harness's own spelling of it, and whether that spelling
+// is one the harness's cycle key can produce.
+//
+// It exists because a rung alone is not enough to decide "are we there?".
+// Several native spellings can share one rung — claude paints both
+// "⏸ manual mode on" and "⏵⏵ don't ask on" for the manual rung — and only one
+// of the two is a posture a Shift+Tab cycle can actually put the session in.
+// A driver that compares rungs alone therefore reads a dontAsk session as
+// already-manual and writes no keystroke, leaving the session auto-DENYING
+// where the caller asked for per-tool approvals.
+type PermissionPosture struct {
+	// Rung carries exactly PermissionModeDetector.PermissionMode's contract
+	// for this adapter, so the two readers can never disagree about the rung
+	// (claude-code's PermissionMode is expressed in terms of this one).
+	Rung string
+
+	// Native is the HARNESS's own spelling of the posture — claude's
+	// --permission-mode vocabulary ("plan", "default", "acceptEdits",
+	// "auto", "bypassPermissions", "dontAsk"). It is DIAGNOSTIC: it belongs
+	// in error messages and in a caller that wants to know it is in dontAsk
+	// specifically. It must NEVER be compared against
+	// wrapper.PermissionRungs() — the two vocabularies overlap by accident
+	// ("plan", "auto") and disagree where it matters (claude spells the
+	// manual rung "default").
+	Native string
+
+	// OnRing reports whether Native is a spelling the harness's cycle key can
+	// produce. It is the DECISION field, and the reason this struct exists:
+	//
+	//   - true  → Rung == target really does mean "the session is in the
+	//     posture a cycle to that rung would produce". claude's "acceptEdits"
+	//     is a second spelling of the ask rung and is on the ring, so it must
+	//     keep satisfying a request for "ask" with zero keystrokes.
+	//   - false → an off-ring alias (claude's launch-only "dontAsk"). It
+	//     reports its Rung truthfully, but the session is NOT in the posture
+	//     a cycle would produce, so a driver asked for that rung must cycle
+	//     rather than return early.
+	//
+	// Phrasing the test as ring membership rather than "is this the canonical
+	// native for this rung" means a future off-ring alias gets the right
+	// behaviour the moment the footer parser learns its word.
+	OnRing bool
+}
+
+// PermissionPostureDetector is an optional capability adapters may implement to
+// report the full posture (rung + native spelling + ring membership) rather
+// than the rung alone. Same consult idiom as BusyDetector and
+// PermissionModeDetector: a type assertion on the adapter, answered per screen.
+//
+// Implemented by the claude-code adapter ONLY. codex deliberately does not:
+// its collaboration axis has no alias collision ("plan" and "default" are
+// distinct postures, both on its 2-cycle), so implementing it there would add
+// a second source of truth for no behaviour change. Drivers must therefore
+// keep a fallback for adapters that implement PermissionModeDetector alone.
+type PermissionPostureDetector interface {
+	// PermissionPosture reports the harness's current posture read from the
+	// rendered screen.
+	//
+	// false means the screen carries NO readable signal — an onboarding wall,
+	// a modal covering the footer, a release that renamed the modes — exactly
+	// as in PermissionModeDetector. It never means "readable, and not the
+	// posture you asked about".
+	PermissionPosture(snap screen.Snapshot) (PermissionPosture, bool)
+}

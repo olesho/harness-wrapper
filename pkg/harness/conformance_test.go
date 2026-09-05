@@ -333,6 +333,7 @@ func TestConformance_ClaudePermissionFooter(t *testing.T) {
 
 	assertDistinctRungReadings(t, seen)
 	probeClaudeDontAsk(t, bin)
+	assertClaudeDontAskEscape(t, bin)
 }
 
 // openConformanceConv launches one live harness session and returns it with the
@@ -488,6 +489,122 @@ func probeClaudeDontAsk(t *testing.T, bin string) {
 			"express a tie.\n"+
 			"  fix permissionModeRungs in pkg/turns/harness/claudecode/permmode.go",
 			p.rung, p.line)
+	}
+}
+
+// assertClaudeDontAskEscape is the LIVE half of PUPPET-514, and the only place
+// the one empirical unknown is settled: what claude's TUI actually does on
+// Shift+Tab from a --permission-mode dontAsk session.
+//
+// dontAsk paints its own footer word on the manual rung while sitting OFF
+// claude's Shift+Tab ring (its ring function returns ["plan","default",
+// "acceptEdits"], extended with auto/bypassPermissions for a session launched
+// able to reach them — dontAsk is in none of them). A driver comparing rungs
+// alone therefore read such a session as already-manual and wrote nothing,
+// leaving it auto-DENYING everything not pre-approved while the caller's
+// InputPolicy waited for approvals that never came.
+//
+// The assertion is the user-visible contract: SetPermissionMode(ctx, "manual")
+// must SUCCEED and leave the footer reading "manual mode" — posture
+// {manual, default, on-ring} — not "don't ask". The log line below records the
+// FIRST posture observed after the switch, which is the empirical answer worth
+// quoting: the design does not depend on claude entering the ring at any
+// particular position, only on it leaving dontAsk at all.
+//
+// Cost: this launches the claude TUI and presses one key. NO tokens are spent —
+// no prompt is ever submitted, so it is not a rebake.
+func assertClaudeDontAskEscape(t *testing.T, bin string) {
+	t.Helper()
+
+	// Cancelled only when this probe returns: the conversation's process dies
+	// with it (see openConformanceConv).
+	ctx, cancel := context.WithTimeout(context.Background(), 2*footerPollTimeout+60*time.Second)
+	defer cancel()
+
+	conv, closeConv := openConformanceConv(t, ctx, `claude-code, permission mode "dontAsk", escape`, chat.Options{
+		Harness:        "claude-code",
+		BinaryPath:     bin,
+		PermissionMode: "dontAsk",
+		Store:          memstore.New(),
+		// Same entry and same two-screen reason as probeClaudeFooter: the
+		// folder-trust dialog must be answered or the footer never paints.
+		InputPolicy: &chat.InputPolicy{ByKind: map[string]chat.Disposition{
+			"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+		}},
+	})
+	defer closeConv()
+
+	pd, ok := conv.Adapter().(turns.PermissionPostureDetector)
+	if !ok {
+		t.Fatalf("claude-code adapter %T does not implement turns.PermissionPostureDetector — "+
+			"the capability this check asserts through has been removed", conv.Adapter())
+	}
+
+	var start turns.PermissionPosture
+	ready, _ := pollScreen(conv, footerPollTimeout, func(snap screen.Snapshot) bool {
+		if wall := claudeAuthWall(snap.Text); wall != "" {
+			t.Skipf("claude is not logged in (screen shows %q) — log in with `claude` and re-run; "+
+				"an unauthenticated session paints a footer for every rung and would make this "+
+				"check lie rather than fail", wall)
+		}
+		var readable bool
+		start, readable = pd.PermissionPosture(snap)
+		return readable
+	})
+	line, _ := claudeFooterLine(ready.Text)
+	t.Logf("PROBE dontAsk escape: launch footer=%q posture=%+v", line, start)
+
+	if start.Native != "dontAsk" || start.OnRing {
+		t.Errorf("FOOTER DRIFT: a --permission-mode dontAsk launch read back as %+v, "+
+			"want {Rung:manual Native:dontAsk OnRing:false}.\n"+
+			"  footer line as rendered: %q\n"+
+			"  fix permissionModeNatives / cycleRingNatives in "+
+			"pkg/turns/harness/claudecode/permmode.go — a DIFFERENT package from this test, "+
+			"which is exactly why this message names it.\n"+
+			"  see docs/md/internal/versions-drift.md",
+			start, line)
+		return
+	}
+
+	release, err := conv.AcquireControl(ctx)
+	if err != nil {
+		t.Fatalf("AcquireControl: %v", err)
+	}
+	defer release()
+
+	mode, err := conv.SetPermissionMode(ctx, "manual")
+	after, readable := pd.PermissionPosture(conv.ScreenSnapshot())
+	afterLine, _ := claudeFooterLine(conv.ScreenSnapshot().Text)
+	// THE recorded answer to "what does Shift+Tab do from dontAsk". Logged
+	// before any verdict so a failing run still reports it.
+	t.Logf("PROBE dontAsk escape: SetPermissionMode(manual) = (%q, %v); posture now %+v (readable=%t) footer=%q",
+		mode, err, after, readable, afterLine)
+
+	if err != nil {
+		t.Errorf("CYCLE DRIFT: SetPermissionMode(manual) on a dontAsk session failed: %v\n"+
+			"  posture after the drive: %+v\n"+
+			"  footer line as rendered: %q\n"+
+			"  dontAsk is expected to be OFF claude's Shift+Tab ring but ESCAPABLE by it. "+
+			"If claude now refuses to cycle out of dontAsk at all, that is the assumption "+
+			"pkg/chat/permmode.go's drive is written against; re-check cycleRingNatives in "+
+			"pkg/turns/harness/claudecode/permmode.go.\n"+
+			"  see docs/md/internal/versions-drift.md",
+			err, after, afterLine)
+		return
+	}
+	if mode != "manual" {
+		t.Errorf("SetPermissionMode(manual) from dontAsk returned %q, want \"manual\"", mode)
+	}
+	want := turns.PermissionPosture{Rung: "manual", Native: "default", OnRing: true}
+	if !readable || after != want {
+		t.Errorf("CYCLE DRIFT: after SetPermissionMode(manual) the posture is %+v (readable=%t), want %+v.\n"+
+			"  footer line as rendered: %q\n"+
+			"  the session must sit in claude's ON-RING \"manual mode\" spelling, not \"don't ask\": "+
+			"that is the difference between surfacing per-tool approvals and auto-denying them.\n"+
+			"  fix permissionModeNatives / cycleRingNatives in "+
+			"pkg/turns/harness/claudecode/permmode.go.\n"+
+			"  see docs/md/internal/versions-drift.md",
+			after, readable, want, afterLine)
 	}
 }
 
