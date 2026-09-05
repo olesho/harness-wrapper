@@ -295,6 +295,18 @@ func (c *Conversation) PermissionMode() (string, bool) {
 // or an InputPolicy entry is for. Without one, the upward switch surfaces the
 // dialog and returns ErrPermissionModeBlockedByInput rather than hanging.
 //
+// ACCEPTED RESIDUAL — a dontAsk session. Claude's native dontAsk launch reports
+// the "manual" rung (it ties with claude's default in claude's own permissiveness
+// rank table, and the rung ladder is a strict total order). So SetPermissionMode
+// (ctx, "manual") on such a session sees start == target and returns early
+// WITHOUT a keystroke: the session keeps auto-DENYING everything not pre-approved
+// instead of surfacing approvals. Permissiveness-wise that is safe — equal rank,
+// and strictly more restrictive in effect — but a caller whose InputPolicy expects
+// KindApproval requests silently receives none. Distinguishing the two spellings
+// would require turns.PermissionModeDetector to carry the native spelling
+// alongside the rung, an interface change across every adapter; it is deliberately
+// not worked around here.
+//
 // # Scope: process-local, NOT persisted
 //
 // PermissionMode is a LAUNCH knob replayed on resume (ReopenOptions.PermissionMode

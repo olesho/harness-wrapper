@@ -444,35 +444,50 @@ func probeClaudeFooter(t *testing.T, bin, mode string) footerProbe {
 	return p
 }
 
-// probeClaudeDontAsk launches claude's NATIVE dontAsk mode. This is a PROBE,
-// not an assertion: dontAsk has no canonical rung, permissionModeRE's
-// alternation is closed on the five known words, so ("", false) is the expected
-// reading and must NOT fail. The log is the capture the parser's open question
-// needs.
-//
-// WHAT THIS PROBE ALREADY FOUND (claude 2.1.218, 2026-07-23): dontAsk DOES
-// paint a genuinely distinct sixth footer —
+// probeClaudeDontAsk launches claude's NATIVE dontAsk mode and ASSERTS the
+// reading. dontAsk paints a genuinely distinct sixth footer word (claude
+// 2.1.218, 2026-07-23):
 //
 //	⏵⏵ don't ask on (shift+tab to cycle)
 //
-// and the shipped parser reads it as ("", false), i.e. correctly "unknown"
-// rather than a wrong rung — the closed alternation behaving exactly as
-// permmode.go documents. Turning that into a sixth rung is a behavior change to
-// a SHIPPED parser in a different package (a "don't ask" row in
-// permissionModeRE + permissionModeRungs, a new canonical rung in
-// wrapper.PermissionRungs, and a sixth assertion above); it is deliberately out
-// of scope here, and this probe stays a log until that lands. Note the
-// apostrophe: any alternation row for it must survive claude rendering ' as a
-// typographic ’.
+// and permissionModeRE's closed alternation now carries a row for it that maps
+// onto the EXISTING manual rung. The justification is claude's own
+// permissiveness rank table, {plan:0, bubble:1, default:1, dontAsk:1,
+// acceptEdits:2, auto:3, bypassPermissions:4}: dontAsk ties with default
+// (claude's spelling of manual), and wrapper.PermissionRungs() is a strict
+// total order that cannot express a tie — so dontAsk is a second spelling of an
+// existing rung, exactly as acceptEdits is a second spelling of ask.
+//
+// dontAsk is deliberately kept OUT of the seen map fed to
+// assertDistinctRungReadings: that check fails when launched rungs collapse
+// onto fewer readings, and dontAsk -> manual is a collapse this ticket chose.
+// Feeding it in would make the correct mapping look like footer drift.
+//
+// Note the apostrophe: the alternation row tolerates both ASCII ' and a
+// typographic ’, because a future release could typeset the footer.
 func probeClaudeDontAsk(t *testing.T, bin string) {
 	t.Helper()
 	p := probeClaudeFooter(t, bin, "dontAsk")
-	t.Logf("PROBE dontAsk (never asserted): footer=%q suffix=%q detector=%q readable=%t",
+	t.Logf("PROBE dontAsk: footer=%q suffix=%q detector=%q readable=%t",
 		p.line, p.suffix, p.rung, p.readable)
-	if p.readable {
-		t.Logf("PROBE dontAsk: the shipped parser read %q for claude's native dontAsk mode — "+
-			"confirm whether dontAsk paints a distinct footer before treating this as a rung",
-			p.rung)
+	if !p.readable {
+		t.Errorf("FOOTER DRIFT: claude's native dontAsk mode read back as unreadable.\n"+
+			"  footer line as rendered: %q\n"+
+			"  want the \"don't ask\" row of permissionModeRE (pkg/turns/harness/claudecode/permmode.go) "+
+			"to match and report the manual rung.\n"+
+			"  see docs/md/internal/versions-drift.md",
+			p.line)
+		return
+	}
+	if p.rung != "manual" {
+		t.Errorf("FOOTER DRIFT: claude's native dontAsk mode read back as %q, want \"manual\".\n"+
+			"  footer line as rendered: %q\n"+
+			"  dontAsk maps onto the EXISTING manual rung: claude's permissiveness rank table "+
+			"{plan:0, bubble:1, default:1, dontAsk:1, acceptEdits:2, auto:3, bypassPermissions:4} "+
+			"ties dontAsk with default, and PermissionRungs() is a strict total order that cannot "+
+			"express a tie.\n"+
+			"  fix permissionModeRungs in pkg/turns/harness/claudecode/permmode.go",
+			p.rung, p.line)
 	}
 }
 

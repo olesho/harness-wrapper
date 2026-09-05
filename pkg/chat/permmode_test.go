@@ -580,6 +580,15 @@ func TestSetPermissionMode_RingLengthTable(t *testing.T) {
 		{"argv-skip-permissions-flag", "", []string{wrapper.SkipPermissionsFlag}, 5, true},
 		{"argv-trailing-flag-unknown", "", []string{"--permission-mode"}, 5, true},
 		{"plain-non-bypass-launch", "plan", nil, 4, false},
+		// A dontAsk launch is a DEFINITE non-bypass posture: claudeRung maps the
+		// native spelling onto the manual rung, so it takes the 4-ring branch and
+		// SetPermissionMode("bypass") fast-fails without a keystroke. Before the
+		// mapping landed it resolved to "" and fell into the "unknown, assume the
+		// 5-ring, bypass legal" branch — which is wrong, because a dontAsk launch
+		// carries no bypass-enabling flag.
+		{"options-permission-mode-dont-ask", "dontAsk", nil, 4, false},
+		{"argv-separated-dont-ask", "", []string{"--permission-mode", "dontAsk"}, 4, false},
+		{"argv-joined-dont-ask", "", []string{"--permission-mode=dontAsk"}, 4, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conv, fake := newPermModeConv(t, Options{
@@ -627,8 +636,8 @@ func TestSetPermissionMode_TargetGates(t *testing.T) {
 		target  string
 		want    error
 	}{
-		// claude: "dontAsk" is a launch-only --permission-mode value with no
-		// canonical rung, so it is not on the ring.
+		// claude: "dontAsk" is a launch-only native spelling; it maps to the
+		// "manual" rung but is not itself on the ring.
 		{chatClaudeCode, "dontAsk", ErrPermissionModeUnreachable},
 		{chatClaudeCode, "", ErrPermissionModeUnreachable},
 		{chatClaudeCode, "acceptEdits", ErrPermissionModeUnreachable},
