@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -239,6 +240,93 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 
 // parseMenuOptions extracts the numbered choices, de-duplicating by choice
 // number so a redraw that paints the menu twice yields one option set.
+// markerRE matches the highlighted row of an UNNUMBERED menu. Claude Code
+// 2.1.261 dropped the "N." prefixes from the folder-trust dialog and moved the
+// default highlight onto "No, exit", so the numbered parser below finds nothing
+// and DetectInput reports the dialog as not-actionable — no InputRequested is
+// emitted, a trust_prompt=allow policy is never consulted, and the harness exits
+// on the default "No, exit".
+var markerRE = regexp.MustCompile(`(?m)^([^\S\n]*)(?:❯|›|>)[^\S\n]+(\S[^\n]*)$`)
+
+// menuNavKeys are the bytes that move an unnumbered menu's highlight. A digit
+// cannot be used: there is no digit on screen to press.
+var (
+	menuKeyDown  = []byte("\x1b[B")
+	menuKeyUp    = []byte("\x1b[A")
+	menuKeyEnter = []byte("\r")
+)
+
+// maxUnnumberedMenuRows bounds how much of the screen an unnumbered menu may
+// claim, so a stray "> " line cannot turn arbitrary prose into options.
+const maxUnnumberedMenuRows = 8
+
+// parseUnnumberedMenuOptions extracts choices from a menu with no "N." prefixes
+// by locating the ❯ marker and taking the contiguous non-blank block around it.
+// Because selection is positional, each option's Keys walk the highlight from
+// the marker row to that option's row and press Enter — never a bare digit,
+// which would be typed into the dialog rather than selecting anything.
+func parseUnnumberedMenuOptions(text string) []turns.InputOption {
+	m := markerRE.FindStringSubmatchIndex(text)
+	if m == nil {
+		return nil
+	}
+	lines := strings.Split(text, "\n")
+	markerLine := strings.Count(text[:m[0]], "\n")
+
+	strip := func(s string) string {
+		s = strings.TrimSpace(s)
+		for _, mk := range []string{"❯", "›", ">"} {
+			if strings.HasPrefix(s, mk) {
+				s = strings.TrimSpace(strings.TrimPrefix(s, mk))
+				break
+			}
+		}
+		return cleanLabel(s)
+	}
+
+	first := markerLine
+	for first > 0 && strings.TrimSpace(lines[first-1]) != "" && markerLine-first+1 < maxUnnumberedMenuRows {
+		first--
+	}
+	last := markerLine
+	for last < len(lines)-1 && strings.TrimSpace(lines[last+1]) != "" && last-first+1 < maxUnnumberedMenuRows {
+		last++
+	}
+
+	var opts []turns.InputOption
+	cursor := -1
+	for i := first; i <= last; i++ {
+		label := strip(lines[i])
+		if label == "" {
+			continue
+		}
+		if i == markerLine {
+			cursor = len(opts)
+		}
+		opts = append(opts, turns.InputOption{
+			ID:    strconv.Itoa(len(opts) + 1),
+			Alias: aliasForLabel(label),
+			Label: label,
+		})
+	}
+	if cursor < 0 || len(opts) < 2 {
+		// A lone highlighted line is a cursor, not a menu.
+		return nil
+	}
+	for i := range opts {
+		var keys []byte
+		step, n := menuKeyDown, i-cursor
+		if n < 0 {
+			step, n = menuKeyUp, -n
+		}
+		for j := 0; j < n; j++ {
+			keys = append(keys, step...)
+		}
+		opts[i].Keys = append(keys, menuKeyEnter...)
+	}
+	return opts
+}
+
 func parseMenuOptions(text string) []turns.InputOption {
 	var opts []turns.InputOption
 	seen := make(map[string]bool)
@@ -257,6 +345,9 @@ func parseMenuOptions(text string) []turns.InputOption {
 			// highlight; the Enter confirms.
 			Keys: []byte(num + "\r"),
 		})
+	}
+	if len(opts) == 0 {
+		return parseUnnumberedMenuOptions(text)
 	}
 	return opts
 }
