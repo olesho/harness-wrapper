@@ -482,6 +482,14 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 // recognized as an already-present token in Config.Args.
 const SkipPermissionsFlag = "--dangerously-skip-permissions"
 
+// AllowSkipPermissionsFlag is claude-code 2.1.261's UNLOCK flag: it makes the
+// bypass rung selectable without selecting it ("Enable bypassing all permission
+// checks as an option, without it being enabled by default"). It is therefore
+// NOT bypass-enabling in validatePermissionMode's sense — a session carrying it
+// launches RESTRICTED — but it does put bypass on the Shift+Tab ring. Never
+// emitted; recognized in Config.Args only.
+const AllowSkipPermissionsFlag = "--allow-dangerously-skip-permissions"
+
 // codexBypassFlag is codex's blanket approval+sandbox bypass flag. Like
 // SkipPermissionsFlag it is recognized in Args but never emitted.
 const codexBypassFlag = "--dangerously-bypass-approvals-and-sandbox"
@@ -746,10 +754,36 @@ func rungIndex(rung string) int {
 // Only two such flags exist: claude's SkipPermissionsFlag and codex's
 // --dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
 // permission axis at all return nil.
+//
+// The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
+// see BypassReachableFlags.
 func BypassEnablingFlags(harness string) []string {
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode:
 		return []string{SkipPermissionsFlag}
+	case "codex":
+		return []string{codexBypassFlag}
+	default:
+		return nil
+	}
+}
+
+// BypassReachableFlags returns the harness argv flags that, when present at
+// launch, leave bypass REACHABLE on the harness's own permission ring —
+// whether or not the launch is already unrestricted. This is the wider of the
+// two sets and the split matters: BypassEnablingFlags answers "is this launch
+// already unrestricted" and feeds validatePermissionMode's contradiction
+// check, while this one answers "can this session get to bypass at all" and
+// feeds pkg/chat's ring-length calculation.
+//
+// For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
+// unlocks the rung without selecting it. Codex has no separate unlock flag, so
+// the two sets coincide there. The returned slice is freshly allocated; callers
+// may mutate it.
+func BypassReachableFlags(harness string) []string {
+	switch normHarness(harness) {
+	case "claude", harnessClaudeCode:
+		return []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}
 	case "codex":
 		return []string{codexBypassFlag}
 	default:

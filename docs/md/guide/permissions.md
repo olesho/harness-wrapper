@@ -86,6 +86,12 @@ The wrapper refuses, rather than dropping, every one of these:
 - a non-bypass mode when a bypass-enabling flag (`--dangerously-skip-permissions`,
   `--dangerously-bypass-approvals-and-sandbox`) is already in `Args` — a contradiction, not a merge.
 
+claude-code 2.1.261's `--allow-dangerously-skip-permissions` is deliberately **not** on that list. It
+only *unlocks* the bypass rung ("without it being enabled by default"); a session carrying it launches
+restricted, so pairing it with a restrictive mode is legal, not a contradiction — it is the very
+combination the flag exists to serve. What it does change is ring membership: see
+`BypassReachableFlags` and gate 6 below.
+
 Over HTTP each of these is a `400 invalid_config`; in Go they wrap both `chat.ErrInvalidOptions` and
 `wrapper.ErrInvalidConfig`, so `errors.Is` matches either.
 
@@ -136,8 +142,10 @@ why the signature returns a string alongside the error. Its gates, in order:
    codex's sandbox spellings);
 4. the caller holds the control token;
 5. no turn is in flight;
-6. `bypass` is only reachable when the session was **launched** bypass-enabled — you cannot cycle your
-   way up to unrestricted;
+6. `bypass` is only reachable when the session was **launched** bypass-enabled, or launched with
+   claude's unlock-only `--allow-dangerously-skip-permissions`, which puts bypass on the ring without
+   selecting it (`wrapper.BypassReachableFlags`) — you cannot otherwise cycle your way up to
+   unrestricted;
 7. the composer is ready.
 
 If the harness is already at the target, it returns immediately without typing anything — "already at

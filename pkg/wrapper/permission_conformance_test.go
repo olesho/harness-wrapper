@@ -330,7 +330,8 @@ func TestConformance_PermissionAllowedSets(t *testing.T) {
 // is ever EMITTED by argsWithHarnessPermissionMode, but both are hardcoded in
 // production: SkipPermissionsFlag by validatePermissionMode's contradiction
 // check and by BypassEnablingFlags, codexBypassFlag by codex's whole-directive
-// suppression. A rename upstream silently defeats both.
+// suppression, AllowSkipPermissionsFlag by BypassReachableFlags' ring-length
+// answer. A rename upstream silently defeats them.
 func TestConformance_BypassFlagsExist(t *testing.T) {
 	requirePermissionConformance(t)
 
@@ -340,6 +341,7 @@ func TestConformance_BypassFlagsExist(t *testing.T) {
 		flag        string
 	}{
 		{harness: "claude", versionsKey: "claude-code", flag: SkipPermissionsFlag},
+		{harness: "claude", versionsKey: "claude-code", flag: AllowSkipPermissionsFlag},
 		{harness: "codex", versionsKey: "codex", flag: codexBypassFlag},
 	}
 

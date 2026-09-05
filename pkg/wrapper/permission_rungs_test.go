@@ -81,8 +81,52 @@ func TestBypassEnablingFlags(t *testing.T) {
 	}
 }
 
+func TestBypassReachableFlags(t *testing.T) {
+	tests := []struct {
+		harness string
+		want    []string
+	}{
+		{"claude", []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}},
+		{"claude-code", []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}},
+		{"Claude-Code", []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}},
+		// codex has no separate unlock flag, so reachable == enabling there. The
+		// claude unlock flag must never leak into this arm.
+		{"codex", []string{codexBypassFlag}},
+		{"pi", nil},
+		{"opencode", nil},
+		{"generic", nil},
+		{"", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.harness, func(t *testing.T) {
+			if got := BypassReachableFlags(tt.harness); !slices.Equal(got, tt.want) {
+				t.Fatalf("BypassReachableFlags(%q) = %v, want %v", tt.harness, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBypassReachableFlagsFreshSlice(t *testing.T) {
+	first := BypassReachableFlags("claude")
+	for i := range first {
+		first[i] = "clobbered"
+	}
+	slices.Reverse(first)
+
+	want := []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}
+	if got := BypassReachableFlags("claude"); !slices.Equal(got, want) {
+		t.Fatalf("BypassReachableFlags(claude) after caller mutation = %v, want %v", got, want)
+	}
+}
+
 func TestBypassEnablingFlagsNeverIncludesNonexistentFlag(t *testing.T) {
-	// --allow-dangerously-skip-permissions does not exist in this repo.
+	// --allow-dangerously-skip-permissions DOES exist upstream as of claude-code
+	// 2.1.261, but it is unlock-only: it makes the bypass rung selectable without
+	// selecting it, so a launch carrying it is still RESTRICTED. It must stay out
+	// of this set, whose job is validatePermissionMode's contradiction check —
+	// adding it would turn the flag's own intended pairing with a restrictive
+	// --permission-mode into a hard ErrInvalidConfig. Ring membership is
+	// BypassReachableFlags' business instead.
 	for _, harness := range []string{"claude", "claude-code", "codex", "pi", ""} {
 		for _, flag := range BypassEnablingFlags(harness) {
 			if flag != SkipPermissionsFlag && flag != codexBypassFlag {
@@ -129,6 +173,9 @@ func TestEffectiveLaunchRung(t *testing.T) {
 		// which is exactly what the structured-run startup_error guard relies on.
 		{"claude blanket bypass flag beats restrictive mode flag", "claude", []string{"--permission-mode", "plan", SkipPermissionsFlag}, "", "bypass"},
 		{"claude blanket bypass flag beats restrictive knob", "claude", []string{SkipPermissionsFlag}, "plan", "bypass"},
+		// The UNLOCK flag sets no rung: it makes bypass selectable but leaves the
+		// launch restricted, so the reported rung is the one --permission-mode names.
+		{"claude unlock flag does not report bypass", "claude", []string{AllowSkipPermissionsFlag, "--permission-mode=plan"}, "", "plan"},
 		// Duplicated flags: claude's parser is last-wins, so the resolver must be
 		// too — reporting "plan" for a launch that lands on bypass is the one
 		// direction a safety field must never fail in.
