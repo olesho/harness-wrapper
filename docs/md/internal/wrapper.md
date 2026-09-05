@@ -69,7 +69,10 @@ never validated (an unsupported harness is a silent no-op), and `PermissionMode`
 
 Alongside those, the package exports helpers for reasoning about the rungs themselves:
 `PermissionRungs()` (the canonical rungs, least→most permissive, a fresh slice per call),
-`MorePermissive()` and `BypassEnablingFlags()`. Their full signatures and godoc live in the generated
+`MorePermissive()`, `BypassEnablingFlags()` and `BypassReachableFlags()` — the latter being the wider
+set that decides whether bypass is on the session's Shift+Tab ring, and the reason claude's
+unlock-only `--allow-dangerously-skip-permissions` is recognized for ring membership while staying out
+of the contradiction check above. Their full signatures and godoc live in the generated
 `docs/MODULES.md`, which `harness docs markdown` regenerates from the AST — consult it there rather
 than duplicating a signature list here that would drift against it.
 
