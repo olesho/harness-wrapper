@@ -49,6 +49,23 @@ type StaticHookProfile interface {
 	StaticHookProvider() HookProvider
 }
 
+// ConfigDirResolver is an OPTIONAL interface a Profile implements when the
+// harness takes its config ROOT from the launch environment (Claude Code's
+// CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than from $HOME alone. It lets
+// the harness-agnostic orchestrator forward that root to the hook subprocess as
+// HW_HARNESS_CONFIG_DIR without knowing any harness's env-var vocabulary.
+//
+// Without it, a fired hook naming a per-profile transcript is rejected by
+// validateTranscriptPath as "not under transcript root", because HookContext
+// .ConfigDir is empty and the check falls back to <Home>/.claude.
+type ConfigDirResolver interface {
+	// HarnessConfigDir returns the harness config root named by the launch
+	// env (an os.Environ()-style "K=V" slice), or "" when the env does not
+	// override it — in which case the hook subprocess keeps its $HOME-derived
+	// default.
+	HarnessConfigDir(env []string) string
+}
+
 // HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
 // HW_* env (never the subprocess cwd) — the authority for environment. It is
 // distinct from ResolveContext (run-detection inputs) and ReadContext (the

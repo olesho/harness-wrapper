@@ -254,6 +254,24 @@ type TranscriptReader interface {
 	ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error)
 }
 
+// EnvConfigurable is an optional capability an adapter implements when its
+// on-disk lookups depend on the harness's launch ENVIRONMENT (e.g. Claude
+// Code's CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than on $HOME alone.
+// A profiled agent is launched with its own config root, so an adapter that
+// only knows $HOME reads the OPERATOR's transcripts, or none at all.
+//
+// The chat layer calls this once at Open with the environment the harness is
+// actually launched with (Options.Env) — never os.Environ(), which is a
+// DIFFERENT process's view when one process drives several profiled
+// conversations. Implementations must treat an absent, empty or whitespace
+// value as "unset" (leaving the $HOME default in place) and must apply
+// last-occurrence-wins for duplicate keys, matching exec semantics.
+type EnvConfigurable interface {
+	// ConfigureFromEnv applies the harness launch environment (an
+	// os.Environ()-style "K=V" slice) to the adapter's on-disk roots.
+	ConfigureFromEnv(env []string)
+}
+
 // Quitter is an optional capability adapters may implement to surface the key
 // sequence that makes the interactive harness exit gracefully (so it can flush
 // state / persist its transcript), instead of being SIGTERM'd. RunTurn sends
