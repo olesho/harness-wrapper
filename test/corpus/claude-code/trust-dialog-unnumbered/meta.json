@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.261",
+  "recorded_at": "2026-09-05T03:12:12Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "the folder-trust dialog as Claude Code 2.1.261 actually renders it: UNNUMBERED (no \"N.\" prefixes) with the default highlight on the DESTRUCTIVE choice, \"❯ No, exit\", and \"Yes, I trust this folder\" one row below it. Accepting therefore means \\x1b[B\\r, never a digit. Captured under tmux by driving a real claude binary at a fresh directory and dumping the pane's raw output — NOT via `screenbench-record`, whose harness answers the dialog before a recording starts. Replay incrementally in chunks of ~128 bytes: a whole-file write snapshots only the last frame, and chunks small enough to split a row mid-paint make the adapter see a truncated option label and fire a second InputRequested."
+}

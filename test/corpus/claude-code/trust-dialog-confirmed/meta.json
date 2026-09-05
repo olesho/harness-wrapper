@@ -1,0 +1,8 @@
+{
+  "harness": "claude-code",
+  "binary_version": "2.1.261",
+  "recorded_at": "2026-09-05T05:14:35Z",
+  "cols": 120,
+  "rows": 40,
+  "notes": "the same UNNUMBERED 2.1.261 folder-trust dialog (default highlight on \"❯ No, exit\", \"Yes, I trust this folder\" one row below), followed by the frames that answer it: everything after the dialog is the response to a single \\x1b[B\\r written into the pty, i.e. what the wrapper's own proceed keys produce. It is the only recording of the POST-ANSWER render, which is what pins that the anchor leaves the screen and the adapter emits InputResolved instead of hanging on a stale request. Captured under tmux against a real claude binary, NOT via `screenbench-record`. Replay incrementally in chunks of ~128 bytes: chunks of 1KiB or more swallow the dialog entirely (the answer lands in the same write) and chunks small enough to split a row mid-paint fire an extra InputRequested on the truncated label."
+}
