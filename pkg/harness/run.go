@@ -156,7 +156,12 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := rp.Hooks.EnsureConfig(cfg.Wrapper.WorkingDir, cfg.HookCommand); err != nil {
 			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: ensure hooks: %w", err)
 		}
-		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield, cfg.ResumeSessionID)
+		// Reuse the profile the run already resolved through — never re-probe.
+		var configDir string
+		if p, ok := For(cfg.Wrapper.Harness); ok {
+			configDir = harnessConfigDir(p, cfg.Wrapper.Env)
+		}
+		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield, cfg.ResumeSessionID, configDir)
 	}
 
 	// Install the tap when there is something to observe: live events to parse
@@ -330,8 +335,11 @@ func planAcquisition(mode Mode, rp ResolvedProfile, haveSink bool) acqPlan {
 // replace it, so the harness keeps its normal environment. The yield var is
 // added only when a YieldControl was supplied; HW_HARNESS_SESSION_ID only on a
 // resume launch (harnessSessionID non-empty) — leaving it unset on fresh starts
-// keeps the resume session guard disarmed there.
-func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSessionID string) []string {
+// keeps the resume session guard disarmed there. HW_HARNESS_CONFIG_DIR is added
+// only when the profile resolved a config root from the launch env (a profiled
+// agent); absent ⇒ the hook subprocess derives it from HW_HOME as before, so an
+// unprofiled run is byte-for-byte unchanged.
+func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSessionID, configDir string) []string {
 	if base == nil {
 		base = os.Environ()
 	}
@@ -345,7 +353,21 @@ func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSe
 	if harnessSessionID != "" {
 		out = append(out, EnvHarnessSessionID+"="+harnessSessionID)
 	}
+	if configDir != "" {
+		out = append(out, EnvConfigDir+"="+configDir)
+	}
 	return out
+}
+
+// harnessConfigDir asks the ALREADY-RESOLVED profile for the harness config root
+// named by the launch env. "" when the harness has no such notion, when the
+// profile is unknown, or when the env does not override the default.
+func harnessConfigDir(p Profile, env []string) string {
+	r, ok := p.(ConfigDirResolver)
+	if !ok {
+		return ""
+	}
+	return r.HarnessConfigDir(env)
 }
 
 // streamTap is the per-run, goroutine-confined consumer of wrapper's durable
