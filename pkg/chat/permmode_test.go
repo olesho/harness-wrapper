@@ -579,8 +579,9 @@ func TestSetPermissionMode_RatchetUp_Indeterminate(t *testing.T) {
 // --- ring length ---------------------------------------------------------
 
 // The ring is 5 long — and bypass is on it — whenever the session was launched
-// bypass-enabled, resolved through wrapper.EffectiveLaunchRung /
-// BypassEnablingFlags rather than by re-parsing argv here. Options.PermissionMode
+// bypass-enabled, or launched with a flag that merely UNLOCKS the bypass rung
+// without selecting it, resolved through wrapper.EffectiveLaunchRung /
+// BypassReachableFlags rather than by re-parsing argv here. Options.PermissionMode
 // alone is NOT enough: argsWithHarnessPermissionMode suppresses injection when
 // argv already carries the flag, so the argv-carried cases below have
 // Options.PermissionMode == "" and a bypass-enabled session. Returning
@@ -599,6 +600,8 @@ func TestSetPermissionMode_RingLengthTable(t *testing.T) {
 		{"argv-joined", "", []string{"--permission-mode=bypassPermissions"}, 5, true},
 		{"argv-skip-permissions-flag", "", []string{wrapper.SkipPermissionsFlag}, 5, true},
 		{"argv-trailing-flag-unknown", "", []string{"--permission-mode"}, 5, true},
+		{"argv-allow-skip-permissions-flag", "plan", []string{"--allow-dangerously-skip-permissions"}, 5, true},
+		{"argv-allow-skip-permissions-joined", "plan", []string{"--allow-dangerously-skip-permissions=true"}, 5, true},
 		{"plain-non-bypass-launch", "plan", nil, 4, false},
 		// A dontAsk launch is a DEFINITE non-bypass posture: claudeRung maps the
 		// native spelling onto the manual rung, so it takes the 4-ring branch and

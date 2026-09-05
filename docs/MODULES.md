@@ -2346,6 +2346,29 @@ left unported here; porting it is deferred to a follow-up ticket.
 
 - `ResumeArgs(harnessSessionID string) []string`
 
+#### `SwallowedPromptDetector`
+
+> SwallowedPromptDetector is an optional capability adapters may implement to
+report, from a settled screen, that the harness never accepted the prompt at
+all — as opposed to accepting it and answering.
+
+The two are indistinguishable to the rest of the chat layer: a swallowed
+prompt leaves the harness sitting at a ready prompt with no assistant output,
+which is exactly what a completed turn also looks like once the reply has
+scrolled off. Without this verdict such a run completes "successfully" with
+the raw ready screen as its reply, and a caller that pays per run cannot tell
+the difference (observed in loom's daemon: eight consecutive paid agent runs
+reported complete while producing zero assistant output).
+
+sentScreenText is the screen as it looked when the prompt was submitted, so
+an implementation can answer "nothing changed at all". Adapters that cannot
+tell simply do not implement this.
+
+Ported from meta-harness (turns.SwallowedPromptDetector); the two
+implementations are kept in step.
+
+- `PromptNotAccepted(snap screen.Snapshot, sentScreenText string) bool`
+
 #### `TranscriptReader`
 Optional adapter capability providing access to the harness's persisted conversation log to hydrate Conversation.History().
 
@@ -2671,6 +2694,23 @@ ring-length calculation.
 Only two such flags exist: claude's SkipPermissionsFlag and codex's
 --dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
 permission axis at all return nil.
+
+The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
+see BypassReachableFlags.
+
+#### `func BypassReachableFlags(harness string) []string`
+BypassReachableFlags returns the harness argv flags that, when present at
+launch, leave bypass REACHABLE on the harness's own permission ring —
+whether or not the launch is already unrestricted. This is the wider of the
+two sets and the split matters: BypassEnablingFlags answers "is this launch
+already unrestricted" and feeds validatePermissionMode's contradiction
+check, while this one answers "can this session get to bypass at all" and
+feeds pkg/chat's ring-length calculation.
+
+For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
+unlocks the rung without selecting it. Codex has no separate unlock flag, so
+the two sets coincide there. The returned slice is freshly allocated; callers
+may mutate it.
 
 #### `func EffectiveLaunchRung(harness string, args []string, mode string) string`
 EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,

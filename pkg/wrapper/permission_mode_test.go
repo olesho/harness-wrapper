@@ -581,6 +581,24 @@ func TestValidateConfig_PermissionMode(t *testing.T) {
 			args:    []string{"-a", "never", "exec"},
 			mode:    "manual",
 		},
+		// Deliberate asymmetry with the skip-permissions rejection above:
+		// --allow-dangerously-skip-permissions only UNLOCKS the bypass rung, it
+		// does not select it, so the launch really is restricted and pairing it
+		// with a restrictive mode is exactly what the flag is for. Rejecting this
+		// would trade a wrong refusal in SetPermissionMode for a wrong refusal at
+		// launch. See BypassReachableFlags.
+		{
+			name:    "claude allow-skip-permissions unlock flag does not contradict a restrictive mode",
+			harness: "claude",
+			args:    []string{AllowSkipPermissionsFlag},
+			mode:    "plan",
+		},
+		{
+			name:    "claude-code allow-skip-permissions=value unlock flag does not contradict",
+			harness: "claude-code",
+			args:    []string{AllowSkipPermissionsFlag + "=true"},
+			mode:    "ask",
+		},
 	}
 
 	for _, tc := range accepted {

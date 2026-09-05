@@ -91,6 +91,9 @@ as 400 `invalid_config`. Two residual gaps remain:
    `--dangerously-skip-permissions`; codex = `-s`, `--sandbox`, `-a`, `--ask-for-approval`, and
    `--dangerously-bypass-approvals-and-sandbox`. The two `--dangerously-*` arms are reachable only for
    a bypass-class mode — any other mode paired with them is rejected with 400 rather than dropped.
+   claude's `--allow-dangerously-skip-permissions` is in neither set: it suppresses no injection (it
+   sets no rung, so `--permission-mode` is still injected alongside it) and trips no contradiction,
+   but it does put `bypass` on the ring a later `permission_mode` switch may cycle to.
 2. **In-band mutation.** A client holding the control token can send arbitrary text via
    `POST /v1/conversations/{id}/messages` (claude's `/permissions`, codex's `/approvals`) and flip the
    mode inside the TUI. Nothing validates or observes that; the listing keeps reporting the open-time
