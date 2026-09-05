@@ -78,10 +78,17 @@ docs-serve:
 # The catch-all arm is deliberate: an exit code this target does not recognise
 # (a panic, a future code) must surface as a failure rather than fall into the
 # "drift is fine" arm. Collapsing unknown into benign is the exact bug above.
+# CHECK_VERSIONS_ARGS: extra flags for the sentry binary. Empty by default, so
+# the operator-facing `make check-versions` is unchanged. It exists so the
+# regression test in cmd/check-versions/makefile_exit_test.go can point THIS
+# recipe at a dead registry -- the defect it guards (a collapsed exit status)
+# lives in the recipe, not in Go code, and is untestable without a way in.
+CHECK_VERSIONS_ARGS ?=
+
 check-versions:
 	@dir="$$(mktemp -d)"; \
 	go build -o "$$dir/check-versions" ./cmd/check-versions || { rm -rf "$$dir"; exit 2; }; \
-	"$$dir/check-versions"; code=$$?; \
+	"$$dir/check-versions" $(CHECK_VERSIONS_ARGS); code=$$?; \
 	rm -rf "$$dir"; \
 	case $$code in \
 		0|1) exit 0 ;; \
