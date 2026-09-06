@@ -14,8 +14,8 @@ against. It is embedded into `pkg/versions` at build time.
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
 
-> Both files carry claude-code `2.1.261` as of 2026-09-04, verified live against the installed
-> 2.1.261 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> Both files carry claude-code `2.1.263` as of 2026-09-06, verified live against the installed
+> 2.1.263 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
 > extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
 > permission-mode surfaces still rest on recorded corpora, and the blocking startup dialogs are
 > seeded away by the release-check harness and stay unverified). ALL FOUR claude scenarios —
@@ -42,8 +42,8 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.261` as of 2026-09-04, verified live against the installed
-> 2.1.261 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> Both files carry claude-code `2.1.263` as of 2026-09-06, verified live against the installed
+> 2.1.263 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
 > extraction and the multi-turn keep-alive path only — the `interruptMarker` and tool-call surfaces
 > still rest on corpora recorded at 2.1.251, the permission-mode footers remain anchored at 2.1.217,
 > and the blocking startup dialogs are seeded away by the release-check harness and stay
