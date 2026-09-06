@@ -47,7 +47,7 @@ import (
 // runStructuredRun builds today.
 //
 // Env / arg POLICY is a cmd/ concern and stays out of this library: the caller
-// runs cleanedEnv (strip CLAUDECODE / CLAUDE_CODE_*) and applySandboxDefaults
+// runs cleanedEnv (strip Claude Code's nesting markers) and applySandboxDefaults
 // (the opt-in --sandbox-defaults injection) itself, then passes the
 // ALREADY-CLEANED Env / Args in here. oneshot does not re-implement either.
 type Config struct {
