@@ -60,31 +60,37 @@ func resolveUnderPolicy(p *chat.InputPolicy, req *turns.InputRequest) *turns.Inp
 	return nil
 }
 
-// TestInputHandling_UnattendedAutoAcceptsBypassAcceptance pins the IMPLICIT
-// COUPLING on the `run` path: inputHandling's unattended branch installs ONE
-// `trust_prompt` policy entry — written for the FOLDER-TRUST dialog — and it
-// also auto-accepts claude-code's skip-all-permissions acceptance screen,
-// because claudecode.DetectInput emits bypassAnchor ("Bypass Permissions mode")
-// under that same Kind (pkg/turns/harness/claudecode/claudecode.go:205) and the
-// screen's first option carries Alias "proceed" ("Yes, I accept").
+// TestInputHandling_UnattendedAutoAcceptsBypassAcceptance pins that
+// inputHandling's unattended branch auto-accepts claude-code's
+// skip-all-permissions acceptance screen — now via an EXPLICIT
+// claudecode.KindBypassAcceptance entry rather than as a side effect of the
+// folder-trust one. The screen's first option carries Alias "proceed" ("Yes, I
+// accept"), which is what the entry resolves to.
 //
 // This is the SECOND, independent copy of that policy; pkg/oneshot.turnConfig
 // holds the other (pinned in pkg/oneshot/permission_pin_test.go), and
 // pkg/harness.TurnConfig.InputPolicy restates it as prose.
 //
-// EXPECTED TO BREAK DELIBERATELY: the filed follow-up that splits the detector's
-// Kind (e.g. a distinct `bypass_acceptance` instead of reusing `trust_prompt`)
-// will make this resolve to nil. When it goes red, decide explicitly whether the
-// unattended policy should still accept the bypass screen — and add the new kind
-// to BOTH policy copies if so.
+// BROKEN DELIBERATELY, AND FIXED, BY PUPPET-507 (child of PUPPET-495): this
+// test used to assert Kind == "trust_prompt" for the bypass screen and existed
+// to go red when the detector's Kind was split. It was split — the folder-trust
+// dialog and the acceptance screen are separate kinds now, because every policy
+// surface keys on Kind alone and "trust the folder but never silently accept a
+// skip-all-permissions launch" was otherwise inexpressible. The decision the old
+// comment demanded was made explicitly: harness-wrapper's own unattended
+// behaviour stays byte-identical, so BOTH policy copies name the new kind, and
+// this pin now asserts the new kind plus the same resolved option. The
+// separation itself is guarded by
+// TestPolicy_CanTrustFolderWithoutAcceptingBypass below.
 func TestInputHandling_UnattendedAutoAcceptsBypassAcceptance(t *testing.T) {
 	req, ok := claudecode.DetectInput(bypassAcceptancePinScreen)
 	if !ok {
 		t.Fatal("claudecode.DetectInput did not classify the bypass-permissions screen; this pin would be vacuous")
 	}
-	if req.Kind != "trust_prompt" {
-		t.Fatalf("Kind = %q, want trust_prompt — the coupling this test pins is GONE; "+
-			"check whether the unattended policy still covers the bypass screen", req.Kind)
+	if req.Kind != claudecode.KindBypassAcceptance {
+		t.Fatalf("Kind = %q, want %q — the bypass screen no longer carries its own kind; "+
+			"check whether the unattended policy still covers it",
+			req.Kind, claudecode.KindBypassAcceptance)
 	}
 
 	policy, handler := inputHandling(context.Background(), false, nil)
@@ -120,5 +126,63 @@ func TestInputHandling_InteractiveLeavesBypassToTheHuman(t *testing.T) {
 	}
 	if opt := resolveUnderPolicy(policy, req); opt != nil {
 		t.Errorf("interactive mode pre-resolved the bypass screen to %q; it must reach the human", opt.Label)
+	}
+}
+
+// folderTrustPinScreen is claude-code's folder-trust dialog, the counterpart to
+// bypassAcceptancePinScreen above. Duplicated for the same reason: the fixture
+// in pkg/turns/harness/claudecode/input_test.go is an unexported test const.
+const folderTrustPinScreen = `╭─────────────────────────────────────────────────╮
+│ Do you trust the files in this folder?            │
+│                                                   │
+│ /Users/oleh/Work/aether/harness-wrapper           │
+│                                                   │
+│ ❯ 1. Yes, proceed                                 │
+│   2. No, exit                                     │
+│                                                   │
+│ Enter to confirm · Esc to exit                    │
+╰─────────────────────────────────────────────────╯`
+
+// TestPolicy_CanTrustFolderWithoutAcceptingBypass is the regression guard for
+// the split PUPPET-495 asked for: a single ByKind policy must be able to say
+// "yes" to folder trust and "no" to the skip-all-permissions acceptance screen
+// AT THE SAME TIME. While both screens carried Kind "trust_prompt" that
+// sentence was inexpressible — one map key covered both, so any policy that
+// trusted a folder also accepted a bypass launch, silently.
+//
+// This asserts through the real resolution path (resolveUnderPolicy mirrors
+// chat's policyOption/findOption), against both real detected requests, so it
+// fails the moment the two kinds are merged back together.
+func TestPolicy_CanTrustFolderWithoutAcceptingBypass(t *testing.T) {
+	trust, ok := claudecode.DetectInput(folderTrustPinScreen)
+	if !ok {
+		t.Fatal("claudecode.DetectInput did not classify the folder-trust dialog; this guard would be vacuous")
+	}
+	bypass, ok := claudecode.DetectInput(bypassAcceptancePinScreen)
+	if !ok {
+		t.Fatal("claudecode.DetectInput did not classify the bypass-permissions screen; this guard would be vacuous")
+	}
+
+	policy := &chat.InputPolicy{ByKind: map[string]chat.Disposition{
+		claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+		claudecode.KindBypassAcceptance: {Kind: chat.DispositionDeny},
+	}}
+
+	trustOpt := resolveUnderPolicy(policy, trust)
+	if trustOpt == nil {
+		t.Fatal("the folder-trust dialog resolved to nothing under a policy that answers trust_prompt")
+	}
+	if trustOpt.Label != "Yes, proceed" {
+		t.Errorf("folder trust resolved to %q (alias %q), want %q", trustOpt.Label, trustOpt.Alias, "Yes, proceed")
+	}
+
+	bypassOpt := resolveUnderPolicy(policy, bypass)
+	if bypassOpt == nil {
+		t.Fatal("the bypass-acceptance screen resolved to nothing under a policy that denies bypass_acceptance")
+	}
+	if bypassOpt.Label != "No, exit" {
+		t.Errorf("bypass acceptance resolved to %q (alias %q), want %q — the deny entry did not bind, "+
+			"which means the trust entry is still covering both screens",
+			bypassOpt.Label, bypassOpt.Alias, "No, exit")
 	}
 }

@@ -458,10 +458,12 @@ func TestSetPermissionMode_StopsOnBypassAcceptanceDialog(t *testing.T) {
 func TestSetPermissionMode_InputPolicyResolvesDialog(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{
 		Harness: chatClaudeCode,
-		// claudecode classifies the bypass-acceptance screen under the same
-		// "trust_prompt" kind as the folder-trust dialog (claudecode.go:205).
+		// claudecode classifies the bypass-acceptance screen under its own
+		// "bypass_acceptance" kind (claudecode.KindBypassAcceptance), distinct
+		// from the folder-trust dialog's "trust_prompt" — so this policy must
+		// name that kind, not the trust one, to resolve the dialog below.
 		InputPolicy: &InputPolicy{ByKind: map[string]Disposition{
-			"trust_prompt": {Kind: DispositionAnswer, OptionID: "1"},
+			claudecode.KindBypassAcceptance: {Kind: DispositionAnswer, OptionID: "1"},
 		}},
 	}, claudeRing5, 3) // start: auto
 	withControl(t, conv)

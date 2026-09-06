@@ -23,9 +23,14 @@ Usually the harness is blocked on something the normal flow can't satisfy:
   `EventInputRequest` or pre-configure an [`InputPolicy`](chat.md#interactive-input-blocking-prompts):
   ```go
   InputPolicy{ByKind: map[string]Disposition{
-      "trust_prompt": {Kind: DispositionAnswer, OptionID: "proceed"},
+      "trust_prompt":      {Kind: DispositionAnswer, OptionID: "proceed"},
+      "bypass_acceptance": {Kind: DispositionAnswer, OptionID: "proceed"},
   }}
   ```
+  The two screens are **separate kinds** — the folder-trust dialog is `trust_prompt`, the
+  acceptance screen `bypass_acceptance` — so a policy naming only the first leaves the second
+  blocking. That is deliberate: it is what lets you trust a folder without accepting a
+  skip-all-permissions launch.
   `harness-wrapper run` and `POST /v1/turns` auto-accept these, so the hang there is almost always the
   auth wall above.
 - **`Send` returns `ErrInputPending`.** A dialog is awaiting an answer — call `Answer` (or set a

@@ -34,8 +34,8 @@ func TestDetectInput_TrustDialog(t *testing.T) {
 	if !ok {
 		t.Fatal("DetectInput did not recognize the trust dialog")
 	}
-	if req.Kind != "trust_prompt" {
-		t.Errorf("Kind = %q, want trust_prompt", req.Kind)
+	if req.Kind != KindTrustPrompt {
+		t.Errorf("Kind = %q, want %q", req.Kind, KindTrustPrompt)
 	}
 	if req.Prompt != trustAnchor {
 		t.Errorf("Prompt = %q, want %q", req.Prompt, trustAnchor)
@@ -63,6 +63,11 @@ func TestDetectInput_BypassAcceptance(t *testing.T) {
 	req, ok := DetectInput(bypassScreen)
 	if !ok {
 		t.Fatal("DetectInput did not recognize the bypass-permissions screen")
+	}
+	// Its OWN kind, not the folder-trust dialog's — see
+	// TestDetectInput_TrustAndBypassHaveDistinctKinds for why that matters.
+	if req.Kind != KindBypassAcceptance {
+		t.Errorf("Kind = %q, want %q", req.Kind, KindBypassAcceptance)
 	}
 	if len(req.Options) != 2 {
 		t.Fatalf("len(Options) = %d, want 2 (%+v)", len(req.Options), req.Options)
@@ -126,4 +131,54 @@ func findKind(evs []turns.Event, k turns.Kind) *turns.Event {
 		}
 	}
 	return nil
+}
+
+// trustScreenAlt is the second folder-trust phrasing (trustAnchorAlt), which
+// claude-code paints instead of trustAnchor on some versions. Numbered here so
+// parseMenuOptions finds the menu; the unnumbered variant is covered separately
+// in unnumbered_menu_test.go.
+const trustScreenAlt = `Quick safety check:
+
+Is this a project you created or one you trust?
+
+❯ 1. Yes, I trust this folder
+  2. No, exit
+`
+
+// TestDetectInput_TrustAndBypassHaveDistinctKinds is the regression guard for
+// the defect PUPPET-495 filed: all three anchors used to be stamped with one
+// Kind ("trust_prompt"), and every policy surface keys on Kind alone
+// (chat.InputPolicy.ByKind here, domain.RoleInputPolicy.Kinds in loomcli) — so
+// "trust this folder, but never silently accept a skip-all-permissions launch"
+// could not be expressed at all.
+//
+// The two folder-trust phrasings must stay KindTrustPrompt; the bypass
+// acceptance screen must carry KindBypassAcceptance; and the two constants must
+// differ, which is the property the policy surfaces actually depend on.
+func TestDetectInput_TrustAndBypassHaveDistinctKinds(t *testing.T) {
+	if KindTrustPrompt == KindBypassAcceptance {
+		t.Fatalf("KindTrustPrompt and KindBypassAcceptance are both %q — the folder-trust "+
+			"dialog and the bypass-acceptance screen are indistinguishable to any ByKind policy",
+			KindTrustPrompt)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		screen string
+		want   string
+	}{
+		{"folder trust", trustScreen, KindTrustPrompt},
+		{"folder trust (alt phrasing)", trustScreenAlt, KindTrustPrompt},
+		{"bypass acceptance", bypassScreen, KindBypassAcceptance},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, ok := DetectInput(tc.screen)
+			if !ok {
+				t.Fatalf("DetectInput did not classify the %s screen; the assertion would be vacuous", tc.name)
+			}
+			if req.Kind != tc.want {
+				t.Errorf("Kind = %q, want %q", req.Kind, tc.want)
+			}
+		})
+	}
 }
