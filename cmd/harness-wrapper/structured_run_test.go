@@ -103,8 +103,8 @@ func TestStructuredRun_SandboxDefaultsInjection(t *testing.T) {
 	}
 
 	// Ambient-IS_SANDBOX hygiene, required for the two negative rows to mean
-	// anything: cleanedEnv() starts from os.Environ() and strips only
-	// CLAUDECODE / CLAUDE_CODE_*, so the shim's ${IS_SANDBOX-unset} otherwise
+	// anything: cleanedEnv() starts from os.Environ() and strips only Claude
+	// Code's nesting markers, so the shim's ${IS_SANDBOX-unset} otherwise
 	// reflects the TEST HOST. In a guest that already exports IS_SANDBOX=1 —
 	// exactly the deployment this feature targets — the bypass-alone row would
 	// fail spuriously and the sandbox-defaults row would pass for the WRONG
