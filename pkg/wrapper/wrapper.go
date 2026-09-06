@@ -813,15 +813,24 @@ func EffectiveLaunchRung(harness string, args []string, mode string) string {
 }
 
 // claudeRung normalizes a canonical rung or a claude-native --permission-mode
-// value to a canonical rung. The inverse of claudePermissionMode, except that
-// claudeModeDontAsk has NO canonical rung and so reports unknown ("") rather
-// than being guessed into ask or auto.
+// value to a canonical rung. The inverse of claudePermissionMode, which is
+// deliberately not a bijection: two claude-native spellings can share one rung.
+//
+// claudeModeDontAsk reports the existing manual rung. Claude's own
+// permissiveness rank table reads {plan:0, bubble:1, default:1, dontAsk:1,
+// acceptEdits:2, auto:3, bypassPermissions:4}: dontAsk ties with default
+// (claude's spelling of manual), and PermissionRungs() is a strict total order
+// that cannot express a tie. dontAsk is also strictly more restrictive in
+// effect ("deny if not pre-approved"), so reporting manual can never
+// UNDER-report permissiveness.
 func claudeRung(value string) string {
 	switch value {
 	case claudeModeAcceptEdits:
 		return permissionModeAsk
 	case claudeModeBypassPermissions:
 		return permissionModeBypass
+	case claudeModeDontAsk:
+		return permissionModeManual
 	}
 	if rungIndex(value) >= 0 {
 		return value

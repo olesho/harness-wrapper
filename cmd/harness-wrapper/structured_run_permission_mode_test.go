@@ -99,6 +99,12 @@ func TestStructuredRun_PermissionModeClaude(t *testing.T) {
 			why:  "acceptEdits -> ask; the wire NEVER carries a native spelling",
 		},
 		{
+			name: "native dontAsk reports the manual rung",
+			args: []string{"--permission-mode", "dontAsk", "claude", "--"},
+			want: "manual",
+			why:  "dontAsk -> manual; claude's own rank table ties dontAsk with its default (this ladder's manual), and the wire NEVER carries a native spelling",
+		},
+		{
 			name: "sandbox-defaults alone reports bypass",
 			args: []string{"--sandbox-defaults", "claude", "--"},
 			want: "bypass",

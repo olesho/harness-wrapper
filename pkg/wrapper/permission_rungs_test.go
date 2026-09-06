@@ -38,7 +38,10 @@ func TestMorePermissive(t *testing.T) {
 		}
 	}
 
-	// Unknown / empty / native spellings fail closed on either side.
+	// Unknown / empty / native spellings fail closed on either side. dontAsk
+	// stays here even though claudeRung now maps it onto the manual rung:
+	// MorePermissive takes CANONICAL rungs only, so rungIndex("dontAsk") must
+	// keep returning -1, exactly as it does for acceptEdits/bypassPermissions.
 	unknowns := []string{"", "acceptEdits", "dontAsk", "bypassPermissions", "danger-full-access", "read-only", "workspace-write", "totallyUnknown"}
 	for _, u := range unknowns {
 		for _, r := range rungs {
@@ -105,7 +108,14 @@ func TestEffectiveLaunchRung(t *testing.T) {
 		{"claude argv unknown value", "claude", []string{"--permission-mode", "totallyUnknown"}, "", ""},
 		{"claude knob plan", "claude", nil, "plan", "plan"},
 		{"claude knob acceptEdits", "claude", nil, "acceptEdits", "ask"},
-		{"claude knob dontAsk is unknown", "claude", nil, "dontAsk", ""},
+		// dontAsk is a second claude-native spelling of the manual rung, exactly
+		// as acceptEdits is of ask: claude's own permissiveness rank table
+		// ({plan:0, bubble:1, default:1, dontAsk:1, acceptEdits:2, auto:3,
+		// bypassPermissions:4}) ties dontAsk with default, and PermissionRungs()
+		// is a strict total order that cannot express a tie.
+		{"claude knob dontAsk is manual", "claude", nil, "dontAsk", "manual"},
+		{"claude argv separated native dontAsk", "claude", []string{"--permission-mode", "dontAsk"}, "", "manual"},
+		{"claude argv attached native dontAsk", "claude", []string{"--permission-mode=dontAsk"}, "", "manual"},
 		{"claude knob empty", "claude", nil, "", ""},
 		{"claude argv wins over knob", "claude", []string{"--permission-mode", "plan"}, "bypass", "plan"},
 		{"claude argv canonical rung passthrough", "claude", []string{"--permission-mode=manual"}, "", "manual"},
@@ -172,6 +182,8 @@ func TestEffectiveLaunchRungMatchesInjection(t *testing.T) {
 	}{
 		{"claude", nil, "bypass"},
 		{"claude", nil, "plan"},
+		{"claude", nil, "dontAsk"},
+		{"claude", []string{"--permission-mode", "dontAsk"}, ""},
 		{"claude", []string{"--permission-mode", "plan"}, "bypass"},
 		{"codex", nil, "manual"},
 		{"codex", []string{"-s", "read-only"}, "bypass"},
@@ -208,6 +220,9 @@ func TestEffectiveLaunchRungIdempotentOverInjection(t *testing.T) {
 		{"claude", nil, "bypass"},
 		{"claude", nil, "plan"},
 		{"claude", nil, "acceptEdits"},
+		{"claude", nil, "dontAsk"},
+		{"claude", []string{"--permission-mode", "dontAsk"}, ""},
+		{"claude", []string{"--permission-mode=dontAsk"}, "bypass"},
 		{"claude", []string{"--permission-mode", "plan"}, "bypass"},
 		{"claude", []string{SkipPermissionsFlag}, "plan"},
 		{"claude-code", nil, "manual"},

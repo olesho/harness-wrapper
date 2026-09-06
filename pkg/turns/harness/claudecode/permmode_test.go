@@ -12,9 +12,13 @@ import (
 
 var _ turns.PermissionModeDetector = (*Adapter)(nil)
 
-// The five live footer markers (claude-code 2.1.217) and the canonical rung
+// The six live footer markers (claude-code 2.1.217) and the canonical rung
 // each must translate to. The marker is only the glyph + words + "on";
 // everything after it is a separately-varying tail (see footerTails).
+//
+// Six markers, FIVE rungs: --permission-mode dontAsk paints its own footer word
+// but shares the manual rung (claude's own permissiveness rank table ties
+// dontAsk with its default, and the rung ladder is a strict total order).
 var footerMarkers = []struct {
 	marker string
 	rung   string
@@ -24,6 +28,7 @@ var footerMarkers = []struct {
 	{"⏵⏵ accept edits on", "ask"},
 	{"⏵⏵ auto mode on", "auto"},
 	{"⏵⏵ bypass permissions on", "bypass"},
+	{"⏵⏵ don't ask on", "manual"},
 }
 
 // Every tail observed on disk. The "(shift+tab to cycle)" hint is optional for
@@ -81,6 +86,7 @@ func TestPermissionModeFromFooter_widenedColumnGaps(t *testing.T) {
 		{"⏵⏵   bypass    permissions   on   (shift+tab to cycle)", "bypass"},
 		{"⏸\tmanual\tmode\ton · ← for agents", "manual"},
 		{"⏵⏵  accept   edits  on", "ask"},
+		{"⏵⏵   don't    ask   on   (shift+tab to cycle)", "manual"},
 	} {
 		got, ok := permissionModeFromFooter(tc.text)
 		if !ok {
@@ -109,6 +115,16 @@ func TestPermissionModeFromFooter_negatives(t *testing.T) {
 		"⏵⏵ auto mode online",
 		// Words without the glyph are prose, not a marker.
 		"auto mode on (shift+tab to cycle) · ← for agents",
+		// The closed alternation stays closed with the sixth row in place: a
+		// SEVENTH mode word must still degrade to unknown.
+		"⏵⏵ frobnicate mode on (shift+tab to cycle) · ← for agents",
+		// Near-miss on the sixth row itself: "don't ask" is the whole marker,
+		// so "don't ask again" is not it.
+		"⏵⏵ don't ask again on (shift+tab to cycle)",
+		// The real per-tool dialog row (permission_dialog_pin_test.go) contains
+		// the words "don't ask" and, elsewhere on screen, plenty of prose. No
+		// glyph, so it is not a footer.
+		"  2. Yes, and don't ask again for npm commands",
 	} {
 		if got, ok := permissionModeFromFooter(text); ok {
 			t.Errorf("permissionModeFromFooter(%q) = %q, true; want \"\", false", text, got)
@@ -223,4 +239,44 @@ func readCorpusFile(t *testing.T, parts ...string) string {
 		t.Fatalf("read fixture: %v", err)
 	}
 	return string(b)
+}
+
+// TestPermissionModeFromFooter_dontAsk pins the sixth footer word added for
+// claude's native --permission-mode dontAsk. It reports the EXISTING manual
+// rung: claude's permissiveness rank table
+// ({plan:0, bubble:1, default:1, dontAsk:1, acceptEdits:2, auto:3,
+// bypassPermissions:4}) ties dontAsk with default (claude's spelling of
+// manual), and the canonical rung ladder is a strict total order with no way to
+// express a tie.
+//
+// The recorded capture (test/corpus/permission-mode/claude-code/dont-ask) uses
+// an ASCII apostrophe; the U+2019 case below is SYNTHETIC and exists so a
+// future release that typesets the footer cannot silently drop the read back to
+// unknown.
+func TestPermissionModeFromFooter_dontAsk(t *testing.T) {
+	for _, text := range []string{
+		"⏵⏵ don't ask on (shift+tab to cycle) · ← for agents",
+		"⏵⏵ don't ask on",
+		"⏵⏵ don’t ask on (shift+tab to cycle) · ← for agents",
+		"⏸ don't ask on",
+		padTo("  ⏵⏵ don't ask on (shift+tab to cycle) · ← for agents          ○ low · /effort", 120),
+	} {
+		got, ok := permissionModeFromFooter(text)
+		if !ok {
+			t.Errorf("permissionModeFromFooter(%q) = _, false; want \"manual\", true", text)
+			continue
+		}
+		if got != "manual" {
+			t.Errorf("permissionModeFromFooter(%q) = %q; want \"manual\"", text, got)
+		}
+	}
+}
+
+// The per-tool permission dialog carries the literal words "don't ask again"
+// on a menu row. Adding the sixth alternation row must not turn that dialog
+// into a footer reading.
+func TestPermissionModeFromFooter_perToolDialogIsNotAFooter(t *testing.T) {
+	if got, ok := permissionModeFromFooter(toolPermissionScreen); ok {
+		t.Errorf("permissionModeFromFooter(toolPermissionScreen) = %q, true; want \"\", false", got)
+	}
 }

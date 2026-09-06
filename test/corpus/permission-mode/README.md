@@ -44,7 +44,7 @@ sync with `test/scripts/<harness>/*.json`).
 | `claude-code/plan` | 120 | `plan` | enforcing |
 | `claude-code/ask` | 120 | `ask` | enforcing (launched `--permission-mode acceptEdits`) |
 | `claude-code/bypass` | 120 | `bypass` | enforcing |
-| `claude-code/dont-ask` | 120 | `dontAsk` | **pending parser** — see the `dontAsk` contract below |
+| `claude-code/dont-ask` | 120 | `manual` | enforcing (launched `--permission-mode dontAsk`; see the `dontAsk` contract below) |
 | `codex/plan` | 200 | `plan` | enforcing (collaboration axis, not a rung) |
 | `codex/plan-narrow-gutter` | 120 | `plan` | **pending parser** — see the gutter finding below |
 
@@ -109,7 +109,7 @@ session, and a scratch-directory cwd row.
 ⏵⏵ accept edits on (shift+tab to cycle) · ← for agents
 ⏸ plan mode on (shift+tab to cycle) · ← for agents
 ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
-⏵⏵ don't ask on (shift+tab to cycle)                 ← SIXTH word, see below
+⏵⏵ don't ask on (shift+tab to cycle)                 ← SIXTH word, FIFTH rung; see below
 ```
 
 ## Capture questions — answered live at 2.1.217
@@ -155,27 +155,46 @@ into the ring only when the session was launched bypass-enabled, and the two
 bypass-enabling flags produce an identical ring. `dontAsk` is in **neither**
 ring — it is reachable only via the launch flag.
 
-## The `dontAsk` contract — it paints a SIXTH, DISTINCT footer
+## The `dontAsk` contract — a SIXTH footer word on the EXISTING `manual` rung
 
 **Finding (claude-code 2.1.217): `--permission-mode dontAsk` paints its own
-footer word, `⏵⏵ don't ask on (shift+tab to cycle)`, which is not one of the five
-markers the parser matches.** The capture is at `claude-code/dont-ask/`, and the
-shipped `permissionModeFromFooter` reports `("", false)` for it — an unreadable
-screen, not a rung.
+footer word, `⏵⏵ don't ask on (shift+tab to cycle)`.** The capture is at
+`claude-code/dont-ask/`.
 
-This is exactly the case the ticket flagged as "say so prominently": the
-parser's closed alternation needs a **sixth branch**, and deciding which rung
-name that branch reports (`dontAsk` is accepted at launch by
-`isSupportedPermissionMode`, `pkg/wrapper/wrapper.go:557`, but is **not** a
-canonical rung in `wrapper.PermissionRungs()`) is a parser-ticket decision, not
-a corpus one. The fixture records `"mode": "dontAsk"` with `pending_parser` set,
-so the day that branch lands the test demands the field be dropped.
+**RESOLVED.** The parser's closed alternation carries a **sixth row** for it, and
+that row reports the **existing `manual` rung** — no sixth canonical rung was
+added. The evidence, from claude's own bundle:
+
+- its permissiveness rank table reads
+  `{plan:0, bubble:1, default:1, dontAsk:1, acceptEdits:2, auto:3, bypassPermissions:4}`
+  — `dontAsk` and `default` (claude's spelling of `manual`) share rank 1.
+  `wrapper.PermissionRungs()` is a **strict total order** consumed by
+  `rungIndex`/`MorePermissive`; a genuine sixth rung would have to be a TIE with
+  manual, which that model cannot express. `dontAsk` is a second spelling of an
+  existing rung, exactly as `acceptEdits` is a second spelling of `ask`.
+- the SDK schema string reads
+  `'dontAsk' - Don't prompt for permissions, deny if not pre-approved.` — strictly
+  MORE restrictive than manual, so reporting `manual` can never UNDER-report
+  permissiveness.
+- the bundle's ring function returns `["plan","default","acceptEdits"]` (plus
+  auto/bypass when enabled), corroborating question 3 below: `dontAsk` is absent
+  from the ring, so mapping it to manual cannot corrupt the cycle driver's ring
+  model.
+
+`dontAsk` remains accepted at launch by `isSupportedPermissionMode`
+(`pkg/wrapper/wrapper.go`) and remains **absent** from `wrapper.PermissionRungs()`
+— `rungIndex("dontAsk")` still returns -1, so `MorePermissive` keeps failing
+closed on the native spelling.
+
+The closed-alternation property is preserved: the sixth row is one more
+explicitly enumerated word, not a generic `<words> on` capture, so a SEVENTH,
+future mode still degrades to `("", false)`.
 
 Observed mapping, for the record:
 
 | launch flag | footer word painted | parser today |
 | --- | --- | --- |
-| `--permission-mode dontAsk` | `⏵⏵ don't ask on` | `("", false)` — no match |
+| `--permission-mode dontAsk` | `⏵⏵ don't ask on` | `("manual", true)` |
 
 ## Codex finding: the right-alignment gutter can collapse to ONE space
 

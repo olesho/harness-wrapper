@@ -28,6 +28,12 @@ Each harness's **native spellings** are also accepted for that harness: `acceptE
 `bypassPermissions` for claude; `read-only`, `workspace-write`, `danger-full-access` for codex. A
 native spelling sent to the harness that does not own it is **rejected**, not ignored.
 
+Claude's `dontAsk` maps to the **`manual`** rung: claude's own permissiveness rank table ranks
+`dontAsk` equal to its `default` (this table's `manual`), and the rung ladder is a strict total order
+with no room for a tie. `dontAsk` is strictly more restrictive in effect ("deny if not pre-approved"),
+so reporting `manual` can never under-report permissiveness. It is a second spelling of an existing
+rung, exactly as `acceptEdits` is a second spelling of `ask`.
+
 `opencode` and `pi` have no permission axis; any mode against them is an error rather than a silent
 no-op.
 

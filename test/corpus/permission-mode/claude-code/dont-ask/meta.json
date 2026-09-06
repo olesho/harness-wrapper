@@ -4,7 +4,6 @@
   "recorded_at": "2026-07-22T19:45:58.591108Z",
   "cols": 120,
   "rows": 40,
-  "mode": "dontAsk",
-  "pending_parser": "claude-code 2.1.217 paints a SIXTH, distinct footer word for --permission-mode dontAsk (\"⏵⏵ don't ask on\"), which permissionModeFromFooter's closed alternation does not match, so it reports (\"\", false) today. Adding the sixth branch — and deciding which rung name it reports — belongs to the parser ticket, not to this corpus. Drop this field once that lands.",
-  "notes": "Launched with --permission-mode dontAsk. Footer: \"⏵⏵ don't ask on (shift+tab to cycle)\" — a footer word absent from the five-marker observed set."
+  "mode": "manual",
+  "notes": "Launched with --permission-mode dontAsk — a SIXTH claude-native launch spelling, painting a sixth footer word: \"⏵⏵ don't ask on (shift+tab to cycle)\". mode is the expected canonical rung, not the launch spelling, and dontAsk reports the existing manual rung: claude's own permissiveness rank table ({plan:0, bubble:1, default:1, dontAsk:1, acceptEdits:2, auto:3, bypassPermissions:4}) gives dontAsk and default (claude's spelling of manual) the SAME rank, and PermissionRungs() is a strict total order that cannot express a tie. dontAsk is a second spelling of an existing rung, as acceptEdits is of ask. It is also strictly more restrictive in effect (\"deny if not pre-approved\"), so reporting manual can never under-report permissiveness."
 }
