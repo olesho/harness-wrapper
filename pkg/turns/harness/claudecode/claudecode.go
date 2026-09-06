@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -217,17 +218,22 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 // blocking prompt.
 func DetectInput(text string) (*turns.InputRequest, bool) {
 	var prompt string
+	var idx int
 	switch {
 	case strings.Contains(text, trustAnchor):
-		prompt = trustAnchor
+		prompt, idx = trustAnchor, strings.Index(text, trustAnchor)
 	case strings.Contains(text, trustAnchorAlt):
-		prompt = trustAnchorAlt
+		prompt, idx = trustAnchorAlt, strings.Index(text, trustAnchorAlt)
 	case strings.Contains(text, bypassAnchor):
-		prompt = bypassAnchor
+		prompt, idx = bypassAnchor, strings.Index(text, bypassAnchor)
 	default:
 		return nil, false
 	}
-	opts := parseMenuOptions(text)
+	// The unnumbered fallback needs to know WHERE the question is: its menu sits
+	// just below it, whereas a screen that merely quotes the anchor has nothing
+	// there but transcript and the composer.
+	anchorLine := strings.Count(text[:idx], "\n")
+	opts := parseMenuOptions(text, anchorLine)
 	if len(opts) == 0 {
 		// Anchor visible but the menu hasn't rendered yet — not actionable.
 		return nil, false
@@ -239,7 +245,153 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 
 // parseMenuOptions extracts the numbered choices, de-duplicating by choice
 // number so a redraw that paints the menu twice yields one option set.
-func parseMenuOptions(text string) []turns.InputOption {
+// markerRE matches the highlighted row of an UNNUMBERED menu. Claude Code
+// 2.1.261 dropped the "N." prefixes from the folder-trust dialog and moved the
+// default highlight onto "No, exit", so the numbered parser below finds nothing
+// and DetectInput reports the dialog as not-actionable — no InputRequested is
+// emitted, a trust_prompt=allow policy is never consulted, and the harness exits
+// on the default "No, exit".
+//
+// Only the real highlight glyphs are accepted: ❯ (claude-code) and › (codex).
+// A bare ">" is ordinary prose punctuation — a quote, a diff marker, a shell
+// transcript — and admitting it turned any screen that merely QUOTED one of
+// the anchors into a menu.
+var markerRE = regexp.MustCompile(`(?m)^([^\S\n]*)(?:❯|›)[^\S\n]+(\S[^\n]*)$`)
+
+// menuNavKeys are the bytes that move an unnumbered menu's highlight. A digit
+// cannot be used: there is no digit on screen to press.
+var (
+	menuKeyDown  = []byte("\x1b[B")
+	menuKeyUp    = []byte("\x1b[A")
+	menuKeyEnter = []byte("\r")
+)
+
+// maxUnnumberedMenuRows bounds how much of the screen an unnumbered menu may
+// claim, so a stray marker line cannot turn arbitrary prose into options.
+const maxUnnumberedMenuRows = 8
+
+// maxAnchorToMenuRows bounds how far BELOW the anchor question the menu may
+// sit. The live 2.1.261 capture has 5 lines between the anchor and "❯ No,
+// exit"; the composer prompt of an agent that merely quotes the anchor is
+// typically dozens of rows further down, at the bottom of the viewport.
+const maxAnchorToMenuRows = 20
+
+// parseUnnumberedMenuOptions extracts choices from a menu with no "N." prefixes
+// by locating the ❯ marker and taking the contiguous block around it.
+// Because selection is positional, each option's Keys walk the highlight from
+// the marker row to that option's row and press Enter — never a bare digit,
+// which would be typed into the dialog rather than selecting anything.
+//
+// anchorLine is the row of the anchor question DetectInput matched. The menu
+// belongs to that question, so it must be BELOW it and within
+// maxAnchorToMenuRows: prose that merely quotes an anchor arms this fallback,
+// and without the offset the ❯ of the COMPOSER at the bottom of the screen was
+// parsed as the menu — submitting whatever the operator had typed.
+func parseUnnumberedMenuOptions(text string, anchorLine int) []turns.InputOption {
+	lines := strings.Split(text, "\n")
+	// A screen can carry several markers (the dialog's own, and the composer's).
+	// Take the first that actually looks like this anchor's menu.
+	for _, m := range markerRE.FindAllStringSubmatchIndex(text, -1) {
+		markerLine := strings.Count(text[:m[0]], "\n")
+		if opts := unnumberedMenuAt(lines, markerLine, anchorLine); opts != nil {
+			return opts
+		}
+	}
+	return nil
+}
+
+// unnumberedMenuAt reads the option block around the marker row, or nil when
+// that row is not a menu highlight.
+func unnumberedMenuAt(lines []string, markerLine, anchorLine int) []turns.InputOption {
+	if markerLine <= anchorLine || markerLine-anchorLine > maxAnchorToMenuRows {
+		return nil
+	}
+	if isComposerRow(lines, markerLine) {
+		return nil
+	}
+
+	first := markerLine
+	for first > 0 && !isMenuBoundary(lines[first-1]) && markerLine-first+1 < maxUnnumberedMenuRows {
+		first--
+	}
+	last := markerLine
+	for last < len(lines)-1 && !isMenuBoundary(lines[last+1]) && last-first+1 < maxUnnumberedMenuRows {
+		last++
+	}
+
+	var opts []turns.InputOption
+	cursor := -1
+	for i := first; i <= last; i++ {
+		label := stripMarker(lines[i])
+		if label == "" {
+			continue
+		}
+		if i == markerLine {
+			cursor = len(opts)
+		}
+		opts = append(opts, turns.InputOption{
+			ID:    strconv.Itoa(len(opts) + 1),
+			Alias: aliasForLabel(label),
+			Label: label,
+		})
+	}
+	// Checked AFTER chrome filtering: a "menu" that only reaches two rows by
+	// counting a border is not a menu.
+	if cursor < 0 || len(opts) < 2 {
+		// A lone highlighted line is a cursor, not a menu.
+		return nil
+	}
+	for i := range opts {
+		var keys []byte
+		step, n := menuKeyDown, i-cursor
+		if n < 0 {
+			step, n = menuKeyUp, -n
+		}
+		for j := 0; j < n; j++ {
+			keys = append(keys, step...)
+		}
+		opts[i].Keys = append(keys, menuKeyEnter...)
+	}
+	return opts
+}
+
+// isComposerRow reports whether the marker on this row is the INPUT BOX prompt
+// rather than a menu highlight. The composer's ❯ is framed: its immediate
+// neighbours on both sides are the box's rules. In the real dialog neither
+// neighbour is chrome (a blank line above, the sibling option below), so the
+// true positive is untouched — and a menu that merely ABUTS a rule on one side
+// stays a menu.
+func isComposerRow(lines []string, markerLine int) bool {
+	if markerLine == 0 || markerLine == len(lines)-1 {
+		return false
+	}
+	return boxOrRuleRE.MatchString(lines[markerLine-1]) && boxOrRuleRE.MatchString(lines[markerLine+1])
+}
+
+// isMenuBoundary reports whether ln terminates the option block: a blank line,
+// or any of the transcript chrome that must never become an option (box rules,
+// message bullets, tool-result continuations, the thinking footer).
+func isMenuBoundary(ln string) bool {
+	if strings.TrimSpace(ln) == "" {
+		return true
+	}
+	return boxOrRuleRE.MatchString(ln) || bulletRE.MatchString(ln) ||
+		toolResultRE.MatchString(ln) || thinkingRE.MatchString(ln)
+}
+
+// stripMarker drops the highlight glyph and column padding from a menu row.
+func stripMarker(s string) string {
+	s = strings.TrimSpace(s)
+	for _, mk := range []string{"❯", "›"} {
+		if strings.HasPrefix(s, mk) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, mk))
+			break
+		}
+	}
+	return cleanLabel(s)
+}
+
+func parseMenuOptions(text string, anchorLine int) []turns.InputOption {
 	var opts []turns.InputOption
 	seen := make(map[string]bool)
 	for _, m := range menuRE.FindAllStringSubmatch(text, -1) {
@@ -257,6 +409,9 @@ func parseMenuOptions(text string) []turns.InputOption {
 			// highlight; the Enter confirms.
 			Keys: []byte(num + "\r"),
 		})
+	}
+	if len(opts) == 0 {
+		return parseUnnumberedMenuOptions(text, anchorLine)
 	}
 	return opts
 }

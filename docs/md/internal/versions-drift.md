@@ -78,6 +78,15 @@ The table it prints has six columns — `harness | package | pinned | latest | s
 one line and truncated to 120 characters; `--format=json` carries the same text untruncated in each
 row's `error` field.
 
+Those exit codes are **contractual**, and the target is safe to invoke from a script: the recipe
+builds the binary into a tmpdir and runs it rather than using `go run`, so `make check-versions`
+exits **0** for current-or-drift (drift is the normal state at every upstream release and must not
+fail the target) and **2** when the sentry could not answer at all. `scripts/claude-release-check.sh`
+depends on exactly that split. The recipe also accepts `CHECK_VERSIONS_ARGS`, which is passed
+straight to the binary; it exists **for tests only** — `cmd/check-versions/makefile_exit_test.go`
+uses it to point the target at the reserved discard port 9 and assert the outage path really exits 2
+— and should be left empty in operator and CI use.
+
 ## When the table shows `error`
 
 An `error` row means **no comparison happened**. `latest` is `—` because the registry was never read,
