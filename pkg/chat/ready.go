@@ -20,6 +20,15 @@ import (
 // can flash by in a single frame as the CLI advances its own login flow.
 const authGateStabilizeGap = 2 * time.Second
 
+// Cross-language asymmetry, deliberate (PUPPET-315): the TS port has a second,
+// NON-throwing readiness helper (awaitPromptReadyUntil) used by input/answer,
+// setPermissionMode and probeCodexStatus, and that helper carries its own auth
+// classification so those callers can report an auth cause instead of a bare
+// timeout. Go has no such twin — every readiness wait here goes through
+// waitReadyForSend, which already classifies and returns ErrAuthRequired — so
+// there is nothing to mirror. If a bounded, non-throwing readiness wait is ever
+// added on this side, give it the same classification.
+
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
 	// its own; fail fast so the caller answers it first. (A prompt being
@@ -218,7 +227,9 @@ func readyForInput(harness, text string) bool {
 // test/corpus/auth for the captured screen each one matches:
 //   - claude-code: "Not logged in · Please run /login" (logged out); "Invalid API
 //     key · Fix external API key" (bad external key); the first-run onboarding
-//     "Choose the text style" theme picker and the "Select login method" screen.
+//     "Choose the text style" theme picker, the "Select login method" screen, and
+//     the OAuth browser sign-in screen the latter advances into ("Use the url
+//     below to sign in" / "Paste code here if prompted").
 //   - codex:       "401 Unauthorized: missing bearer or basic authentication"
 //     (bad/expired key); a logged-out TUI / `codex login status` say "Not logged
 //     in"; codex's own remediation is "run `codex login`"; the never-signed-in
@@ -241,6 +252,14 @@ var (
 	claudeOnboardingRE = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)choose the text style`), // theme picker
 		regexp.MustCompile(`(?i)select login method`),   // login-method screen
+		// The OAuth sign-in page the login-method menu advances into: the browser
+		// handoff / paste-the-code screen. It is a WALL — it never becomes a
+		// composer — and the "Select login method" anchor is gone from the screen
+		// by the time it paints, so without these anchors it matches nothing and
+		// waitReadyForSend blocks to the run deadline (PUPPET-315). Claude's
+		// counterpart to codex's "finish signing in via your browser".
+		regexp.MustCompile(`(?i)use the url below to sign in`),
+		regexp.MustCompile(`(?i)paste code here if prompted`),
 	}
 	codexOnboardingRE = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)sign in with chatgpt`),               // never-signed-in menu

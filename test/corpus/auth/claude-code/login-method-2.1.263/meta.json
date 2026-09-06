@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "onboarding-login-method",
+  "source": "live macOS capture, claude-code 2.1.263, fresh HOME + CLAUDE_CONFIG_DIR, tmux 120x40, 2026-09-06 (PUPPET-315)",
+  "note": "The frame one step before oauth-browser-signin, matched only by 'select login method'. Pinned because it is the anchor that DISAPPEARS to create the PUPPET-315 gap: if a future release rewords it, the failure mode is the same silent hang, and this fixture catches it as a test instead."
+}
