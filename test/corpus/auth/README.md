@@ -32,6 +32,26 @@ recorded in Claude Code sessions `d413926b` (meta-harness / TS) and `3e9ee981`
 (omitting the `✻ … for 0s` thinking marker) is exactly the bug that let the
 original PRs ship green while broken.
 
+### claude-code 2.1.263 (macOS, 2026-09-06 — PUPPET-315)
+
+The three `*-2.1.263` / `oauth-browser-signin` claude cases were captured on
+**macOS**, not the `167.233.43.85` VM. Recipe (credential-less, ~1 minute):
+
+    SP=$(mktemp -d); C=$SP/cfg; H=$SP/home; W=$SP/wd; mkdir -p $C $H $W
+    tmux new-session -d -s p -x 120 -y 40 -c "$W" \
+      "env HOME=$H CLAUDE_CONFIG_DIR=$C BROWSER=/usr/bin/true claude"
+    tmux capture-pane -p -t p            # advance with: tmux send-keys -t p C-m
+
+An unauthenticated fresh workspace walks theme picker → login-method menu →
+OAuth browser sign-in. The folder-trust dialog appears only *after*
+authentication, so it is NOT reachable from a credential-less config dir.
+
+`not-logged-in-2.1.263` needs one extra step: seed the fresh `CLAUDE_CONFIG_DIR`
+with only `{"hasCompletedOnboarding":true,"theme":"dark","oauthAccount":…}`
+(copied from `~/.claude.json`) and **no** `.credentials.json`. That boots
+straight to a composer whose footer reads `Not logged in · Run /login` — so a
+logged-out claude IS reachable on macOS; the Linux VM is not required for these.
+
 ## Known gap
 
 No **logged-in successful-reply** claude screen was captured, so there is no

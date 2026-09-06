@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "onboarding-oauth-browser-signin",
+  "source": "live macOS capture, claude-code 2.1.263, fresh HOME + CLAUDE_CONFIG_DIR, tmux 120x40, 2026-09-06 (PUPPET-315)",
+  "note": "THE unmatched wall. Reached from the login-method menu; the 'Select login method' anchor is gone by the time this paints, so before PUPPET-315 nothing matched it: authRequired false, onboardingWall false, readyForInput false -> awaitPromptReady blocks to the run deadline with nothing logged. Anchors: 'use the url below to sign in', 'paste code here if prompted'. Claude's counterpart to codex/signin-browser. Wording verified identical on 2.1.251 and 2.1.263. The authorize URL is a one-time expired PKCE challenge for a login flow that was never completed, not a credential; it is kept verbatim because the corpus forbids hand-edited fixtures."
+}
