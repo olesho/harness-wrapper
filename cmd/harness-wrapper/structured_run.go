@@ -61,8 +61,9 @@ func runStructuredRun(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), resolveRunTimeout())
 	defer cancel()
 
-	// Strip Claude Code's nesting markers so the spawned harness persists a
-	// transcript (see runOneShot for the full rationale), then apply the
+	// Strip Claude Code's nesting markers (minus the credential exemption in
+	// nestingExemptEnvKeys) so the spawned harness persists a transcript AND
+	// stays authenticated (see runOneShot for the full rationale), then apply the
 	// opt-in --sandbox-defaults injection on top. Both are env/arg POLICY and
 	// stay a cmd/ concern: pkg/oneshot receives the ALREADY-CLEANED Env/Args.
 	// The permission mode is passed in so a bypass rung composes: the env half
