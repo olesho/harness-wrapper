@@ -121,7 +121,25 @@ const (
 	trustAnchorAlt = "Is this a project you created or one you trust?"
 	// bypassAnchor is the --dangerously-skip-permissions acceptance screen,
 	// which is itself a blocking confirm even though it "skips" permissions.
+	// It carries its OWN kind (KindBypassAcceptance), not the folder-trust one:
+	// every policy surface keys on Kind alone, so sharing a kind with folder
+	// trust made "trust this folder, but never silently accept a
+	// skip-all-permissions launch" inexpressible.
 	bypassAnchor = "Bypass Permissions mode"
+)
+
+// Input kinds this adapter stamps on turns.InputRequest.Kind. They are the keys
+// a declarative policy matches on (chat.InputPolicy.ByKind, and loomcli's
+// domain.RoleInputPolicy.Kinds), so they are exported: a consumer that wants to
+// answer one screen and refuse the other should name these constants rather
+// than repeat the string literals.
+const (
+	// KindTrustPrompt is the folder-trust dialog, in either phrasing.
+	KindTrustPrompt = "trust_prompt"
+	// KindBypassAcceptance is the --dangerously-skip-permissions acceptance
+	// screen. Split out of KindTrustPrompt so a policy can trust a folder
+	// without also accepting a skip-all-permissions launch.
+	KindBypassAcceptance = "bypass_acceptance"
 )
 
 // menuRE matches a numbered menu item line, e.g. "(selector) 1. Yes, proceed"
@@ -217,15 +235,17 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 // check and this adapter share one source of truth about what counts as a
 // blocking prompt.
 func DetectInput(text string) (*turns.InputRequest, bool) {
-	var prompt string
+	var prompt, kind string
 	var idx int
+	// Order matters and must not change: a screen that contains BOTH a trust
+	// anchor and the bypass phrase resolves to trust, exactly as it always has.
 	switch {
 	case strings.Contains(text, trustAnchor):
-		prompt, idx = trustAnchor, strings.Index(text, trustAnchor)
+		prompt, idx, kind = trustAnchor, strings.Index(text, trustAnchor), KindTrustPrompt
 	case strings.Contains(text, trustAnchorAlt):
-		prompt, idx = trustAnchorAlt, strings.Index(text, trustAnchorAlt)
+		prompt, idx, kind = trustAnchorAlt, strings.Index(text, trustAnchorAlt), KindTrustPrompt
 	case strings.Contains(text, bypassAnchor):
-		prompt, idx = bypassAnchor, strings.Index(text, bypassAnchor)
+		prompt, idx, kind = bypassAnchor, strings.Index(text, bypassAnchor), KindBypassAcceptance
 	default:
 		return nil, false
 	}
@@ -238,7 +258,7 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 		// Anchor visible but the menu hasn't rendered yet — not actionable.
 		return nil, false
 	}
-	req := &turns.InputRequest{Kind: "trust_prompt", Prompt: prompt, Options: opts}
+	req := &turns.InputRequest{Kind: kind, Prompt: prompt, Options: opts}
 	req.ID = inputID(req)
 	return req, true
 }
@@ -249,7 +269,7 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 // 2.1.261 dropped the "N." prefixes from the folder-trust dialog and moved the
 // default highlight onto "No, exit", so the numbered parser below finds nothing
 // and DetectInput reports the dialog as not-actionable — no InputRequested is
-// emitted, a trust_prompt=allow policy is never consulted, and the harness exits
+// emitted, a KindTrustPrompt=allow policy is never consulted, and the harness exits
 // on the default "No, exit".
 //
 // Only the real highlight glyphs are accepted: ❯ (claude-code) and › (codex).

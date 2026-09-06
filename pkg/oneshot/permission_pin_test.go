@@ -91,32 +91,35 @@ func pinConfig() Config {
 	}
 }
 
-// TestTurnConfig_BypassAcceptanceAutoAnswered pins the IMPLICIT COUPLING on the
-// container path: turnConfig's single unattended `trust_prompt` policy entry —
-// written for the FOLDER-TRUST dialog — also auto-accepts claude-code's
-// skip-all-permissions acceptance screen, because claudecode.DetectInput emits
-// bypassAnchor ("Bypass Permissions mode") under that same Kind
-// (pkg/turns/harness/claudecode/claudecode.go:205) and the screen's first
-// option carries Alias "proceed" ("Yes, I accept").
+// TestTurnConfig_BypassAcceptanceAutoAnswered pins that turnConfig's unattended
+// policy auto-accepts claude-code's skip-all-permissions acceptance screen —
+// now via an EXPLICIT claudecode.KindBypassAcceptance entry rather than as a
+// side effect of the folder-trust one. The screen's first option carries Alias
+// "proceed" ("Yes, I accept"), which is what the entry resolves to.
 //
 // turnConfig is the copy used by `structured-run` and therefore by
 // pkg/env.RunStructuredTurn — the containerized guest path, where a reachable
 // `bypass` rung matters most. cmd/harness-wrapper's inputHandling holds the
 // second, independent copy of the same policy (pinned there).
 //
-// EXPECTED TO BREAK DELIBERATELY: the filed follow-up that splits the detector's
-// Kind (e.g. a distinct `bypass_acceptance` instead of reusing `trust_prompt`)
-// will make this resolve to nil. That is the point — when it goes red, decide
-// explicitly whether the unattended policy should still accept the bypass
-// screen, and add the new kind to the policy if so.
+// BROKEN DELIBERATELY, AND FIXED, BY PUPPET-507 (child of PUPPET-495): this test
+// used to assert Kind == "trust_prompt" for the bypass screen and existed to go
+// red when the detector's Kind was split. It was split — the folder-trust dialog
+// and the acceptance screen are separate kinds now, because every policy surface
+// keys on Kind alone and "trust the folder but never silently accept a
+// skip-all-permissions launch" was otherwise inexpressible. The decision the old
+// comment demanded was made explicitly: harness-wrapper's own unattended
+// behaviour stays byte-identical, so both policy copies name the new kind and
+// this pin asserts the new kind plus the same resolved option.
 func TestTurnConfig_BypassAcceptanceAutoAnswered(t *testing.T) {
 	req, ok := claudecode.DetectInput(bypassAcceptanceScreen)
 	if !ok {
 		t.Fatal("claudecode.DetectInput did not classify the bypass-permissions screen; this pin would be vacuous")
 	}
-	if req.Kind != "trust_prompt" {
-		t.Fatalf("Kind = %q, want trust_prompt — the coupling this test pins is GONE; "+
-			"check whether the unattended policy still covers the bypass screen", req.Kind)
+	if req.Kind != claudecode.KindBypassAcceptance {
+		t.Fatalf("Kind = %q, want %q — the bypass screen no longer carries its own kind; "+
+			"check whether the unattended policy still covers it",
+			req.Kind, claudecode.KindBypassAcceptance)
 	}
 
 	cfg := turnConfig(pinConfig())

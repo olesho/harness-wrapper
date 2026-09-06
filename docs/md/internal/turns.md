@@ -79,7 +79,7 @@ which harness implements what.
 ```go
 type InputRequest struct {
 	ID      string        // stable across redraws of the same prompt
-	Kind    string        // "trust_prompt" | "menu_select" | "confirm" | "text_input"
+	Kind    string        // "trust_prompt" | "bypass_acceptance" | "menu_select" | "confirm" | "text_input"
 	Prompt  string
 	Options []InputOption
 }

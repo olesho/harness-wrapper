@@ -120,9 +120,11 @@ contributes args **and** env — notably `IS_SANDBOX=1`, which suppresses claude
 Permissions mode* acceptance screen and allows running as root. chatd has no `--sandbox-defaults`
 equivalent and no `--auto-accept`; its only levers are the request's `env` and `input_policy`. So a
 chatd caller asking for `bypass` must either pass `IS_SANDBOX=1` in `env`, or supply an `input_policy`
-with `by_kind: {"trust_prompt": …}` (the same lever documented below for the folder-trust dialog) —
-otherwise the harness stops on the acceptance screen, surfaced as a `trust_prompt` input request, and
-root is disallowed. chatd is precisely the containerized/remote entry point where this bites, so use
+with `by_kind: {"bypass_acceptance": …}` — otherwise the harness stops on the acceptance screen,
+surfaced as a `bypass_acceptance` input request, and root is disallowed. Note the kind: the
+acceptance screen has its **own** kind, distinct from the folder-trust dialog's `trust_prompt`, so a
+policy that names only `trust_prompt` does **not** cover it (that is deliberate — it lets a caller
+trust a folder without also accepting a skip-all-permissions launch). chatd is precisely the containerized/remote entry point where this bites, so use
 one of the two levers explicitly.
 
 ### The event stream
@@ -143,7 +145,8 @@ so you don't miss the completion frame.
 
 The HTTP analogue of [`harness-wrapper run`](cli.md#one-shot-run): open, drive a single turn, return
 the reply, tear down. Supply an `input_policy` to make an unattended turn survive a trust dialog (e.g.
-`{"by_kind": {"trust_prompt": {"kind": "answer", "option_id": "proceed"}}}`).
+`{"by_kind": {"trust_prompt": {"kind": "answer", "option_id": "proceed"}}}`). For a `bypass`-class
+launch add a `"bypass_acceptance"` entry too — it is a separate kind.
 
 ## Reference clients
 

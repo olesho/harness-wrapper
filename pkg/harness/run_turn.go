@@ -122,14 +122,17 @@ type TurnConfig struct {
 	// than hanging to the deadline. For an untrusted worktree, set
 	// {ByKind: {"trust_prompt": {Kind: "answer", OptionID: "proceed"}}}.
 	//
-	// Be aware that "trust_prompt" is NOT folder-trust-only: claude-code's
-	// --dangerously-skip-permissions ("Bypass Permissions mode") acceptance
-	// screen is emitted under the same Kind, so the entry above also accepts a
-	// skip-all-permissions launch. That is deliberate and pinned today, pending
-	// the follow-up that splits the detector's Kind. A policy alone also cannot
-	// gate what is never surfaced: claude's per-tool permission dialog is not
-	// detected, so it reaches no policy at all and stalls the turn to the
-	// deadline.
+	// claude-code emits two distinct kinds here, and the entry above covers only
+	// the first:
+	//   - "trust_prompt" (claudecode.KindTrustPrompt) — the folder-trust dialog,
+	//     in either phrasing;
+	//   - "bypass_acceptance" (claudecode.KindBypassAcceptance) — the
+	//     --dangerously-skip-permissions ("Bypass Permissions mode") acceptance
+	//     screen, which needs its OWN entry. A folder-trust entry no longer
+	//     accepts a skip-all-permissions launch by accident.
+	// A policy alone also cannot gate what is never surfaced: claude's per-tool
+	// permission dialog is not detected, so it reaches no policy at all and
+	// stalls the turn to the deadline.
 	InputPolicy *chat.InputPolicy
 
 	// OnInputRequest is an in-process resolver for prompts the policy didn't

@@ -130,3 +130,14 @@ the implementing environment; confirm against a real folder-trust dialog (if a d
 auto-confirms, the trailing `\r` is a harmless no-op; if the menu needs arrow navigation, adjust
 there). Later: `InputRequestTimeout`; additional detectors (onboarding/theme, text/login,
 tool-permission menus); a structured headless signal at the wrapper layer for non-chat consumers.
+
+---
+
+**2026-09-06 — the bypass acceptance screen has its own kind.** The body above is left as the
+historical record: v1 stamped claude-code's `--dangerously-skip-permissions` acceptance screen
+`trust_prompt`, the same kind as the folder-trust dialog. Since every policy surface keys on `Kind`
+alone, that made "trust this folder, but never silently accept a skip-all-permissions launch"
+inexpressible. `claudecode.DetectInput` now stamps it `bypass_acceptance`
+(`claudecode.KindBypassAcceptance`, alongside `claudecode.KindTrustPrompt`). harness-wrapper's own
+unattended policies name both kinds, so their behaviour is unchanged; the release is expressive-only
+here. See PUPPET-495 / PUPPET-507.

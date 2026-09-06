@@ -83,9 +83,13 @@ type openRequest struct {
 	// Bypass Permissions mode acceptance screen and allowing root), chatd has
 	// no --sandbox-defaults equivalent — so a caller asking for `bypass` must
 	// either pass IS_SANDBOX=1 in Env or supply an InputPolicy with
-	// ByKind{"trust_prompt": ...}, otherwise the harness stops on the
-	// acceptance screen (surfaced as a trust_prompt input request) and root is
-	// disallowed.
+	// ByKind{"bypass_acceptance": ...}, otherwise the harness stops on the
+	// acceptance screen (surfaced as a bypass_acceptance input request) and root
+	// is disallowed. Note the kind: "bypass_acceptance" is the acceptance
+	// screen's own kind, distinct from the folder-trust dialog's
+	// "trust_prompt" — a policy that answers only trust_prompt does NOT cover
+	// this screen (and, deliberately, no longer accepts a bypass launch on a
+	// folder-trust entry's behalf).
 	PermissionMode string `json:"permission_mode,omitempty"`
 	// DisableCodexAutoDismiss disables the built-in auto-dismissal of Codex's
 	// choice-free startup interstitials (model migration, menu-less notices).

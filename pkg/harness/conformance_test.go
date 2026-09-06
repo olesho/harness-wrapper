@@ -17,6 +17,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/versions"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
@@ -409,15 +410,17 @@ func probeClaudeFooter(t *testing.T, bin, mode string) footerProbe {
 		PermissionMode: mode,
 		Store:          memstore.New(),
 		// Bypass-class launches surface claude's "Bypass Permissions mode"
-		// acceptance screen, which claudecode.DetectInput emits under Kind
-		// trust_prompt with a "proceed"-aliased first option — and the footer
-		// NEVER paints until it is answered. Same entry, same two-screen
-		// reason, as pkg/oneshot/oneshot.go:203 (documented at :167-176); it
-		// also covers the folder-trust dialog. WorkingDir is left at the
-		// process CWD (the repo checkout, which claude already trusts) rather
-		// than t.TempDir(), so folder trust is not an extra variable.
+		// acceptance screen, which claudecode.DetectInput emits under its OWN
+		// Kind (claudecode.KindBypassAcceptance) with a "proceed"-aliased first
+		// option — and the footer NEVER paints until it is answered. Since that
+		// kind is distinct from the folder-trust dialog's, both are named here,
+		// exactly as the unattended policy in pkg/oneshot/oneshot.go does.
+		// WorkingDir is left at the process CWD (the repo checkout, which claude
+		// already trusts) rather than t.TempDir(), so folder trust is not an
+		// extra variable.
 		InputPolicy: &chat.InputPolicy{ByKind: map[string]chat.Disposition{
-			"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 		}},
 	})
 	defer closeConv()
