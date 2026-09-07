@@ -323,20 +323,21 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 // treats an unreadable dialog as blocking instead of typing a prompt into it.
 func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 	var prompt string
+	var idx int
 	switch {
 	case strings.Contains(text, trustAnchor):
-		prompt = trustAnchor
+		prompt, idx = trustAnchor, strings.Index(text, trustAnchor)
 	case strings.Contains(text, trustAnchorAlt):
-		prompt = trustAnchorAlt
+		prompt, idx = trustAnchorAlt, strings.Index(text, trustAnchorAlt)
 	case strings.Contains(text, bypassAnchor):
-		prompt = bypassAnchor
+		prompt, idx = bypassAnchor, strings.Index(text, bypassAnchor)
 	default:
 		return nil, DetectNone
 	}
 	// Everything the selector parser looks at must come AFTER the anchor: "❯" is
 	// also the composer prompt glyph, so scanning the whole frame would let
 	// scrollback decide what the dialog's rows are.
-	after := text[strings.Index(text, prompt)+len(prompt):]
+	after := text[idx+len(prompt):]
 	opts := parseMenuOptions(text, after)
 	if len(opts) == 0 {
 		if hasChoiceShapedLine(after) {

@@ -47,6 +47,17 @@ const (
 	maxSelectorRows = 8
 )
 
+// maxAnchorToMenuRows bounds how far BELOW the anchor question the menu may
+// sit. Carried over from the trunk's parser (#36/#37), which this one replaces:
+// the column and terminator rules below reject the COMPOSER when it renders as
+// a lone glyph, but they cannot reject a syntactically perfect menu that simply
+// belongs to something else — a long transcript that quoted the anchor near the
+// top and has an unrelated selector near the bottom parses cleanly and is still
+// not this dialog's menu. The live 2.1.261 capture has 5 lines between the
+// anchor and "❯ No, exit"; a real dialog's menu is always within a handful of
+// rows of its question.
+const maxAnchorToMenuRows = 20
+
 // borderRunes are the box-drawing glyphs Claude Code frames a dialog with. They
 // appear as a line's left edge (stripped by lineContent so a boxed dialog
 // measures its label column like a bare one) and as whole separator lines
@@ -95,6 +106,11 @@ func parseSelectorMenu(after string) []turns.InputOption {
 		break
 	}
 	if highlight < 0 {
+		return nil
+	}
+	// `after` begins at the anchor, so the highlight's index IS its distance
+	// below the question. Past the bound this is someone else's menu.
+	if highlight > maxAnchorToMenuRows {
 		return nil
 	}
 
