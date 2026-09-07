@@ -111,7 +111,8 @@ func TestWaitReadyForSend_ParsedDialogKeepsWaiting(t *testing.T) {
 // the first bytes written, with nothing typed into the dialog beforehand.
 func TestIntegration_SelectorTrustDialogAnsweredWithArrowThenEnter(t *testing.T) {
 	script := fakeharness.New("claude-code").Idle().Build()
-	script.Steps = append(script.Steps,
+	script.Steps = append(
+		script.Steps,
 		// The dialog, painted verbatim (the builder's CRLF conversion happens
 		// in the fake, so this uses plain newlines).
 		fakeharness.Step{Frame: &fakeharness.Frame{DelayMs: 40, Screen: strings.ReplaceAll(selectorTrustFrame, "\r\n", "\n")}},
