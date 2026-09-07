@@ -101,6 +101,21 @@ func TestReadyForInput_ClaudeNotReadyScreens(t *testing.T) {
 			"\u276f 1. Yes, I trust this folder\n  2. No, exit\n",
 		"folder-trust dialog (alt phrasing)": "Is this a project you created or one you trust?\n" +
 			"\u276f 1. Yes, I trust this folder\n  2. No, exit\n",
+		// The UNNUMBERED shape claude 2.1.251 actually renders (captured live,
+		// 2026-08-29). The numbered entries above pass only because their digits
+		// parse; this one FAILED before the selector-menu parser landed —
+		// readyForInput fell through to its bare "❯"-contains and called the
+		// dialog ready, so Send typed the prompt into it and submitted onto the
+		// highlighted "No, exit", quitting claude at startup. The cheapest
+		// possible regression pin for that.
+		"folder-trust dialog (unnumbered, 2.1.251)": "Accessing workspace:\n" +
+			"/private/tmp/trustrepo\n" +
+			"Quick safety check: Is this a project you created or one you trust? \u2026\n" +
+			"Claude Code'll be able to read, edit, and execute files here.\n" +
+			"Security guide\n" +
+			" \u276f No, exit\n" +
+			"   Yes, I trust this folder\n" +
+			"Enter to confirm \u00b7 Esc to cancel\n",
 		"bypass acceptance": "WARNING: Bypass Permissions mode\n" +
 			"\u276f 1. No, exit\n  2. Yes, I accept\n",
 		"theme picker": loadCorpusScreen(t, "claude-code/theme-picker"),

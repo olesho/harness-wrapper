@@ -16,6 +16,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 )
 
@@ -453,5 +454,47 @@ func TestAutoAcceptAnswer_CodexApproval(t *testing.T) {
 		t.Errorf("OptionID = %q, want %q (the 'Yes, proceed' row) — if this changed "+
 			"deliberately, update the comment above; unattended runs now answer codex "+
 			"approvals differently", ans.OptionID, "1")
+	}
+}
+
+// TestAutoAcceptAnswer_SelectorTrustDialog pins the unattended path against
+// claude 2.1.251's UNNUMBERED folder-trust dialog. The stakes differ from the
+// numbered case: the rows are in the order claude paints them, "No, exit"
+// FIRST, so AutoAcceptAnswer's second tier (fall through to Options[0]) would
+// answer "exit" and quit the CLI. Only the affirmative tier gets this right,
+// and this pin is what keeps it wired.
+func TestAutoAcceptAnswer_SelectorTrustDialog(t *testing.T) {
+	const frame = "Accessing workspace:\n" +
+		"/private/tmp/trustrepo\n" +
+		"Quick safety check: Is this a project you created or one you trust? \u2026\n" +
+		"Claude Code'll be able to read, edit, and execute files here.\n" +
+		"Security guide\n" +
+		" \u276f No, exit\n" +
+		"   Yes, I trust this folder\n" +
+		"Enter to confirm \u00b7 Esc to cancel\n"
+
+	req, ok := claudecode.DetectInput(frame)
+	if !ok {
+		t.Fatal("the live 2.1.251 trust dialog did not classify; this pin would be vacuous")
+	}
+	// Mirrors pkg/chat's toClientInputRequest (unexported): the client-facing
+	// DTO is built field-by-field, so Keys/Highlighted never cross this boundary
+	// — which is precisely why the unattended answer must be right by ALIAS.
+	cr := chat.InputRequest{ID: req.ID, Kind: req.Kind, Prompt: req.Prompt}
+	for _, o := range req.Options {
+		cr.Options = append(cr.Options, chat.InputOption{ID: o.ID, Alias: o.Alias, Label: o.Label})
+	}
+	if cr.Options[0].Alias != "deny" {
+		t.Fatalf("fixture drifted: Options[0] is %q/%q, but the danger this pins is that claude "+
+			"lists the DENY row first", cr.Options[0].Alias, cr.Options[0].Label)
+	}
+
+	ans, ok := oneshot.AutoAcceptAnswer(cr)
+	if !ok {
+		t.Fatal("AutoAcceptAnswer declined the folder-trust dialog; an unattended run would wedge")
+	}
+	if ans.OptionID != "1" {
+		t.Errorf("OptionID = %q, want %q (\"Yes, I trust this folder\") — the unattended path is "+
+			"answering the folder-trust dialog by QUITTING claude", ans.OptionID, "1")
 	}
 }
