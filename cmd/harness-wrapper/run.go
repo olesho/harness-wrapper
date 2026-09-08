@@ -13,6 +13,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"golang.org/x/term"
 )
 
@@ -177,18 +178,21 @@ func cleanedEnv() []string {
 //     interaction still resolves rather than failing the run with ErrInputPending.
 //     TurnConfig.Output is left unset by the caller: raw PTY bytes would garble
 //     the clean menu on the same tty (see runOneShot).
-//   - unattended: today's behavior — a trust_prompt auto-answer policy plus an
-//     oneshot.AutoAcceptAnswer callback, so an unattended one-shot never hangs.
-//     That ONE trust_prompt entry deliberately covers TWO different screens:
-//     claude-code's folder-trust dialog AND its --dangerously-skip-permissions
-//     ("Bypass Permissions mode") acceptance screen, which claudecode.DetectInput
-//     emits under the same Kind — so unattended, a bypass launch is accepted by
-//     the entry written for folder trust. This coupling is pinned
-//     (TestInputHandling_UnattendedAutoAcceptsBypassAcceptance) pending the
-//     follow-up that splits the detector's Kind (e.g. bypass_acceptance);
-//     splitting it is a behavior change to a shipped detector and is out of
-//     scope here. pkg/oneshot.turnConfig holds a SECOND, independent copy of
-//     this same policy — change both together.
+//   - unattended: an auto-answer policy plus an oneshot.AutoAcceptAnswer
+//     callback, so an unattended one-shot never hangs. The policy names TWO
+//     kinds, deliberately and explicitly: claudecode.KindTrustPrompt (the
+//     folder-trust dialog) and claudecode.KindBypassAcceptance (the
+//     --dangerously-skip-permissions, "Bypass Permissions mode", acceptance
+//     screen). These are DISTINCT kinds — claudecode.DetectInput used to stamp
+//     both screens trust_prompt, so the entry written for folder trust silently
+//     accepted a skip-all-permissions launch and no policy could separate them.
+//     The kinds are split now; naming both here keeps unattended `run` behaving
+//     exactly as before, and makes accepting the bypass screen a choice on the
+//     record rather than a side effect. Pinned by
+//     TestInputHandling_UnattendedAutoAcceptsBypassAcceptance, with
+//     TestPolicy_CanTrustFolderWithoutAcceptingBypass guarding the separation
+//     itself. pkg/oneshot.turnConfig holds a SECOND, independent copy of this
+//     same policy — change both together.
 //     Note also what this callback does NOT gate: claude's per-tool permission
 //     dialog is not detected at all, so restrictive --permission-mode rungs
 //     stall an unattended turn to the deadline (exit 124), and codex's
@@ -205,7 +209,8 @@ func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.I
 	}
 	policy := &chat.InputPolicy{
 		ByKind: map[string]chat.Disposition{
-			"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 		},
 	}
 	return policy, func(req chat.InputRequest) (chat.InputAnswer, bool) {

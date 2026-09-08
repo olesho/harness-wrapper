@@ -249,7 +249,7 @@ chat layer owns the keystrokes (see [ADR-002](../internal/decisions/adr-002-inte
 ```go
 type InputRequest struct {
 	ID      string        // stable per prompt; correlates the answer
-	Kind    string        // e.g. "trust_prompt", "update_menu", "model_migration"
+	Kind    string        // e.g. "trust_prompt", "bypass_acceptance", "update_menu", "model_migration"
 	Prompt  string        // the question text
 	Options []InputOption // menu choices (ID, Alias, Label); nil for free text
 }
@@ -267,13 +267,24 @@ A detected prompt is resolved in this order:
        "trust_prompt": {Kind: DispositionAnswer, OptionID: "proceed"},
    }}
    ```
+   claude-code's folder-trust dialog (`trust_prompt`) and its
+   `--dangerously-skip-permissions` acceptance screen (`bypass_acceptance`) are **separate kinds**,
+   so each needs its own entry — which is what makes "trust this folder, but refuse a
+   skip-all-permissions launch" expressible:
+   ```go
+   InputPolicy{ByKind: map[string]Disposition{
+       "trust_prompt":      {Kind: DispositionAnswer, OptionID: "proceed"},
+       "bypass_acceptance": {Kind: DispositionDeny},
+   }}
+   ```
    `Disposition.Kind` is `DispositionAsk` (default) | `DispositionAnswer` | `DispositionDeny`.
 2. **`Options.OnInputRequest`** — an in-process callback (Go only), consulted when the policy says
    `ask`.
 3. **Surface to the client** — an `EventInputRequest` is emitted; answer it with `Answer` (requires
    the control token). When it clears, `EventInputResolved` fires.
 
-`trust_prompt` answer aliases are `proceed` and `deny`, so a policy need not know the exact wording.
+`trust_prompt` and `bypass_acceptance` answer aliases are both `proceed` and `deny`, so a policy
+need not know the exact wording.
 While a prompt awaits an external answer `Send` returns `ErrInputPending`; while a policy/handler is
 auto-answering, `Send` waits for the prompt to clear.
 

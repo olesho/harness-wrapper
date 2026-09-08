@@ -249,8 +249,9 @@ implementations. For the `claude` harness it:
 For every other harness it is a documented no-op. `IS_SANDBOX=1` is what suppresses claude-code's
 "Bypass Permissions mode" acceptance screen entirely and allows running as root — relevant for
 container workspaces under `internal/env`. (An explicitly passed `--dangerously-skip-permissions`
-already works unattended without the env var: the acceptance screen is detected as a `trust_prompt`
-and auto-answered, so the flag's value is cross-implementation parity plus the `IS_SANDBOX` effects,
+already works unattended without the env var: the acceptance screen is detected as a
+`bypass_acceptance` and auto-answered by the unattended policy's entry for that kind, so the
+flag's value is cross-implementation parity plus the `IS_SANDBOX` effects,
 not an un-hang fix. The same holds for `--permission-mode bypass`, which reaches claude as
 `--permission-mode bypassPermissions`: unattended it is auto-answered, but an interactive `run`
 surfaces the screen to the human and passthrough hands it straight to their terminal.)
@@ -318,7 +319,7 @@ human's own terminal.
 | Axis | passthrough | interactive `run` (tty) | unattended `run` / `structured-run` |
 |---|---|---|---|
 | claude per-tool permission dialog (`plan`/`manual`/`ask`) | human answers | **not surfaced** (no detector) → stalls to deadline (exit 124) | **not surfaced** → stalls to deadline (124) |
-| claude bypass-acceptance screen (`bypass`) | human answers | surfaced (`bypassAnchor` → `trust_prompt`, nil policy) → tty chooser | auto-accepted by the `trust_prompt` policy |
+| claude bypass-acceptance screen (`bypass`) | human answers | surfaced (`bypassAnchor` → `bypass_acceptance`, nil policy) → tty chooser | auto-accepted by the `bypass_acceptance` policy entry |
 | codex `-s` sandbox axis | enforced by codex | enforced by codex | **enforced by codex** |
 | codex `-a` approval axis | human answers | surfaced → tty chooser | **auto-approved** by `oneshot.AutoAcceptAnswer` |
 
@@ -329,8 +330,10 @@ here:
   unattended turns to the deadline;
 - `pkg/oneshot.AutoAcceptAnswer` is wired unconditionally, so it auto-approves `codex.KindApproval`
   even when a restrictive rung was requested (an approval policy would have to be kind-aware);
-- the bypass acceptance screen shares the `trust_prompt` kind with folder trust, so no policy can
-  target it independently (it would need its own `bypass_acceptance` kind).
+(A third limitation used to sit here: the bypass acceptance screen shared the `trust_prompt` kind
+with folder trust, so no policy could target it independently. **Resolved** — `claudecode.DetectInput`
+now stamps it `bypass_acceptance` (`claudecode.KindBypassAcceptance`), and the unattended policies
+name both kinds explicitly so the behaviour in the table above is unchanged.)
 
 The flag name and its usage string are a deliberate cross-repo mirror: `cmd/harness-wrapper/testdata/flags.golden`
 here and the TypeScript half's `test/cli/testdata/wrapper-flags.golden` are meant to agree. If they

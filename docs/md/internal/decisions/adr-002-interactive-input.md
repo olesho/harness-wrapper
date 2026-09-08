@@ -124,6 +124,23 @@ claudecode adapter (anchored folder-trust + bypass detectors, dedup, numbered-me
 errors), `cmd/harness-chatd` (typed SSE, `POST …/input`, `input_policy`), and `harness.RunTurn`.
 Documented in the [Chat API](../../guide/chat.md#interactive-input-blocking-prompts).
 
+**One open verification:** the per-option keystroke is **digit + `\r`** (`"1\r"`), an isolated
+constant in `parseMenuOptions`. It is the one part not validated against a live Claude Code build in
+the implementing environment; confirm against a real folder-trust dialog (if a digit alone
+auto-confirms, the trailing `\r` is a harmless no-op; if the menu needs arrow navigation, adjust
+there). Later: `InputRequestTimeout`; additional detectors (onboarding/theme, text/login,
+tool-permission menus); a structured headless signal at the wrapper layer for non-chat consumers.
+
+---
+
+**2026-09-06 — the bypass acceptance screen has its own kind.** The body above is left as the
+historical record: v1 stamped claude-code's `--dangerously-skip-permissions` acceptance screen
+`trust_prompt`, the same kind as the folder-trust dialog. Since every policy surface keys on `Kind`
+alone, that made "trust this folder, but never silently accept a skip-all-permissions launch"
+inexpressible. `claudecode.DetectInput` now stamps it `bypass_acceptance`
+(`claudecode.KindBypassAcceptance`, alongside `claudecode.KindTrustPrompt`). harness-wrapper's own
+unattended policies name both kinds, so their behaviour is unchanged; the release is expressive-only
+here. See PUPPET-495 / PUPPET-507.
 **The open verification above is now closed — and it went the other way.** Confirmed live against
 claude 2.1.251 (tmux, 2026-08-29): the folder-trust dialog is rendered with **no numbers at all**,
 and the menu *does* need arrow navigation. See the amendment below. Later: `InputRequestTimeout`;

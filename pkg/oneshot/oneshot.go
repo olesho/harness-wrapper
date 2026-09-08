@@ -39,6 +39,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 )
 
 // Config carries the fields oneshot needs to build a harness.TurnConfig, EXCEPT
@@ -164,17 +165,19 @@ func validateConfig(cfg Config) error {
 // the auto-accept trust policy, the AutoAcceptAnswer callback, and Codex
 // update-menu auto-skip. ExitAfterTurn is always true (clean, bounded run).
 //
-// The single trust_prompt entry deliberately covers TWO different screens:
-// claude-code's folder-trust dialog AND its --dangerously-skip-permissions
-// ("Bypass Permissions mode") acceptance screen, which claudecode.DetectInput
-// emits under the same Kind with a "proceed"-aliased first option. So on this
-// path — used by structured-run and therefore by pkg/env.RunStructuredTurn, the
-// containerized guest path — the entry written for folder trust is what accepts
-// a skip-all-permissions launch. Pinned by
-// TestTurnConfig_BypassAcceptanceAutoAnswered, pending the follow-up that splits
-// the detector's Kind (e.g. bypass_acceptance); that split is a behavior change
-// to a shipped detector and is out of scope here. cmd/harness-wrapper's
-// inputHandling holds a SECOND, independent copy of this policy — change both.
+// The policy names TWO kinds, deliberately and explicitly:
+// claudecode.KindTrustPrompt (the folder-trust dialog) and
+// claudecode.KindBypassAcceptance (the --dangerously-skip-permissions, "Bypass
+// Permissions mode", acceptance screen, whose first option is "proceed"-aliased).
+// These are DISTINCT kinds — claudecode.DetectInput used to stamp both screens
+// trust_prompt, so on this path (used by structured-run and therefore by
+// pkg/env.RunStructuredTurn, the containerized guest path) the entry written for
+// folder trust was what accepted a skip-all-permissions launch, and no policy
+// could tell the two apart. The kinds are split now; naming both here keeps this
+// config's unattended behaviour unchanged, and makes accepting the bypass screen
+// a choice on the record. Pinned by TestTurnConfig_BypassAcceptanceAutoAnswered.
+// cmd/harness-wrapper's inputHandling holds a SECOND, independent copy of this
+// policy — change both.
 //
 // Two further limits of what this config enforces, both pinned in
 // permission_pin_test.go: claude's per-tool permission dialog is not detected at
@@ -200,7 +203,8 @@ func turnConfig(cfg Config) harness.TurnConfig {
 		AutoSkipCodexUpdateNotice: true,
 		InputPolicy: &chat.InputPolicy{
 			ByKind: map[string]chat.Disposition{
-				"trust_prompt": {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+				claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+				claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 			},
 		},
 		OnInputRequest: AutoAcceptAnswer,

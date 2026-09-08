@@ -108,9 +108,12 @@ type InputRequest struct {
 	// snapshots of one dialog collapse to a single request.
 	ID string
 
-	// Kind categorizes the prompt: "trust_prompt", "menu_select",
-	// "confirm", or "text_input". It is the key a declarative policy
-	// matches on.
+	// Kind categorizes the prompt: "trust_prompt", "bypass_acceptance",
+	// "menu_select", "confirm", or "text_input". It is the key a declarative
+	// policy matches on. "trust_prompt" is the folder-trust dialog and
+	// "bypass_acceptance" claude-code's --dangerously-skip-permissions
+	// acceptance screen; they are separate kinds so a policy can answer one
+	// without answering the other.
 	Kind string
 
 	// Prompt is the question text shown to the user.
