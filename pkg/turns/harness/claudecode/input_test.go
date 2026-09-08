@@ -180,6 +180,9 @@ func TestDetectInput_TrustAndBypassHaveDistinctKinds(t *testing.T) {
 				t.Errorf("Kind = %q, want %q", req.Kind, tc.want)
 			}
 		})
+	}
+}
+
 // TestDetectInput_SelectorTrustDialog is the selector-shape twin of
 // TestDetectInput_TrustDialog above. The numbered assertions there are the
 // regression guard proving this branch did not steal the numbered path, so they
