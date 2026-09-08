@@ -280,3 +280,137 @@ func TestPermissionModeFromFooter_perToolDialogIsNotAFooter(t *testing.T) {
 		t.Errorf("permissionModeFromFooter(toolPermissionScreen) = %q, true; want \"\", false", got)
 	}
 }
+
+var _ turns.PermissionPostureDetector = (*Adapter)(nil)
+
+// TestPermissionPostureFromFooter_matrix pins the FULL posture for every one of
+// the six footer words: the canonical rung, claude's own spelling of it, and
+// whether the Shift+Tab cycle can produce that spelling.
+//
+// The two rows that carry the whole distinction, and the reason this reader
+// exists at all:
+//
+//   - "don't ask"    → {manual, dontAsk, OFF-ring}. Truthfully the manual rung,
+//     but a launch-only posture; a driver asked for "manual" must cycle.
+//   - "accept edits" → {ask, acceptEdits, ON-ring}. Also a second spelling of
+//     its rung, but one the cycle produces — a driver asked for "ask" must NOT
+//     press anything. It is the guard against over-correcting this fix.
+func TestPermissionPostureFromFooter_matrix(t *testing.T) {
+	for _, tc := range []struct {
+		marker string
+		want   turns.PermissionPosture
+	}{
+		{"⏸ plan mode on", turns.PermissionPosture{Rung: "plan", Native: "plan", OnRing: true}},
+		{"⏸ manual mode on", turns.PermissionPosture{Rung: "manual", Native: "default", OnRing: true}},
+		{"⏵⏵ accept edits on", turns.PermissionPosture{Rung: "ask", Native: "acceptEdits", OnRing: true}},
+		{"⏵⏵ auto mode on", turns.PermissionPosture{Rung: "auto", Native: "auto", OnRing: true}},
+		{"⏵⏵ bypass permissions on", turns.PermissionPosture{Rung: "bypass", Native: "bypassPermissions", OnRing: true}},
+		{"⏵⏵ don't ask on", turns.PermissionPosture{Rung: "manual", Native: "dontAsk", OnRing: false}},
+	} {
+		for _, tail := range footerTails {
+			text := padTo("  "+tc.marker+tail, 120)
+			got, ok := permissionPostureFromFooter(text)
+			if !ok {
+				t.Errorf("permissionPostureFromFooter(%q) = _, false; want %+v, true", text, tc.want)
+				continue
+			}
+			if got != tc.want {
+				t.Errorf("permissionPostureFromFooter(%q) = %+v; want %+v", text, got, tc.want)
+			}
+		}
+	}
+}
+
+// The curly-apostrophe variant of the don't-ask footer must yield the IDENTICAL
+// posture, not merely the identical rung: one normalisation feeds both lookups.
+func TestPermissionPostureFromFooter_curlyApostrophe(t *testing.T) {
+	want := turns.PermissionPosture{Rung: "manual", Native: "dontAsk", OnRing: false}
+	for _, text := range []string{
+		"⏵⏵ don't ask on (shift+tab to cycle) · ← for agents",
+		"⏵⏵ don’t ask on (shift+tab to cycle) · ← for agents",
+		"⏵⏵   don’t    ask   on",
+	} {
+		got, ok := permissionPostureFromFooter(text)
+		if !ok {
+			t.Errorf("permissionPostureFromFooter(%q) = _, false; want %+v, true", text, want)
+			continue
+		}
+		if got != want {
+			t.Errorf("permissionPostureFromFooter(%q) = %+v; want %+v", text, got, want)
+		}
+	}
+}
+
+// A renamed or newly-added mode word degrades to the ZERO posture, never to a
+// half-read one: an unknown word must not yield Rung "" with OnRing true, which
+// a driver's on-ring test would then have to defend against.
+func TestPermissionPostureFromFooter_negatives(t *testing.T) {
+	for _, text := range []string{
+		"",
+		"❯ \n✻ Baked for 3s\n",
+		"⏵⏵ frobnicate mode on (shift+tab to cycle) · ← for agents",
+		"⏵⏵ don't ask again on (shift+tab to cycle)",
+		"  2. Yes, and don't ask again for npm commands",
+		"auto mode on (shift+tab to cycle) · ← for agents",
+	} {
+		got, ok := permissionPostureFromFooter(text)
+		if ok {
+			t.Errorf("permissionPostureFromFooter(%q) = %+v, true; want zero, false", text, got)
+			continue
+		}
+		if got != (turns.PermissionPosture{}) {
+			t.Errorf("permissionPostureFromFooter(%q) returned %+v with ok=false; want the zero posture", text, got)
+		}
+	}
+}
+
+// The two readers can no longer disagree — PermissionMode is a projection of
+// PermissionPosture — but the assertion is what keeps a future refactor honest.
+func TestAdapter_PermissionModeAgreesWithPosture(t *testing.T) {
+	a := New()
+	texts := []string{"", "❯ \n✻ Baked for 3s\n", "⏵⏵ turbo mode on"}
+	for _, m := range footerMarkers {
+		for _, tail := range footerTails {
+			texts = append(texts, padTo("  "+m.marker+tail, 120))
+		}
+	}
+	for _, text := range texts {
+		snap := screen.Snapshot{Text: text}
+		rung, rok := a.PermissionMode(snap)
+		p, pok := a.PermissionPosture(snap)
+		if rok != pok {
+			t.Errorf("[%q] PermissionMode ok=%v but PermissionPosture ok=%v", text, rok, pok)
+			continue
+		}
+		if p.Rung != rung {
+			t.Errorf("[%q] PermissionPosture.Rung = %q; PermissionMode = %q", text, p.Rung, rung)
+		}
+	}
+}
+
+// permissionModeNatives and cycleRingNatives are keyed off the same closed
+// alternation as permissionModeRungs. Drift between them would make
+// permissionPostureFromFooter degrade a KNOWN mode to unknown, so pin it.
+func TestPermissionModeTablesAreKeyedTogether(t *testing.T) {
+	for key := range permissionModeRungs {
+		native, ok := permissionModeNatives[key]
+		if !ok {
+			t.Errorf("permissionModeNatives is missing the %q row that permissionModeRungs has", key)
+			continue
+		}
+		if _, ok := cycleRingNatives[native]; !ok {
+			t.Errorf("cycleRingNatives is missing the %q row for footer word %q", native, key)
+		}
+	}
+	for key := range permissionModeNatives {
+		if _, ok := permissionModeRungs[key]; !ok {
+			t.Errorf("permissionModeRungs is missing the %q row that permissionModeNatives has", key)
+		}
+	}
+	// dontAsk is the ONE off-ring spelling, and the reason the capability
+	// exists. If claude ever puts it on the cycle, this fix is no longer needed
+	// and the change must be deliberate.
+	if cycleRingNatives["dontAsk"] {
+		t.Error(`cycleRingNatives["dontAsk"] = true; dontAsk is a launch-only posture absent from claude's ring function`)
+	}
+}

@@ -687,8 +687,24 @@ func (*Adapter) Busy(snap screen.Snapshot) bool {
 // the rendered screen. It returns ("", false) when the screen carries no
 // readable marker — an onboarding/auth wall, a modal covering the footer, or a
 // release that renamed the modes. Implements turns.PermissionModeDetector.
+//
+// It is the RUNG PROJECTION of PermissionPosture, so the two readers cannot
+// disagree about the rung.
 func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
 	return permissionModeFromFooter(snap.Text)
+}
+
+// PermissionPosture reports the same reading as PermissionMode plus claude's
+// OWN spelling of the posture and whether that spelling is one the Shift+Tab
+// cycle can produce. Implements turns.PermissionPostureDetector.
+//
+// The capability exists for one case: --permission-mode dontAsk paints its own
+// footer word on the manual rung but is NOT on claude's cycle ring, so a driver
+// comparing rungs alone reads such a session as already-manual and writes no
+// keystroke — leaving it auto-DENYING where the caller asked for per-tool
+// approvals. OnRing is what lets the driver tell the two spellings apart.
+func (*Adapter) PermissionPosture(snap screen.Snapshot) (turns.PermissionPosture, bool) {
+	return permissionPostureFromFooter(snap.Text)
 }
 
 // quitCommand is Claude Code's "/quit" slash command followed by its enhanced

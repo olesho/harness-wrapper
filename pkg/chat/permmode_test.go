@@ -32,12 +32,30 @@ import (
 // copied from the shapes pinned in claudecode/permmode.go (captured from
 // claude-code 2.1.217). "manual mode" deliberately carries NO "(shift+tab to
 // cycle)" hint, matching the real footer.
+//
+// The map is keyed by RING POSITION, not by rung: "dontAsk" is claude's
+// launch-only sixth footer word, which reports the SAME manual rung while
+// sitting off the Shift+Tab ring. Because claudeModeScreen keys straight off
+// this map, a fake ring may now contain "dontAsk" and paint it faithfully.
 var claudeFooters = map[string]string{
-	"plan":   "⏸ plan mode on (shift+tab to cycle) · ← for agents",
-	"manual": "⏸ manual mode on · ← for agents",
-	"ask":    "⏵⏵ accept edits on (shift+tab to cycle) · ← for agents",
-	"auto":   "⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
-	"bypass": "⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+	"plan":    "⏸ plan mode on (shift+tab to cycle) · ← for agents",
+	"manual":  "⏸ manual mode on · ← for agents",
+	"ask":     "⏵⏵ accept edits on (shift+tab to cycle) · ← for agents",
+	"auto":    "⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+	"bypass":  "⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+	"dontAsk": "⏵⏵ don't ask on (shift+tab to cycle) · ← for agents",
+}
+
+// claudePosture is the posture the claude-code adapter reads back for one of
+// claudeFooters' keys. It is written out longhand rather than derived, so a
+// change to the adapter's tables trips these tests instead of moving with them.
+var claudePosture = map[string]turns.PermissionPosture{
+	"plan":    {Rung: "plan", Native: "plan", OnRing: true},
+	"manual":  {Rung: "manual", Native: "default", OnRing: true},
+	"ask":     {Rung: "ask", Native: "acceptEdits", OnRing: true},
+	"auto":    {Rung: "auto", Native: "auto", OnRing: true},
+	"bypass":  {Rung: "bypass", Native: "bypassPermissions", OnRing: true},
+	"dontAsk": {Rung: "manual", Native: "dontAsk", OnRing: false},
 }
 
 // claudeModeScreen is a settled claude composer painting the footer for rung.
@@ -1080,14 +1098,14 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 		}, claudeRing4, 0) // start: plan, and nothing ever repaints it
 
 		start := time.Now()
-		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
 		elapsed := time.Since(start)
 
 		if err != nil {
-			t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
+			t.Fatalf("awaitPostureChange = (%+v, %v); an elapsed budget with no change is not an error", observed, err)
 		}
-		if observed != "plan" {
-			t.Errorf("observed = %q, want the unchanged posture plan", observed)
+		if observed != claudePosture["plan"] {
+			t.Errorf("observed = %+v, want the unchanged posture plan", observed)
 		}
 		if elapsed >= 2*permModeBoundTimeout {
 			t.Errorf("awaitPostureChange took %v against a %v budget; the budget is not bounding the wait",
@@ -1113,12 +1131,12 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 			permModeRenderTimeout: time.Microsecond,
 		}, claudeRing4, 0) // start: plan
 
-		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
 		if err != nil {
-			t.Fatalf("awaitPostureChange = (%q, %v); an elapsed budget with no change is not an error", observed, err)
+			t.Fatalf("awaitPostureChange = (%+v, %v); an elapsed budget with no change is not an error", observed, err)
 		}
-		if observed != "plan" {
-			t.Errorf("observed = %q, want the unchanged posture plan", observed)
+		if observed != claudePosture["plan"] {
+			t.Errorf("observed = %+v, want the unchanged posture plan", observed)
 		}
 	})
 
@@ -1132,9 +1150,9 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 		}, claudeRing4, 0) // start: plan, so the posture-change check never wins
 		close(conv.closed)
 
-		observed, err := conv.awaitPostureChange(testCtx(t), "plan")
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
 		if !errors.Is(err, ErrClosed) {
-			t.Fatalf("awaitPostureChange on a closed conversation = (%q, %v), want ErrClosed", observed, err)
+			t.Fatalf("awaitPostureChange on a closed conversation = (%+v, %v), want ErrClosed", observed, err)
 		}
 	})
 }
@@ -1282,5 +1300,256 @@ func TestPermModePollInterval(t *testing.T) {
 	}
 	if got := permModePollInterval(40 * time.Millisecond); got != 10*time.Millisecond {
 		t.Errorf("permModePollInterval(40ms) = %v, want 10ms", got)
+	}
+}
+
+// --- dontAsk: an off-ring start must be CYCLED off, never accepted ---------
+
+// claudeRingFromDontAsk models a session launched --permission-mode dontAsk.
+// Position 0 is the off-ring launch posture; 1..4 are the real 4-ring. The
+// advance below is what makes it "off-ring": one press enters the ring, and no
+// press ever returns to 0 — dontAsk is a launch-only spelling that claude's
+// cycle function does not contain.
+var claudeRingFromDontAsk = []string{"dontAsk", "plan", "manual", "ask", "auto"}
+
+// enterRingThenCycle is claudeRingFromDontAsk's advance: index 0 → 1, and
+// thereafter a plain cycle within 1..len-1.
+func enterRingThenCycle(idx int) int {
+	if idx == 0 {
+		return 1
+	}
+	return 1 + (idx % 4)
+}
+
+// THE REGRESSION TEST. A dontAsk session asked for "manual" must actually
+// press: before the posture reader existed the driver saw start.Rung == target,
+// returned ("manual", nil) with ZERO keystrokes, and left the session
+// auto-DENYING everything not pre-approved — so a caller whose InputPolicy has a
+// KindApproval entry received no requests at all and an unattended turn stalled
+// to its deadline. On the pre-fix code this fails with shiftTabs == 0.
+func TestSetPermissionMode_DontAskStartCyclesToManual(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, claudeRingFromDontAsk, 0)
+	fake.advance = enterRingThenCycle
+	withControl(t, conv)
+
+	// The starting posture is the manual RUNG under a different native spelling.
+	// That is exactly the reading the old rung-only comparison accepted.
+	if start, ok := conv.permissionPosture(); !ok || start != claudePosture["dontAsk"] {
+		t.Fatalf("start posture = (%+v, %v), want %+v", start, ok, claudePosture["dontAsk"])
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if err != nil {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want success", mode, err)
+	}
+	if mode != "manual" {
+		t.Errorf("final mode = %q, want manual", mode)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Fatal("wrote 0 Shift+Tab presses: the dontAsk start was accepted as already-manual (the PUPPET-514 bug)")
+	}
+	// And the session is now in the ON-RING spelling, which is what the caller
+	// actually asked for: per-tool approvals rather than automatic denial.
+	if p, ok := conv.permissionPosture(); !ok || p != claudePosture["manual"] {
+		t.Errorf("final posture = (%+v, %v), want %+v", p, ok, claudePosture["manual"])
+	}
+}
+
+// The guard against OVER-correcting the fix: an on-ring reading that already
+// satisfies the target must still return with zero keystrokes. "accept edits"
+// is a second spelling of the ask rung exactly as "don't ask" is of manual —
+// the difference is ring membership, and nothing else.
+func TestSetPermissionMode_OnRingStartWritesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ring   []string
+		target string
+	}{
+		{"manual-mode-footer/manual", claudeRing4, "manual"},
+		{"accept-edits-footer/ask", claudeRing4, "ask"},
+		{"plan-footer/plan", claudeRing4, "plan"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			startIdx := 0
+			for i, m := range tc.ring {
+				if m == tc.target {
+					startIdx = i
+				}
+			}
+			conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, tc.ring, startIdx)
+			withControl(t, conv)
+
+			mode, err := conv.SetPermissionMode(testCtx(t), tc.target)
+			if err != nil {
+				t.Fatalf("SetPermissionMode(%q) = (%q, %v), want success", tc.target, mode, err)
+			}
+			if mode != tc.target {
+				t.Errorf("final mode = %q, want %q", mode, tc.target)
+			}
+			if st, _ := fake.counts(); st != 0 {
+				t.Errorf("wrote %d Shift+Tab presses for an already-satisfied on-ring target, want 0", st)
+			}
+		})
+	}
+}
+
+// Shift+Tab inert in dontAsk — the empirical unknown the design refuses to bet
+// on. The drive must exhaust its bound and fail LOUDLY, naming the native
+// spelling so the message is a diagnosis rather than the paradox "manual not
+// observed" from a session whose rung never left manual.
+//
+// It must NOT be ErrPermissionModeIndeterminate: the restore matcher is
+// rung-only, so it matches at the loop top and the session is provably no more
+// permissive than it started.
+func TestSetPermissionMode_StuckInDontAsk(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, claudeRingFromDontAsk, 0)
+	fake.advance = func(int) int { return 0 } // the press does nothing at all
+	withControl(t, conv)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if !errors.Is(err, ErrPermissionModeSwitchFailed) {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want ErrPermissionModeSwitchFailed", mode, err)
+	}
+	if errors.Is(err, ErrPermissionModeIndeterminate) {
+		t.Fatalf("got ErrPermissionModeIndeterminate: the session never left the manual rung, so it is not indeterminate (%v)", err)
+	}
+	if mode != "manual" {
+		t.Errorf("final mode = %q, want the unchanged manual rung", mode)
+	}
+	if !strings.Contains(err.Error(), "dontAsk") {
+		t.Errorf("error %q does not name the observed native spelling; the message reads as a paradox without it", err)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Error("wrote 0 Shift+Tab presses; the drive must try before it gives up")
+	}
+}
+
+// A drive that LEAVES a dontAsk start and then fails restores the RUNG, not the
+// launch posture — nothing Shift+Tab can do returns to dontAsk. The restore
+// matcher is rung-only precisely so this matches at the loop top instead of
+// burning a second full bound on an unreachable target.
+func TestSetPermissionMode_RestoreFromDontAskStart(t *testing.T) {
+	// A ring whose "plan" position can never be painted: the fake leaves
+	// dontAsk on the first press and then oscillates between manual and ask.
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, []string{"dontAsk", "manual", "ask"}, 0)
+	fake.advance = func(idx int) int {
+		if idx == 0 {
+			return 1
+		}
+		return 1 + (idx % 2)
+	}
+	withControl(t, conv)
+
+	ringLen, _ := conv.cycleRing()
+	bound := 2 * ringLen
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
+	if !errors.Is(err, ErrPermissionModeSwitchFailed) {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want ErrPermissionModeSwitchFailed", mode, err)
+	}
+	if mode != "manual" {
+		t.Errorf("restored mode = %q, want the starting manual RUNG (dontAsk itself is unreachable)", mode)
+	}
+	if !strings.Contains(err.Error(), `restored "manual"`) {
+		t.Errorf("error %q does not report the restored rung", err)
+	}
+	// The restore must not burn a second full bound: it matches immediately,
+	// because the rung never left manual after the first press.
+	if st, _ := fake.counts(); st > 2*bound {
+		t.Errorf("wrote %d presses against a 2×%d ceiling; the restore path is re-driving an unreachable posture", st, bound)
+	}
+}
+
+// An unreadable screen can never satisfy a match. The zero posture has Rung ""
+// and OnRing false, and no target is ever "" — so the early return must not
+// fire and the drive must proceed to press.
+func TestSetPermissionMode_UnreadableScreenNeverSatisfies(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 1) // manual
+	withControl(t, conv)
+
+	// Repaint a composer with NO footer: readyForInput still passes, but the
+	// posture is unreadable.
+	paint(conv.screen, []string{"Claude Code", "", "❯ ", ""})
+	if p, ok := conv.permissionPosture(); ok || p != (turns.PermissionPosture{}) {
+		t.Fatalf("permissionPosture on a footerless screen = (%+v, %v), want the zero posture, false", p, ok)
+	}
+	if matchTarget("manual")(turns.PermissionPosture{}) {
+		t.Error("matchTarget(manual) accepted the zero posture")
+	}
+	if matchRung("manual")(turns.PermissionPosture{}) {
+		t.Error("matchRung(manual) accepted the zero posture")
+	}
+
+	// The drive itself: the fake repaints a real footer on the first press, so
+	// the call succeeds — the point is that it PRESSED rather than short-cutting
+	// on an unreadable screen that happened to be the target rung underneath.
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if err != nil {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want success", mode, err)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Error("wrote 0 Shift+Tab presses from an unreadable screen; an unreadable read must never satisfy a target")
+	}
+}
+
+// --- the fallback shim ----------------------------------------------------
+
+// codex implements turns.PermissionModeDetector and deliberately NOT
+// turns.PermissionPostureDetector, so every codex path in this file runs
+// through permissionPosture's fallback. That is what makes the whole codex
+// suite above a fallback-equivalence assertion; pinning it here stops a future
+// adapter change from silently moving those tests onto a different code path.
+func TestPermissionPosture_FallbackShim(t *testing.T) {
+	codex, err := resolveAdapter("codex")
+	if err != nil {
+		t.Fatalf("resolveAdapter(codex): %v", err)
+	}
+	if _, ok := codex.(turns.PermissionPostureDetector); ok {
+		t.Error("the codex adapter now implements turns.PermissionPostureDetector; the codex tests no longer exercise the fallback")
+	}
+	claude, err := resolveAdapter(chatClaudeCode)
+	if err != nil {
+		t.Fatalf("resolveAdapter(claude-code): %v", err)
+	}
+	if _, ok := claude.(turns.PermissionPostureDetector); !ok {
+		t.Fatal("the claude-code adapter must implement turns.PermissionPostureDetector")
+	}
+
+	// Through the shim, a posture reduces to the rung plus "readable", so every
+	// comparison in the driver degrades exactly to the rung comparison it
+	// replaced — including matchTarget, which must keep accepting any readable
+	// rung on an adapter that cannot answer the ring question.
+	for _, tc := range []struct {
+		harness string
+		lines   []string
+		want    turns.PermissionPosture
+		wantOK  bool
+	}{
+		{"codex", codexModeScreen(codexCollabPlan), turns.PermissionPosture{Rung: codexCollabPlan, OnRing: true}, true},
+		{"codex", codexModeScreen(codexCollabDefault), turns.PermissionPosture{Rung: codexCollabDefault, OnRing: true}, true},
+		{"pi", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+		{"opencode", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+		{"generic", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+	} {
+		t.Run(tc.harness+"/"+tc.want.Rung, func(t *testing.T) {
+			conv, _ := newPermModeConv(t, Options{Harness: tc.harness}, nil, 0)
+			paint(conv.screen, tc.lines)
+			got, ok := conv.permissionPosture()
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("permissionPosture() = (%+v, %v), want (%+v, %v)", got, ok, tc.want, tc.wantOK)
+			}
+			if tc.wantOK && !matchTarget(tc.want.Rung)(got) {
+				t.Errorf("matchTarget(%q) rejected the shim's reading %+v; the fallback must not change codex behaviour", tc.want.Rung, got)
+			}
+		})
 	}
 }

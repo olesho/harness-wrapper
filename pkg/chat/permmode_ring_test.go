@@ -235,3 +235,55 @@ func TestSetPermissionMode_NotPersistedAcrossReopen(t *testing.T) {
 		t.Errorf("after Reopen PermissionMode() = (%q, %v), want the launch posture (auto, true)", mode, ok)
 	}
 }
+
+// The PUPPET-514 fix over a REAL pty: a session launched --permission-mode
+// dontAsk asked for "manual" must actually emit fakeharness.ShiftTabCSI9_2u.
+//
+// The hermetic twin (TestSetPermissionMode_DontAskStartCyclesToManual) pins the
+// decision at the writeStdin seam; this pins that the keystroke survives the
+// whole shiftTabForHarness → wrapper stdin → raw-mode reader path, which is the
+// only place a "fix" that never reaches the harness could hide. The fake only
+// advances on an exact ShiftTabCSI9_2u match, so a driver that writes nothing
+// simply never leaves the "don't ask" frame and this fails on the returned
+// posture rather than on a timeout.
+//
+// The ring is the off-ring launch posture followed by the real 4-ring, and the
+// script's modulo walk never returns to position 0 within the sweep — the same
+// "one press enters the ring, no press returns to it" shape claude's own ring
+// function implies.
+func TestSetPermissionMode_DontAskEscapesOverPTY(t *testing.T) {
+	ring := []string{"dontAsk", "plan", "manual", "ask", "auto"}
+	conv := openFake(t, modeRingScript(chatClaudeCode, ring, 0, len(ring)), func(o *Options) {
+		o.PermissionMode = "dontAsk"
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// The launch frame reads the manual RUNG under claude's dontAsk spelling —
+	// the reading the pre-fix driver accepted as "already there".
+	waitForPosture(t, conv, "manual", 10*time.Second)
+
+	release, err := conv.AcquireControl(ctx)
+	if err != nil {
+		t.Fatalf("AcquireControl: %v", err)
+	}
+	defer release()
+
+	mode, err := conv.SetPermissionMode(ctx, "manual")
+	if err != nil {
+		t.Fatalf("SetPermissionMode(manual) from dontAsk = (%q, %v)", mode, err)
+	}
+	if mode != "manual" {
+		t.Errorf("returned mode = %q, want manual", mode)
+	}
+	// The rung alone cannot tell the two spellings apart, so assert the POSTURE:
+	// the session must now be in the on-ring "manual mode" footer.
+	p, ok := conv.permissionPosture()
+	if !ok {
+		t.Fatal("permissionPosture unreadable after the switch")
+	}
+	if p != claudePosture["manual"] {
+		t.Errorf("final posture = %+v, want %+v (the driver never left claude's dontAsk spelling)", p, claudePosture["manual"])
+	}
+}
