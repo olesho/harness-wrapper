@@ -28,6 +28,29 @@ Each harness's **native spellings** are also accepted for that harness: `acceptE
 `bypassPermissions` for claude; `read-only`, `workspace-write`, `danger-full-access` for codex. A
 native spelling sent to the harness that does not own it is **rejected**, not ignored.
 
+Claude's `dontAsk` maps to the **`manual`** rung: claude's own permissiveness rank table ranks
+`dontAsk` equal to its `default` (this table's `manual`), and the rung ladder is a strict total order
+with no room for a tie. `dontAsk` is strictly more restrictive in effect ("deny if not pre-approved"),
+so reporting `manual` can never under-report permissiveness. It is a second spelling of an existing
+rung, exactly as `acceptEdits` is a second spelling of `ask`.
+
+The two spellings are **not** interchangeable to the switcher, though, and the difference is ring
+membership: `acceptEdits` is a posture claude's Shift+Tab cycle produces, while `dontAsk` is
+launch-only and absent from that cycle. So `SetPermissionMode(ctx, "manual")` on a `dontAsk` session
+**cycles** — it is not a no-op — until the footer actually reads `⏸ manual mode on`, and the session
+starts surfacing per-tool approvals instead of auto-denying them. If the cycle cannot leave `dontAsk`,
+the call fails with `ErrPermissionModeSwitchFailed` naming the observed native spelling; it never
+returns a quiet success. Adapters expose the distinction through
+[`turns.PermissionPostureDetector`](../internal/turns.md).
+
+One residual comes with that. A drive that **starts** in `dontAsk` and then fails cannot put the
+session back — nothing Shift+Tab can do returns to a launch-only posture — so the restore path
+restores the `manual` **rung** and the session now *asks* where it previously *denied*. That is
+rank-equal on claude's own table and never more permissive on the ladder, but it is a real, one-way
+change of effect. The route there is also worth knowing: reaching `manual` from `dontAsk` walks the
+ring and can pass **through** `auto` on the way, exactly as an ordinary `ask` → `manual` drive already
+does.
+
 `opencode` and `pi` have no permission axis; any mode against them is an error rather than a silent
 no-op.
 
@@ -117,7 +140,10 @@ why the signature returns a string alongside the error. Its gates, in order:
    way up to unrestricted;
 7. the composer is ready.
 
-If the harness is already at the target, it returns immediately without typing anything.
+If the harness is already at the target, it returns immediately without typing anything — "already at
+the target" meaning the posture on screen is one the **cycle can produce**, not merely one that shares
+the target's rung. That is what makes `acceptEdits` satisfy a request for `ask` with zero keystrokes
+while `dontAsk` does not satisfy a request for `manual`.
 
 ### Cycle-and-check, never cycle-and-count
 
@@ -146,6 +172,7 @@ reports what happened:
 | Outcome | Error |
 |---|---|
 | target not reached, start restored | `ErrPermissionModeSwitchFailed` |
+| target not reached from an off-ring start (claude's `dontAsk`) | `ErrPermissionModeSwitchFailed`, naming the native spelling; the starting **rung** is restored, the launch posture is not |
 | target not reached, restore also failed, and the session is left *more permissive* than it started | `ErrPermissionModeIndeterminate` |
 | target not reached, restore failed, not more permissive | `ErrPermissionModeSwitchFailed` |
 | aborted by a modal, a cancelled context, a closed session, or a write failure | that error, **no restore attempt** |

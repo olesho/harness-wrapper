@@ -39,7 +39,8 @@ each is defined in full.
   queryable `Snapshot` (rendered text + cursor + a monotonic `Generation`).
 - **Adapter** (`turns.Adapter`) — the per-harness contract: `OnScreen` + `OnWrapperStatus` → turn
   [events](turns.md). Optional capabilities: `SessionIDExtractor`, `RawSessionIDExtractor`,
-  `TranscriptReader`, `Quitter`, `MessageExtractor`, `BusyDetector`, `PermissionModeDetector`.
+  `TranscriptReader`, `Quitter`, `MessageExtractor`, `BusyDetector`, `PermissionModeDetector`,
+  `PermissionPostureDetector`.
 - **Marker** — the on-screen string an adapter keys on for turn completion (claude-code `✻ Verb for Ns`;
   codex `Token usage:`). The fragile, version-dependent part — see [drift](versions-drift.md).
 - **`Busy()`** — an adapter capability reporting "still working" vs "idle at the prompt", so the chat

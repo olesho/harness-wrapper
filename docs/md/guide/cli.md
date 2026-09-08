@@ -73,8 +73,9 @@ The promise is **one-directional**:
   `--sandbox-defaults` (which injects `--dangerously-skip-permissions`), a raw
   `--dangerously-skip-permissions` after `--`, and codex's `-s danger-full-access` in every spelling.
 - **Absence never means "safe."** An absent key means no canonical rung could be *named*: the harness
-  default, an unsupported harness, a native spelling with no canonical equivalent (claude's
-  `dontAsk`), a codex argv setting only the `-a` approval axis, or a present-but-unreadable flag.
+  default, an unsupported harness, a codex argv setting only the `-a` approval axis, or a
+  present-but-unreadable flag. Claude's `dontAsk` is no longer one of these causes: it reports the
+  `manual` rung.
 - **A restrictive rung is a launch argument, not a gate.** On this path claude's per-tool permission
   dialog is not detected at all (so `plan` / `manual` / `ask` stall an unattended turn to the
   deadline) and codex approvals are auto-answered, so only codex's `-s` sandbox axis is actually

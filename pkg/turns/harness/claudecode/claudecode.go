@@ -27,7 +27,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -162,6 +161,11 @@ type Adapter struct {
 	// name what cleared.
 	lastInputID string
 	lastInput   *turns.InputRequest
+
+	// lastUnparseableFingerprint dedups the unrecognized-dialog Errored event
+	// across redraws of the SAME unreadable dialog, and is cleared whenever the
+	// screen leaves that state so a later recurrence still reports.
+	lastUnparseableFingerprint string
 }
 
 // New constructs a Claude Code adapter.
@@ -210,7 +214,8 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	// transition on the request ID. A new dialog (or a different one
 	// replacing the current) emits InputRequested; the dialog clearing
 	// emits InputResolved.
-	if req, ok := DetectInput(snap.Text); ok {
+	req, det := DetectInputDetail(snap.Text)
+	if det == DetectOK {
 		if req.ID != a.lastInputID {
 			a.lastInputID = req.ID
 			a.lastInput = req
@@ -225,16 +230,116 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 		a.lastInput = nil
 		out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "claude-code: input resolved", Input: resolved})
 	}
+	out = append(out, a.unparseableEvents(snap.Text, det)...)
 
 	return out
 }
 
+// unparseableEvents reports a blocking dialog whose choices this build cannot
+// read: one Errored naming the anchor and the raw candidate lines, deduped on a
+// fingerprint of both so a redraw does not spam it. Caller holds a.mu.
+//
+// Two things it deliberately does NOT do. It never synthesizes an InputResolved,
+// and never touches lastInputID/lastInput: no InputRequested was emitted for
+// this screen, so there is no transition to close. And it is not the primary
+// signal — handleTurnsEvent drops non-Input events while there is no
+// currentTurn, so at startup (exactly when the folder-trust dialog fires) this
+// may go nowhere. It is a belt to pkg/chat's braces: ready.go is what turns the
+// same state into a named, fast failure on the send path.
+func (a *Adapter) unparseableEvents(text string, det Detection) []turns.Event {
+	if det != DetectUnparseable {
+		a.lastUnparseableFingerprint = ""
+		return nil
+	}
+	anchor, after, ok := anchorSplit(text)
+	if !ok {
+		return nil
+	}
+	lines := candidateLines(after)
+	fp := inputFingerprint(anchor, lines)
+	if fp == a.lastUnparseableFingerprint {
+		return nil
+	}
+	a.lastUnparseableFingerprint = fp
+	return []turns.Event{{
+		Kind:   turns.Errored,
+		Reason: reasonPrefix + "unrecognized blocking dialog: " + anchor + ": " + strings.Join(lines, " | "),
+	}}
+}
+
+// anchorSplit returns the dialog anchor present in text and the frame text that
+// follows it. It mirrors DetectInputDetail's anchor switch — the two must agree
+// on WHICH anchor matched, or a report would quote the wrong dialog.
+func anchorSplit(text string) (anchor, after string, ok bool) {
+	switch {
+	case strings.Contains(text, trustAnchor):
+		anchor = trustAnchor
+	case strings.Contains(text, trustAnchorAlt):
+		anchor = trustAnchorAlt
+	case strings.Contains(text, bypassAnchor):
+		anchor = bypassAnchor
+	default:
+		return "", "", false
+	}
+	return anchor, text[strings.Index(text, anchor)+len(anchor):], true
+}
+
+// inputFingerprint hashes an anchor plus the raw candidate lines under it, the
+// dedup key for the unrecognized-dialog report.
+func inputFingerprint(anchor string, lines []string) string {
+	var b strings.Builder
+	b.WriteString(anchor)
+	for _, l := range lines {
+		b.WriteByte(0)
+		b.WriteString(l)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
+}
+
+// Detection is what DetectInputDetail saw. The four states exist because a
+// single bool conflated two very different screens: "no dialog" and "a dialog
+// whose choices this build cannot read". The second one is PERMANENT — it never
+// clears on its own — so reporting it as the first left the harness blocked with
+// nothing naming the cause (claude 2.1.251's unnumbered folder-trust dialog; see
+// menu_selector.go).
+type Detection int
+
+const (
+	// DetectNone: no dialog anchor on screen.
+	DetectNone Detection = iota
+	// DetectPending: the anchor is up but nothing choice-shaped has painted
+	// yet — a mid-render frame. Not actionable, and deliberately silent.
+	DetectPending
+	// DetectUnparseable: the anchor is up AND choice-shaped lines are present,
+	// but no usable option set could be built. Blocking and permanent; callers
+	// must fail loudly rather than wait.
+	DetectUnparseable
+	// DetectOK: a usable request was built.
+	DetectOK
+)
+
 // DetectInput recognizes a blocking interactive dialog in the rendered
 // screen text and returns the structured request, or (nil, false) when no
-// dialog is present. It is a pure function so the chat layer's readiness
-// check and this adapter share one source of truth about what counts as a
-// blocking prompt.
+// usable request could be built. It is the two-value wrapper over
+// DetectInputDetail kept for callers that only need "can I answer this?"
+// (pkg/oneshot, the adapter's InputRequested path).
+//
+// Callers that must distinguish "no dialog" from "a dialog I cannot read" —
+// anything deciding whether the harness is READY — must use DetectInputDetail
+// instead: this form maps both to false.
 func DetectInput(text string) (*turns.InputRequest, bool) {
+	req, det := DetectInputDetail(text)
+	return req, det == DetectOK
+}
+
+// DetectInputDetail recognizes a blocking interactive dialog in the rendered
+// screen text and reports which of the four Detection states it is in. It is a
+// pure function so the chat layer's readiness check and this adapter share one
+// source of truth about what counts as a blocking prompt — a claim that stays
+// true only because pkg/chat's readiness gate calls THIS form (ready.go), and so
+// treats an unreadable dialog as blocking instead of typing a prompt into it.
+func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 	var prompt, kind string
 	var idx int
 	// Order matters and must not change: a screen that contains BOTH a trust
@@ -247,171 +352,46 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 	case strings.Contains(text, bypassAnchor):
 		prompt, idx, kind = bypassAnchor, strings.Index(text, bypassAnchor), KindBypassAcceptance
 	default:
-		return nil, false
+		return nil, DetectNone
 	}
-	// The unnumbered fallback needs to know WHERE the question is: its menu sits
-	// just below it, whereas a screen that merely quotes the anchor has nothing
-	// there but transcript and the composer.
-	anchorLine := strings.Count(text[:idx], "\n")
-	opts := parseMenuOptions(text, anchorLine)
+	// Everything the selector parser looks at must come AFTER the anchor: "❯" is
+	// also the composer prompt glyph, so scanning the whole frame would let
+	// scrollback decide what the dialog's rows are.
+	after := text[idx+len(prompt):]
+	opts := parseMenuOptions(text, after)
 	if len(opts) == 0 {
+		if hasChoiceShapedLine(after) {
+			// The menu IS painted and we could not read it. Permanent, so it
+			// must not be reported as "no dialog".
+			return nil, DetectUnparseable
+		}
 		// Anchor visible but the menu hasn't rendered yet — not actionable.
-		return nil, false
+		return nil, DetectPending
 	}
 	req := &turns.InputRequest{Kind: kind, Prompt: prompt, Options: opts}
 	req.ID = inputID(req)
-	return req, true
+	return req, DetectOK
 }
 
-// parseMenuOptions extracts the numbered choices, de-duplicating by choice
+// parseMenuOptions extracts a dialog's choices, trying the two shapes claude
+// renders in a fixed order:
+//
+//  1. The NUMBERED menu, over the whole frame (`text`) — byte-identical to what
+//     this function always did. Numbered-first is deliberate: a numbered menu
+//     also carries "❯", and its digit keys are ABSOLUTE (immune to a stale
+//     highlight), so it must win whenever it parses.
+//  2. The UNNUMBERED selector menu, over `after` (the text following the
+//     anchor) — see parseSelectorMenu for why its scope is narrower.
+func parseMenuOptions(text, after string) []turns.InputOption {
+	if opts := parseNumberedMenu(text); len(opts) > 0 {
+		return opts
+	}
+	return parseSelectorMenu(after)
+}
+
+// parseNumberedMenu extracts the numbered choices, de-duplicating by choice
 // number so a redraw that paints the menu twice yields one option set.
-// markerRE matches the highlighted row of an UNNUMBERED menu. Claude Code
-// 2.1.261 dropped the "N." prefixes from the folder-trust dialog and moved the
-// default highlight onto "No, exit", so the numbered parser below finds nothing
-// and DetectInput reports the dialog as not-actionable — no InputRequested is
-// emitted, a KindTrustPrompt=allow policy is never consulted, and the harness exits
-// on the default "No, exit".
-//
-// Only the real highlight glyphs are accepted: ❯ (claude-code) and › (codex).
-// A bare ">" is ordinary prose punctuation — a quote, a diff marker, a shell
-// transcript — and admitting it turned any screen that merely QUOTED one of
-// the anchors into a menu.
-var markerRE = regexp.MustCompile(`(?m)^([^\S\n]*)(?:❯|›)[^\S\n]+(\S[^\n]*)$`)
-
-// menuNavKeys are the bytes that move an unnumbered menu's highlight. A digit
-// cannot be used: there is no digit on screen to press.
-var (
-	menuKeyDown  = []byte("\x1b[B")
-	menuKeyUp    = []byte("\x1b[A")
-	menuKeyEnter = []byte("\r")
-)
-
-// maxUnnumberedMenuRows bounds how much of the screen an unnumbered menu may
-// claim, so a stray marker line cannot turn arbitrary prose into options.
-const maxUnnumberedMenuRows = 8
-
-// maxAnchorToMenuRows bounds how far BELOW the anchor question the menu may
-// sit. The live 2.1.261 capture has 5 lines between the anchor and "❯ No,
-// exit"; the composer prompt of an agent that merely quotes the anchor is
-// typically dozens of rows further down, at the bottom of the viewport.
-const maxAnchorToMenuRows = 20
-
-// parseUnnumberedMenuOptions extracts choices from a menu with no "N." prefixes
-// by locating the ❯ marker and taking the contiguous block around it.
-// Because selection is positional, each option's Keys walk the highlight from
-// the marker row to that option's row and press Enter — never a bare digit,
-// which would be typed into the dialog rather than selecting anything.
-//
-// anchorLine is the row of the anchor question DetectInput matched. The menu
-// belongs to that question, so it must be BELOW it and within
-// maxAnchorToMenuRows: prose that merely quotes an anchor arms this fallback,
-// and without the offset the ❯ of the COMPOSER at the bottom of the screen was
-// parsed as the menu — submitting whatever the operator had typed.
-func parseUnnumberedMenuOptions(text string, anchorLine int) []turns.InputOption {
-	lines := strings.Split(text, "\n")
-	// A screen can carry several markers (the dialog's own, and the composer's).
-	// Take the first that actually looks like this anchor's menu.
-	for _, m := range markerRE.FindAllStringSubmatchIndex(text, -1) {
-		markerLine := strings.Count(text[:m[0]], "\n")
-		if opts := unnumberedMenuAt(lines, markerLine, anchorLine); opts != nil {
-			return opts
-		}
-	}
-	return nil
-}
-
-// unnumberedMenuAt reads the option block around the marker row, or nil when
-// that row is not a menu highlight.
-func unnumberedMenuAt(lines []string, markerLine, anchorLine int) []turns.InputOption {
-	if markerLine <= anchorLine || markerLine-anchorLine > maxAnchorToMenuRows {
-		return nil
-	}
-	if isComposerRow(lines, markerLine) {
-		return nil
-	}
-
-	first := markerLine
-	for first > 0 && !isMenuBoundary(lines[first-1]) && markerLine-first+1 < maxUnnumberedMenuRows {
-		first--
-	}
-	last := markerLine
-	for last < len(lines)-1 && !isMenuBoundary(lines[last+1]) && last-first+1 < maxUnnumberedMenuRows {
-		last++
-	}
-
-	var opts []turns.InputOption
-	cursor := -1
-	for i := first; i <= last; i++ {
-		label := stripMarker(lines[i])
-		if label == "" {
-			continue
-		}
-		if i == markerLine {
-			cursor = len(opts)
-		}
-		opts = append(opts, turns.InputOption{
-			ID:    strconv.Itoa(len(opts) + 1),
-			Alias: aliasForLabel(label),
-			Label: label,
-		})
-	}
-	// Checked AFTER chrome filtering: a "menu" that only reaches two rows by
-	// counting a border is not a menu.
-	if cursor < 0 || len(opts) < 2 {
-		// A lone highlighted line is a cursor, not a menu.
-		return nil
-	}
-	for i := range opts {
-		var keys []byte
-		step, n := menuKeyDown, i-cursor
-		if n < 0 {
-			step, n = menuKeyUp, -n
-		}
-		for j := 0; j < n; j++ {
-			keys = append(keys, step...)
-		}
-		opts[i].Keys = append(keys, menuKeyEnter...)
-	}
-	return opts
-}
-
-// isComposerRow reports whether the marker on this row is the INPUT BOX prompt
-// rather than a menu highlight. The composer's ❯ is framed: its immediate
-// neighbours on both sides are the box's rules. In the real dialog neither
-// neighbour is chrome (a blank line above, the sibling option below), so the
-// true positive is untouched — and a menu that merely ABUTS a rule on one side
-// stays a menu.
-func isComposerRow(lines []string, markerLine int) bool {
-	if markerLine == 0 || markerLine == len(lines)-1 {
-		return false
-	}
-	return boxOrRuleRE.MatchString(lines[markerLine-1]) && boxOrRuleRE.MatchString(lines[markerLine+1])
-}
-
-// isMenuBoundary reports whether ln terminates the option block: a blank line,
-// or any of the transcript chrome that must never become an option (box rules,
-// message bullets, tool-result continuations, the thinking footer).
-func isMenuBoundary(ln string) bool {
-	if strings.TrimSpace(ln) == "" {
-		return true
-	}
-	return boxOrRuleRE.MatchString(ln) || bulletRE.MatchString(ln) ||
-		toolResultRE.MatchString(ln) || thinkingRE.MatchString(ln)
-}
-
-// stripMarker drops the highlight glyph and column padding from a menu row.
-func stripMarker(s string) string {
-	s = strings.TrimSpace(s)
-	for _, mk := range []string{"❯", "›"} {
-		if strings.HasPrefix(s, mk) {
-			s = strings.TrimSpace(strings.TrimPrefix(s, mk))
-			break
-		}
-	}
-	return cleanLabel(s)
-}
-
-func parseMenuOptions(text string, anchorLine int) []turns.InputOption {
+func parseNumberedMenu(text string) []turns.InputOption {
 	var opts []turns.InputOption
 	seen := make(map[string]bool)
 	for _, m := range menuRE.FindAllStringSubmatch(text, -1) {
@@ -429,9 +409,6 @@ func parseMenuOptions(text string, anchorLine int) []turns.InputOption {
 			// highlight; the Enter confirms.
 			Keys: []byte(num + "\r"),
 		})
-	}
-	if len(opts) == 0 {
-		return parseUnnumberedMenuOptions(text, anchorLine)
 	}
 	return opts
 }
@@ -707,8 +684,24 @@ func (*Adapter) Busy(snap screen.Snapshot) bool {
 // the rendered screen. It returns ("", false) when the screen carries no
 // readable marker — an onboarding/auth wall, a modal covering the footer, or a
 // release that renamed the modes. Implements turns.PermissionModeDetector.
+//
+// It is the RUNG PROJECTION of PermissionPosture, so the two readers cannot
+// disagree about the rung.
 func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
 	return permissionModeFromFooter(snap.Text)
+}
+
+// PermissionPosture reports the same reading as PermissionMode plus claude's
+// OWN spelling of the posture and whether that spelling is one the Shift+Tab
+// cycle can produce. Implements turns.PermissionPostureDetector.
+//
+// The capability exists for one case: --permission-mode dontAsk paints its own
+// footer word on the manual rung but is NOT on claude's cycle ring, so a driver
+// comparing rungs alone reads such a session as already-manual and writes no
+// keystroke — leaving it auto-DENYING where the caller asked for per-tool
+// approvals. OnRing is what lets the driver tell the two spellings apart.
+func (*Adapter) PermissionPosture(snap screen.Snapshot) (turns.PermissionPosture, bool) {
+	return permissionPostureFromFooter(snap.Text)
 }
 
 // quitCommand is Claude Code's "/quit" slash command followed by its enhanced
