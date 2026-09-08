@@ -121,9 +121,9 @@ type StructuredTurnResult struct {
 	//     --dangerously-skip-permissions, a raw --dangerously-skip-permissions
 	//     after --, codex's -s danger-full-access in every spelling).
 	//   - ABSENT NEVER MEANS "SAFE". It means no canonical rung could be named:
-	//     the harness default, an unsupported harness, a harness-native spelling
-	//     with no canonical equivalent (claude's dontAsk), a codex argv setting
-	//     only the -a approval axis, or a present-but-unreadable flag.
+	//     the harness default, an unsupported harness, a codex argv setting only
+	//     the -a approval axis, or a present-but-unreadable flag. (Claude's
+	//     dontAsk is NO LONGER one of these causes: it reports the manual rung.)
 	//   - A RESTRICTIVE RUNG IS A LAUNCH ARGUMENT, NOT AN ENFORCEMENT CLAIM —
 	//     least of all on this path. Under structured-run, claude's per-tool
 	//     permission dialog is not detected at all (no InputRequest is emitted, so

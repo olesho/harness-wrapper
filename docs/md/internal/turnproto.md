@@ -96,8 +96,8 @@ Read it one-directionally:
   that carry no canonical flag: `--sandbox-defaults`, a raw `--dangerously-skip-permissions` after
   `--`, and codex's `-s danger-full-access` in any spelling.
 - **Absence never means "safe."** It means no rung could be *named* — harness default, unsupported
-  harness, a native spelling with no canonical equivalent (claude's `dontAsk`), a codex argv that sets
-  only the `-a` approval axis, or an unreadable flag value.
+  harness, a codex argv that sets only the `-a` approval axis, or an unreadable flag value. Claude's
+  `dontAsk` is no longer one of these causes: it reports the `manual` rung.
 - **A rung is a launch argument, not an enforcement claim.** On this path claude's per-tool permission
   dialog is not detected at all, and codex approvals are auto-answered by
   [`oneshot.AutoAcceptAnswer`](oneshot.md#what-that-policy-costs). See

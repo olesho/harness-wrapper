@@ -212,6 +212,63 @@ func (c *Conversation) PermissionMode() (string, bool) {
 	return d.PermissionMode(c.ScreenSnapshot())
 }
 
+// permissionPosture is the driver's INTERNAL read: the full posture (rung +
+// the harness's own spelling + ring membership) rather than the rung alone.
+// Same adapter-consult shape PermissionMode already uses, with one extra step.
+//
+// The fallback matters as much as the consult. An adapter that implements only
+// turns.PermissionModeDetector (codex today, and any future adapter) is read
+// through PermissionMode and given OnRing = ok — "any readable rung counts as
+// reachable" — which makes every posture comparison in this file degrade
+// EXACTLY to the rung comparison it replaced. That equivalence is what keeps
+// the codex paths byte-identical to their pre-PUPPET-514 behaviour, and it is
+// asserted by a test rather than left to reading.
+//
+// It is stateless, like PermissionMode: the posture is re-read off the screen
+// on every consult, never cached.
+func (c *Conversation) permissionPosture() (turns.PermissionPosture, bool) {
+	if d, ok := c.adapter.(turns.PermissionPostureDetector); ok {
+		return d.PermissionPosture(c.ScreenSnapshot())
+	}
+	rung, ok := c.PermissionMode()
+	return turns.PermissionPosture{Rung: rung, OnRing: ok}, ok
+}
+
+// postureMatch answers "has the drive arrived?" for one posture reading. There
+// are exactly two, and the ASYMMETRY between them is the whole idea, so it is
+// documented here rather than at the three call sites.
+//
+// matchTarget is the DRIVE matcher: the rung must match AND the reading must be
+// on the cycle ring. Refusing an off-ring alias is the fix this file exists
+// for — claude's dontAsk reports the manual rung truthfully while sitting in a
+// posture the caller did not ask for.
+//
+// matchRung is the RESTORE matcher: rung only, OnRing deliberately ignored. Two
+// reasons, and both are load-bearing:
+//
+//  1. An off-ring START is unrecoverable BY CONSTRUCTION. Once the cycle has
+//     left dontAsk, nothing Shift+Tab can do returns to it — it is a
+//     launch-only spelling absent from claude's ring function. A drive matcher
+//     on the restore path would therefore burn a second full press bound and
+//     then report a failure for a session that is sitting exactly on its
+//     starting RUNG.
+//  2. The driver's safety invariant is stated in rungs: wrapper.MorePermissive
+//     compares rung indices and returns false for any non-rung spelling.
+//     Restoring the rung is what restores the invariant the errors below are
+//     written against.
+//
+// Neither matcher can be satisfied by an unreadable screen: that reads as the
+// zero PermissionPosture, whose Rung is "" and which no target ever equals.
+type postureMatch func(turns.PermissionPosture) bool
+
+func matchTarget(target string) postureMatch {
+	return func(p turns.PermissionPosture) bool { return p.Rung == target && p.OnRing }
+}
+
+func matchRung(rung string) postureMatch {
+	return func(p turns.PermissionPosture) bool { return p.Rung == rung }
+}
+
 // SetPermissionMode cycles the harness to target and returns the FINAL
 // OBSERVED posture on both the success and every failure path. That is why the
 // signature is (string, error): after a failed switch the caller still needs to
@@ -298,6 +355,27 @@ func (c *Conversation) PermissionMode() (string, bool) {
 // or an InputPolicy entry is for. Without one, the upward switch surfaces the
 // dialog and returns ErrPermissionModeBlockedByInput rather than hanging.
 //
+// A dontAsk session CYCLES, it is not a no-op. Claude's native dontAsk launch
+// reports the "manual" rung (it ties with claude's default in claude's own
+// permissiveness rank table, and the rung ladder is a strict total order), but it
+// is a launch-only spelling that is NOT on claude's Shift+Tab ring. The driver
+// tells the two spellings apart through turns.PermissionPostureDetector, so
+// SetPermissionMode(ctx, "manual") on such a session presses until the footer
+// actually reads "manual mode" — or returns ErrPermissionModeSwitchFailed naming
+// the observed native spelling. It never returns a quiet success while the
+// session keeps auto-DENYING everything not pre-approved.
+//
+// ACCEPTED RESIDUAL — restoring a dontAsk start. A drive that STARTS in dontAsk
+// and then fails cannot put the session back: nothing Shift+Tab can do returns to
+// a launch-only posture. The restore path therefore matches on the RUNG alone and
+// leaves the session in "manual", so it now ASKS where it previously DENIED. That
+// is rank-equal on claude's own table and never more permissive on the rung
+// ladder, and it is the more supervised of the two effects (a human or policy
+// decides, rather than an automatic deny) — but it is a real, one-way change of
+// effect and callers must plan for it. Note the transient too: reaching "manual"
+// from dontAsk walks the ring and can pass THROUGH "auto" on the way, exactly as
+// an existing ask → manual drive already does.
+//
 // # Scope: process-local, NOT persisted
 //
 // PermissionMode is a LAUNCH knob replayed on resume (ReopenOptions.PermissionMode
@@ -351,13 +429,14 @@ func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (st
 		return observed, err
 	}
 
-	start, _ := c.PermissionMode()
-	if start == target {
-		return start, nil
+	arrived := matchTarget(target)
+	start, _ := c.permissionPosture()
+	if arrived(start) {
+		return start.Rung, nil
 	}
 
 	bound := 2 * ringLen
-	final, err := c.driveToPermissionMode(ctx, target, bound)
+	final, err := c.driveToPermissionMode(ctx, target, arrived, bound)
 	if err == nil {
 		return final, nil
 	}
@@ -369,23 +448,35 @@ func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (st
 		return final, err
 	}
 
-	// The target was never observed. Restore the STARTING posture by continuing
-	// to cycle — the ring is a cycle, so the start is always reachable — under a
-	// second, equal bound.
-	restored, rerr := c.cyclePermissionMode(ctx, start, bound)
+	// The target was never observed. Restore the STARTING RUNG by continuing to
+	// cycle — the ring is a cycle, so the rung is always reachable — under a
+	// second, equal bound. Rung-only on purpose: see postureMatch.
+	restored, rerr := c.cyclePermissionMode(ctx, matchRung(start.Rung), bound)
 	if rerr == nil {
-		return restored, fmt.Errorf("%w: %q not observed within %d presses (restored %q)",
-			ErrPermissionModeSwitchFailed, target, bound, restored)
+		return restored, fmt.Errorf("%w: %q not observed within %d presses%s (restored %q)",
+			ErrPermissionModeSwitchFailed, target, bound, offRingNote(start, target), restored)
 	}
 	if !errors.Is(rerr, errPermissionModeBoundExhausted) {
 		return restored, rerr
 	}
-	if wrapper.MorePermissive(restored, start) {
+	if wrapper.MorePermissive(restored, start.Rung) {
 		return restored, fmt.Errorf("%w: started %q, left at %q while trying to reach %q",
-			ErrPermissionModeIndeterminate, start, restored, target)
+			ErrPermissionModeIndeterminate, start.Rung, restored, target)
 	}
-	return restored, fmt.Errorf("%w: %q not observed within %d presses and %q not restored (left at %q)",
-		ErrPermissionModeSwitchFailed, target, bound, start, restored)
+	return restored, fmt.Errorf("%w: %q not observed within %d presses%s and %q not restored (left at %q)",
+		ErrPermissionModeSwitchFailed, target, bound, offRingNote(start, target), start.Rung, restored)
+}
+
+// offRingNote names the off-ring start in the switch-failure message, so the
+// one case that would otherwise read as a paradox — "manual not observed",
+// reported by a session whose rung never left manual — reads as the real
+// diagnosis instead. Empty for every other start, which is every case where
+// the rung comparison already tells the whole story.
+func offRingNote(start turns.PermissionPosture, target string) string {
+	if start.Rung != target || start.OnRing || start.Native == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (still in the harness's native %q spelling, which the cycle could not leave)", start.Native)
 }
 
 // errPermissionModeBoundExhausted is the INTERNAL marker meaning "the press
@@ -398,22 +489,32 @@ var errPermissionModeBoundExhausted = errors.New("chat: permission mode cycle bo
 // driveToPermissionMode performs the harness-appropriate switch to target.
 // codex's "plan" is reached with the `/plan` slash command (with the
 // refusal-retry budget); everything else is cycle-and-check via Shift+Tab.
-func (c *Conversation) driveToPermissionMode(ctx context.Context, target string, bound int) (string, error) {
+//
+// It takes BOTH the target string and the arrival matcher: the codex
+// short-circuit keys on the target itself, while the cycle decides arrival
+// through the matcher (see postureMatch for why those are not the same test).
+func (c *Conversation) driveToPermissionMode(ctx context.Context, target string, arrived postureMatch, bound int) (string, error) {
 	if c.opts.Harness == "codex" && target == codexCollabPlan {
 		return c.codexEnterPlan(ctx)
 	}
-	return c.cyclePermissionMode(ctx, target, bound)
+	return c.cyclePermissionMode(ctx, arrived, bound)
 }
 
 // cyclePermissionMode is the CYCLE-AND-CHECK loop: press Shift+Tab, re-read the
-// posture through turns.PermissionModeDetector, repeat until target is observed
-// or the bound elapses. It NEVER counts presses to infer the mode — the ring
-// length is only a bound, so a surprising ring order or a repaint that lands two
-// modes later is settled by re-reading, not by arithmetic.
+// posture through turns.PermissionPostureDetector (or the rung-only fallback),
+// repeat until arrived reports a match or the bound elapses. It NEVER counts
+// presses to infer the mode — the ring length is only a bound, so a surprising
+// ring order or a repaint that lands two modes later is settled by re-reading,
+// not by arithmetic.
+//
+// Arrival is the MATCHER's decision, never a rung comparison here: the drive and
+// restore paths ask different questions of the same reading (see postureMatch).
+// It still returns a RUNG, on every path — the (string, error) contract of
+// SetPermissionMode is unchanged.
 //
 // Between every press it re-checks the input state and refuses to write into an
 // open modal (see pressGate).
-func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, bound int) (string, error) {
+func (c *Conversation) cyclePermissionMode(ctx context.Context, arrived postureMatch, bound int) (string, error) {
 	keys := shiftTabForHarness(c.opts.Harness, c.screen.Snapshot().Text)
 	if len(keys) == 0 {
 		// Defensive: permissionModeCapabilities already rejected every harness
@@ -422,29 +523,30 @@ func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, b
 		return observed, fmt.Errorf("%w: %q has no Shift+Tab encoding", ErrPermissionModeUnsupported, c.opts.Harness)
 	}
 
-	last, _ := c.PermissionMode()
+	last, _ := c.permissionPosture()
 	for i := 0; i < bound; i++ {
-		if last == target {
-			return last, nil
+		if arrived(last) {
+			return last.Rung, nil
 		}
-		if err := c.pressGate(ctx, last); err != nil {
-			return last, err
+		// Observed is a RUNG in the public PermissionModeBlockedError contract.
+		if err := c.pressGate(ctx, last.Rung); err != nil {
+			return last.Rung, err
 		}
 		if err := c.write(keys); err != nil {
-			return last, fmt.Errorf("chat: set permission mode: write shift+tab: %w", err)
+			return last.Rung, fmt.Errorf("chat: set permission mode: write shift+tab: %w", err)
 		}
 		observed, err := c.awaitPostureChange(ctx, last)
-		if observed != "" {
+		if observed.Rung != "" {
 			last = observed
 		}
 		if err != nil {
-			return last, err
+			return last.Rung, err
 		}
 	}
-	if last == target {
-		return last, nil
+	if arrived(last) {
+		return last.Rung, nil
 	}
-	return last, errPermissionModeBoundExhausted
+	return last.Rung, errPermissionModeBoundExhausted
 }
 
 // codexEnterPlan writes `/plan` + codex's submit key and waits for the
@@ -479,6 +581,13 @@ func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, b
 //
 // # Why every attempt is a real submission
 //
+// (The argument below is stated in POSTURES since PUPPET-514, and is unchanged
+// by that: the codex adapter implements turns.PermissionModeDetector only, so it
+// is read through permissionPosture's fallback shim, whose Native is always ""
+// and whose OnRing tracks readability. Posture equality there reduces exactly to
+// rung equality, so "a refusal produces no posture change" means what it always
+// meant.)
+//
 // A refused `/plan` produces NO posture change — codex paints no Plan marker and
 // its detector reports the absence as ("default", true), never as unknown — so
 // awaitPostureChange always runs to its full budget and the attempt count cannot
@@ -497,42 +606,43 @@ func (c *Conversation) cyclePermissionMode(ctx context.Context, target string, b
 // observed a posture change and matched no refusal, at most once per call".
 func (c *Conversation) codexEnterPlan(ctx context.Context) (string, error) {
 	refused := false
-	last, _ := c.PermissionMode()
+	last, _ := c.permissionPosture()
 
 	for n := 0; ; n++ {
-		if err := c.pressGate(ctx, last); err != nil {
+		// Observed is a RUNG in the public PermissionModeBlockedError contract.
+		if err := c.pressGate(ctx, last.Rung); err != nil {
 			if refused && ctxAborted(err) {
-				return last, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
+				return last.Rung, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
 			}
-			return last, err
+			return last.Rung, err
 		}
 		screenText := c.screen.Snapshot().Text
 		cmd := append([]byte("/plan"), submitKeyForHarness(c.opts.Harness, screenText)...)
 		if err := c.write(cmd); err != nil {
-			return last, fmt.Errorf("chat: set permission mode: write /plan: %w", err)
+			return last.Rung, fmt.Errorf("chat: set permission mode: write /plan: %w", err)
 		}
 
 		observed, err := c.awaitPostureChange(ctx, last)
-		if observed != "" {
+		if observed.Rung != "" {
 			last = observed
 		}
 		if err != nil {
 			if refused && ctxAborted(err) {
-				return last, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
+				return last.Rung, fmt.Errorf("%w: %w", ErrCodexPlanRefusedBusy, err)
 			}
-			return last, err
+			return last.Rung, err
 		}
-		if last == codexCollabPlan {
-			return last, nil
+		if last.Rung == codexCollabPlan {
+			return last.Rung, nil
 		}
 		if codexPlanRefusalRE.MatchString(c.screen.Snapshot().Text) {
 			refused = true
 		}
 		if n+1 >= codexPlanRetryAttempts {
 			if refused {
-				return last, fmt.Errorf("%w (retried %d times)", ErrCodexPlanRefusedBusy, codexPlanRetryAttempts)
+				return last.Rung, fmt.Errorf("%w (retried %d times)", ErrCodexPlanRefusedBusy, codexPlanRetryAttempts)
 			}
-			return last, errPermissionModeBoundExhausted
+			return last.Rung, errPermissionModeBoundExhausted
 		}
 	}
 }
@@ -648,9 +758,16 @@ func closedNow(ch <-chan struct{}) bool {
 // again, and the outer bound is what stops it. That is the cycle-and-CHECK
 // contract — never assume a press landed, never assume it did not.
 //
+// It compares FULL POSTURES, not rungs, and that is load-bearing on claude: the
+// dontAsk → default transition keeps the same "manual" rung, so a rung
+// comparison would read the one press that matters as "no change" and burn the
+// whole per-press render budget waiting for a repaint that already happened.
+// Equality on (Rung, Native, OnRing) sees it immediately, and no other caller is
+// affected — a real rung change also changes the native spelling.
+//
 // The budget is a HARD bound: see the expiry check below for why the deadline
 // arm alone is not one.
-func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (string, error) {
+func (c *Conversation) awaitPostureChange(ctx context.Context, prev turns.PermissionPosture) (turns.PermissionPosture, error) {
 	budget := c.permModeRenderBudget()
 	expiry := time.Now().Add(budget)
 	deadline := time.NewTimer(budget)
@@ -661,14 +778,15 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (str
 	for {
 		if c.inputAwaitingClient() {
 			if req := c.PendingInput(); req != nil {
-				observed, _ := c.PermissionMode()
-				if observed == "" {
+				observed, ok := c.permissionPosture()
+				if !ok {
 					observed = prev
 				}
-				return observed, &PermissionModeBlockedError{Request: *req, Observed: observed}
+				// Observed is a RUNG in the public error contract.
+				return observed, &PermissionModeBlockedError{Request: *req, Observed: observed.Rung}
 			}
 		}
-		if observed, ok := c.PermissionMode(); ok && observed != prev {
+		if observed, ok := c.permissionPosture(); ok && observed != prev {
 			return observed, nil
 		}
 
@@ -677,15 +795,15 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev string) (str
 		// as a quiet "budget elapsed, no change", which is exactly what the old
 		// deadline arm reported whenever it won the coin flip against ctx.Done().
 		if ctx.Err() != nil {
-			observed, _ := c.PermissionMode()
+			observed, _ := c.permissionPosture()
 			return observed, ctx.Err()
 		}
 		if closedNow(c.closed) {
-			observed, _ := c.PermissionMode()
+			observed, _ := c.permissionPosture()
 			return observed, ErrClosed
 		}
 		if time.Now().After(expiry) {
-			observed, _ := c.PermissionMode()
+			observed, _ := c.permissionPosture()
 			return observed, nil
 		}
 

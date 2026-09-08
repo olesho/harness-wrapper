@@ -66,8 +66,8 @@ reject values the Go producer *does* emit.
   `--dangerously-skip-permissions` after `--`, and codex's `-s danger-full-access` in every spelling.
   Closing that hole is the point of the field.
 - **Absence never means "safe."** It means no canonical rung could be *named*: the harness default,
-  an unsupported harness, a native spelling with no canonical equivalent (claude's `dontAsk`), a
-  codex argv setting only the `-a` approval axis, or a present-but-unreadable flag.
+  an unsupported harness, a codex argv setting only the `-a` approval axis, or a present-but-unreadable
+  flag. Claude's `dontAsk` is no longer one of these causes: it reports the `manual` rung.
 - **`"manual"` does NOT mean "this turn was supervised."** On the `structured-run` path claude's
   per-tool permission dialog is not detected at all (no input request is emitted, so restrictive
   rungs stall an unattended turn to the deadline), and the approval callback is wired unconditionally
