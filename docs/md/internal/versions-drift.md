@@ -13,18 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-
-> Both files carry claude-code `2.1.266` as of 2026-09-09, verified live against the installed
-> 2.1.266 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
-> extraction and the multi-turn keep-alive path only — the `interruptMarker`, tool-call and
-> permission-mode surfaces still rest on recorded corpora, and the blocking startup dialogs are
-> seeded away by the release-check harness and stay unverified). ALL FOUR claude scenarios —
-> `settled-after-turn`, `multi-turn`, `tool-call` and `interrupted-mid-reply` — are re-baked at
-> `2.1.251`, so the corpus trails the pin by design rather than by neglect. meta-harness's own pin
-> file is still at `2.1.218` and has to follow — until it does, `scripts/sync-versions.sh --check`
-> against a sibling checkout reports drift by design, the snapshot is a parity *target* rather than
-> a mirror of what meta-harness ships today, and the no-args mode would drag this repo's pin
-> *backwards* by 48 releases.
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.267", "verified_at": "2026-09-09"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -42,14 +31,17 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.266` as of 2026-09-09, verified live against the installed
-> 2.1.266 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
+> Both files carry claude-code `2.1.267` as of 2026-09-09, verified live against the installed
+> 2.1.267 binary via `TestRunTurn_RealClaudeDogfood{,KeepAlive}` (end-of-turn detection, reply
 > extraction and the multi-turn keep-alive path only — the `interruptMarker` and tool-call surfaces
 > still rest on corpora recorded at 2.1.251, the permission-mode footers remain anchored at 2.1.217,
 > and the blocking startup dialogs are seeded away by the release-check harness and stay
-> unverified). meta-harness's own pin file is still at `2.1.218` (verified 2026-07-23) and has to
-> follow — until it does, `scripts/sync-versions.sh --check` against a sibling checkout reports
-> drift by design, and the no-args mode would drag this repo's pin *backwards* by 48 releases.
+> unverified). The corpus trails the pin by design rather than by neglect: its recordings are frozen
+> renderings the adapter must keep handling, not evidence about the pinned release. meta-harness's
+> own pin file is still at `2.1.218` (verified 2026-07-23) and has to follow — until it does,
+> `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, the snapshot
+> is a parity *target* rather than a mirror of what meta-harness ships today, and the no-args mode
+> would drag this repo's pin *backwards* by 49 releases.
 
 The read API:
 
@@ -99,17 +91,34 @@ A new release exists; the corpus hasn't been verified against it yet — it may 
 backwards-compatible.
 
 1. Install it locally (e.g. `npm i -g @anthropic-ai/claude-code@<ver>`).
-2. Re-bake the affected harness and run its adapter regression:
+2. Run the **live** tests — this is the only step that actually observes the new release. The corpus
+   is frozen bytes and replays green against a version it has never seen, so it can neither confirm
+   nor deny a new one:
    ```bash
-   for s in interrupted-mid-reply multi-turn settled-after-turn tool-call; do
-       make rebake-corpus HARNESS=claude SCENARIO=$s
-   done
+   export CLAUDE_CONFIG_DIR=<a config dir with folder-trust already accepted>
+   export HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1
+   go test ./pkg/harness/ -run 'RealClaude' -v -timeout 15m -count=1
+   ```
+   Use `-run 'RealClaude'`, not `RealClaudeDogfood`: the narrower filter misses
+   `TestRunTurn_RealClaudeLargePromptIntact`. `-v` is not optional: these tests **skip** when
+   `claude` is off PATH or the env gate is unset, and `go test` prints `ok` for a package whose tests
+   all skipped. An absent `--- PASS` is an inconclusive run, not a pass. (A `blocked on interactive
+   input request` failure is a stale `CLAUDE_CONFIG_DIR`, not a regression — it has been mis-filed as
+   one before.)
+3. **All `--- PASS`** → the adapter handles the new release; bump the pin, and do *not* re-bake — the
+   existing recordings are still valid renderings the adapter must keep handling.
+   **Any `--- FAIL`** → a marker shifted (next section); fix it, re-bake only the affected
+   scenario(s), and run the adapter regression:
+   ```bash
+   make rebake-corpus HARNESS=claude SCENARIO=<affected scenario>
    go test -race ./pkg/turns/harness/claudecode/...
    ```
-3. **Green** → it's backwards-compatible. **Red** → a marker shifted (next section).
+   Read [Recording gotchas](#recording-gotchas) before re-baking a claude scenario.
 4. Re-verify the **shapes the six canonical scenarios do not cover** (below).
-5. Either way, finish by setting `pinned`/`verified_at` in `versions.json`, refreshing the adapter's
-   "Verified against …" package comment, and committing `test/corpus/<harness>/**` + the version bump.
+5. Finish by setting `pinned`/`verified_at` in `versions.json` **and** the vendored
+   `pkg/versions/testdata/meta-harness-versions.json` (the hermetic parity test fails otherwise),
+   refreshing the adapter's package comment with the version and the way it was verified, and
+   committing any `test/corpus/<harness>/**` change alongside the version bump.
 
 ### Shapes the canonical scenarios miss
 
