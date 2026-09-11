@@ -171,10 +171,15 @@ func parseSelectorMenu(after string) []turns.InputOption {
 //   - NEVER a bare CR for a non-highlighted row. Claude highlights "No, exit"
 //     by default, so a bare CR answers "yes" by quitting — the entire bug class
 //     this parser exists for.
-//   - The result is written as a SINGLE PTY write (Conversation.write passes the
-//     whole opt.Keys to one WriteStdin). "ESC [ B" arriving in one write parses
-//     as Down; split across writes it is a lone Esc, which CANCELS the dialog.
-//     Do not split it, and do not sleep between the arrows.
+//   - The ARROWS are written as a single PTY write. "ESC [ B" arriving in one
+//     write parses as Down; split across writes it is a lone Esc, which CANCELS
+//     the dialog. Do not split an escape sequence, and do not sleep between the
+//     arrows. The ONE legal split is at the very end, between the last arrow and
+//     the trailing CR: pkg/chat writes the arrows, waits for the marker to land
+//     on the target label, and only then writes the CR (answerAndConfirm in
+//     pkg/chat/input.go). That boundary is not a timing hack — an Enter pressed
+//     before the highlight is confirmed selects whatever row it was on, which
+//     here is "No, exit".
 //   - Arrow repetition, not absolute addressing: the offsets are only valid
 //     against the highlight they were derived from, which is why the highlight
 //     row is captured in the same pass as the labels.

@@ -185,6 +185,14 @@ type Conversation struct {
 	inputSurfaced bool
 	inputStateCh  chan struct{}
 
+	// inputUnresolved is set when an auto-answer was written but the dialog
+	// never acted on it, after the bounded retries in answerAndConfirm. It is
+	// what turns a permanent stall into a fast, diagnosable failure: a prompt
+	// nothing can clear can never reach the ready state, so waitReadyForSend
+	// returns this instead of blocking to the caller's run deadline. Cleared
+	// when a new request arrives and when one resolves.
+	inputUnresolved *InputUnresolvedError
+
 	// writeStdin, when non-nil, replaces sess.WriteStdin for interactive
 	// answer keystrokes. Production leaves it nil (writes go to the PTY); it
 	// exists so the input-resolution path is testable without a live session.
@@ -1116,6 +1124,74 @@ func (c *Conversation) emit(ev ConversationEvent) {
 		// Buffer full — drop. Slow consumers lose events; this matches
 		// the wrapper's own slow-consumer policy.
 	}
+}
+
+// ErrInputUnresolved is the sentinel behind *InputUnresolvedError. An
+// auto-answer was written to a blocking prompt and the prompt did not act on
+// it — the harness is wedged on a dialog no keystroke this layer knows how to
+// send will clear.
+//
+// It exists so a caller can classify the failure without depending on the
+// concrete type:
+//
+//	if errors.Is(err, chat.ErrInputUnresolved) { ... }
+//
+// and recover the evidence with errors.As when it wants the screen.
+var ErrInputUnresolved = errors.New("chat: interactive prompt did not accept its answer")
+
+// InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
+// PermissionModeBlockedError it carries the client-facing chat.InputRequest
+// (the value PendingInput returns and Answer accepts) plus the screen as it
+// looked when the driver gave up, so a failed run is diagnosable from the error
+// alone rather than from a 43-minute silence.
+type InputUnresolvedError struct {
+	// Request is the prompt that would not take its answer.
+	Request InputRequest
+	// Observed is the rendered screen at the last attempt.
+	Observed string
+	// Attempts is how many answers were written before giving up.
+	Attempts int
+}
+
+func (e *InputUnresolvedError) Error() string {
+	return fmt.Sprintf("%s: %s (kind %q, id %q, %d attempts)",
+		ErrInputUnresolved.Error(), e.Request.Prompt, e.Request.Kind, e.Request.ID, e.Attempts)
+}
+
+// Unwrap makes errors.Is(err, ErrInputUnresolved) match.
+func (e *InputUnresolvedError) Unwrap() error { return ErrInputUnresolved }
+
+// recordUnresolvedInput latches a stall so waitReadyForSend can fail fast on
+// it. Only the typed error latches: a cancelled context or a closed
+// conversation is the caller's own doing, not a wedged dialog, and latching it
+// would poison a conversation that is otherwise fine.
+func (c *Conversation) recordUnresolvedInput(err error) {
+	var ue *InputUnresolvedError
+	if !errors.As(err, &ue) {
+		return
+	}
+	c.mu.Lock()
+	c.inputUnresolved = ue
+	c.mu.Unlock()
+}
+
+// inputBlocked reports the error that makes this conversation unsendable
+// because of an interactive prompt, or nil. The unresolved stall is checked
+// FIRST: it is strictly more informative than ErrInputPending (it carries the
+// screen and the attempt count) and both are true at once, because a stall
+// surfaces the request to the client on its way out.
+func (c *Conversation) inputBlocked() error {
+	c.mu.Lock()
+	unresolved := c.inputUnresolved
+	awaiting := c.currentInput != nil && c.inputSurfaced
+	c.mu.Unlock()
+	if unresolved != nil {
+		return unresolved
+	}
+	if awaiting {
+		return ErrInputPending
+	}
+	return nil
 }
 
 // resolveAdapter maps Options.Harness to a concrete turns.Adapter.

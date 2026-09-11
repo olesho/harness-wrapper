@@ -373,6 +373,57 @@ func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 	return req, DetectOK
 }
 
+// AnchorPresent reports whether a blocking-dialog anchor is still painted on
+// screen. It is deliberately WEAKER than DetectInput: an anchor whose menu has
+// not rendered yet is DetectPending, so DetectInput says "no request" while the
+// dialog is very much still up. "Has my answer cleared it?" must therefore ask
+// this and not DetectInput, or a mid-paint frame reads as success.
+//
+// Exported so pkg/chat can confirm an answer landed without copying the anchor
+// list; anchorSplit stays the single source of truth for what an anchor is.
+func AnchorPresent(text string) bool {
+	_, _, ok := anchorSplit(text)
+	return ok
+}
+
+// numberedLabelRE strips the "N." prefix a numbered menu row carries, so the
+// highlighted row's label is comparable with the option Labels DetectInput
+// reports (which never include the number).
+var numberedLabelRE = regexp.MustCompile(`^\d+\.[^\S\n]+`)
+
+// HighlightedLabel returns the cleaned label of the row currently carrying the
+// menu marker ("❯") under a dialog anchor, or ("", false) when no anchor is up
+// or no row below it is highlighted.
+//
+// This is what lets a caller confirm that NAVIGATION landed before it presses
+// Enter: the marker's row is the row Enter will select, and matching it by
+// LABEL rather than by index is required — claude-code 2.1.261 inverted the
+// folder-trust option order, so an index that was "proceed" became "exit".
+//
+// Like parseSelectorMenu it only ever scans the text FOLLOWING the anchor: "❯"
+// is also the composer prompt glyph, so a whole-frame scan would let scrollback
+// decide which row is highlighted.
+func HighlightedLabel(text string) (string, bool) {
+	_, after, ok := anchorSplit(text)
+	if !ok {
+		return "", false
+	}
+	for _, ln := range strings.Split(after, "\n") {
+		content := lineContent(ln)
+		col, ok := selectorLabelColumn(content)
+		if !ok {
+			continue
+		}
+		r := []rune(content)
+		label := cleanLabel(numberedLabelRE.ReplaceAllString(strings.TrimSpace(string(r[col:])), ""))
+		if label == "" {
+			return "", false
+		}
+		return label, true
+	}
+	return "", false
+}
+
 // parseMenuOptions extracts a dialog's choices, trying the two shapes claude
 // renders in a fixed order:
 //
