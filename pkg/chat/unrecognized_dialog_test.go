@@ -27,6 +27,20 @@ const selectorTrustFrame = "Accessing workspace:\r\n" +
 	"   Yes, I trust this folder\r\n" +
 	"Enter to confirm · Esc to cancel\r\n"
 
+// selectorTrustFrameMoved is the SAME dialog after a Down: the "❯" has moved to
+// "Yes, I trust this folder". A real claude repaints like this the moment it
+// processes the arrow, and the wrapper withholds the confirming CR until it
+// sees the marker on the target label — pressing Enter on an unconfirmed row is
+// how "No, exit" gets selected.
+const selectorTrustFrameMoved = "Accessing workspace:\r\n" +
+	"/private/tmp/trustrepo\r\n" +
+	"Quick safety check: Is this a project you created or one you trust? …\r\n" +
+	"Claude Code'll be able to read, edit, and execute files here.\r\n" +
+	"Security guide\r\n" +
+	"   No, exit\r\n" +
+	" ❯ Yes, I trust this folder\r\n" +
+	"Enter to confirm · Esc to cancel\r\n"
+
 // unparseableTrustFrame keeps the anchor and a choice-shaped "❯" row but gives
 // it no sibling, so no option set can be built: DetectUnparseable, the state
 // that used to be reported as "no dialog at all".
@@ -105,10 +119,21 @@ func TestWaitReadyForSend_ParsedDialogKeepsWaiting(t *testing.T) {
 //
 // The default highlight is "No, exit". A bare CR — what a "simplification" of
 // the positional keys would produce — selects it and quits claude at startup,
-// silently. The fake's wait step matches ONLY "ESC [ B CR", so a bare CR hangs
-// the scenario to the test deadline; and because the step CAPTURES everything
-// received before the match, the echoed "[…]" is empty exactly when those were
-// the first bytes written, with nothing typed into the dialog beforehand.
+// silently. The fake's first wait step matches ONLY "ESC [ B", so a bare CR
+// hangs the scenario to the test deadline; and because that step CAPTURES
+// everything received before the match, the echoed "[…]" is empty exactly when
+// those were the first bytes written, with nothing typed into the dialog
+// beforehand.
+//
+// The arrow and the CR are awaited SEPARATELY, with a repaint between them, and
+// that is the contract this test pins rather than an implementation detail. The
+// wrapper writes the navigation, then confirms on screen that the marker landed
+// on the target LABEL, and only then writes the CR (see answerAndConfirm in
+// input.go). A fake that painted the dialog once and never repainted would
+// never show the marker move, so the CR would correctly never be sent — which
+// is the point: an Enter pressed on an unconfirmed row selects "No, exit".
+// What must NOT be split is "ESC [ B" itself: a lone Esc cancels the dialog, so
+// the regex below matches the whole sequence and the wrapper writes it as one.
 func TestIntegration_SelectorTrustDialogAnsweredWithArrowThenEnter(t *testing.T) {
 	script := fakeharness.New("claude-code").Idle().Build()
 	script.Steps = append(
@@ -116,8 +141,14 @@ func TestIntegration_SelectorTrustDialogAnsweredWithArrowThenEnter(t *testing.T)
 		// The dialog, painted verbatim (the builder's CRLF conversion happens
 		// in the fake, so this uses plain newlines).
 		fakeharness.Step{Frame: &fakeharness.Frame{DelayMs: 40, Screen: strings.ReplaceAll(selectorTrustFrame, "\r\n", "\n")}},
-		// Down + CR, and nothing before it.
-		fakeharness.Step{WaitInput: &fakeharness.WaitInput{UntilRegex: `\x1b\[B\r`, Capture: true, Label: "trust-arrow-enter"}},
+		// Down, in one write, and nothing before it.
+		fakeharness.Step{WaitInput: &fakeharness.WaitInput{UntilRegex: `\x1b\[B`, Capture: true, Label: "trust-arrow"}},
+		// The dialog acknowledges the arrow by repainting with the marker on
+		// "Yes, I trust this folder". Only now may the wrapper confirm.
+		fakeharness.Step{Frame: &fakeharness.Frame{DelayMs: 20, Screen: strings.ReplaceAll(selectorTrustFrameMoved, "\r\n", "\n")}},
+		// The confirming CR. No Capture: the prompt stashed by the arrow step
+		// is what the echo below reports, so stray bytes stay detectable.
+		fakeharness.Step{WaitInput: &fakeharness.WaitInput{UntilRegex: `\r`, Label: "trust-enter"}},
 		fakeharness.Step{Frame: &fakeharness.Frame{DelayMs: 20, Screen: "Claude Code\n\nTRUSTED [{{prompt}}]\n\n❯ \n", Echo: true}},
 		fakeharness.Step{Hold: &fakeharness.Hold{}},
 	)
