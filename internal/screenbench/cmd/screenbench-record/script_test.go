@@ -474,3 +474,65 @@ func TestParseFlagsScriptPath(t *testing.T) {
 		t.Errorf("AutoVersion should be true")
 	}
 }
+
+func TestParseFlagsWorkdirDefaultsEmpty(t *testing.T) {
+	c, err := parseFlags([]string{
+		"--harness", "codex",
+		"--bin", "/x/codex",
+		"--out", "/tmp/out",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkingDir != "" {
+		t.Errorf("WorkingDir should default empty (inherit process CWD), got %q", c.WorkingDir)
+	}
+}
+
+func TestParseFlagsWorkdir(t *testing.T) {
+	dir := t.TempDir()
+	c, err := parseFlags([]string{
+		"--harness", "claude-code",
+		"--bin", "/x/claude",
+		"--out", "/tmp/out",
+		"--workdir", dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.WorkingDir != dir {
+		t.Errorf("WorkingDir = %q, want %q", c.WorkingDir, dir)
+	}
+}
+
+func TestParseFlagsWorkdirRejectsMissingPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+	_, err := parseFlags([]string{
+		"--harness", "claude-code",
+		"--bin", "/x/claude",
+		"--out", "/tmp/out",
+		"--workdir", missing,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a nonexistent --workdir")
+	}
+	if !strings.Contains(err.Error(), "--workdir") {
+		t.Errorf("error should name the flag, got %v", err)
+	}
+}
+
+func TestParseFlagsWorkdirRejectsNonDirectory(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := parseFlags([]string{
+		"--harness", "claude-code",
+		"--bin", "/x/claude",
+		"--out", "/tmp/out",
+		"--workdir", file,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a --workdir that is not a directory")
+	}
+}
