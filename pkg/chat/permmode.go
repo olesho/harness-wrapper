@@ -417,11 +417,11 @@ func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (st
 
 	ringLen, bypassOnRing := c.cycleRing()
 	if target == permissionRungBypass && !bypassOnRing {
-		// Definite non-bypass launch with no bypass-enabling flag: bypass is not
+		// Definite non-bypass launch with no bypass-reachable flag: bypass is not
 		// on this session's ring. Fail before writing anything — cycling would
 		// just walk the 4-ring forever and leave the session somewhere else.
-		return "", fmt.Errorf("%w: %q requires a bypass-enabled launch (--permission-mode=bypassPermissions or %s)",
-			ErrPermissionModeUnreachable, target, wrapper.SkipPermissionsFlag)
+		return "", fmt.Errorf("%w: %q requires a bypass-enabled launch (--permission-mode=bypassPermissions, %s or %s)",
+			ErrPermissionModeUnreachable, target, wrapper.SkipPermissionsFlag, wrapper.AllowSkipPermissionsFlag)
 	}
 
 	if err := c.waitReadyForSend(ctx); err != nil {
@@ -850,7 +850,11 @@ func permissionModeCapabilities(harness string) (targets []string, ok bool) {
 // it decides whether SetPermissionMode("bypass") fast-fails without writing.
 //
 // The launch posture is resolved through wrapper.EffectiveLaunchRung and
-// wrapper.BypassEnablingFlags rather than by re-parsing argv here.
+// wrapper.BypassReachableFlags rather than by re-parsing argv here. Ring
+// membership uses the REACHABLE set, not the enabling one: claude's
+// --allow-dangerously-skip-permissions unlocks the bypass rung without
+// selecting it, so a session carrying it launches restricted yet can still
+// cycle to bypass.
 // Options.PermissionMode ALONE is not enough: argsWithHarnessPermissionMode
 // (wrapper.go:595-615) suppresses injection entirely when --permission-mode or
 // the skip-permissions flag is already in argv, so a caller launching with
@@ -858,9 +862,9 @@ func permissionModeCapabilities(harness string) (targets []string, ok bool) {
 // Options.PermissionMode == "" and a bypass-enabled session.
 //
 // Three branches:
-//   - definite bypass-class rung, or a bypass-enabling flag present → 5-ring,
+//   - definite bypass-class rung, or a bypass-reachable flag present → 5-ring,
 //     bypass legal.
-//   - definite non-bypass rung and no bypass-enabling flag → 4-ring, bypass
+//   - definite non-bypass rung and no bypass-reachable flag → 4-ring, bypass
 //     fast-fails.
 //   - EffectiveLaunchRung returns "" (UNKNOWN — a trailing flag with no operand,
 //     an unrecognized spelling) → NO fast-fail: assume the larger ring as the
@@ -878,7 +882,7 @@ func (c *Conversation) cycleRing() (ringLen int, bypassOnRing bool) {
 	if rung == permissionRungBypass {
 		return 5, true
 	}
-	if argsContainFlag(c.opts.Args, wrapper.BypassEnablingFlags(chatClaudeCode)...) {
+	if argsContainFlag(c.opts.Args, wrapper.BypassReachableFlags(chatClaudeCode)...) {
 		return 5, true
 	}
 	if rung == "" {
