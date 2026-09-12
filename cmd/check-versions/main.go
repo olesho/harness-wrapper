@@ -2,6 +2,21 @@
 // versions.json against the npm registry's latest published version
 // for each declared package. Run via `make check-versions`.
 //
+// In table mode the run ends with a one-line verdict on stdout — one of
+//
+//	✓ all pins match latest
+//	⚠ drift detected — see docs/md/internal/versions-drift.md when ready
+//	✗ could not query the npm registry
+//
+// The verdict is printed HERE rather than derived from the exit code by a
+// caller, because a caller cannot rely on seeing the exit code: `go run`
+// collapses any non-zero child status to 1, so under it a registry outage is
+// indistinguishable from real drift. `make check-versions` used to invoke this
+// through `go run` and switch on that status, which made every npm outage
+// announce "drift detected"; the target now builds the binary first so the
+// codes below survive, but the verdict stays here so any text consumer gets
+// the truth regardless of how it was launched.
+//
 // Exit codes:
 //
 //	0 — all pinned versions match latest (or are intentionally blank)
@@ -23,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/versions"
@@ -41,6 +57,9 @@ func main() {
 	all, err := versions.All()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "check-versions: %v\n", err)
+		if *format != "json" {
+			writeVerdict(os.Stdout, true, false)
+		}
 		os.Exit(exitCode(true, false))
 	}
 
@@ -52,6 +71,7 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(report)
 	default:
 		writeTable(os.Stdout, report)
+		writeVerdict(os.Stdout, anyErr, anyDrift)
 	}
 
 	os.Exit(exitCode(anyErr, anyDrift))
@@ -68,6 +88,23 @@ func exitCode(anyErr, anyDrift bool) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+// writeVerdict prints the one-line human verdict. It takes anyErr/anyDrift
+// directly — the two are still separable here, which is exactly what the exit
+// code loses on its way through `go run`. anyErr wins: a probe that never
+// reached the registry says nothing about whether the pins are current, so
+// "could not query" must not be reported as either drift or an all-clear.
+func writeVerdict(w io.Writer, anyErr, anyDrift bool) {
+	_, _ = fmt.Fprintln(w)
+	switch {
+	case anyErr:
+		_, _ = fmt.Fprintln(w, "✗ could not query the npm registry")
+	case anyDrift:
+		_, _ = fmt.Fprintln(w, "⚠ drift detected — see docs/md/internal/versions-drift.md when ready")
+	default:
+		_, _ = fmt.Fprintln(w, "✓ all pins match latest")
 	}
 }
 
@@ -147,10 +184,44 @@ func fetchLatest(client *http.Client, registry, pkg string) (string, error) {
 	return payload.Version, nil
 }
 
-// writeTable emits a 4-column Markdown table.
+// detailCellMax caps the detail column. A registry error can be a multi-line
+// TLS chain dump; unbounded it would make the table unreadable in exactly the
+// situation the column exists for. The untruncated text stays in --format=json.
+const detailCellMax = 120
+
+// detailCell renders a row's probe error for the table. Only `error` rows have
+// one — a `match`/`drift`/`unpinned` row's cell is blank — and the text is
+// flattened first: an embedded newline or `|` would break the Markdown table's
+// own syntax and take the remaining rows with it.
+func detailCell(r Row) string {
+	if r.Status != "error" || r.Error == "" {
+		return ""
+	}
+	flat := strings.Map(func(c rune) rune {
+		if c == '|' {
+			return ' '
+		}
+		return c
+	}, r.Error)
+	// Fields splits on every kind of whitespace, so this also collapses the
+	// newlines and tabs that would otherwise escape the cell.
+	flat = strings.Join(strings.Fields(flat), " ")
+	if runes := []rune(flat); len(runes) > detailCellMax {
+		return string(runes[:detailCellMax-1]) + "…"
+	}
+	return flat
+}
+
+// writeTable emits the 6-column Markdown table.
+//
+// The `detail` column carries the probe error on `error` rows. Without it the
+// table an operator triages from read only `| … | — | error |` and the actual
+// cause was recoverable only by re-running under --format=json — which is how
+// a TLS verification failure came to be filed as a pin-drift bug. The JSON
+// shape is unchanged; it already carried `error`.
 func writeTable(w io.Writer, rows []Row) {
-	_, _ = fmt.Fprintln(w, "| harness | package | pinned | latest | status |")
-	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|")
+	_, _ = fmt.Fprintln(w, "| harness | package | pinned | latest | status | detail |")
+	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|---|")
 	for _, r := range rows {
 		latest := r.Latest
 		if latest == "" {
@@ -160,6 +231,6 @@ func writeTable(w io.Writer, rows []Row) {
 		if pinned == "" {
 			pinned = "—"
 		}
-		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status)
+		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s | %s |\n", r.Harness, r.Package, pinned, latest, r.Status, detailCell(r))
 	}
 }
