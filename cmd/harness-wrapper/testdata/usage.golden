@@ -4,6 +4,7 @@ usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
        harness-wrapper status <session> [--json]
        harness-wrapper kill <session>
        harness-wrapper list
+       harness-wrapper reap [--dry-run]
 
 wrapper flags (must come BEFORE the harness name):
   --trace-file PATH       write trace events as NDJSON to PATH
@@ -54,5 +55,11 @@ Pass --auto-accept to force the always-auto behavior even with a terminal.
 
 Tmux mode lets you detach from a long-running agent: the harness
 keeps running inside the tmux session, and `harness-wrapper attach`
-(or `tmux attach -t hw-<NAME>`) reconnects you. Trace events go to
-~/.harness-wrapper/sessions/<NAME>.trace.ndjson by default.
+(or `tmux -L harness-wrapper attach -t hw-<NAME>`) reconnects you. Trace
+events go to ~/.harness-wrapper/sessions/<NAME>.trace.ndjson by default.
+
+Sessions live on a DEDICATED tmux socket (`tmux -L harness-wrapper`), not
+the default one, so ambient global tmux options -- notably remain-on-exit,
+which strands finished sessions as dead panes -- cannot reach them. They
+therefore do NOT appear in a bare `tmux ls`. Override the socket with
+HW_TMUX_SOCKET. `reap` kills hw- sessions whose panes are all dead.
