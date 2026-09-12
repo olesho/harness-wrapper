@@ -100,8 +100,9 @@ func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdi
 }
 
 // readSubagentTranscript handles PostToolUse[Task]: when the Task spawned a
-// subagent (tool_response.agentId present), Claude has written its transcript at
-// <parent_dir>/subagents/agent-<agentId>.jsonl. It reads that file and tags each
+// subagent (tool_response.agentId present), Claude has written its transcript
+// under a per-session sidecar dir named after the session file — see
+// subagentTranscriptPaths for the layouts tried. It reads that file and tags each
 // event with the subagent's own session id + the ParentSessionID, so the Runs
 // tab can nest the subagent under its parent. Subagent capture is best-effort:
 // an absent file (timing) yields nil, not an error.
@@ -127,13 +128,21 @@ func readSubagentTranscript(ctx harness.HookContext, p claudeHookPayload, stdin 
 	if err := validateTranscriptPath(ctx, p.SessionID, p.TranscriptPath); err != nil {
 		return nil, err
 	}
-	subPath := filepath.Join(filepath.Dir(p.TranscriptPath), "subagents", "agent-"+agentID+".jsonl")
-	data, err := os.ReadFile(subPath) //nolint:gosec // derived under the validated parent transcript dir
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // subagent transcript not present yet — best-effort
+	var data []byte
+	var found bool
+	for _, subPath := range subagentTranscriptPaths(p.TranscriptPath, agentID) {
+		b, err := os.ReadFile(subPath) //nolint:gosec // derived under the validated parent transcript's session dir
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // try the next layout
+			}
+			return nil, fmt.Errorf("claude hook post-task: read subagent %s: %w", subPath, err)
 		}
-		return nil, fmt.Errorf("claude hook post-task: read subagent %s: %w", subPath, err)
+		data, found = b, true
+		break
+	}
+	if !found {
+		return nil, nil // subagent transcript not present yet — best-effort
 	}
 	events, err := claudecode.Events(data)
 	if err != nil {
@@ -148,6 +157,27 @@ func readSubagentTranscript(ctx harness.HookContext, p claudeHookPayload, stdin 
 		}
 	}
 	return out, nil
+}
+
+// subagentTranscriptPaths returns the candidate on-disk locations for a
+// spawned subagent transcript, most-current first. Claude 2.1.261 writes it
+// under a per-session sidecar dir named after the session file:
+//
+//	<projects>/<encoded-cwd>/<session-uuid>/subagents/agent-<id>.jsonl
+//
+// (measured 131/131 at that depth, 0 at the legacy sibling depth). The second
+// candidate is that legacy sibling-of-the-file location, kept so an older
+// Claude still parses.
+//
+// Derived from the handed-over parent transcript path, never reconstructed
+// from the session id — TrimSuffix keeps working if the basename convention
+// changes, and it cannot escape the already-validated transcript root.
+func subagentTranscriptPaths(parentTranscript, agentID string) []string {
+	name := "agent-" + agentID + ".jsonl"
+	return []string{
+		filepath.Join(strings.TrimSuffix(parentTranscript, ".jsonl"), "subagents", name),
+		filepath.Join(filepath.Dir(parentTranscript), "subagents", name),
+	}
 }
 
 // validSubagentID guards the agentId interpolated into the subagent file path
