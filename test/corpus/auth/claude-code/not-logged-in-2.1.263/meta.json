@@ -1,0 +1,7 @@
+{
+  "harness": "claude-code",
+  "authRequired": true,
+  "state": "logged-out-composer",
+  "source": "live macOS capture, claude-code 2.1.263, CLAUDE_CONFIG_DIR seeded with hasCompletedOnboarding/theme/oauthAccount but NO .credentials.json, tmux 120x40, 2026-09-06 (PUPPET-315)",
+  "note": "Regression guard, not a fix: 2.1.263 still spells the footer 'Not logged in · Run /login', so the existing claudeLoggedOutRE anchors hold. readyForInput is intentionally TRUE here — a real composer carrying a stale logged-out banner IS ready, which is the claudeOnboardingRE (wall, not ready) vs claudeLoggedOutRE (banner, ready) split. The composer line is '❯' + U+00A0."
+}

@@ -2,6 +2,8 @@ package chat
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -97,11 +99,78 @@ func TestAuthRequired(t *testing.T) {
 		{"codex does not fire on claude /login", "codex", "please run /login", false},
 		// Unknown harness never fires.
 		{"unknown harness", "some-other-harness", "Not logged in", false},
+		// claude-code 2.1.263 OAuth browser sign-in (PUPPET-315): the wall the
+		// login-method menu advances into. "Select login method" is GONE from this
+		// screen, so before the fix nothing matched it and Send hung to the
+		// deadline. Both prose lines are anchors; either alone suffices.
+		{"claude oauth sign-in url line", chatClaudeCode, " Browser didn't open? Use the url below to sign in (c to copy)", true},
+		{"claude oauth paste-code line", chatClaudeCode, " Paste code here if prompted >", true},
+		// The anchors are deliberately the full UI phrasings: an assistant reply
+		// merely saying "paste code" must not be gated.
+		{"claude reply mentioning paste code", chatClaudeCode, "⏺ Copy the snippet and paste code into main.go.", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := authRequired(tc.harness, tc.text); got != tc.want {
 				t.Errorf("authRequired(%q, %q) = %v, want %v", tc.harness, tc.text, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestOnboardingWallClaude2_1_263 pins the claude 2.1.263 pre-reply screens as
+// measured live on 2026-09-06 (PUPPET-315), straight off the corpus fixtures. The
+// OAuth browser sign-in screen is the one that used to match nothing: it is a
+// WALL (onboardingWall true, so the auth gate fires IMMEDIATELY rather than after
+// authGateStabilizeGap — the CLI can replace this frame within one paint), and it
+// is never ready for input. The logged-out composer is the deliberate contrast:
+// authRequired true but readyForInput ALSO true, because a real composer carrying
+// a stale banner is usable.
+func TestOnboardingWallClaude2_1_263(t *testing.T) {
+	for _, tc := range []struct {
+		fixture                       string
+		wantWall, wantReady, wantAuth bool
+	}{
+		{"oauth-browser-signin", true, false, true},
+		{"login-method-2.1.263", true, false, true},
+		{"not-logged-in-2.1.263", false, true, true},
+	} {
+		t.Run(tc.fixture, func(t *testing.T) {
+			b, err := os.ReadFile(filepath.Join(authCorpusRoot, "claude-code", tc.fixture, "screen.txt"))
+			if err != nil {
+				t.Fatalf("read fixture: %v", err)
+			}
+			screen := string(b)
+			if got := onboardingWall(chatClaudeCode, screen); got != tc.wantWall {
+				t.Errorf("onboardingWall = %v, want %v", got, tc.wantWall)
+			}
+			if got := readyForInput(chatClaudeCode, screen); got != tc.wantReady {
+				t.Errorf("readyForInput = %v, want %v", got, tc.wantReady)
+			}
+			if got := authRequired(chatClaudeCode, screen); got != tc.wantAuth {
+				t.Errorf("authRequired = %v, want %v", got, tc.wantAuth)
+			}
+		})
+	}
+}
+
+// TestReadyForInputClaudeTrustDialog2_1_263 is the chat-layer cross-check for the
+// PUPPET-452 class of regression: 2.1.261 dropped the folder-trust dialog's
+// numbered options, which broke the turns-layer menu matcher. The chat layer
+// matches by literal substring, not menu shape, so the dialog is still not-ready
+// on 2.1.263 — and it is not an auth screen. Frame body captured live 2026-09-06.
+func TestReadyForInputClaudeTrustDialog2_1_263(t *testing.T) {
+	const trustDialog = " Accessing workspace:\n\n /tmp/probe/wd4\n\n" +
+		" Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source\n" +
+		" project, or work from your team). If not, take a moment to review what's in this folder first.\n\n" +
+		" Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n" +
+		" \u276f No, exit\n   Yes, I trust this folder\n\n Enter to confirm \u00b7 Esc to cancel\n"
+	if readyForInput(chatClaudeCode, trustDialog) {
+		t.Error("readyForInput(trust dialog) = true, want false")
+	}
+	if onboardingWall(chatClaudeCode, trustDialog) {
+		t.Error("onboardingWall(trust dialog) = true, want false: it is a blocking dialog, not an auth wall")
+	}
+	if authRequired(chatClaudeCode, trustDialog) {
+		t.Error("authRequired(trust dialog) = true, want false")
 	}
 }

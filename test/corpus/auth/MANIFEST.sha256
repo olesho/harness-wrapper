@@ -1,10 +1,16 @@
-c1244922633ac03dcf8b06df7741c64bd396c17fd645a02dfc90052a2de9226d  README.md
+3b34fba2b0d10879532bbf307ac54e71e774f55b3f85b25f668951aa391c2e08  README.md
 56427cf920509dafccd5daf070d8aaafd56ae0eb8d7d2f79da3c34bf318f49cb  claude-code/invalid-api-key/meta.json
 d50145fd739977392cf3b0bbf1b73f863d2fcdf831ffe5605f3981f879f57c27  claude-code/invalid-api-key/screen.txt
+c5bc0160d0f91a929f505d04f26ba5d5f0ed280dbfa43a984a004c32e4cbecd7  claude-code/login-method-2.1.263/meta.json
+8012415e021ce02e32dae0bb4ec5ed4f1fc441625b19ca0efe0047013c474714  claude-code/login-method-2.1.263/screen.txt
+3d38fe60ce54903c046f019fa11478e2f0bc43a4e865cb4393f55345b5eab85c  claude-code/not-logged-in-2.1.263/meta.json
+5ab315e8508852ed87f5323416b6e5314c159542f6b34d549701c9b8b11b925d  claude-code/not-logged-in-2.1.263/screen.txt
 59640e49b14edcb964eed14de8fc49623b7169e47b6128c1c2439556213ae280  claude-code/not-logged-in-brewed/meta.json
 0421890c4f2d8540615656b5c9ce6d5b71a423ee213ca33c41015a6fcefc4e29  claude-code/not-logged-in-brewed/screen.txt
 9f9ece723ffd8e7ec17699511ebe2b7dc3a2e0c49121e8fa19db262500a5b9db  claude-code/not-logged-in-churned/meta.json
 d2b4efce609b66079946a49a604a3c194c84b7645c9c92aeaa4bc3d16e0e8ace  claude-code/not-logged-in-churned/screen.txt
+01dd346bb240267c3c255c8ba6cf71afa5c95de7400042deefc5717965523370  claude-code/oauth-browser-signin/meta.json
+c343ffb77ff23f943937f01e8b29ba9331669b00f305774c1d7c22bc9572f371  claude-code/oauth-browser-signin/screen.txt
 e050baacc040d03b66fcd397cf07ea8dc0ce55eec9ae6a2a613aaeb4890b02c7  claude-code/theme-picker/meta.json
 350bf0953e79215e34f1ac6b23cfa683410fcb161f7c95ce381d48c9cb122b38  claude-code/theme-picker/screen.txt
 5e2b1b93e7a855b4f9670b8fdf2f819d73710c8a3de058ed16f0867d852a113f  codex/http-401/meta.json
