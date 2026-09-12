@@ -30,7 +30,9 @@
 package codex
 
 import (
+	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
@@ -64,8 +66,13 @@ type Adapter struct {
 	generic.Adapter // inherits OnWrapperStatus + (no-op) OnScreen-but-we-override
 
 	// SessionsRoot overrides the default ~/.codex/sessions location used by
-	// the on-disk session-id fallback (LocateSessionID). Empty means default;
-	// set only in tests.
+	// the on-disk session-id fallback (LocateSessionID) and by ReadTranscript.
+	// It is set by ConfigureFromEnv from the harness's launch CODEX_HOME (and
+	// by tests directly); empty means the default.
+	//
+	// It is deliberately NOT guarded by mu: the chat layer writes it once at
+	// Open, before the watcher goroutine starts, so the write happens-before
+	// every read.
 	SessionsRoot string
 
 	mu              sync.Mutex
@@ -189,6 +196,35 @@ func (*Adapter) ExtractSessionID(snap screen.Snapshot) (string, bool) {
 //     pkg/chat has no primer). That is a separate follow-up ticket.
 func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
 	return collaborationMode(snap.Text)
+}
+
+// ConfigureFromEnv points the on-disk lookups at the config root the harness
+// was launched with: CODEX_HOME/sessions. Implements turns.EnvConfigurable. An
+// absent or blank value leaves SessionsRoot empty, so the reader keeps its
+// ~/.codex/sessions default — the unprofiled case is unchanged.
+//
+// A relative CODEX_HOME is left VERBATIM: codex resolves it against the harness
+// child's cwd, not the wrapper's.
+func (a *Adapter) ConfigureFromEnv(env []string) {
+	home := strings.TrimSpace(envLookup(env, "CODEX_HOME"))
+	if home == "" {
+		return
+	}
+	a.SessionsRoot = filepath.Join(home, "sessions")
+}
+
+// envLookup returns the value of key in an os.Environ()-style "K=V" slice, or
+// "" if absent. LAST occurrence wins, matching exec semantics. pkg/turns cannot
+// import pkg/harness, so this mirrors harness.EnvLookup deliberately.
+func envLookup(env []string, key string) string {
+	prefix := key + "="
+	val := ""
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			val = kv[len(prefix):]
+		}
+	}
+	return val
 }
 
 // LocateSessionID recovers the Codex session UUID from the most recent

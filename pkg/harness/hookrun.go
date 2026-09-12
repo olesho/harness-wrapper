@@ -43,7 +43,7 @@ const (
 // call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
 // main run's resolution already decided to install hooks.
 func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (HookOutcome, error) {
-	spool := envLookup(env, EnvSpool)
+	spool := EnvLookup(env, EnvSpool)
 	if spool == "" {
 		return HookOutcome{}, nil // inert outside a wrapper run
 	}
@@ -60,15 +60,15 @@ func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (Hoo
 	// The yield-guard is a control hook, not a capture hook: it decides whether
 	// to block the tool, and never touches the spool.
 	if spec := hp.HookSpec(); spec.Yield != nil && event == spec.Yield.Arg {
-		return checkYield(envLookup(env, EnvYieldFile)), nil
+		return checkYield(EnvLookup(env, EnvYieldFile)), nil
 	}
 
 	ctx := HookContext{
-		Cwd:              envLookup(env, EnvHookCwd),
-		Home:             envLookup(env, EnvHome),
-		ConfigDir:        envLookup(env, EnvConfigDir),
+		Cwd:              EnvLookup(env, EnvHookCwd),
+		Home:             EnvLookup(env, EnvHome),
+		ConfigDir:        EnvLookup(env, EnvConfigDir),
 		SpoolDir:         spool,
-		HarnessSessionID: envLookup(env, EnvHarnessSessionID),
+		HarnessSessionID: EnvLookup(env, EnvHarnessSessionID),
 	}
 	events, err := hp.ParseHookPayload(ctx, event, stdin)
 	if err != nil {
@@ -197,9 +197,12 @@ func filterResumeSession(expected string, events []transcript.ParsedEvent) []tra
 	return kept
 }
 
-// envLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
-// if absent. The last occurrence wins (matching exec semantics).
-func envLookup(env []string, key string) string {
+// EnvLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
+// if absent. The last occurrence wins (matching exec semantics). Exported so
+// per-harness Profile packages — which cannot see this package's unexported
+// helpers — read the launch env by exactly the same rule the hook subprocess
+// does; see ConfigDirResolver.
+func EnvLookup(env []string, key string) string {
 	prefix := key + "="
 	val := ""
 	for _, kv := range env {

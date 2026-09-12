@@ -11,6 +11,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/harness"
 )
@@ -36,6 +37,18 @@ func (Profile) Resolve(_ harness.ResolveContext) harness.ResolvedProfile {
 // StaticHookProvider returns Claude's HookProvider without running detection, for
 // the fired hook subprocess (harness.HandleHookEvent) which must not re-probe.
 func (Profile) StaticHookProvider() harness.HookProvider { return hookProvider{} }
+
+// HarnessConfigDir returns the CLAUDE_CONFIG_DIR value from the harness launch
+// env, or "" when it is absent or blank. Implements harness.ConfigDirResolver,
+// which is how a profiled agent's own config root reaches the hook subprocess
+// as HW_HARNESS_CONFIG_DIR — without it the subprocess falls back to
+// <Home>/.claude and rejects the agent's real transcript path.
+//
+// Last occurrence wins (harness.EnvLookup), matching exec semantics: callers
+// commonly append an override to an inherited env.
+func (Profile) HarnessConfigDir(env []string) string {
+	return strings.TrimSpace(harness.EnvLookup(env, "CLAUDE_CONFIG_DIR"))
+}
 
 // sessionIDExtractor parses Claude's stream-json "system:init" event.
 type sessionIDExtractor struct{}
