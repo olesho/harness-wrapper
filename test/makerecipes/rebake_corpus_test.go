@@ -62,8 +62,10 @@ func runRebake(t *testing.T, extra ...string) []string {
 		t.Fatal(err)
 	}
 	argvFile := filepath.Join(t.TempDir(), "argv")
-	args := append([]string{"-C", repoRoot(t), "rebake-corpus",
-		"HARNESS=claude", "SCENARIO=settled-after-turn", "RECORDER=" + fakeRecorder(t)}, extra...)
+	args := append([]string{
+		"-C", repoRoot(t), "rebake-corpus",
+		"HARNESS=claude", "SCENARIO=settled-after-turn", "RECORDER=" + fakeRecorder(t),
+	}, extra...)
 	cmd := exec.Command("make", args...)
 	cmd.Env = append(os.Environ(),
 		"PATH="+claudeDir+string(os.PathListSeparator)+os.Getenv("PATH"),
