@@ -3,7 +3,6 @@ package chat
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -269,11 +268,11 @@ func (c *Conversation) tryResolveInput(req *turns.InputRequest) bool {
 			// request. Nothing is lost: the only ctx consumer downstream is
 			// awaitComposerEcho, which already selects on c.closed, so Close
 			// still unblocks it, and its own deadline bounds the rest.
-			if err := c.writeAnswer(context.Background(), req, ans); err == nil {
+			err := c.writeAnswer(context.Background(), req, ans)
+			if err == nil {
 				return true
-			} else {
-				c.recordUnresolvedInput(err)
 			}
+			c.recordUnresolvedInput(err)
 		}
 	}
 	return false
@@ -422,40 +421,41 @@ func findOptionByAlias(req *turns.InputRequest, alias string) *turns.InputOption
 // unanswered modal on screen. The keys were never wrong: replaying the exact
 // bytes by hand into the same pane dismissed the dialog.
 //
-// So this file now does to an interactive ANSWER what submit.go does to a
-// prompt: it OBSERVES the screen instead of trusting a write. Fixed delays are
-// the wrong instrument — "the two writes race and the environment decides the
-// winner" (submit.go) — and a 60 ms settle between the arrows and the Enter was
-// measured to change nothing.
+// So this file does to an interactive ANSWER what submit.go does to a prompt:
+// it OBSERVES the screen instead of trusting a write. But a frame is evidence
+// of what the application DID, never of what it did NOT do: an unchanged frame
+// after a key cannot tell "the key was ignored" from "the key was taken and the
+// next screen has not painted yet". A key re-sent into the second case lands on
+// the NEXT screen — on a bypass launch, the acceptance dialog, whose default
+// row is "No, exit". So every write here waits for positive evidence, and the
+// absence of evidence ends the answer with a bounded *InputUnresolvedError
+// instead of another keystroke:
 //
-// Note the direction of each check, which differs from submit.go's on purpose:
-//
-//   - NAVIGATION is confirmed BEFORE the confirm key. An Enter pressed while
-//     the marker sits on the wrong row selects that row, and on a trust dialog
-//     the wrong row is "No, exit" — it kills the session. So a marker that
-//     never lands means NO Enter at all, never a hopeful one.
-//   - THE ANSWER is confirmed AFTER the fact, and retried. Re-pressing Enter on
-//     a menu that already took it is not the same hazard as double-submitting a
-//     prompt: the dialog is gone, so the retry is skipped entirely. What makes
-//     the retry safe is that the keys are RECOMPUTED from the live screen —
-//     replaying the original "\x1b[B" after the highlight has moved would walk
-//     past the target row.
+//   - NAVIGATION is written once, and the confirm key only after the highlight
+//     is seen on the target row OF THE ORIGINAL DIALOG — read through that
+//     dialog's own parse, never through a label that merely appears somewhere
+//     on screen. A highlight that does not land means no Enter and no second
+//     arrow: re-sending navigation while the first may still be in flight can
+//     walk the real highlight past the target (or around a wrapping menu back
+//     onto "No, exit") while a late frame shows the target.
+//   - THE ANSWER is confirmed after the fact. The dialog leaving the screen, or
+//     a different dialog replacing it, resolves it. The ONE state that
+//     licenses a re-answer is the measured 2.1.261 reset: the same dialog, with
+//     its highlight now OFF the row just confirmed — a repaint that could only
+//     come after the Enter, showing the dialog did not take it. The re-answer
+//     is computed from that live screen. A frame still showing the highlight on
+//     the target proves nothing, and gets no second Enter.
 const (
-	// answerAttempts bounds re-answers of a dialog that will not clear. Three
-	// covers a repaint that ate one answer without turning a wedged dialog into
-	// an unbounded keystroke loop.
+	// answerAttempts bounds the answers written to a dialog that keeps
+	// resetting. Three covers a repaint that ate one answer without turning a
+	// wedged dialog into an unbounded keystroke loop.
 	answerAttempts = 3
 )
 
-// errNavigationMissed is internal: the highlight never reached the target row,
-// so the confirm key was deliberately not written. It is never returned to a
-// caller — answerAndConfirm turns it into another attempt or, at the end, into
-// an *InputUnresolvedError.
-var errNavigationMissed = errors.New("chat: menu highlight never reached the target option")
-
 // answerAndConfirm writes opt's keystrokes and confirms the harness acted on
-// them, re-answering from the CURRENT screen up to answerAttempts times before
-// giving up with an *InputUnresolvedError.
+// them, following the evidence rules above, and gives up with an
+// *InputUnresolvedError — carrying the answers actually written — when the
+// screen stops providing evidence.
 //
 // Harnesses other than claude-code, and any Conversation with no screen (the
 // unit tests that inject only a write sink), keep the historical single write:
@@ -468,85 +468,144 @@ func (c *Conversation) answerAndConfirm(ctx context.Context, req *turns.InputReq
 
 	label := opt.Label
 	keys := opt.Keys
-	observed := c.screen.Snapshot().Text
-
-	for attempt := 1; ; attempt++ {
-		cur, err := c.writeAnswerKeys(ctx, label, keys)
-		if cur != "" {
-			observed = cur
-		}
-		switch {
-		case err == nil:
-			// The answer is delivered; did the dialog take it?
-			cleared, seen, err := c.awaitScreen(ctx, func(s string) bool {
-				return dialogCleared(req, s)
-			})
-			if seen != "" {
-				observed = seen
-			}
-			if err != nil {
+	var observed string
+	answered := 0
+	for {
+		nav, confirm, split := splitNavKeys(keys)
+		if split {
+			if err := c.write(nav); err != nil {
 				return err
 			}
-			if cleared {
+			st, seen, err := c.awaitDialog(ctx, req, label, func(st dialogState) bool {
+				return st == dialogOnTarget || st == dialogGone
+			})
+			observed = seen
+			switch {
+			case err != nil:
+				return err
+			case st == dialogGone:
+				// Answered or replaced while navigating — no Enter belongs to
+				// this request any more. A replacement gets its own request.
 				return nil
+			case st != dialogOnTarget:
+				// No evidence the arrows landed: lost, or still in flight. No
+				// Enter, and no second arrow.
+				return c.unresolvedInput(req, observed, answered)
 			}
-		case errors.Is(err, errNavigationMissed):
-			// No Enter was written. Fall through to another attempt rather than
-			// pressing into whatever row the marker is actually on.
-		default:
+			keys = confirm
+		}
+		if err := c.write(keys); err != nil {
 			return err
 		}
+		answered++
 
-		if attempt >= answerAttempts {
-			break
-		}
-		if err := c.answerBackoff(ctx, attempt); err != nil {
+		st, seen, err := c.awaitDialog(ctx, req, label, func(st dialogState) bool {
+			return st == dialogGone || (split && st == dialogOffTarget)
+		})
+		observed = seen
+		switch {
+		case err != nil:
 			return err
-		}
-
-		observed = c.screen.Snapshot().Text
-		if dialogCleared(req, observed) {
-			// It cleared during the backoff.
+		case st == dialogGone:
 			return nil
+		case !split || st != dialogOffTarget || answered >= answerAttempts:
+			// Unchanged, unreadable, or out of answers. An unchanged frame
+			// cannot distinguish a rejected Enter from a stale screen, so the
+			// answer ends here rather than pressing Enter again.
+			return c.unresolvedInput(req, observed, answered)
 		}
-		next, ok := recomputeKeys(observed, label)
+
+		// The same dialog repainted with its highlight off the row just
+		// confirmed: the answer did not take. Re-answer from the live screen.
+		if err := c.answerBackoff(ctx, answered); err != nil {
+			return err
+		}
+		observed = c.screen.Snapshot().Text
+		next, ok := keysOnLiveScreen(observed, req, label)
 		if !ok {
-			// The anchor is up but the menu no longer parses, so there is no
-			// honest set of keys to send. Stop rather than replay stale ones.
-			break
+			if dialogStateOf(observed, req, label) == dialogGone {
+				return nil // it cleared during the backoff
+			}
+			return c.unresolvedInput(req, observed, answered)
 		}
 		keys = next
 	}
+}
 
+// unresolvedInput is the bounded failure: the request, the last screen read,
+// and how many answers were actually written.
+func (c *Conversation) unresolvedInput(req *turns.InputRequest, observed string, answered int) error {
 	return &InputUnresolvedError{
 		Request:  toClientInputRequest(req),
 		Observed: observed,
-		Attempts: answerAttempts,
+		Attempts: answered,
 	}
 }
 
-// writeAnswerKeys delivers one answer, splitting navigation from the confirm
-// key when there is navigation to confirm. It returns the last screen it read
-// (for the error's evidence) and errNavigationMissed when it declined to press
-// Enter.
-func (c *Conversation) writeAnswerKeys(ctx context.Context, label string, keys []byte) (string, error) {
-	nav, confirm, split := splitNavKeys(keys)
-	if !split {
-		return "", c.write(keys)
+// dialogState is what the screen says about ONE request's dialog.
+type dialogState int
+
+const (
+	// dialogGone: the request's dialog is not on screen — answered, or
+	// replaced by a different dialog (which the adapter reports as its own
+	// request).
+	dialogGone dialogState = iota
+	// dialogUnreadable: the request's prompt or anchor is still painted but
+	// its menu does not parse as that dialog right now (a partial repaint).
+	dialogUnreadable
+	// dialogOnTarget: the request's own dialog, highlight on the target row.
+	dialogOnTarget
+	// dialogOffTarget: the request's own dialog, highlight on another row (or,
+	// for a numbered menu, on no row this layer can identify).
+	dialogOffTarget
+)
+
+// dialogStateOf reads text for req's dialog and the option labelled label.
+//
+// The dialog is identified by its request ID — kind, prompt and option labels
+// — through a fresh parse of the whole screen, so a label that merely appears
+// somewhere on screen, or a different dialog's menu, is never mistaken for
+// this one. The highlight is read through that same parse: the parser derives
+// each option's keys from the current highlight, so in an unnumbered menu the
+// highlighted option is exactly the one whose keys are a bare confirm.
+func dialogStateOf(text string, req *turns.InputRequest, label string) dialogState {
+	live, ok := claudecode.DetectInput(text)
+	if ok && live.ID == req.ID {
+		opt := findOption(live, label)
+		if opt != nil && bytes.Equal(opt.Keys, []byte{'\r'}) {
+			return dialogOnTarget
+		}
+		return dialogOffTarget
 	}
-	if err := c.write(nav); err != nil {
-		return "", err
+	if dialogPainted(req, text) {
+		return dialogUnreadable
 	}
-	landed, seen, err := c.awaitScreen(ctx, func(s string) bool {
-		return markerOnLabel(s, label)
-	})
-	if err != nil {
-		return seen, err
+	return dialogGone
+}
+
+// dialogPainted reports whether req's dialog is still painted at all. It asks
+// for the request's own prompt (or, without one, any anchor), not for a
+// parse: a dialog whose menu is mid-paint fails DetectInput while still being
+// very much up.
+func dialogPainted(req *turns.InputRequest, text string) bool {
+	if req.Prompt != "" {
+		return strings.Contains(text, req.Prompt)
 	}
-	if !landed {
-		return seen, errNavigationMissed
+	return claudecode.AnchorPresent(text)
+}
+
+// keysOnLiveScreen re-derives the keystrokes for label from req's dialog as it
+// looks NOW, or reports false when that dialog is not the one on screen.
+func keysOnLiveScreen(text string, req *turns.InputRequest, label string) ([]byte, bool) {
+	live, ok := claudecode.DetectInput(text)
+	if !ok || live.ID != req.ID {
+		return nil, false
 	}
-	return seen, c.write(confirm)
+	opt := findOption(live, label)
+	if opt == nil || len(opt.Keys) == 0 {
+		return nil, false
+	}
+	return opt.Keys, true
 }
 
 // splitNavKeys splits an option's keystrokes into the navigation prefix that
@@ -568,54 +627,12 @@ func splitNavKeys(keys []byte) (nav, confirm []byte, ok bool) {
 	return nav, keys[len(keys)-1:], true
 }
 
-// markerOnLabel reports whether the menu marker currently sits on label.
-// Matching is by LABEL and never by index: claude-code 2.1.261 inverted the
-// folder-trust option order, so the row that used to mean "proceed" now means
-// "exit".
-func markerOnLabel(text, label string) bool {
-	got, ok := claudecode.HighlightedLabel(text)
-	return ok && strings.EqualFold(got, label)
-}
-
-// dialogCleared reports whether THIS request's dialog has left the screen.
-//
-// It asks for the request's own anchor to be gone, not for DetectInput to fail:
-// a dialog whose menu is mid-paint fails DetectInput while still being very
-// much up, so DetectInput would read a repaint as success. And it is scoped to
-// this request rather than to "any dialog" (claudecode.AnchorPresent) because a
-// DIFFERENT dialog replacing this one is a resolution of this one — the adapter
-// hashes a new ID for it and emits its own InputRequested, which starts its own
-// answer. Retrying this request's keys into someone else's menu is exactly the
-// wrong-row press the navigation check exists to prevent.
-func dialogCleared(req *turns.InputRequest, text string) bool {
-	if req.Prompt != "" {
-		return !strings.Contains(text, req.Prompt)
-	}
-	return !claudecode.AnchorPresent(text)
-}
-
-// recomputeKeys re-derives the keystrokes for label from the screen as it looks
-// NOW. This is what makes a retry safe: the highlight has usually moved by the
-// time the first answer failed, and replaying the original arrows would walk
-// past the target row instead of onto it.
-func recomputeKeys(text, label string) ([]byte, bool) {
-	req, ok := claudecode.DetectInput(text)
-	if !ok {
-		return nil, false
-	}
-	opt := findOption(req, label)
-	if opt == nil || len(opt.Keys) == 0 {
-		return nil, false
-	}
-	return opt.Keys, true
-}
-
-// answerBackoff waits between attempts, growing with the attempt number so a
-// harness that is merely slow gets more room on the second try than the first.
-// It returns early — with an error — on cancellation or Close, so a wedged
-// dialog never holds a shutdown open.
-func (c *Conversation) answerBackoff(ctx context.Context, attempt int) error {
-	d := time.Duration(attempt) * c.permModeRenderBudget() / 4
+// answerBackoff waits between answers, growing with the number already written
+// so a harness that is merely slow gets more room on the second try than the
+// first. It returns early — with an error — on cancellation or Close, so a
+// wedged dialog never holds a shutdown open.
+func (c *Conversation) answerBackoff(ctx context.Context, answered int) error {
+	d := time.Duration(answered) * c.permModeRenderBudget() / 4
 	if d <= 0 {
 		return nil
 	}
@@ -631,19 +648,20 @@ func (c *Conversation) answerBackoff(ctx context.Context, attempt int) error {
 	}
 }
 
-// awaitScreen polls the live screen until want reports true or the render
-// budget expires, and returns what it last read.
+// awaitDialog polls the live screen until done reports true for req's dialog
+// state or the render budget expires, and returns the last state and screen.
 //
 // It reuses permModeRenderBudget rather than inventing a timing idiom: it is
 // the same question ("has the TUI repainted yet?"), the same order of
-// magnitude, and the same unexported override the hermetic tests already shrink.
+// magnitude, and the same unexported override the hermetic tests already
+// shrink.
 //
 // The select's arms carry NO returns — they only WAKE the loop, and every
-// decision is taken in the body, in order: want first (so work that lands on
-// the final tick is still honoured), then ctx and Close (an aborted wait must
-// never be reported as a quiet expiry), then the budget. See closedNow for the
-// measured bugs that shape costs when it is written the other way round.
-func (c *Conversation) awaitScreen(ctx context.Context, want func(string) bool) (bool, string, error) {
+// decision is taken in the body, in order: done first (so evidence that lands
+// on the final tick is still honoured), then ctx and Close (an aborted wait
+// must never be reported as a quiet expiry), then the budget. See closedNow for
+// the measured bugs that shape costs when it is written the other way round.
+func (c *Conversation) awaitDialog(ctx context.Context, req *turns.InputRequest, label string, done func(dialogState) bool) (dialogState, string, error) {
 	budget := c.permModeRenderBudget()
 	expiry := time.Now().Add(budget)
 	deadline := time.NewTimer(budget)
@@ -656,17 +674,18 @@ func (c *Conversation) awaitScreen(ctx context.Context, want func(string) bool) 
 
 	for {
 		cur := c.screen.Snapshot().Text
-		if want(cur) {
-			return true, cur, nil
+		st := dialogStateOf(cur, req, label)
+		if done(st) {
+			return st, cur, nil
 		}
 		if ctx.Err() != nil {
-			return false, cur, ctx.Err()
+			return st, cur, ctx.Err()
 		}
 		if closedNow(c.closed) {
-			return false, cur, ErrClosed
+			return st, cur, ErrClosed
 		}
 		if time.Now().After(expiry) {
-			return false, cur, nil
+			return st, cur, nil
 		}
 		select {
 		case <-ctx.Done():

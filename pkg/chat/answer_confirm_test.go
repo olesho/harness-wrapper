@@ -20,11 +20,12 @@ import (
 //	    written only after the marker has actually landed on the target row;
 //	(b) a marker that never moves produces NO confirm key at all — pressing it
 //	    would select whatever row the marker is on, and on a trust dialog that
-//	    row is "No, exit";
-//	(c) a dialog that stays up is re-answered a bounded number of times with
-//	    keys RECOMPUTED from the live screen, then fails with the typed error
-//	    instead of stalling to the caller's run deadline;
-//	(d) a dialog that clears on the first answer is answered exactly once.
+//	    row is "No, exit" — and no second arrow either;
+//	(c) a dialog that visibly RESETS after an answer is re-answered a bounded
+//	    number of times with keys RECOMPUTED from the live screen, then fails
+//	    with the typed error instead of stalling to the caller's run deadline;
+//	(d) a dialog that clears on the first answer is answered exactly once, and
+//	    one that merely stays as it was gets no second Enter.
 //
 // (c) is the fleet-wide hang this change exists for: before it, one ineffective
 // answer was permanent, because the adapter re-emits InputRequested only when
@@ -198,8 +199,11 @@ func TestAnswerAndConfirm_NeverPressesEnterOnTheWrongRow(t *testing.T) {
 	if n := f.countOf(confirm); n != 0 {
 		t.Fatalf("wrote the confirm key %d times with the marker still on %q; it must never be pressed on the wrong row", n, "No, exit")
 	}
-	if n := f.countOf(navDown); n != answerAttempts {
-		t.Errorf("wrote navigation %d times, want %d (one per bounded attempt)", n, answerAttempts)
+	// Exactly one arrow: a frame that did not move cannot say whether the
+	// first arrow was lost or is still in flight, and a second one could walk
+	// the real highlight past the target.
+	if n := f.countOf(navDown); n != 1 {
+		t.Errorf("wrote navigation %d times, want 1 — no blind re-send", n)
 	}
 	var ue *InputUnresolvedError
 	if !errors.As(err, &ue) {
@@ -208,8 +212,8 @@ func TestAnswerAndConfirm_NeverPressesEnterOnTheWrongRow(t *testing.T) {
 	if !errors.Is(err, ErrInputUnresolved) {
 		t.Errorf("errors.Is(err, ErrInputUnresolved) = false for %v", err)
 	}
-	if ue.Attempts != answerAttempts {
-		t.Errorf("Attempts = %d, want %d", ue.Attempts, answerAttempts)
+	if ue.Attempts != 0 {
+		t.Errorf("Attempts = %d, want 0: no answer was written", ue.Attempts)
 	}
 	if !strings.Contains(ue.Observed, "No, exit") {
 		t.Errorf("Observed screen carries no evidence of the dialog:\n%s", ue.Observed)
@@ -254,36 +258,85 @@ func TestAnswerAndConfirm_RetriesABoundedNumberOfTimesThenFails(t *testing.T) {
 	}
 }
 
-// Every re-answer must be computed from the screen as it looks NOW. Here the
-// first answer leaves the highlight ON the target, so replaying the original
-// Down would walk PAST it — the correct second answer is a bare Enter.
-func TestAnswerAndConfirm_RecomputesKeysFromTheLiveScreen(t *testing.T) {
-	answered := 0
+// The unsafe case the previous contract REQUIRED: the first answer leaves the
+// highlight on the target and the dialog up, unchanged. That frame cannot tell
+// a rejected Enter from an accepted one whose next screen has not painted, and
+// in the second case a bare Enter lands on the next dialog. So there is no
+// second Enter: the answer ends with the typed error, one answer written.
+func TestAnswerAndConfirm_UnchangedFrameAfterEnterGetsNoSecondEnter(t *testing.T) {
 	f := newAnswerFake(t, 60*time.Millisecond, trustFrameMarkerOnExit, func(f *answerFake, p []byte) {
-		if bytes.Equal(p, confirm) {
-			answered++
-			if answered == 1 {
-				// Dialog survives, but the highlight stays where it was put.
-				f.paint(trustFrameMarkerOnTrust)
-				return
-			}
-			f.paint(composerFrame)
-			return
-		}
-		if bytes.Equal(p, navDown) {
-			f.paint(trustFrameMarkerOnTrust)
+		if bytes.Equal(p, navDown) || bytes.Equal(p, confirm) {
+			f.paint(trustFrameMarkerOnTrust) // the dialog survives, highlight where it was put
 		}
 	})
 	req, opt := trustRequestUnnumbered(t)
 
+	err := f.c.answerAndConfirm(context.Background(), req, opt)
+	var ue *InputUnresolvedError
+	if !errors.As(err, &ue) {
+		t.Fatalf("err = %v, want *InputUnresolvedError", err)
+	}
+	if n := f.countOf(confirm); n != 1 {
+		t.Errorf("confirm key written %d times, want 1 — an unchanged frame is no evidence the Enter was rejected", n)
+	}
+	if ue.Attempts != 1 {
+		t.Errorf("Attempts = %d, want 1", ue.Attempts)
+	}
+}
+
+// threeRowTrust is an unnumbered trust-shaped dialog with a third row, so the
+// row a reset lands on can differ from where navigation started.
+func threeRowTrust(marker int) string {
+	rows := []string{"No, exit", "Yes, I trust this folder", "Yes, and remember"}
+	out := "Quick safety check: Is this a project you created or one you trust?\r\n\r\n"
+	for i, r := range rows {
+		if i == marker {
+			out += "❯ " + r + "\r\n"
+		} else {
+			out += "  " + r + "\r\n"
+		}
+	}
+	return out + "\r\nEnter to confirm · Esc to cancel\r\n"
+}
+
+// Every re-answer is computed from the screen as it looks NOW. The dialog
+// resets with its highlight BELOW the target, so the correct re-answer is Up,
+// and replaying the original Down would walk away from the target.
+func TestAnswerAndConfirm_RecomputesKeysFromTheLiveScreen(t *testing.T) {
+	navUp := []byte("\x1b[A")
+	marker, answered := 0, 0
+	f := newAnswerFake(t, 2*time.Second, threeRowTrust(0), func(f *answerFake, p []byte) {
+		switch {
+		case bytes.Equal(p, navDown):
+			marker++
+			f.paint(threeRowTrust(marker))
+		case bytes.Equal(p, navUp):
+			marker--
+			f.paint(threeRowTrust(marker))
+		case bytes.Equal(p, confirm):
+			answered++
+			if answered == 1 {
+				marker = 2 // reset, landing below the target
+				f.paint(threeRowTrust(marker))
+				return
+			}
+			f.paint(composerFrame)
+		}
+	})
+	req, ok := claudecode.DetectInput(threeRowTrust(0))
+	if !ok {
+		t.Fatal("three-row fixture does not detect")
+	}
+	opt := findOption(req, trustLabel)
+	if opt == nil {
+		t.Fatalf("no %q option in %+v", trustLabel, req.Options)
+	}
+
 	if err := f.c.answerAndConfirm(context.Background(), req, opt); err != nil {
 		t.Fatalf("answerAndConfirm: %v", err)
 	}
-	if n := f.countOf(navDown); n != 1 {
-		t.Errorf("navigation written %d times, want 1 — the retry must not replay arrows that would walk past the target", n)
-	}
-	if n := f.countOf(confirm); n != 2 {
-		t.Errorf("confirm key written %d times, want 2 (the retry is a bare Enter on the already-highlighted row)", n)
+	if got := f.writtenStrings(); strings.Join(got, "|") != strings.Join([]string{string(navDown), string(confirm), string(navUp), string(confirm)}, "|") {
+		t.Errorf("writes = %q, want Down, Enter, then the recomputed Up, Enter", got)
 	}
 }
 
