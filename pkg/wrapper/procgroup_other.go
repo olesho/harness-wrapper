@@ -8,17 +8,23 @@ import (
 	"syscall"
 )
 
-// signalProcessGroup signals p alone on platforms with no POSIX process
-// groups. Behaviour here is exactly what the wrapper did on every platform
-// before group-scoped termination; the unix build gets the group semantics.
-// Keeping the same signature on both sides is what keeps session.go free of
-// build tags.
-func signalProcessGroup(p *os.Process, sig syscall.Signal) error {
-	if p == nil {
+// resolveSessionGroup reports no signalable group on platforms without POSIX
+// process groups, so the wrapper signals the harness process alone — exactly
+// what it did on every platform before group-scoped termination. Keeping the
+// same helpers on both sides keeps procgroup.go and session.go free of build
+// tags.
+func resolveSessionGroup(int) int { return 0 }
+
+// killGroup is never reached here: resolveSessionGroup yields no group.
+func killGroup(int, syscall.Signal) error { return errors.ErrUnsupported }
+
+// groupHasMembers has no group to report on.
+func groupHasMembers(int) bool { return false }
+
+// ignoreProcessGone maps "the target is already gone" onto success.
+func ignoreProcessGone(err error) error {
+	if errors.Is(err, os.ErrProcessDone) {
 		return nil
 	}
-	if err := p.Signal(sig); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
-	return nil
+	return err
 }

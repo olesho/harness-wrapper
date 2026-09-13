@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-// getpgidFn and killFn indirect the two syscalls signalProcessGroup makes so
+// getpgidFn and killFn indirect the two syscalls group termination makes so
 // tests can stub a degenerate or self-referential process group and assert the
 // per-process fallback is taken. Production code never reassigns them.
 var (
@@ -16,42 +16,44 @@ var (
 	killFn    = syscall.Kill
 )
 
-// signalProcessGroup delivers sig to the whole process group led by p, not
-// just to p itself.
+// resolveSessionGroup returns the process group led by pid, or 0 when that
+// group must not be signalled.
 //
-// This is sound because sessions are started with pty.Start, which sets
-// SysProcAttr.Setsid: the harness is therefore a session leader whose PGID
-// equals its PID, and every tool subprocess it spawns inherits that group.
-// Signalling the PID alone leaves those descendants running — reparented to
-// PID 1, with their exit status unreachable by anyone — which is exactly how a
-// 35-minute test run outlived the session that started it.
-//
-// Safety: group 0 means "the caller's own group", group 1 is init's, and the
-// wrapper's own group would take down the caller (the loom daemon) with the
-// harness. Any of those, or a failure to resolve the group at all, falls back
-// to signalling the single process, which is what the wrapper did before.
-//
-// ESRCH is swallowed: a process that already exited is a successful
-// termination, and a signal error must never change a run's classification.
-func signalProcessGroup(p *os.Process, sig syscall.Signal) error {
-	if p == nil {
-		return nil
+// Sessions start under pty.Start, which sets SysProcAttr.Setsid, so the harness
+// is a session leader whose PGID equals its PID and every tool subprocess it
+// spawns inherits that group. Anything else — a lookup failure, a group the
+// harness does not lead, or a dangerous group (see signalableGroup) — resolves
+// to 0, and the wrapper signals the harness process alone, as it did before
+// group-scoped termination.
+func resolveSessionGroup(pid int) int {
+	pgid, err := getpgidFn(pid)
+	if err != nil || pgid != pid || !signalableGroup(pgid) {
+		return 0
 	}
-	pgid, err := getpgidFn(p.Pid)
-	if err != nil || !signalableGroup(pgid) {
-		return ignoreProcessGone(p.Signal(sig))
-	}
-	return ignoreProcessGone(killFn(-pgid, sig))
+	return pgid
 }
 
 // signalableGroup reports whether pgid is a process group the wrapper may
 // signal. It mirrors the self-protection in loom's own process-tree reaper:
-// never group 0, never init's group, never our own.
+// never group 0, never init's group, never our own — signalling the wrapper's
+// group would take down the caller (the loom daemon) with the harness.
 func signalableGroup(pgid int) bool {
 	if pgid <= 1 {
 		return false
 	}
 	return pgid != syscall.Getpgrp()
+}
+
+// killGroup delivers sig to every member of process group pgid.
+func killGroup(pgid int, sig syscall.Signal) error {
+	return killFn(-pgid, sig)
+}
+
+// groupHasMembers reports whether process group pgid still has any member.
+// EPERM means members exist that this process may not signal.
+func groupHasMembers(pgid int) bool {
+	err := killFn(-pgid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // ignoreProcessGone maps "the target is already gone" onto success.
