@@ -769,10 +769,10 @@ func (*Adapter) SessionControlFlags() []string {
 // the reader keeps its ~/.claude/projects default — the unprofiled case is
 // byte-for-byte unchanged.
 //
-// A relative CLAUDE_CONFIG_DIR is left VERBATIM rather than made absolute
-// against the wrapper's cwd: claude itself resolves it against the harness
-// child's cwd, so resolving it here would invent a different path than the one
-// the transcript was actually written to.
+// A relative CLAUDE_CONFIG_DIR is stored VERBATIM here and resolved at read
+// time against the harness child's working directory (ReadTranscript's
+// workingDir): claude takes the value verbatim, so that is where it wrote the
+// transcript. Resolving it against the wrapper's cwd would read elsewhere.
 func (a *Adapter) ConfigureFromEnv(env []string) {
 	dir := strings.TrimSpace(envLookup(env, "CLAUDE_CONFIG_DIR"))
 	if dir == "" {
@@ -797,9 +797,11 @@ func envLookup(env []string, key string) string {
 }
 
 // ReadTranscript reads the on-disk Claude Code session log, under ProjectsRoot
-// when ConfigureFromEnv supplied one. Implements turns.TranscriptReader.
+// when ConfigureFromEnv supplied one — resolved against workingDir, the harness
+// child's cwd, when it is relative. Implements turns.TranscriptReader.
 func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	evs, err := (&transcriptcc.Reader{ProjectsRoot: a.ProjectsRoot}).Read(harnessSessionID, workingDir)
+	root := transcript.ResolveHarnessPath(a.ProjectsRoot, workingDir)
+	evs, err := (&transcriptcc.Reader{ProjectsRoot: root}).Read(harnessSessionID, workingDir)
 	if err != nil {
 		return nil, err
 	}

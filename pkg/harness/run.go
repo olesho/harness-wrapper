@@ -156,11 +156,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		if err := rp.Hooks.EnsureConfig(cfg.Wrapper.WorkingDir, cfg.HookCommand); err != nil {
 			return Result{TranscriptStrategy: "none"}, fmt.Errorf("harness: ensure hooks: %w", err)
 		}
-		// Reuse the profile the run already resolved through — never re-probe.
-		var configDir string
-		if p, ok := For(cfg.Wrapper.Harness); ok {
-			configDir = harnessConfigDir(p, cfg.Wrapper.Env)
-		}
+		configDir := hookConfigDir(cfg.Wrapper.Harness, cfg.Wrapper.Env, cfg.Wrapper.WorkingDir)
 		wc.Env = hookEnv(cfg.Wrapper.Env, spoolDir, cfg.Wrapper.WorkingDir, cfg.Yield, cfg.ResumeSessionID, configDir)
 	}
 
@@ -359,13 +355,39 @@ func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSe
 	return out
 }
 
-// harnessConfigDir asks the ALREADY-RESOLVED profile for the harness config root
-// named by the launch env. "" when the harness has no such notion, when the
-// profile is unknown, or when the env does not override the default.
+// hookConfigDir is the harness config root the fired hooks must validate
+// transcripts against: the root the harness child is ACTUALLY launched with,
+// made absolute against the child's working directory.
+//
+// Both halves matter. The launch env is Wrapper.Env, or this process's
+// environment when Env is nil — exec inherits it, so the child runs on an
+// inherited root and the hooks must be told the same one. And claude takes a
+// relative CLAUDE_CONFIG_DIR verbatim, relative to ITS cwd, so the root handed
+// to the hook subprocess is resolved against workingDir, never left relative
+// for some other process's cwd to interpret.
+//
+// The profile is looked up by name in the registry the run already resolved
+// through — never re-probed. "" when the harness has no config-root notion, the
+// profile is unknown, or the launch env does not override the default.
+func hookConfigDir(harnessName string, env []string, workingDir string) string {
+	p, ok := For(harnessName)
+	if !ok {
+		return ""
+	}
+	return transcript.ResolveHarnessPath(harnessConfigDir(p, env), workingDir)
+}
+
+// harnessConfigDir asks the profile for the harness config root named by the
+// launch env. A nil env is the inherited one (os.Environ()), matching exec and
+// hookEnv. "" when the harness has no such notion or the env does not override
+// the default.
 func harnessConfigDir(p Profile, env []string) string {
 	r, ok := p.(ConfigDirResolver)
 	if !ok {
 		return ""
+	}
+	if env == nil {
+		env = os.Environ()
 	}
 	return r.HarnessConfigDir(env)
 }

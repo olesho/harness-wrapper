@@ -203,8 +203,9 @@ func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
 // absent or blank value leaves SessionsRoot empty, so the reader keeps its
 // ~/.codex/sessions default — the unprofiled case is unchanged.
 //
-// A relative CODEX_HOME is left VERBATIM: codex resolves it against the harness
-// child's cwd, not the wrapper's.
+// A relative CODEX_HOME is stored VERBATIM here and resolved at lookup time
+// against the harness child's working directory: codex canonicalizes the value
+// against its own cwd at startup, so that is where its rollouts are.
 func (a *Adapter) ConfigureFromEnv(env []string) {
 	home := strings.TrimSpace(envLookup(env, "CODEX_HOME"))
 	if home == "" {
@@ -233,15 +234,22 @@ func envLookup(env []string, key string) string {
 // returns nothing on Codex 0.142+ (the resume hint is no longer rendered).
 // Implements turns.SessionIDLocator.
 func (a *Adapter) LocateSessionID(workingDir string) (string, bool) {
-	return (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).LocateLatestSession(workingDir)
+	return a.reader(workingDir).LocateLatestSession(workingDir)
 }
 
 // ReadTranscript reads the on-disk Codex session log. Implements
 // turns.TranscriptReader.
 func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	evs, err := (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).Read(harnessSessionID, workingDir)
+	evs, err := a.reader(workingDir).Read(harnessSessionID, workingDir)
 	if err != nil {
 		return nil, err
 	}
 	return transcript.TurnsFromEvents(evs), nil
+}
+
+// reader builds the on-disk reader for a harness child running in workingDir:
+// SessionsRoot, when relative, is resolved against that directory rather than
+// the wrapper's cwd (see ConfigureFromEnv).
+func (a *Adapter) reader(workingDir string) *transcriptcodex.Reader {
+	return &transcriptcodex.Reader{SessionsRoot: transcript.ResolveHarnessPath(a.SessionsRoot, workingDir)}
 }

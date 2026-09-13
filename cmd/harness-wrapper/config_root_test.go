@@ -28,7 +28,7 @@ func TestStructuredTranscriptUsesConfigRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "review-session.jsonl"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	events, err := readStructuredTranscript("claude", "review-session", wd)
+	events, err := readStructuredTranscript("claude", "review-session", wd, cleanedEnv())
 	if err != nil {
 		t.Fatalf("transcript exists in configured profile but structured-run failed: %v", err)
 	}

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
@@ -127,7 +129,7 @@ func runStructuredRun(args []string) int {
 	// failure never erases a successful reply. An empty/absent session id makes
 	// Read error (missing files), which is tolerated: entries stay empty and the
 	// failure is recorded in transcript_error.
-	entries, terr := readStructuredTranscript(parsed.HarnessName, outcome.HarnessSessionID, wd)
+	entries, terr := readStructuredTranscript(parsed.HarnessName, outcome.HarnessSessionID, wd, env)
 	if terr != nil {
 		result.TranscriptError = terr.Error()
 	} else {
@@ -142,7 +144,7 @@ func runStructuredRun(args []string) int {
 	// omitempty tag drops the field. No usage_error sibling is emitted (a
 	// failure-observability field would be an additive follow-up, not this
 	// ticket).
-	if reader, ok := transcriptReaderFor(parsed.HarnessName); ok {
+	if reader, ok := transcriptReaderFor(parsed.HarnessName, env, wd); ok {
 		if ur, ok := reader.(transcript.UsageReader); ok {
 			if u, uerr := ur.ReadUsage(outcome.HarnessSessionID, wd); uerr == nil && u != nil {
 				result.Usage = u
@@ -162,24 +164,40 @@ func runStructuredRun(args []string) int {
 // using the transcript Reader selected by HARNESS SHORT NAME ("claude"/"codex")
 // — NOT the chat-adapter name ("claude-code"). It reads the raw on-disk stream,
 // which preserves tool-call events that res.History folds away.
-func readStructuredTranscript(harnessName, harnessSessionID, workingDir string) ([]transcript.Event, error) {
-	reader, ok := transcriptReaderFor(harnessName)
+//
+// env is the environment the harness was LAUNCHED with: a profiled agent's
+// CLAUDE_CONFIG_DIR / CODEX_HOME there is where its logs are, not HOME.
+func readStructuredTranscript(harnessName, harnessSessionID, workingDir string, env []string) ([]transcript.Event, error) {
+	reader, ok := transcriptReaderFor(harnessName, env, workingDir)
 	if !ok {
 		return nil, fmt.Errorf("no transcript reader for harness %q", harnessName)
 	}
 	return reader.Read(harnessSessionID, workingDir)
 }
 
-// transcriptReaderFor selects the per-harness transcript.Reader by short name.
+// transcriptReaderFor selects the per-harness transcript.Reader by short name,
+// rooted where a harness launched with env in workingDir writes its logs.
 // Deliberately NOT chat.resolveAdapter: that returns a turns.Adapter keyed on
 // the chat-adapter name ("claude-code"), a different interface and a different
 // key space.
-func transcriptReaderFor(harnessName string) (transcript.Reader, bool) {
+//
+// The config root comes from the launch env, never os.Environ() directly, and
+// a relative root is resolved against workingDir — the harness child's cwd —
+// because that is where claude and codex resolve it. An absent or blank root
+// keeps the reader's HOME default.
+func transcriptReaderFor(harnessName string, env []string, workingDir string) (transcript.Reader, bool) {
+	root := func(key, sub string) string {
+		dir := strings.TrimSpace(harness.EnvLookup(env, key))
+		if dir == "" {
+			return ""
+		}
+		return transcript.ResolveHarnessPath(filepath.Join(dir, sub), workingDir)
+	}
 	switch harnessName {
 	case "claude":
-		return claudecode.New(), true
+		return &claudecode.Reader{ProjectsRoot: root("CLAUDE_CONFIG_DIR", "projects")}, true
 	case "codex":
-		return codex.New(), true
+		return &codex.Reader{SessionsRoot: root("CODEX_HOME", "sessions")}, true
 	default:
 		return nil, false
 	}

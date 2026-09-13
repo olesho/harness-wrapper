@@ -263,3 +263,41 @@ func TestParseHookPayloadPostTaskSurfacesUnreadableSidecar(t *testing.T) {
 		t.Errorf("got %+v alongside the error, want no events", evs)
 	}
 }
+
+// TestValidateTranscriptPathAnchorsRelativePaths: under a relative
+// CLAUDE_CONFIG_DIR claude hands its hooks a transcript path relative to its own
+// cwd (the run's working dir, HW_HOOK_CWD). It is accepted when it lands under
+// the root and still rejected when it escapes it.
+func TestValidateTranscriptPathAnchorsRelativePaths(t *testing.T) {
+	wt := t.TempDir()
+	root := filepath.Join(wt, ".agent-claude")
+	ctx := harness.HookContext{Home: t.TempDir(), Cwd: wt, ConfigDir: root}
+
+	rel := filepath.Join(".agent-claude", "projects", "-wt", "rel-sess.jsonl")
+	if err := os.MkdirAll(filepath.Join(wt, filepath.Dir(rel)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"type":"user","uuid":"r1","timestamp":"2026-05-14T12:00:00Z","message":{"role":"user","content":"relative"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(wt, rel), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]string{"session_id": "rel-sess", "transcript_path": rel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, err := hookProvider{}.ParseHookPayload(ctx, "stop", payload)
+	if err != nil {
+		t.Fatalf("relative transcript path under the root rejected: %v", err)
+	}
+	if len(evs) != 1 || evs[0].Event.Text != "relative" {
+		t.Fatalf("got %+v, want the one staged event", evs)
+	}
+
+	escape, err := json.Marshal(map[string]string{"session_id": "rel-sess", "transcript_path": filepath.Join("..", "elsewhere", "rel-sess.jsonl")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (hookProvider{}).ParseHookPayload(ctx, "stop", escape); err == nil {
+		t.Fatal("a relative path escaping the transcript root was accepted")
+	}
+}
