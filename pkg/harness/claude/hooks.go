@@ -82,6 +82,11 @@ func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdi
 	if p.SessionID == "" {
 		return nil, fmt.Errorf("claude hook %q: empty session_id", event)
 	}
+	// claude builds transcript_path from its config root VERBATIM, so under a
+	// relative CLAUDE_CONFIG_DIR the path it hands over is relative to its own
+	// cwd — the run's working dir. Anchor it there before validating or reading
+	// it, rather than letting this subprocess's cwd decide.
+	p.TranscriptPath = transcript.ResolveHarnessPath(p.TranscriptPath, ctx.Cwd)
 	switch event {
 	case argStop, argSessionEnd:
 		return readParentTranscript(ctx, p)
@@ -242,7 +247,7 @@ func validateTranscriptPath(ctx harness.HookContext, sessionID, tpath string) er
 	if tpath == "" {
 		return fmt.Errorf("claude hook: empty transcript_path")
 	}
-	configDir := ctx.ConfigDir
+	configDir := transcript.ResolveHarnessPath(ctx.ConfigDir, ctx.Cwd)
 	if configDir == "" {
 		configDir = filepath.Join(ctx.Home, ".claude")
 	}
