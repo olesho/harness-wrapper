@@ -174,13 +174,13 @@ func TestTmuxRoundTrip(t *testing.T) {
 	}
 	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
 
+	// A private server, like every tmux test here: never the user's own
+	// harness-wrapper server (see privateTmuxSocket).
+	socket := privateTmuxSocket(t)
+	sockEnv := envTmuxSocket + "=" + socket
+
 	tracePath := filepath.Join(t.TempDir(), "t.ndjson")
 	sessionName := "hwtest"
-	t.Cleanup(func() {
-		cmd := exec.Command(hwBin, "kill", sessionName)
-		cmd.Env = appendEnv(cmd.Env, "PATH="+envPATH)
-		_ = cmd.Run()
-	})
 
 	// Spawn the parent. The harness ("claude") is the mock running in
 	// stuck mode so the session stays alive long enough to observe.
@@ -190,7 +190,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 		"--trace-file", tracePath,
 		"claude", "--", "--mode", "stuck",
 	)
-	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir())
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir(), sockEnv)
 	out, err := spawn.CombinedOutput()
 	if err != nil {
 		t.Fatalf("spawn: %v\n%s", err, out)
@@ -201,7 +201,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// list should include our session.
 	listCmd := exec.Command(hwBin, "list")
-	listCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	listCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	listOut, err := listCmd.Output()
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -212,7 +212,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// status (text) should mention the session.
 	statusCmd := exec.Command(hwBin, "status", sessionName)
-	statusCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	statusCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	statusOut, err := statusCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("status: %v\n%s", err, statusOut)
@@ -223,12 +223,12 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// kill should remove the session.
 	killCmd := exec.Command(hwBin, "kill", sessionName)
-	killCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	killCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	if killOut, err := killCmd.CombinedOutput(); err != nil {
 		t.Fatalf("kill: %v\n%s", err, killOut)
 	}
 	listCmd2 := exec.Command(hwBin, "list")
-	listCmd2.Env = appendEnv(nil, "PATH="+envPATH)
+	listCmd2.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	listOut2, _ := listCmd2.Output()
 	if strings.Contains(string(listOut2), sessionName) {
 		t.Errorf("session %q still listed after kill: %s", sessionName, listOut2)
@@ -248,13 +248,9 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 	}
 	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
 
+	socket := privateTmuxSocket(t)
 	tracePath := filepath.Join(t.TempDir(), "short.trace.ndjson")
 	sessionName := "hwshort"
-	t.Cleanup(func() {
-		cmd := exec.Command(hwBin, "kill", sessionName)
-		cmd.Env = appendEnv(cmd.Env, "PATH="+envPATH)
-		_ = cmd.Run()
-	})
 
 	spawn := exec.Command(
 		hwBin,
@@ -262,16 +258,13 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 		"--trace-file", tracePath,
 		"claude", "--",
 	)
-	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir())
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir(), envTmuxSocket+"="+socket)
 	if out, err := spawn.CombinedOutput(); err != nil {
 		t.Fatalf("spawn short run: %v\n%s", err, out)
 	}
 
-	deadline := time.Now().Add(15 * time.Second)
-	for tmuxSessionExists(sessionName) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-	}
-	if tmuxSessionExists(sessionName) {
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatalf("tmux session %q still alive after short run", sessionName)
 	}
 
@@ -313,4 +306,109 @@ func buildMockHarness(t *testing.T) string {
 		t.Fatalf("build mock harness: %v\n%s", err, outBytes)
 	}
 	return out
+}
+
+// TestTmuxSpawnArgv freezes the new-session argv. It carries no -L: the socket
+// is prepended by tmuxCmd for every invocation, so duplicating it here would be
+// a second place to get wrong.
+func TestTmuxSpawnArgv(t *testing.T) {
+	got := tmuxSpawnArgv("hw-demo", []string{"/self", "--tmux-child", "demo", "claude", "--"})
+	want := []string{"new-session", "-d", "-s", "hw-demo", "/self", "--tmux-child", "demo", "claude", "--"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tmuxSpawnArgv = %v, want %v", got, want)
+	}
+}
+
+// TestTmuxRemainOnExitOffArgv pins the option that PUPPET-346 was entirely
+// about: with remain-on-exit on, a finished pane is retained and the session
+// never dies.
+func TestTmuxRemainOnExitOffArgv(t *testing.T) {
+	got := tmuxRemainOnExitOffArgv("hw-demo")
+	want := []string{"set-option", "-t", "hw-demo", "-w", "remain-on-exit", "off"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tmuxRemainOnExitOffArgv = %v, want %v", got, want)
+	}
+}
+
+// TestTmuxCmdUsesDedicatedSocket asserts every tmux invocation is pinned to our
+// own server with -L. A call that loses the flag silently talks to the user's
+// default server, where none of our sessions exist.
+func TestTmuxCmdUsesDedicatedSocket(t *testing.T) {
+	t.Setenv(envTmuxSocket, "")
+	got := tmuxCmd("has-session", "-t", "hw-x").Args
+	want := []string{"tmux", "-L", defaultTmuxSocket, "has-session", "-t", "hw-x"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tmuxCmd args = %v, want %v", got, want)
+	}
+
+	t.Setenv(envTmuxSocket, "custom-sock")
+	got = tmuxCmd("list-sessions").Args
+	want = []string{"tmux", "-L", "custom-sock", "list-sessions"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tmuxCmd args with %s set = %v, want %v", envTmuxSocket, got, want)
+	}
+}
+
+// TestTmuxShortRunSurvivesRemainOnExit is the regression test for PUPPET-346,
+// run under the exact hostile condition that caused it: a tmux server with
+// `remain-on-exit on` set globally, which retains a pane after its process
+// exits and so keeps the session alive forever holding nothing.
+//
+// It pins the two layers that do not depend on the dedicated socket -- the
+// per-session `remain-on-exit off` and the child's self-teardown -- by pointing
+// HW_TMUX_SOCKET at a server that is itself poisoned.
+//
+// It mutates ONLY its own private server, never the shared default one. That
+// distinction is the whole bug: the ambient state this test simulates got there
+// because another repo's suite set the option globally on the default server
+// and restored it only from a cleanup path a killed test binary never runs.
+func TestTmuxShortRunSurvivesRemainOnExit(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available; skipping integration test")
+	}
+
+	socket := privateTmuxSocket(t)
+	// Start the private server and poison it exactly as the real host was.
+	if out, err := exec.Command("tmux", "-L", socket, "new-session", "-d", "-s", "keepalive", "sleep", "120").CombinedOutput(); err != nil {
+		t.Fatalf("start private tmux server: %v\n%s", err, out)
+	}
+	if out, err := exec.Command("tmux", "-L", socket, "setw", "-g", "remain-on-exit", "on").CombinedOutput(); err != nil {
+		t.Fatalf("set remain-on-exit on: %v\n%s", err, out)
+	}
+
+	hwBin := buildHarnessWrapper(t)
+	shimDir := t.TempDir()
+	shimPath := filepath.Join(shimDir, "claude")
+	if err := os.WriteFile(shimPath, []byte("#!/bin/sh\necho fake claude\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
+
+	tracePath := filepath.Join(t.TempDir(), "hostile.trace.ndjson")
+	sessionName := "hwhostile"
+
+	spawn := exec.Command(hwBin, "--tmux-session", sessionName, "--trace-file", tracePath, "claude", "--")
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir(), envTmuxSocket+"="+socket)
+	if out, err := spawn.CombinedOutput(); err != nil {
+		t.Fatalf("spawn short run: %v\n%s", err, out)
+	}
+
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+		dumpTmuxDiagnostics(t, socket, tracePath)
+		t.Fatalf("tmux session %q still alive after short run on a remain-on-exit server", sessionName)
+	}
+
+	// The teardown must not truncate the trace: kill-session destroys the pane
+	// this process runs in, so a flush ordered after it loses the last event.
+	last, err := readLastTraceEvent(tracePath)
+	if err != nil {
+		t.Fatalf("read trace: %v", err)
+	}
+	if last == nil {
+		t.Fatal("trace is empty")
+	}
+	if got := last["kind"]; got != "wrapper_cli_exited" {
+		b, _ := json.Marshal(last)
+		t.Fatalf("last trace kind = %v, want wrapper_cli_exited; event=%s", got, b)
+	}
 }

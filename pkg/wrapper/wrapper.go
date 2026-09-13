@@ -8,6 +8,17 @@
 // non-terminal harness states from recent output. The wrapper does not
 // persist state; callers own persistence.
 //
+// Termination is process-GROUP scoped on unix: the harness and every tool
+// subprocess it spawned are signalled together. This is sound only because
+// sessions start under pty.Start, which sets SysProcAttr.Setsid — the harness
+// is a session leader whose PGID equals its PID, and its descendants inherit
+// that group. Signalling the harness PID alone left those descendants running,
+// reparented to PID 1, long after the run was declared over. The escalation to
+// SIGKILL is owned by the session through to the group being empty, so a
+// harness that exits on SIGTERM cannot strand a child that ignores it; Wait
+// returns after that cleanup. A descendant that calls setsid() itself still
+// escapes; supervising that is the caller's job.
+//
 // Concurrency: the package is safe for multiple concurrent Run calls
 // only in headless mode (non-TTY stdin/stdout). Concurrent foreground
 // Run calls produce undefined behavior because they would compete for
@@ -91,8 +102,16 @@ type Config struct {
 	// will then emit no StatusStale events regardless of quiet duration.
 	StaleThreshold time.Duration
 
-	// WaitDelay is how long to wait after sending SIGTERM before
-	// escalating to SIGKILL on context cancellation. Defaults to 5s.
+	// WaitDelay is the grace period between SIGTERM and SIGKILL when the
+	// wrapper terminates a run (context cancellation, Stop, or a terminal
+	// classification). Defaults to 5s.
+	//
+	// Both signals are delivered to the harness's process group, so tool
+	// subprocesses are reaped with it rather than surviving the run — the
+	// SIGKILL reaches any member still running once the grace period has
+	// passed, even when the harness itself exited on the SIGTERM. See the
+	// package doc for why that is safe, and Session.Wait for what it
+	// promises.
 	WaitDelay time.Duration
 
 	// Trace receives diagnostic events emitted by the wrapper. If nil,

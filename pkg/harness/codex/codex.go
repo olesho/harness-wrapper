@@ -19,7 +19,11 @@
 // Importing this package registers the "codex" profile (see init).
 package codex
 
-import "github.com/olesho/harness-wrapper/pkg/harness"
+import (
+	"strings"
+
+	"github.com/olesho/harness-wrapper/pkg/harness"
+)
 
 // Profile is the Codex CLI harness profile.
 type Profile struct{}
@@ -33,6 +37,14 @@ func (Profile) Resolve(_ harness.ResolveContext) harness.ResolvedProfile {
 	return harness.ResolvedProfile{
 		Resume: resumer{},
 	}
+}
+
+// HarnessConfigDir returns the CODEX_HOME value from the harness launch env, or
+// "" when it is absent or blank. Implements harness.ConfigDirResolver — the
+// codex counterpart of Claude's CLAUDE_CONFIG_DIR, kept in step so the two
+// harnesses do not diverge. Last occurrence wins, matching exec semantics.
+func (Profile) HarnessConfigDir(env []string) string {
+	return strings.TrimSpace(harness.EnvLookup(env, "CODEX_HOME"))
 }
 
 // resumer produces Codex's resume fragment. Codex resumes via the `exec resume`

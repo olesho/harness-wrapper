@@ -103,8 +103,8 @@ func TestStructuredRun_SandboxDefaultsInjection(t *testing.T) {
 	}
 
 	// Ambient-IS_SANDBOX hygiene, required for the two negative rows to mean
-	// anything: cleanedEnv() starts from os.Environ() and strips only
-	// CLAUDECODE / CLAUDE_CODE_*, so the shim's ${IS_SANDBOX-unset} otherwise
+	// anything: cleanedEnv() starts from os.Environ() and strips only Claude
+	// Code's nesting markers, so the shim's ${IS_SANDBOX-unset} otherwise
 	// reflects the TEST HOST. In a guest that already exports IS_SANDBOX=1 —
 	// exactly the deployment this feature targets — the bypass-alone row would
 	// fail spuriously and the sandbox-defaults row would pass for the WRONG
@@ -292,7 +292,8 @@ func TestStructuredTranscript_ClaudeFidelity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := readStructuredTranscript("claude", sessionID, wd)
+	// nil launch env: no config-root override, so the HOME default applies.
+	entries, err := readStructuredTranscript("claude", sessionID, wd, nil)
 	if err != nil {
 		t.Fatalf("readStructuredTranscript: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestStructuredTranscript_CodexFidelity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := readStructuredTranscript("codex", sessionID, "/unused")
+	entries, err := readStructuredTranscript("codex", sessionID, "/unused", nil)
 	if err != nil {
 		t.Fatalf("readStructuredTranscript: %v", err)
 	}
@@ -377,6 +378,9 @@ func TestStructuredRun_UsagePopulatedBestEffort(t *testing.T) {
 			const sessionID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			// Structured-run honours a launch CLAUDE_CONFIG_DIR; a profiled host
+			// exports one, so blank it to keep this HOME-rooted fixture hermetic.
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
 			wd := t.TempDir()
 
 			projDir := filepath.Join(home, ".claude", "projects", claudecode.EncodedCWD(wd))

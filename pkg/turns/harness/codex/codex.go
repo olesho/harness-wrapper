@@ -30,7 +30,9 @@
 package codex
 
 import (
+	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
@@ -64,8 +66,13 @@ type Adapter struct {
 	generic.Adapter // inherits OnWrapperStatus + (no-op) OnScreen-but-we-override
 
 	// SessionsRoot overrides the default ~/.codex/sessions location used by
-	// the on-disk session-id fallback (LocateSessionID). Empty means default;
-	// set only in tests.
+	// the on-disk session-id fallback (LocateSessionID) and by ReadTranscript.
+	// It is set by ConfigureFromEnv from the harness's launch CODEX_HOME (and
+	// by tests directly); empty means the default.
+	//
+	// It is deliberately NOT guarded by mu: the chat layer writes it once at
+	// Open, before the watcher goroutine starts, so the write happens-before
+	// every read.
 	SessionsRoot string
 
 	mu              sync.Mutex
@@ -191,21 +198,58 @@ func (*Adapter) PermissionMode(snap screen.Snapshot) (string, bool) {
 	return collaborationMode(snap.Text)
 }
 
+// ConfigureFromEnv points the on-disk lookups at the config root the harness
+// was launched with: CODEX_HOME/sessions. Implements turns.EnvConfigurable. An
+// absent or blank value leaves SessionsRoot empty, so the reader keeps its
+// ~/.codex/sessions default — the unprofiled case is unchanged.
+//
+// A relative CODEX_HOME is stored VERBATIM here and resolved at lookup time
+// against the harness child's working directory: codex canonicalizes the value
+// against its own cwd at startup, so that is where its rollouts are.
+func (a *Adapter) ConfigureFromEnv(env []string) {
+	home := strings.TrimSpace(envLookup(env, "CODEX_HOME"))
+	if home == "" {
+		return
+	}
+	a.SessionsRoot = filepath.Join(home, "sessions")
+}
+
+// envLookup returns the value of key in an os.Environ()-style "K=V" slice, or
+// "" if absent. LAST occurrence wins, matching exec semantics. pkg/turns cannot
+// import pkg/harness, so this mirrors harness.EnvLookup deliberately.
+func envLookup(env []string, key string) string {
+	prefix := key + "="
+	val := ""
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			val = kv[len(prefix):]
+		}
+	}
+	return val
+}
+
 // LocateSessionID recovers the Codex session UUID from the most recent
 // on-disk rollout whose session_meta cwd matches workingDir. This is the
 // version-independent fallback for the screen-scrape ExtractSessionID, which
 // returns nothing on Codex 0.142+ (the resume hint is no longer rendered).
 // Implements turns.SessionIDLocator.
 func (a *Adapter) LocateSessionID(workingDir string) (string, bool) {
-	return (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).LocateLatestSession(workingDir)
+	return a.reader(workingDir).LocateLatestSession(workingDir)
 }
 
 // ReadTranscript reads the on-disk Codex session log. Implements
 // turns.TranscriptReader.
 func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcript.Turn, error) {
-	evs, err := (&transcriptcodex.Reader{SessionsRoot: a.SessionsRoot}).Read(harnessSessionID, workingDir)
+	evs, err := a.reader(workingDir).Read(harnessSessionID, workingDir)
 	if err != nil {
 		return nil, err
 	}
 	return transcript.TurnsFromEvents(evs), nil
+}
+
+// reader builds the on-disk reader for a harness child running in workingDir:
+// SessionsRoot, when relative, is resolved against that directory rather than
+// the wrapper's cwd (see ConfigureFromEnv).
+func (a *Adapter) reader(workingDir string) *transcriptcodex.Reader {
+	return &transcriptcodex.Reader{SessionsRoot: transcript.ResolveHarnessPath(a.SessionsRoot, workingDir)}
 }

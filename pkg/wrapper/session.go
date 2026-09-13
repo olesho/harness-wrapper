@@ -94,6 +94,10 @@ type Session struct {
 	fanout  *outputFanout
 	stdinMu sync.Mutex
 
+	// term signals the harness's process group and owns the escalation to
+	// SIGKILL through to the group being empty; see groupTerminator.
+	term *groupTerminator
+
 	writerMu   sync.Mutex
 	writerHeld bool
 
@@ -120,6 +124,26 @@ type classification struct {
 // same value. Errors are returned only when the wrapper itself failed
 // during supervision (PTY IO, classifier panic). Harness-level
 // outcomes are reported via Result.Status with err == nil.
+//
+// When the wrapper TERMINATED the run — context cancellation, Stop, or a
+// terminal classification — Wait returns only once the harness's process
+// group has been cleaned up, not merely when the harness itself exits: every
+// member still running when Config.WaitDelay has passed since the SIGTERM is
+// SIGKILLed, and Wait waits briefly for the group to empty. So a tool
+// subprocess that ignores SIGTERM costs up to WaitDelay, and is gone when Wait
+// returns. Two things are outside this promise: processes a harness left
+// running when it exited ON ITS OWN, and descendants that moved themselves out
+// of the group (setsid/setpgid), which need a caller-side backstop.
+//
+// Wait also returns only after the harness's output has been read to its end,
+// so the Result and RecentOutput account for everything it printed before it
+// exited. The end comes when nothing holds the terminal any more. A process
+// the harness left behind that keeps the terminal open gets outputDrainBudget,
+// after which the master is closed and reading stops at the next read; the
+// pty_closed trace event records whether the output was read to its end. On
+// Linux a leftover that holds the terminal without writing still keeps Wait
+// until it exits: the master is in blocking mode, and a close cannot interrupt
+// a read already waiting on it.
 func (s *Session) Wait() (Result, error) {
 	<-s.doneCh
 	s.mu.Lock()
@@ -127,10 +151,11 @@ func (s *Session) Wait() (Result, error) {
 	return s.result, s.finalErr
 }
 
-// Stop requests a graceful shutdown. The wrapper sends SIGTERM and
-// escalates to SIGKILL after Config.WaitDelay if the process has not
-// exited. Stop returns when the session has fully terminated (Wait
-// would not block) or when ctx is cancelled. The session's final
+// Stop requests a graceful shutdown. The wrapper sends SIGTERM to the
+// harness's process group and escalates to SIGKILL after Config.WaitDelay
+// for whatever has not exited. Stop returns when the session has fully
+// terminated, process-group cleanup included (see Wait), or when ctx is
+// cancelled. The session's final
 // status will be Interrupted unless the harness happened to exit on
 // its own before the signal arrived.
 //
@@ -200,12 +225,14 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	if cfg.Env != nil {
 		cmd.Env = cfg.Env
 	}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return cmd.Process.Signal(syscall.SIGTERM)
-	}
+	// Cancellation sends SIGTERM to the harness's whole process group. The
+	// escalation to SIGKILL is NOT armed here: it belongs to the supervisor,
+	// which runs it after reaping the leader (groupTerminator.finish), so a
+	// leader that exits on SIGTERM cannot take a TERM-ignoring child's
+	// escalation with it. cmd.WaitDelay still bounds the LEADER: exec SIGKILLs
+	// the harness process itself if it outlives the grace period.
+	term := &groupTerminator{cmd: cmd}
+	cmd.Cancel = func() error { return term.signal(syscall.SIGTERM) }
 	cmd.WaitDelay = cfg.WaitDelay
 
 	startedAt := time.Now()
@@ -221,6 +248,10 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	if cmd.Process != nil {
 		pid = cmd.Process.Pid
 	}
+	// Resolve the process group now, while the leader cannot have been reaped.
+	term.mu.Lock()
+	term.resolveLocked()
+	term.mu.Unlock()
 	cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
 		Kind:   "pty_opened",
@@ -245,11 +276,39 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 		classifierOn: make(chan struct{}),
 		doneCh:       make(chan struct{}),
 		fanout:       newOutputFanout(cfg.Stdout),
+		term:         term,
 	}
 
 	go s.supervise(ctx)
 	return s, nil
 }
+
+// outputDrainBudget bounds how long the supervisor waits, once the harness has
+// exited, for the output goroutine to read the PTY to its end before it closes
+// the master. The end comes as soon as nothing holds the terminal's slave side
+// any more, which is at once for a harness whose process group is gone; the
+// budget only matters when a process the harness left behind still holds the
+// terminal open.
+const outputDrainBudget = time.Second
+
+// awaitOutputEnd waits up to budget for the output goroutine to finish on its
+// own — it does when its read of the PTY master reports the end of output — and
+// reports whether it did.
+func awaitOutputEnd(outDone <-chan struct{}, budget time.Duration) bool {
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-outDone:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// ptyOutputReader wraps the PTY master for the output copy goroutine. It is the
+// identity in production; tests substitute a slow reader to reproduce the race
+// between reading a harness's final output and closing the master.
+var ptyOutputReader = func(ptmx io.Reader) io.Reader { return ptmx }
 
 // supervise owns the session's lifecycle. It runs the IO copy
 // goroutines, dispatches the classifier, waits for the harness to
@@ -264,13 +323,12 @@ func (s *Session) supervise(ctx context.Context) {
 
 	go runSessionClassifier(ctx, s)
 
-	var outWG sync.WaitGroup
-	outWG.Add(1)
+	outDone := make(chan struct{})
 	go func() {
-		defer outWG.Done()
+		defer close(outDone)
 		// newLineSplitter is nil when no durable line tap is configured, and all
 		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
-		copyPTYOutput(s.ptmx, s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		copyPTYOutput(ptyOutputReader(s.ptmx), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
 	}()
 
 	stdinDone := s.startStdinCopy()
@@ -281,15 +339,25 @@ func (s *Session) supervise(ctx context.Context) {
 	}()
 
 	out := s.awaitTermination(waitCh)
+	// The leader is reaped. A requested termination is not over until its
+	// process group is: finish SIGKILLs what outlives the grace period and
+	// waits for the group to empty, and doneCh — what Wait and Stop block on —
+	// closes only after it.
+	s.term.finish(s.cfg.WaitDelay)
 
 	close(s.classifierOn)
+	// Everything the harness wrote before exiting is still in the PTY. Read it
+	// to the end before closing the master: on Linux a process can exit with
+	// its last output unread, and closing the master discards it — the exit
+	// classifier then misses the very line that explains a fast failure.
+	drained := awaitOutputEnd(outDone, outputDrainBudget)
 	_ = s.ptmx.Close()
-	outWG.Wait()
+	<-outDone
 
 	s.cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
 		Kind:   "pty_closed",
-		Fields: map[string]any{"pid": s.pid},
+		Fields: map[string]any{"pid": s.pid, "output_drained": drained},
 	})
 	if stdinDone != nil {
 		select {
@@ -410,11 +478,11 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 			cc := c
 			out.terminalClassDone = &cc
 			s.recordStatusChange(c, false)
-			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
 			return out
 		case <-s.stopRequest:
 			out.stopRequested = true
-			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
 			return out
 		}
 	}
@@ -489,19 +557,17 @@ func (s *Session) emitEvent(e SessionEvent) {
 	}
 }
 
-// terminateAndWait sends SIGTERM, waits up to waitDelay for the harness
-// to exit, then escalates to SIGKILL.
-func terminateAndWait(cmd *exec.Cmd, waitCh <-chan waitResult, waitDelay time.Duration) (time.Time, error) {
-	if cmd.Process != nil {
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-	}
+// terminateAndWait sends SIGTERM to the harness process group and waits for
+// the harness to exit, SIGKILLing the group if the harness itself outlives
+// WaitDelay. It returns once the LEADER is reaped; the rest of the group is
+// finished off by groupTerminator.finish, which the supervisor runs next.
+func (s *Session) terminateAndWait(waitCh <-chan waitResult) (time.Time, error) {
+	_ = s.term.signal(syscall.SIGTERM)
 	select {
 	case wr := <-waitCh:
 		return wr.endedAt, wr.err
-	case <-time.After(waitDelay):
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+	case <-time.After(s.cfg.WaitDelay):
+		_ = s.term.signal(syscall.SIGKILL)
 		wr := <-waitCh
 		return wr.endedAt, wr.err
 	}
