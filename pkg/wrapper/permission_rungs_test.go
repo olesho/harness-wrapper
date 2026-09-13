@@ -120,9 +120,11 @@ func TestBypassReachableFlagsFreshSlice(t *testing.T) {
 }
 
 func TestBypassEnablingFlagsNeverIncludesNonexistentFlag(t *testing.T) {
-	// --allow-dangerously-skip-permissions DOES exist upstream as of claude-code
-	// 2.1.261, but it is unlock-only: it makes the bypass rung selectable without
-	// selecting it, so a launch carrying it is still RESTRICTED. It must stay out
+	// --allow-dangerously-skip-permissions DOES exist upstream — claude-code
+	// 2.1.270's --help: "Enable bypassing all permission checks as an option,
+	// without it being enabled by default" — but it is unlock-only: it makes the
+	// bypass rung selectable without selecting it, so a launch carrying it is
+	// still RESTRICTED. It must stay out
 	// of this set, whose job is validatePermissionMode's contradiction check —
 	// adding it would turn the flag's own intended pairing with a restrictive
 	// --permission-mode into a hard ErrInvalidConfig. Ring membership is

@@ -593,10 +593,14 @@ func TestValidateConfig_PermissionMode(t *testing.T) {
 			args:    []string{AllowSkipPermissionsFlag},
 			mode:    "plan",
 		},
+		// The bare flag only, under the claude-code alias too: claude 2.1.270
+		// refuses a joined --allow-dangerously-skip-permissions=<bool> before any
+		// session starts ("error: unknown option"), so that spelling has no
+		// launch to validate.
 		{
-			name:    "claude-code allow-skip-permissions=value unlock flag does not contradict",
+			name:    "claude-code allow-skip-permissions unlock flag does not contradict",
 			harness: "claude-code",
-			args:    []string{AllowSkipPermissionsFlag + "=true"},
+			args:    []string{AllowSkipPermissionsFlag},
 			mode:    "ask",
 		},
 	}
