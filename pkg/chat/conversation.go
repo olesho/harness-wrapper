@@ -1120,7 +1120,6 @@ func (c *Conversation) emit(ev ConversationEvent) {
 	}
 }
 
-// resolveAdapter maps Options.Harness to a concrete turns.Adapter.
 // configureAdapterEnv hands the harness's LAUNCH environment to an adapter whose
 // on-disk lookups depend on it (Claude Code's CLAUDE_CONFIG_DIR, Codex's
 // CODEX_HOME). Without it a profiled agent — one launched with its own config
@@ -1145,6 +1144,7 @@ func configureAdapterEnv(adapter turns.Adapter, env []string) {
 	ec.ConfigureFromEnv(env)
 }
 
+// resolveAdapter maps Options.Harness to a concrete turns.Adapter.
 func resolveAdapter(name string) (turns.Adapter, error) {
 	switch name {
 	case "codex":
