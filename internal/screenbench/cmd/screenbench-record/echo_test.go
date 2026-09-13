@@ -165,7 +165,7 @@ func TestAwaitComposerEcho_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
-	if d.awaitComposerEcho(ctx, "anything") {
+	if d.awaitComposerEcho(ctx, "anything", d.screenText()) {
 		t.Error("reported an echo that never arrived")
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {

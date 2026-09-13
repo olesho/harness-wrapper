@@ -404,10 +404,11 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 func (d *scriptDriver) send(ctx context.Context, s string) error {
 	if d.submitKey != nil && strings.HasSuffix(s, "\n") {
 		if body := strings.TrimSuffix(s, "\n"); body != "" {
+			preWrite := d.screenText()
 			if _, err := d.stdin.WriteStdin([]byte(body)); err != nil {
 				return err
 			}
-			d.awaitComposerEcho(ctx, echoNeedle(body))
+			d.awaitComposerEcho(ctx, echoNeedle(body), preWrite)
 		}
 		_, err := d.stdin.WriteStdin(d.submitKey)
 		return err
