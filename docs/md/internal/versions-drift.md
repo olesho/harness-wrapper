@@ -236,10 +236,12 @@ re-run the canary.
   launch (e.g. 0.142.0→0.142.2), polluting the first recording and moving the pin target. There is no
   config key to disable it; instead update to latest by hand first (`codex --version` twice), then bake.
 - **codex environment noise** — the user's `~/.codex/config.toml` (MCP servers like `codex_apps`, model
-  NUX, usage notices) bleeds into recordings. Bake with an isolated `CODEX_HOME=<tmp>` holding a copied
-  `auth.json` and an empty `config.toml`, plus `-- -a never -s read-only` so `tool-call` runs its command
-  without an approval prompt. The isolated `CODEX_HOME/sessions` also makes `expected.txt` extraction
-  unambiguous.
+  NUX, usage notices) bleeds into recordings. Bake with an isolated `CODEX_HOME=<dir>` holding an empty
+  `config.toml` and a login of its own (`CODEX_HOME=<dir> codex login`, once; keep the directory between
+  bakes), plus `-- -a never -s read-only` so `tool-call` runs its command without an approval prompt.
+  Never copy an `auth.json` into it: a copied ChatGPT login shares its refresh token with the original,
+  and whichever copy refreshes second is refused with `refresh_token_reused`. The isolated
+  `CODEX_HOME/sessions` also makes `expected.txt` extraction unambiguous.
 - **Full-screen TUIs need a sized PTY** — the recorder now calls `Session.Resize(--cols,--rows)` after
   start (scripted mode has no controlling TTY to inherit a size from). Without it a ratatui TUI (codex
   0.142) renders into a ~0×0 PTY and replays blank.
