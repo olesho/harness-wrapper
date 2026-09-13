@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -142,5 +143,24 @@ func TestTmuxChildTeardownTargetsItsOwnServer(t *testing.T) {
 	if err != nil || last == nil || last["kind"] != "wrapper_cli_exited" {
 		b, _ := json.Marshal(last)
 		t.Errorf("final trace event = %s (err %v), want wrapper_cli_exited flushed before the teardown", b, err)
+	}
+}
+
+// TestTmuxSelfCmdTargetsTheServerItRunsOn pins the socket choice for the
+// in-pane teardown: the path in $TMUX when present, whatever HW_TMUX_SOCKET
+// says; the dedicated -L socket otherwise.
+func TestTmuxSelfCmdTargetsTheServerItRunsOn(t *testing.T) {
+	t.Setenv(envTmuxSocket, "stale-name")
+
+	t.Setenv("TMUX", "/private/tmp/tmux-501/hw-real,4242,3")
+	if got, want := tmuxSelfCmd("kill-session", "-t", "hw-x").Args, []string{"tmux", "-S", "/private/tmp/tmux-501/hw-real", "kill-session", "-t", "hw-x"}; !slices.Equal(got, want) {
+		t.Errorf("inside a pane: args = %v, want %v", got, want)
+	}
+
+	for _, v := range []string{"", "relative/sock,1,0", ",1,0"} {
+		t.Setenv("TMUX", v)
+		if got, want := tmuxSelfCmd("kill-session", "-t", "hw-x").Args, []string{"tmux", "-L", "stale-name", "kill-session", "-t", "hw-x"}; !slices.Equal(got, want) {
+			t.Errorf("TMUX=%q: args = %v, want the -L fallback %v", v, got, want)
+		}
 	}
 }

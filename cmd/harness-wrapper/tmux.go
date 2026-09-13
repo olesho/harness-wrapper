@@ -203,13 +203,48 @@ func tmuxRemainOnExitOffArgv(tmuxName string) []string {
 // event -- the one `harness-wrapper status` and the regression test read -- can
 // be truncated away.
 //
+// It must reach the server this process RUNS ON, which is why it goes through
+// tmuxSelfCmd rather than tmuxCmd: see tmuxSelfCmd for how a socket name read
+// from the environment strands the session or kills another server's.
+//
 // Best-effort by design: the session may already be gone (the normal path once
 // remain-on-exit is off), and a failure here must never change the exit code.
 func tmuxSelfTeardown(childSession string) {
 	if childSession == "" {
 		return
 	}
-	_ = tmuxCmd("kill-session", "-t", tmuxSessionPrefix+childSession).Run()
+	_ = tmuxSelfCmd("kill-session", "-t", tmuxSessionPrefix+childSession).Run()
+}
+
+// tmuxSelfCmd builds a tmux invocation aimed at the server whose pane this
+// process is running in.
+//
+// Inside a pane tmux sets $TMUX to "<socket path>,<server pid>,<session index>",
+// and that path is the only reliable name for "my server". HW_TMUX_SOCKET is
+// NOT: a pane inherits it only from the server's global environment, which is
+// snapshotted when the server starts (tmux copies only PATH from the client
+// that creates a later session). So a server started without the variable
+// sends the teardown to the default socket, where it misses and the finished
+// session strands whenever remain-on-exit is on; and a server started with a
+// stale value sends it to a DIFFERENT server, where it kills that server's
+// same-named session. `-S <path>` from $TMUX can do neither.
+//
+// Outside tmux ($TMUX unset or not a socket path) it is exactly tmuxCmd.
+func tmuxSelfCmd(args ...string) *exec.Cmd {
+	if sock := tmuxSocketFromEnv(os.Getenv("TMUX")); sock != "" {
+		return exec.Command("tmux", append([]string{"-S", sock}, args...)...) //nolint:gosec // G204: explicit tmux invocation
+	}
+	return tmuxCmd(args...)
+}
+
+// tmuxSocketFromEnv extracts the server socket path from a $TMUX value, or ""
+// when the value is empty or its first field is not an absolute path.
+func tmuxSocketFromEnv(v string) string {
+	path, _, _ := strings.Cut(v, ",")
+	if !filepath.IsAbs(path) {
+		return ""
+	}
+	return path
 }
 
 // resolveTracePath picks the NDJSON trace path. If the caller passed
