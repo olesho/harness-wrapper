@@ -50,7 +50,8 @@ Two properties of this frame are load-bearing:
 
 ## What carries over to meta-harness
 
-Verified against `/Users/oleh/.loom/workspaces/PUPPET/meta-harness`.
+Verified against meta-harness `main` at `e9a1c4e` (2026-09-13); the line numbers
+below are from that revision.
 
 - **`src/turns/harness/claudecode.ts:96` — `menuRE`.** Identical digit
   requirement to the Go side:
@@ -119,11 +120,14 @@ borrowing is not lost: for once meta-harness is the reference, not the port.
 
 ## Reference implementation
 
-Branch **`loom/PUPPET-247`**, commit **`97aa89d`** in this repo —
-*"fix(claudecode): parse the unnumbered selector menu, and stop reporting an
-unparseable dialog as no dialog"*. Primary file:
-**`pkg/turns/harness/claudecode/menu_selector.go`**. Read it before writing the
-TS; the parts that are not obvious from the frame are:
+What landed on this repo's `main`: **#27** (`d4636b6`) —
+*"fix(claudecode): parse the unnumbered selector menu by label column, and stop
+reporting an unparseable dialog as no dialog"* — with **#36** (`4b31279`, the
+unnumbered folder-trust detector) under it and **#37** (`b2feb4f`, the composer
+false positive) on top. Primary file:
+**`pkg/turns/harness/claudecode/menu_selector.go`**. Read it at `main` before
+writing the TS, not the pre-merge branch this brief first pointed at; the parts
+that are not obvious from the frame are:
 
 - **Numbered-first ordering.** The numbered parser still runs first and its
   output is byte-identical to today's; the selector parser runs only when it
@@ -147,6 +151,18 @@ TS; the parts that are not obvious from the frame are:
   do not parse — fail loudly with a named cause), `OK`. The Go side added an
   `ErrUnrecognizedDialog` sentinel fired only after the state survives a re-check
   of the live screen.
+- **Only the real highlight glyph marks a row.** The Go parser keys on `❯`
+  (U+276F) and nothing else; a bare `>` never counts. #37 made that rule after
+  a screen that merely QUOTED a trust anchor, with a typed `>` below it, parsed
+  the composer as a menu — and answering it submitted whatever had been typed.
+- **The menu must belong to its anchor.** Only text after the matched anchor is
+  scanned, and the menu has to start within `maxAnchorToMenuRows` (20) rows of
+  it (#37): a long transcript that quotes the anchor near the top and shows an
+  unrelated selector near the bottom still parses, and is still not this
+  dialog's menu.
+- **A lone `❯` row framed by box rules is the composer.** Box-drawing lines
+  end a block and a block needs at least two rows, so claude's input box —
+  horizontal rules above and below its `❯` line — never parses as a menu.
 - **The request id must stay highlight-independent.** Go's `inputID` hashes kind
   + prompt + option *labels* only. Folding the highlight index in would make each
   arrow keypress mint a "new" request that the policy answers again.
