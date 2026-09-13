@@ -92,9 +92,8 @@ func startSleepTree(t *testing.T, ctx context.Context) (*Session, []int) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = signalProcessGroup(&os.Process{Pid: sess.PID()}, syscall.SIGKILL)
-	})
+	pgid := sess.PID()
+	t.Cleanup(func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
 
 	var kids []int
 	deadline := time.Now().Add(5 * time.Second)
@@ -142,10 +141,10 @@ func TestStopReapsDescendants(t *testing.T) {
 	}
 }
 
-// TestSignalProcessGroupRefusesDangerousGroups asserts the self-protection:
-// a resolved group of 0, 1, or the wrapper's own must never be signalled as a
-// group, only the single process.
-func TestSignalProcessGroupRefusesDangerousGroups(t *testing.T) {
+// TestGroupTerminatorRefusesDangerousGroups asserts the self-protection: a
+// group that resolves to 0, 1, or the wrapper's own must never be signalled as
+// a group, only the single process.
+func TestGroupTerminatorRefusesDangerousGroups(t *testing.T) {
 	cases := map[string]int{
 		"own group":  syscall.Getpgrp(),
 		"group zero": 0,
@@ -163,13 +162,16 @@ func TestSignalProcessGroupRefusesDangerousGroups(t *testing.T) {
 			origGetpgid, origKill := getpgidFn, killFn
 			getpgidFn = func(int) (int, error) { return pgid, nil }
 			killFn = func(pid int, sig syscall.Signal) error {
-				groupCalls = append(groupCalls, pid)
+				if pid < 0 {
+					groupCalls = append(groupCalls, pid)
+				}
 				return origKill(pid, sig)
 			}
 			defer func() { getpgidFn, killFn = origGetpgid, origKill }()
 
-			if err := signalProcessGroup(cmd.Process, syscall.SIGTERM); err != nil {
-				t.Fatalf("signalProcessGroup: %v", err)
+			g := &groupTerminator{cmd: cmd}
+			if err := g.signal(syscall.SIGTERM); err != nil {
+				t.Fatalf("signal: %v", err)
 			}
 			if len(groupCalls) != 0 {
 				t.Fatalf("signalled groups %v; want the per-process fallback and no group signal", groupCalls)
@@ -181,9 +183,9 @@ func TestSignalProcessGroupRefusesDangerousGroups(t *testing.T) {
 	}
 }
 
-// TestSignalProcessGroupFallsBackWhenGetpgidFails covers the other fallback:
-// an unresolvable group must still signal the process.
-func TestSignalProcessGroupFallsBackWhenGetpgidFails(t *testing.T) {
+// TestGroupTerminatorFallsBackWhenGetpgidFails covers the other fallback: an
+// unresolvable group must still signal the process.
+func TestGroupTerminatorFallsBackWhenGetpgidFails(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", "sleep 300")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -194,30 +196,64 @@ func TestSignalProcessGroupFallsBackWhenGetpgidFails(t *testing.T) {
 	getpgidFn = func(int) (int, error) { return 0, syscall.ESRCH }
 	defer func() { getpgidFn = origGetpgid }()
 
-	if err := signalProcessGroup(cmd.Process, syscall.SIGTERM); err != nil {
-		t.Fatalf("signalProcessGroup: %v", err)
+	if err := (&groupTerminator{cmd: cmd}).signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("signal: %v", err)
 	}
 	if !waitProcExit(cmd, 5*time.Second) {
 		t.Errorf("process %d survived the fallback signal", cmd.Process.Pid)
 	}
 }
 
-// TestSignalProcessGroupSwallowsESRCH asserts a signal to a process that is
+// TestGroupTerminatorSwallowsGone asserts a signal to a process that is
 // already gone is not an error: it must never change a run's classification.
-func TestSignalProcessGroupSwallowsESRCH(t *testing.T) {
+func TestGroupTerminatorSwallowsGone(t *testing.T) {
 	cmd := exec.Command("/bin/sh", "-c", "exit 0")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if err := signalProcessGroup(cmd.Process, syscall.SIGTERM); err != nil {
-		t.Errorf("signalProcessGroup on a reaped process = %v, want nil", err)
+	if err := (&groupTerminator{cmd: cmd}).signal(syscall.SIGTERM); err != nil {
+		t.Errorf("signal on a reaped process = %v, want nil", err)
 	}
 }
 
-// TestSignalProcessGroupNilProcess guards the pre-start window where
-// cmd.Process is still nil.
-func TestSignalProcessGroupNilProcess(t *testing.T) {
-	if err := signalProcessGroup(nil, syscall.SIGTERM); err != nil {
-		t.Errorf("signalProcessGroup(nil) = %v, want nil", err)
+// TestGroupTerminatorNilProcess guards the pre-start window where cmd.Process
+// is still nil.
+func TestGroupTerminatorNilProcess(t *testing.T) {
+	if err := (&groupTerminator{cmd: &exec.Cmd{}}).signal(syscall.SIGTERM); err != nil {
+		t.Errorf("signal with no process = %v, want nil", err)
+	}
+}
+
+// TestGroupTerminatorNeverSignalsAnEmptiedGroup pins the recycling guard: once
+// the leader is reaped, a group ID stays ours only while the group has members.
+// An emptied group's ID may already name somebody else's group, so a late
+// SIGKILL must not be sent to it.
+func TestGroupTerminatorNeverSignalsAnEmptiedGroup(t *testing.T) {
+	const fakePgid = 424242
+	var sent []syscall.Signal
+	origGetpgid, origKill := getpgidFn, killFn
+	getpgidFn = func(pid int) (int, error) { return pid, nil }
+	killFn = func(pid int, sig syscall.Signal) error {
+		if pid != -fakePgid {
+			return origKill(pid, sig)
+		}
+		if sig == 0 {
+			return syscall.ESRCH // the group has emptied
+		}
+		sent = append(sent, sig)
+		return nil
+	}
+	defer func() { getpgidFn, killFn = origGetpgid, origKill }()
+
+	g := &groupTerminator{cmd: &exec.Cmd{Process: &os.Process{Pid: fakePgid}}}
+	if err := g.signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("SIGTERM before the reap: %v", err)
+	}
+	g.finish(0) // the leader is reaped; termination was requested, grace is over
+	if err := g.signal(syscall.SIGKILL); err != nil {
+		t.Fatalf("SIGKILL after the reap: %v", err)
+	}
+	if len(sent) != 1 || sent[0] != syscall.SIGTERM {
+		t.Fatalf("group signals = %v, want only the SIGTERM sent while the leader was unreaped", sent)
 	}
 }

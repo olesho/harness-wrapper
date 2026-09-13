@@ -94,10 +94,9 @@ type Session struct {
 	fanout  *outputFanout
 	stdinMu sync.Mutex
 
-	// groupKill holds the pending SIGKILL escalation armed by the
-	// context-cancel path, so supervise can disarm it once the harness is
-	// reaped. Nil until a cancellation actually happens.
-	groupKill *atomic.Pointer[time.Timer]
+	// term signals the harness's process group and owns the escalation to
+	// SIGKILL through to the group being empty; see groupTerminator.
+	term *groupTerminator
 
 	writerMu   sync.Mutex
 	writerHeld bool
@@ -125,6 +124,16 @@ type classification struct {
 // same value. Errors are returned only when the wrapper itself failed
 // during supervision (PTY IO, classifier panic). Harness-level
 // outcomes are reported via Result.Status with err == nil.
+//
+// When the wrapper TERMINATED the run — context cancellation, Stop, or a
+// terminal classification — Wait returns only once the harness's process
+// group has been cleaned up, not merely when the harness itself exits: every
+// member still running when Config.WaitDelay has passed since the SIGTERM is
+// SIGKILLed, and Wait waits briefly for the group to empty. So a tool
+// subprocess that ignores SIGTERM costs up to WaitDelay, and is gone when Wait
+// returns. Two things are outside this promise: processes a harness left
+// running when it exited ON ITS OWN, and descendants that moved themselves out
+// of the group (setsid/setpgid), which need a caller-side backstop.
 func (s *Session) Wait() (Result, error) {
 	<-s.doneCh
 	s.mu.Lock()
@@ -132,10 +141,11 @@ func (s *Session) Wait() (Result, error) {
 	return s.result, s.finalErr
 }
 
-// Stop requests a graceful shutdown. The wrapper sends SIGTERM and
-// escalates to SIGKILL after Config.WaitDelay if the process has not
-// exited. Stop returns when the session has fully terminated (Wait
-// would not block) or when ctx is cancelled. The session's final
+// Stop requests a graceful shutdown. The wrapper sends SIGTERM to the
+// harness's process group and escalates to SIGKILL after Config.WaitDelay
+// for whatever has not exited. Stop returns when the session has fully
+// terminated, process-group cleanup included (see Wait), or when ctx is
+// cancelled. The session's final
 // status will be Interrupted unless the harness happened to exit on
 // its own before the signal arrived.
 //
@@ -205,25 +215,14 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	if cfg.Env != nil {
 		cmd.Env = cfg.Env
 	}
-	// groupKill escalates the ctx-cancel path to SIGKILL on the harness's whole
-	// process group. It is armed by cmd.Cancel and disarmed by supervise once
-	// the harness has been reaped. This timer is NOT redundant with
-	// cmd.WaitDelay below: WaitDelay escalates to SIGKILL on the harness
-	// PROCESS only, so without it a tool subprocess that ignores SIGTERM
-	// survives the run that spawned it.
-	groupKill := &atomic.Pointer[time.Timer]{}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		err := signalProcessGroup(cmd.Process, syscall.SIGTERM)
-		if cfg.WaitDelay > 0 {
-			groupKill.Store(time.AfterFunc(cfg.WaitDelay, func() {
-				_ = signalProcessGroup(cmd.Process, syscall.SIGKILL)
-			}))
-		}
-		return err
-	}
+	// Cancellation sends SIGTERM to the harness's whole process group. The
+	// escalation to SIGKILL is NOT armed here: it belongs to the supervisor,
+	// which runs it after reaping the leader (groupTerminator.finish), so a
+	// leader that exits on SIGTERM cannot take a TERM-ignoring child's
+	// escalation with it. cmd.WaitDelay still bounds the LEADER: exec SIGKILLs
+	// the harness process itself if it outlives the grace period.
+	term := &groupTerminator{cmd: cmd}
+	cmd.Cancel = func() error { return term.signal(syscall.SIGTERM) }
 	cmd.WaitDelay = cfg.WaitDelay
 
 	startedAt := time.Now()
@@ -239,6 +238,10 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	if cmd.Process != nil {
 		pid = cmd.Process.Pid
 	}
+	// Resolve the process group now, while the leader cannot have been reaped.
+	term.mu.Lock()
+	term.resolveLocked()
+	term.mu.Unlock()
 	cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
 		Kind:   "pty_opened",
@@ -263,7 +266,7 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 		classifierOn: make(chan struct{}),
 		doneCh:       make(chan struct{}),
 		fanout:       newOutputFanout(cfg.Stdout),
-		groupKill:    groupKill,
+		term:         term,
 	}
 
 	go s.supervise(ctx)
@@ -277,9 +280,6 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 // channel.
 func (s *Session) supervise(ctx context.Context) {
 	defer close(s.doneCh)
-	// Backstop for the narrow race where cmd.Cancel arms the escalation after
-	// awaitTermination has already disarmed it.
-	defer s.disarmGroupKill()
 	defer close(s.events)
 	defer s.termState.cleanup()
 	defer s.fanout.closeAll()
@@ -303,7 +303,11 @@ func (s *Session) supervise(ctx context.Context) {
 	}()
 
 	out := s.awaitTermination(waitCh)
-	s.disarmGroupKill()
+	// The leader is reaped. A requested termination is not over until its
+	// process group is: finish SIGKILLs what outlives the grace period and
+	// waits for the group to empty, and doneCh — what Wait and Stop block on —
+	// closes only after it.
+	s.term.finish(s.cfg.WaitDelay)
 
 	close(s.classifierOn)
 	_ = s.ptmx.Close()
@@ -433,11 +437,11 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 			cc := c
 			out.terminalClassDone = &cc
 			s.recordStatusChange(c, false)
-			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
 			return out
 		case <-s.stopRequest:
 			out.stopRequested = true
-			out.endedAt, out.waitErr = terminateAndWait(s.cmd, waitCh, s.cfg.WaitDelay)
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
 			return out
 		}
 	}
@@ -512,34 +516,19 @@ func (s *Session) emitEvent(e SessionEvent) {
 	}
 }
 
-// terminateAndWait sends SIGTERM to the harness process group, waits up to
-// waitDelay for the harness to exit, then escalates to SIGKILL on the same
-// group. Group scope is what stops tool subprocesses outliving the run; see
-// signalProcessGroup.
-func terminateAndWait(cmd *exec.Cmd, waitCh <-chan waitResult, waitDelay time.Duration) (time.Time, error) {
-	if cmd.Process != nil {
-		_ = signalProcessGroup(cmd.Process, syscall.SIGTERM)
-	}
+// terminateAndWait sends SIGTERM to the harness process group and waits for
+// the harness to exit, SIGKILLing the group if the harness itself outlives
+// WaitDelay. It returns once the LEADER is reaped; the rest of the group is
+// finished off by groupTerminator.finish, which the supervisor runs next.
+func (s *Session) terminateAndWait(waitCh <-chan waitResult) (time.Time, error) {
+	_ = s.term.signal(syscall.SIGTERM)
 	select {
 	case wr := <-waitCh:
 		return wr.endedAt, wr.err
-	case <-time.After(waitDelay):
-		if cmd.Process != nil {
-			_ = signalProcessGroup(cmd.Process, syscall.SIGKILL)
-		}
+	case <-time.After(s.cfg.WaitDelay):
+		_ = s.term.signal(syscall.SIGKILL)
 		wr := <-waitCh
 		return wr.endedAt, wr.err
-	}
-}
-
-// disarmGroupKill stops the pending SIGKILL escalation armed by cmd.Cancel,
-// if any. Safe to call more than once and when no escalation was ever armed.
-func (s *Session) disarmGroupKill() {
-	if s.groupKill == nil {
-		return
-	}
-	if t := s.groupKill.Load(); t != nil {
-		t.Stop()
 	}
 }
 
