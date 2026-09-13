@@ -2,25 +2,24 @@
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
 // Detection signals first observed on 2.1.141. The pin in versions.json is
-// 2.1.267, verified LIVE against that binary on 2026-09-09 by pkg/harness's
-// TestRunTurn_RealClaudeDogfood{,KeepAlive}, which complete a turn only if
-// thinkingRE matches a settled 2.1.267 end-of-turn summary and Busy() gates the
-// in-flight frames.
+// 2.1.270, verified LIVE against that binary on 2026-09-14 by pkg/harness's
+// TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
+// TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
+// TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
+// 2.1.270 end-of-turn summary and Busy() gates the in-flight frames, so those
+// runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
+// path, a large prompt arriving intact, and the folder-trust dialog, both
+// reported in a directory claude has not trusted and answered.
 //
-// That live check covers END-OF-TURN DETECTION, reply extraction and the
-// multi-turn keep-alive path ONLY. The other signals this adapter owns rest on
-// the recorded corpora and have NOT been re-verified at 2.1.267: interruptMarker
-// and the tool-call rendering, and the permission-mode footers in permmode.go,
-// which are still anchored at 2.1.217. The blocking startup dialogs are seeded
-// away by the release-check harness and are unverified at 2.1.267.
-//
-// ALL FOUR claude scenarios under test/corpus/claude-code/ — settled-after-turn,
-// multi-turn, tool-call and interrupted-mid-reply — are recorded at 2.1.251
-// (meta.json.binary_version is the recorded proof) and replay through this
-// adapter unchanged; no marker moved at 2.1.251. They are still OLDER than the
-// pin, and deliberately so: they are frozen renderings the adapter must keep
-// handling, not evidence about the pinned release. Corpus replay therefore
-// cannot confirm a new upstream version; only the live tests above can.
+// The four scripted claude scenarios under test/corpus/claude-code/ —
+// settled-after-turn, multi-turn, tool-call and interrupted-mid-reply — are
+// recorded at 2.1.270 from a directory claude had never trusted
+// (meta.json.binary_version is the recorded proof), so interruptMarker and the
+// tool-call rendering are verified at the pin by replay. The permission-mode
+// footers in permmode.go are still anchored at 2.1.217. The recordings are
+// frozen renderings the adapter must keep handling: once the pin moves on they
+// trail it, and replaying them cannot confirm the newer release; only the live
+// tests above can.
 //
 // The signals:
 //
@@ -32,7 +31,7 @@
 //
 //   - User interrupt: a "⎿  Interrupted · What should Claude do
 //     instead?" line appears. The turn ended in a recoverable error
-//     state. Re-confirmed verbatim on 2.1.251. What changed at 2.1.24x
+//     state. Re-confirmed verbatim on 2.1.270. What changed at 2.1.24x
 //     is which KEY produces it — Esc interrupts, Ctrl-C clears the
 //     composer and paints nothing — which matters to the recorder, not
 //     to this adapter; see the interrupt step in
