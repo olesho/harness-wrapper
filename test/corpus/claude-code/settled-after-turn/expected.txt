@@ -1,40 +1,39 @@
+  29
+  30
+  31
+  32
+  33
+  34
+  35
+  36
+  37
+  38
+  39
+  40
+  41
+  42
+  43
+  44
+  45
+  46
+  47
+  48
+  49
+  50
+  51
+  52
+  53
+  54
+  55
+  56
+  57
+  58
+  59
+  60
 
-▗ ▗   ▖ ▖  Claude Code v2.1.270
-           Sonnet 5 · Claude API
-  ▘▘ ▝▝    /private/tmp/hw-rebake/multi-turn
-
-  Fable 5.1 writes better code and reports progress on long tasks. Switch anytime with /model.
-
-❯ what is 2 plus 2?
-
-⏺ 4
-
-✻ Churned for 2s · done 11:46 PM
-
-❯ what is double that?
-
-⏺ 8
-
-✻ Worked for 1s · done 11:46 PM
-
-❯ and what is double that?
-
-⏺ 16
-
-✻ Crunched for 2s · done 11:47 PM
-
-
-
-
-
-
-
-
-
-
-
+✻ Brewed for 3s · done 11:46 PM
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯ and what is double that?
+❯
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
