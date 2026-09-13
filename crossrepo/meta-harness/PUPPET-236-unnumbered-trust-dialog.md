@@ -143,8 +143,16 @@ that are not obvious from the frame are:
 - **Positional keys — the dangerous half.** With `h` the highlighted row index,
   row `i` gets CR when `i == h`, `(i-h)` × `ESC [ B` + CR when below, `(h-i)` ×
   `ESC [ A` + CR when above. **Never a bare CR for a non-highlighted row** — that
-  is the whole bug class. The keys must be **one write**: an `ESC [ B` split
+  is the whole bug class. The ARROWS must be one write: an `ESC [ B` split
   across writes is parsed as a lone Esc, which cancels the dialog.
+- **Confirm on evidence, never on a hopeful write (#50).** The Go side writes
+  the arrows, waits until the highlight is seen on the target row of the SAME
+  dialog, and only then writes the trailing CR as its own write. After the CR
+  it waits for the dialog to leave. It re-answers only when the same dialog
+  repaints with its highlight moved OFF the row just confirmed (the 2.1.261
+  reset); an unchanged frame, or a highlight that never lands, ends with a
+  bounded `InputUnresolvedError` and no further keystroke — a key sent into a
+  stale frame lands on whatever screen comes next.
 - **Four explicit detection states** replace the overloaded boolean: `None` (no
   anchor), `Pending` (anchor, no choice-shaped line yet — stay silent, a
   half-painted frame is normal), `Unparseable` (anchor + choice-shaped lines that

@@ -396,44 +396,6 @@ func AnchorPresent(text string) bool {
 	return ok
 }
 
-// numberedLabelRE strips the "N." prefix a numbered menu row carries, so the
-// highlighted row's label is comparable with the option Labels DetectInput
-// reports (which never include the number).
-var numberedLabelRE = regexp.MustCompile(`^\d+\.[^\S\n]+`)
-
-// HighlightedLabel returns the cleaned label of the row currently carrying the
-// menu marker ("❯") under a dialog anchor, or ("", false) when no anchor is up
-// or no row below it is highlighted.
-//
-// This is what lets a caller confirm that NAVIGATION landed before it presses
-// Enter: the marker's row is the row Enter will select, and matching it by
-// LABEL rather than by index is required — claude-code 2.1.261 inverted the
-// folder-trust option order, so an index that was "proceed" became "exit".
-//
-// Like parseSelectorMenu it only ever scans the text FOLLOWING the anchor: "❯"
-// is also the composer prompt glyph, so a whole-frame scan would let scrollback
-// decide which row is highlighted.
-func HighlightedLabel(text string) (string, bool) {
-	_, after, ok := anchorSplit(text)
-	if !ok {
-		return "", false
-	}
-	for _, ln := range strings.Split(after, "\n") {
-		content := lineContent(ln)
-		col, ok := selectorLabelColumn(content)
-		if !ok {
-			continue
-		}
-		r := []rune(content)
-		label := cleanLabel(numberedLabelRE.ReplaceAllString(strings.TrimSpace(string(r[col:])), ""))
-		if label == "" {
-			return "", false
-		}
-		return label, true
-	}
-	return "", false
-}
-
 // parseMenuOptions extracts a dialog's choices, trying the two shapes claude
 // renders in a fixed order:
 //
