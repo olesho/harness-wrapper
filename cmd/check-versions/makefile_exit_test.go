@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/versions"
 )
 
 // repoRoot walks up from this test file's directory to the nearest
@@ -32,22 +37,92 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// TestMakefileReportsRegistryOutageAsError is the regression test for the
-// defect this whole command's exit-code contract exists to serve, and it
-// lives at the layer the defect actually lived in: the Makefile recipe.
+// pinnedRegistry serves <base>/<package>/latest the way registry.npmjs.org does,
+// for every package pinned in versions.json, answering through respond. It is
+// the controlled fixture for the Makefile contract: the recipe runs against a
+// known registry state instead of the network or a presumed-dead port.
+func pinnedRegistry(t *testing.T, respond func(pkg, pinned string) (status int, version string)) string {
+	t.Helper()
+	all, err := versions.All()
+	if err != nil {
+		t.Fatalf("versions.All: %v", err)
+	}
+	pinnedByPkg := make(map[string]string, len(all))
+	for _, e := range all {
+		pinnedByPkg[e.Package] = e.Pinned
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pkg := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/latest")
+		pinned, ok := pinnedByPkg[pkg]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		status, version := respond(pkg, pinned)
+		if status != http.StatusOK {
+			http.Error(w, "registry unavailable", status)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": version})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// hangUpRegistry accepts every connection and drops it without a response: a
+// transport failure, not an HTTP one, and fully under the test's control.
+func hangUpRegistry(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// current answers every package with its pin — or, for an unpinned package,
+// with an arbitrary version, which check-versions reports as "unpinned".
+func current(_, pinned string) (int, string) {
+	if pinned == "" {
+		return http.StatusOK, "1.0.0"
+	}
+	return http.StatusOK, pinned
+}
+
+// runCheckVersions runs `make check-versions` against registry and returns the
+// exit code and combined output.
+func runCheckVersions(t *testing.T, registry string) (int, string) {
+	t.Helper()
+	cmd := exec.Command("make", "-C", repoRoot(t), "check-versions",
+		"CHECK_VERSIONS_ARGS=-registry "+registry+" -timeout 5s")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return 0, string(out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("running make: %v\noutput:\n%s", err, out)
+	}
+	return exitErr.ExitCode(), string(out)
+}
+
+// TestMakefileExitContract replays each registry state through the actual
+// Makefile recipe, the layer the original defect lived in: it ran the program
+// under `go run`, which collapses ANY non-zero child status to 1, so exit 2
+// ("could not query the registry") arrived at the recipe's `case` as 1 and was
+// announced as "drift detected", exit 0. The unit tests in main_test.go pin
+// check(), exitCode(), writeVerdict() and writeTable(); none of them would
+// notice someone reintroducing `go run ./cmd/check-versions`. This would.
 //
-// The recipe used to run the program under `go run`, which collapses ANY
-// non-zero child status to 1 — so exit 2 ("could not query the registry")
-// arrived at the `case` as 1 and was announced as "drift detected", exit 0.
-// The 14 unit tests in main_test.go pin check(), exitCode(), writeVerdict()
-// and writeTable(); none of them would notice someone reintroducing
-// `go run ./cmd/check-versions` tomorrow. This one would.
-//
-// Port 9 is the reserved "discard" port: it is expected to refuse
-// immediately, so every probe errors without touching the network. The
-// message assertions below double as the guard for the unlikely host where
-// something IS listening there — a confusing pass is worse than a failure.
-func TestMakefileReportsRegistryOutageAsError(t *testing.T) {
+// The contract, per state: pins current → exit 0, "all pins match"; drift →
+// exit 0 (drift is reported, not a failure), "drift detected"; any probe
+// failure → exit 2, "could not query" — including when other packages
+// drifted, because a probe that never reached the registry says nothing about
+// whether the pins are current.
+func TestMakefileExitContract(t *testing.T) {
 	if testing.Short() {
 		t.Skip("shells out to make and builds a binary; skipped under -short")
 	}
@@ -55,29 +130,81 @@ func TestMakefileReportsRegistryOutageAsError(t *testing.T) {
 		t.Skip("make not on PATH")
 	}
 
-	cmd := exec.Command("make", "-C", repoRoot(t), "check-versions",
-		"CHECK_VERSIONS_ARGS=-registry http://127.0.0.1:9 -timeout 2s")
-	out, err := cmd.CombinedOutput()
-	got := string(out)
-
-	code := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			t.Fatalf("running make: %v\noutput:\n%s", err, got)
-		}
-		code = exitErr.ExitCode()
-	}
-
-	if code != 2 {
-		t.Errorf("make check-versions against a dead registry: exit %d, want 2\noutput:\n%s", code, got)
-	}
-	if !strings.Contains(got, "could not query") {
-		t.Errorf("output does not report the outage; want a %q line\noutput:\n%s", "could not query", got)
-	}
-	for _, forbidden := range []string{"drift detected", "all pins match"} {
-		if strings.Contains(got, forbidden) {
-			t.Errorf("an unreachable registry was reported as %q — nothing was compared to anything\noutput:\n%s", forbidden, got)
-		}
+	for _, tc := range []struct {
+		name     string
+		registry func(t *testing.T) string
+		wantCode int
+		want     string
+		forbid   []string
+	}{
+		{
+			name:     "all pins current",
+			registry: func(t *testing.T) string { return pinnedRegistry(t, current) },
+			wantCode: 0,
+			want:     "✓ all pins match latest",
+			forbid:   []string{"drift detected", "could not query"},
+		},
+		{
+			name: "one pin behind",
+			registry: func(t *testing.T) string {
+				return pinnedRegistry(t, func(pkg, pinned string) (int, string) {
+					if pkg == "@anthropic-ai/claude-code" {
+						return http.StatusOK, "99.0.0"
+					}
+					return current(pkg, pinned)
+				})
+			},
+			wantCode: 0,
+			want:     "⚠ drift detected",
+			forbid:   []string{"could not query", "all pins match"},
+		},
+		{
+			name: "registry answers 503",
+			registry: func(t *testing.T) string {
+				return pinnedRegistry(t, func(string, string) (int, string) { return http.StatusServiceUnavailable, "" })
+			},
+			wantCode: 2,
+			want:     "✗ could not query the npm registry",
+			forbid:   []string{"drift detected", "all pins match"},
+		},
+		{
+			name:     "registry drops the connection",
+			registry: hangUpRegistry,
+			wantCode: 2,
+			want:     "✗ could not query the npm registry",
+			forbid:   []string{"drift detected", "all pins match"},
+		},
+		{
+			name: "one probe fails while another pin is behind",
+			registry: func(t *testing.T) string {
+				return pinnedRegistry(t, func(pkg, pinned string) (int, string) {
+					switch pkg {
+					case "@openai/codex":
+						return http.StatusServiceUnavailable, ""
+					case "@anthropic-ai/claude-code":
+						return http.StatusOK, "99.0.0"
+					}
+					return current(pkg, pinned)
+				})
+			},
+			wantCode: 2,
+			want:     "✗ could not query the npm registry",
+			forbid:   []string{"drift detected", "all pins match"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out := runCheckVersions(t, tc.registry(t))
+			if code != tc.wantCode {
+				t.Errorf("exit %d, want %d\noutput:\n%s", code, tc.wantCode, out)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output lacks %q\noutput:\n%s", tc.want, out)
+			}
+			for _, f := range tc.forbid {
+				if strings.Contains(out, f) {
+					t.Errorf("output reports %q\noutput:\n%s", f, out)
+				}
+			}
+		})
 	}
 }
