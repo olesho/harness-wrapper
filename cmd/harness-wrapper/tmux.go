@@ -52,9 +52,11 @@ const envTraceFile = "HW_TRACE_FILE"
 // HW_TMUX_SOCKET overrides the socket for debugging.
 const defaultTmuxSocket = "harness-wrapper"
 
-// envTmuxSocket overrides defaultTmuxSocket. It is env-only on purpose: a flag
-// would have to be forwarded through tmuxReexecArgv (see the warning on that
-// function), while an env var crosses the re-exec for free.
+// envTmuxSocket overrides defaultTmuxSocket for every tmux call made from the
+// user's shell: the spawn and the list/status/attach/kill/reap subcommands.
+// The child re-exec'd inside the pane does not rely on it, because a pane
+// inherits it only from the tmux server's startup environment; the child
+// addresses its own server through $TMUX instead (see tmuxSelfCmd).
 const envTmuxSocket = "HW_TMUX_SOCKET"
 
 // tmuxSocketName returns the tmux socket harness-wrapper operates on.

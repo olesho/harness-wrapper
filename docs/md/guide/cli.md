@@ -127,8 +127,9 @@ tmux -L harness-wrapper attach -t hw-demo
 ```
 
 Set `HW_TMUX_SOCKET=<name>` to put sessions on a different socket (debugging, or sharing a socket
-with another tool). It is an environment variable rather than a flag so that it crosses the re-exec
-into the tmux pane for free.
+with another tool). The spawn and the subcommands read it from your shell. The run inside the pane
+does not: a pane inherits environment only from what the tmux server held when it started, so the
+run tears its session down through `$TMUX`, which tmux sets in every pane to name that pane's server.
 
 Sessions stranded on the **default** socket by a build predating this change are not visible to
 `list`/`kill`/`reap` any more — `reap` deliberately has no cross-socket reach, since a tool that goes
