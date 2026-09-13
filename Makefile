@@ -108,13 +108,15 @@ check-versions:
 # Costs real API tokens for codex/claude.
 #
 # Optional WORKDIR=<dir> runs the harness in that directory instead of
-# $(CURDIR)/internal/screenbench. Some screens only paint outside a directory
-# the harness already trusts — claude's folder-trust dialog is the case this
-# exists for, and it needs a freshly `git init`-ed directory claude has never
-# seen. The value is echoed into the recording's meta.json notes so the rebake
-# is reproducible:
+# $(CURDIR)/internal/screenbench — a directory claude already trusts, so no
+# startup dialog ever paints there. Use a freshly `git init`-ed directory to
+# record a scenario the way a fresh checkout starts it. The value is echoed
+# into the recording's meta.json notes so the rebake is reproducible, and it
+# reaches the recorder as ONE argument however many spaces it holds (the
+# recipe reads it from the environment, never splices it into shell text):
 #
-#   make rebake-corpus HARNESS=claude SCENARIO=trust-dialog WORKDIR=/tmp/trustrepo
+#   d=$$(mktemp -d) && git -C "$$d" init -q
+#   make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn WORKDIR="$$d"
 #
 # Resolves harness binary name (claude-code → claude) and dispatches.
 # The harness name passed to --harness matches the directory under
@@ -146,20 +148,20 @@ endif
 	out_dir=test/corpus/$$corpus_dir/$(SCENARIO); \
 	if [ ! -f "$$script_path" ]; then echo "✗ missing script $$script_path"; exit 2; fi; \
 	echo "→ recording $$harness_dir/$(SCENARIO) via $$bin"; \
-	mkdir -p $$out_dir; \
-	workdir_flag=""; \
+	mkdir -p "$$out_dir"; \
+	set --; \
 	workdir_note=""; \
-	if [ -n "$(WORKDIR)" ]; then \
-	  workdir_flag="--workdir $(WORKDIR)"; \
-	  workdir_note=" in workdir $(WORKDIR)"; \
+	if [ -n "$$WORKDIR" ]; then \
+	  set -- --workdir "$$WORKDIR"; \
+	  workdir_note=" in workdir $$WORKDIR"; \
 	fi; \
-	( cd $(CURDIR)/internal/screenbench && \
+	( cd "$(CURDIR)/internal/screenbench" && \
 	  $(RECORDER) \
 	    --harness $$corpus_dir \
 	    --bin "$$bin" \
 	    --out "$(CURDIR)/$$out_dir" \
 	    --auto-version \
-	    $$workdir_flag \
+	    "$$@" \
 	    --script "$(CURDIR)/$$script_path" \
 	    --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)$$workdir_note" )
 
