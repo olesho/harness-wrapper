@@ -93,6 +93,11 @@ check-versions:
 # The harness name passed to --harness matches the directory under
 # test/corpus/ and test/scripts/; the binary name is one of {codex,
 # claude}.
+# RECORDER is the command rebake-corpus runs from internal/screenbench. It is
+# overridable only so test/makerecipes can substitute a fake that records its
+# argv; leave it alone otherwise.
+RECORDER ?= go run -tags screenbench ./cmd/screenbench-record
+
 rebake-corpus:
 ifndef HARNESS
 	$(error HARNESS is required, e.g. HARNESS=codex)
@@ -122,7 +127,7 @@ endif
 	  workdir_note=" in workdir $(WORKDIR)"; \
 	fi; \
 	( cd $(CURDIR)/internal/screenbench && \
-	  go run -tags screenbench ./cmd/screenbench-record \
+	  $(RECORDER) \
 	    --harness $$corpus_dir \
 	    --bin "$$bin" \
 	    --out "$(CURDIR)/$$out_dir" \
