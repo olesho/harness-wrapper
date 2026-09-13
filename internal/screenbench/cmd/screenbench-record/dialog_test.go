@@ -153,3 +153,60 @@ func TestValidateStep_Within(t *testing.T) {
 		t.Errorf("valid answer_dialog step rejected: %v", err)
 	}
 }
+
+// Claude resets its trust dialog to the default highlight on the first Enter
+// after painting it (measured on 2.1.261 and 2.1.270). That repaint — the same
+// dialog, highlight off the row just confirmed — earns one re-answer computed
+// from the live screen; the second Enter is taken.
+func TestAnswerDialog_ResetIsReansweredFromTheLiveScreen(t *testing.T) {
+	enters := 0
+	d, f := newDialogDriver(t, trustFrame(trustNo), func(p []byte) string {
+		switch {
+		case bytes.Equal(p, []byte("\x1b[B")):
+			return trustFrame(trustYes)
+		case bytes.Equal(p, []byte("\r")):
+			enters++
+			if enters == 1 {
+				return trustFrame(trustNo) // reset to the default highlight
+			}
+			return "╭────╮\r\n│ ❯  │\r\n╰────╯\r\n"
+		}
+		return ""
+	})
+	if err := d.answerDialog(context.Background(), trustYes, time.Second); err != nil {
+		t.Fatalf("answerDialog: %v", err)
+	}
+	got := f.sent()
+	want := []string{"\x1b[B", "\r", "\x1b[B", "\r"}
+	if len(got) != len(want) {
+		t.Fatalf("writes = %q, want %q", got, want)
+	}
+	for i := range want {
+		if string(got[i]) != want[i] {
+			t.Fatalf("writes = %q, want %q", got, want)
+		}
+	}
+}
+
+// A dialog that resets after every answer gets a bounded number of answers.
+func TestAnswerDialog_EndlessResetIsBounded(t *testing.T) {
+	d, f := newDialogDriver(t, trustFrame(trustNo), func(p []byte) string {
+		if bytes.Equal(p, []byte("\x1b[B")) {
+			return trustFrame(trustYes)
+		}
+		return trustFrame(trustNo)
+	})
+	err := d.answerDialog(context.Background(), trustYes, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "still up") {
+		t.Fatalf("err = %v, want a bounded still-up error", err)
+	}
+	enters := 0
+	for _, w := range f.sent() {
+		if bytes.Equal(w, []byte("\r")) {
+			enters++
+		}
+	}
+	if enters != maxAnswers {
+		t.Errorf("Enter written %d times, want %d", enters, maxAnswers)
+	}
+}
