@@ -600,8 +600,9 @@ func TestSetPermissionMode_RingLengthTable(t *testing.T) {
 		{"argv-joined", "", []string{"--permission-mode=bypassPermissions"}, 5, true},
 		{"argv-skip-permissions-flag", "", []string{wrapper.SkipPermissionsFlag}, 5, true},
 		{"argv-trailing-flag-unknown", "", []string{"--permission-mode"}, 5, true},
+		// Only the bare flag: claude 2.1.270 refuses --allow-dangerously-skip-permissions=<bool>
+		// ("error: unknown option"), so a joined spelling never launches a session to ring.
 		{"argv-allow-skip-permissions-flag", "plan", []string{"--allow-dangerously-skip-permissions"}, 5, true},
-		{"argv-allow-skip-permissions-joined", "plan", []string{"--allow-dangerously-skip-permissions=true"}, 5, true},
 		{"plain-non-bypass-launch", "plan", nil, 4, false},
 		// A dontAsk launch is a DEFINITE non-bypass posture: claudeRung maps the
 		// native spelling onto the manual rung, so it takes the 4-ring branch and
