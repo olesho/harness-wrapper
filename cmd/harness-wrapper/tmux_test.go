@@ -401,6 +401,7 @@ func TestTmuxShortRunSurvivesRemainOnExit(t *testing.T) {
 	}
 
 	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatalf("tmux session %q still alive after short run on a remain-on-exit server", sessionName)
 	}
 
