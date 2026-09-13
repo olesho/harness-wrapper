@@ -134,6 +134,16 @@ type classification struct {
 // returns. Two things are outside this promise: processes a harness left
 // running when it exited ON ITS OWN, and descendants that moved themselves out
 // of the group (setsid/setpgid), which need a caller-side backstop.
+//
+// Wait also returns only after the harness's output has been read to its end,
+// so the Result and RecentOutput account for everything it printed before it
+// exited. The end comes when nothing holds the terminal any more. A process
+// the harness left behind that keeps the terminal open gets outputDrainBudget,
+// after which the master is closed and reading stops at the next read; the
+// pty_closed trace event records whether the output was read to its end. On
+// Linux a leftover that holds the terminal without writing still keeps Wait
+// until it exits: the master is in blocking mode, and a close cannot interrupt
+// a read already waiting on it.
 func (s *Session) Wait() (Result, error) {
 	<-s.doneCh
 	s.mu.Lock()
@@ -273,6 +283,28 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	return s, nil
 }
 
+// outputDrainBudget bounds how long the supervisor waits, once the harness has
+// exited, for the output goroutine to read the PTY to its end before it closes
+// the master. The end comes as soon as nothing holds the terminal's slave side
+// any more, which is at once for a harness whose process group is gone; the
+// budget only matters when a process the harness left behind still holds the
+// terminal open.
+const outputDrainBudget = time.Second
+
+// awaitOutputEnd waits up to budget for the output goroutine to finish on its
+// own — it does when its read of the PTY master reports the end of output — and
+// reports whether it did.
+func awaitOutputEnd(outDone <-chan struct{}, budget time.Duration) bool {
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-outDone:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
 // ptyOutputReader wraps the PTY master for the output copy goroutine. It is the
 // identity in production; tests substitute a slow reader to reproduce the race
 // between reading a harness's final output and closing the master.
@@ -291,10 +323,9 @@ func (s *Session) supervise(ctx context.Context) {
 
 	go runSessionClassifier(ctx, s)
 
-	var outWG sync.WaitGroup
-	outWG.Add(1)
+	outDone := make(chan struct{})
 	go func() {
-		defer outWG.Done()
+		defer close(outDone)
 		// newLineSplitter is nil when no durable line tap is configured, and all
 		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
 		copyPTYOutput(ptyOutputReader(s.ptmx), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
@@ -315,13 +346,18 @@ func (s *Session) supervise(ctx context.Context) {
 	s.term.finish(s.cfg.WaitDelay)
 
 	close(s.classifierOn)
+	// Everything the harness wrote before exiting is still in the PTY. Read it
+	// to the end before closing the master: on Linux a process can exit with
+	// its last output unread, and closing the master discards it — the exit
+	// classifier then misses the very line that explains a fast failure.
+	drained := awaitOutputEnd(outDone, outputDrainBudget)
 	_ = s.ptmx.Close()
-	outWG.Wait()
+	<-outDone
 
 	s.cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
 		Kind:   "pty_closed",
-		Fields: map[string]any{"pid": s.pid},
+		Fields: map[string]any{"pid": s.pid, "output_drained": drained},
 	})
 	if stdinDone != nil {
 		select {
