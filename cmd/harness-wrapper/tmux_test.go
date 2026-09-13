@@ -174,13 +174,13 @@ func TestTmuxRoundTrip(t *testing.T) {
 	}
 	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
 
+	// A private server, like every tmux test here: never the user's own
+	// harness-wrapper server (see privateTmuxSocket).
+	socket := privateTmuxSocket(t)
+	sockEnv := envTmuxSocket + "=" + socket
+
 	tracePath := filepath.Join(t.TempDir(), "t.ndjson")
 	sessionName := "hwtest"
-	t.Cleanup(func() {
-		cmd := exec.Command(hwBin, "kill", sessionName)
-		cmd.Env = appendEnv(cmd.Env, "PATH="+envPATH)
-		_ = cmd.Run()
-	})
 
 	// Spawn the parent. The harness ("claude") is the mock running in
 	// stuck mode so the session stays alive long enough to observe.
@@ -190,7 +190,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 		"--trace-file", tracePath,
 		"claude", "--", "--mode", "stuck",
 	)
-	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir())
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir(), sockEnv)
 	out, err := spawn.CombinedOutput()
 	if err != nil {
 		t.Fatalf("spawn: %v\n%s", err, out)
@@ -201,7 +201,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// list should include our session.
 	listCmd := exec.Command(hwBin, "list")
-	listCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	listCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	listOut, err := listCmd.Output()
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -212,7 +212,7 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// status (text) should mention the session.
 	statusCmd := exec.Command(hwBin, "status", sessionName)
-	statusCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	statusCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	statusOut, err := statusCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("status: %v\n%s", err, statusOut)
@@ -223,12 +223,12 @@ func TestTmuxRoundTrip(t *testing.T) {
 
 	// kill should remove the session.
 	killCmd := exec.Command(hwBin, "kill", sessionName)
-	killCmd.Env = appendEnv(nil, "PATH="+envPATH)
+	killCmd.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	if killOut, err := killCmd.CombinedOutput(); err != nil {
 		t.Fatalf("kill: %v\n%s", err, killOut)
 	}
 	listCmd2 := exec.Command(hwBin, "list")
-	listCmd2.Env = appendEnv(nil, "PATH="+envPATH)
+	listCmd2.Env = appendEnv(nil, "PATH="+envPATH, sockEnv)
 	listOut2, _ := listCmd2.Output()
 	if strings.Contains(string(listOut2), sessionName) {
 		t.Errorf("session %q still listed after kill: %s", sessionName, listOut2)
@@ -248,13 +248,9 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 	}
 	envPATH := shimDir + ":" + getenvDefault("PATH", "/usr/bin:/bin")
 
+	socket := privateTmuxSocket(t)
 	tracePath := filepath.Join(t.TempDir(), "short.trace.ndjson")
 	sessionName := "hwshort"
-	t.Cleanup(func() {
-		cmd := exec.Command(hwBin, "kill", sessionName)
-		cmd.Env = appendEnv(cmd.Env, "PATH="+envPATH)
-		_ = cmd.Run()
-	})
 
 	spawn := exec.Command(
 		hwBin,
@@ -262,16 +258,13 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 		"--trace-file", tracePath,
 		"claude", "--",
 	)
-	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir())
+	spawn.Env = appendEnv(nil, "PATH="+envPATH, "HOME="+t.TempDir(), envTmuxSocket+"="+socket)
 	if out, err := spawn.CombinedOutput(); err != nil {
 		t.Fatalf("spawn short run: %v\n%s", err, out)
 	}
 
-	deadline := time.Now().Add(15 * time.Second)
-	for tmuxSessionExists(sessionName) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-	}
-	if tmuxSessionExists(sessionName) {
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatalf("tmux session %q still alive after short run", sessionName)
 	}
 
