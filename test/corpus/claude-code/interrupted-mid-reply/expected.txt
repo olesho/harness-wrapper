@@ -1,17 +1,40 @@
+
+▗ ▗   ▖ ▖  Claude Code v2.1.270
+           Sonnet 5 · Claude API
+  ▘▘ ▝▝    /private/tmp/hw-rebake/interrupted-mid-reply
+
+  Fable 5.1 writes better code and reports progress on long tasks. Switch anytime with /model.
+
+❯ tell me a long detailed story about a wizard navigating a haunted library. take at least 1500 words and include vivid
+  descriptions of every room.
+
+⏺ The Wizard's Library
+
+  Aldric Venmoor had catalogued three thousand haunted structures in his forty years as a Warden of Unquiet Places, but
+  the Ashgrove Athenaeum unsettled him before he'd even touched its door. It rose from the fog-choked hollow like a
+  tombstone for a giant, five stories of black granite and green-veined marble, its windows dark save for one flickering
+  amber light on the topmost floor. The village elders had paid him well to enter it. They had paid him better to
+  promise he'd close the door behind him when he left — assuming he left at all.
+
+  He pressed his palm against the oak entrance, murmured a ward of passage, and stepped into the Entrance Hall.
+
+  The chamber swallowed sound. Aldric's boots should have echoed against the checkerboard marble floor, black and white
+  tiles stretching toward a grand staircase that spiraled up into darkness, but instead his footsteps landed with the
+  muffled thud of walking through wet wool. Dust hung suspended in the air rather than settling, caught in shafts of
+  moonlight that fell through a shattered rose window thirty feet above. The window's colored glass — what remained of
+  it — cast fractured patterns of red and blue across a reception desk gone gray with age, its surface still bearing an
+  open ledger whose last entry was dated two centuries past. Cobwebs draped the chandelier overhead like funeral
+  shrouds, and though no candle burned within it, the crystal droplets caught light from nowhere Aldric could identify,
+  glowing faintly the color of old bruises. A grandfather clock stood sentinel beside the staircase, its pendulum frozen
+  mid-swing, and when
   ⎿  Interrupted · What should Claude do instead?
-Resume this session with:       (beads) Find ready-to-work tasks with no blockers
-claude --resume 2ab2c0c9-d06c-4435-8059-ff0742d50557h─command─on─a─recurring─interval─(e.g.─/loop─5m─/foo).─Omit─the─int
-erval─to─let─the─model─self-pace.─────────────────────────────────
-* /agent-browser –NBrowsermautomation CLItforMAIeagents.dUse─when─the─user─needs─to─interact─with─websites,─including─na
-vige ing─pages,─filling─forms,─clicking─buttons,─taking─scree…──────────────────────────────────────────────────────────
-/tui-attach─────────────────────(tuivio-tui-dev)─Connect─to─an─externally-runninglTUItsession.qUsetwheneaoTUIiisaalreadr
-uexit       desClaudeiCodea(via Exit the CLI
- effortatories─in─the─late─1960sSetveffort level for model usage
-/export         s i       e     Expirt the current conversation to a filn or clipb ard
-oextrr-usagerminal,UIhappaandoseConfigure extra usage tonkeep working when limltsnarethit
-/beads:ready                    (beads)eFind ready-io-work  asks with no blockers
-/loop   ular philosophy of softwRun a prompt or slssh command,on a recurring intnrval (e.g. /ioop 5m /foo). Omit the iie
-rval to let the model self-pace.
-* /exitt browsern–iBrowser automationeCLIeft  AI agents. Use when the user needs to interact with websites, including na
-vigating pages, filling forms, clicking buttons, taking scree… with the current PR
-  ⏵⏵ auto mode on (shift+tab to cycle)
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
