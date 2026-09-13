@@ -131,3 +131,38 @@ func TestConfigureAdapterEnv_NonConfigurableAdapterIsNoOp(t *testing.T) {
 	}
 	configureAdapterEnv(a, []string{"CLAUDE_CONFIG_DIR=/nowhere"})
 }
+
+// TestClaudeConfigDir_RelativeRootResolvesAgainstWorkingDir: claude takes
+// CLAUDE_CONFIG_DIR verbatim, so a relative root lives under the harness
+// child's working directory (Options.WorkingDir), which is not this process's
+// cwd. History must read from there.
+func TestClaudeConfigDir_RelativeRootResolvesAgainstWorkingDir(t *testing.T) {
+	const sessID = "33333333-4444-5555-6666-777777777777"
+	const reply = "relative-root transcript"
+
+	// Build the fake first: the build runs in the cwd and caches modules under
+	// HOME, and both are about to change.
+	buildFakeHarness(t)
+	t.Setenv("HOME", t.TempDir())
+	wd := t.TempDir()
+	stageClaudeTranscript(t, filepath.Join(wd, ".agent-claude"), wd, sessID, reply)
+	t.Chdir(t.TempDir()) // the wrapper's cwd is not the child's
+
+	script := fakeharness.New("claude-code").Session(sessID).Idle().StayAliveUntilStopped().Build()
+	conv := openFake(t, script, func(o *Options) {
+		o.WorkingDir = wd
+		o.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR=.agent-claude")
+	})
+	conv.captureRawSessionID("claude --resume " + sessID)
+
+	turns, src, err := conv.HistoryWithSource(context.Background())
+	if err != nil {
+		t.Fatalf("HistoryWithSource: %v", err)
+	}
+	if src != HistorySourceTranscript {
+		t.Fatalf("source = %q, want %q", src, HistorySourceTranscript)
+	}
+	if len(turns) != 2 || turns[1].Text != reply {
+		t.Fatalf("turns = %+v, want the relative-root transcript ending in %q", turns, reply)
+	}
+}
