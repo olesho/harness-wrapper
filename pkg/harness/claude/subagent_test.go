@@ -172,3 +172,94 @@ func TestParseHookPayloadPostTaskLegacyLayout(t *testing.T) {
 		t.Errorf("text = %q, want %q", evs[0].Event.Text, "legacy subtask")
 	}
 }
+
+// writeSubagentTranscript writes a one-event subagent transcript for agentID
+// into dir, whose single user turn reads text. The text is what tells the
+// layouts apart in the negative controls below.
+func writeSubagentTranscript(t *testing.T, dir, agentID, text string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line, err := json.Marshal(map[string]any{
+		"type":      "user",
+		"uuid":      "u-" + agentID,
+		"timestamp": "2026-05-14T12:00:00Z",
+		"message":   map[string]any{"role": "user", "content": text},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent-"+agentID+".jsonl"), append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestParseHookPayloadPostTaskPrefersSidecarLayout is a negative control for
+// the lookup ORDER: with a transcript for the same agent in both layouts, the
+// current sidecar one must win, so a leftover file in the legacy location can
+// never shadow the live one.
+func TestParseHookPayloadPostTaskPrefersSidecarLayout(t *testing.T) {
+	home := t.TempDir()
+	const parentSID = "both-sess"
+	const agentID = "sub-both"
+	parentPath := writeFixtureTranscript(t, home, parentSID)
+	writeSubagentTranscript(t, filepath.Join(strings.TrimSuffix(parentPath, ".jsonl"), "subagents"), agentID, "current layout")
+	writeSubagentTranscript(t, filepath.Join(filepath.Dir(parentPath), "subagents"), agentID, "legacy layout")
+
+	ctx := harness.HookContext{Home: home, Cwd: "/wt"}
+	evs, err := hookProvider{}.ParseHookPayload(ctx, "post-task", postTaskPayload(t, parentSID, parentPath, agentID))
+	if err != nil {
+		t.Fatalf("ParseHookPayload(post-task): %v", err)
+	}
+	if len(evs) != 1 || evs[0].Event.Text != "current layout" {
+		t.Fatalf("got %+v, want the single event from the current sidecar layout", evs)
+	}
+}
+
+// TestParseHookPayloadPostTaskSidecarDirWithoutFile covers a session whose
+// sidecar dir exists (claude creates it for other subagents) without THIS
+// agent's file: the legacy location must still be consulted.
+func TestParseHookPayloadPostTaskSidecarDirWithoutFile(t *testing.T) {
+	home := t.TempDir()
+	const parentSID = "dir-only-sess"
+	const agentID = "sub-legacy"
+	parentPath := writeFixtureTranscript(t, home, parentSID)
+	sidecar := filepath.Join(strings.TrimSuffix(parentPath, ".jsonl"), "subagents")
+	writeSubagentTranscript(t, sidecar, "some-other-agent", "not this one")
+	writeSubagentTranscript(t, filepath.Join(filepath.Dir(parentPath), "subagents"), agentID, "legacy layout")
+
+	ctx := harness.HookContext{Home: home, Cwd: "/wt"}
+	evs, err := hookProvider{}.ParseHookPayload(ctx, "post-task", postTaskPayload(t, parentSID, parentPath, agentID))
+	if err != nil {
+		t.Fatalf("ParseHookPayload(post-task): %v", err)
+	}
+	if len(evs) != 1 || evs[0].Event.Text != "legacy layout" {
+		t.Fatalf("got %+v, want the single event from the legacy layout", evs)
+	}
+}
+
+// TestParseHookPayloadPostTaskSurfacesUnreadableSidecar pins the error arm: a
+// read failure at the current layout that is NOT "file absent" is reported,
+// never papered over by falling back to a possibly stale legacy file.
+func TestParseHookPayloadPostTaskSurfacesUnreadableSidecar(t *testing.T) {
+	home := t.TempDir()
+	const parentSID = "unreadable-sess"
+	const agentID = "sub-dir"
+	parentPath := writeFixtureTranscript(t, home, parentSID)
+	// A directory where the transcript file should be: os.ReadFile fails with
+	// EISDIR, which is not os.IsNotExist.
+	if err := os.MkdirAll(filepath.Join(strings.TrimSuffix(parentPath, ".jsonl"), "subagents", "agent-"+agentID+".jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSubagentTranscript(t, filepath.Join(filepath.Dir(parentPath), "subagents"), agentID, "stale legacy")
+
+	ctx := harness.HookContext{Home: home, Cwd: "/wt"}
+	evs, err := hookProvider{}.ParseHookPayload(ctx, "post-task", postTaskPayload(t, parentSID, parentPath, agentID))
+	if err == nil {
+		t.Fatalf("got events %+v and no error; an unreadable current-layout transcript must be reported", evs)
+	}
+	if evs != nil {
+		t.Errorf("got %+v alongside the error, want no events", evs)
+	}
+}
