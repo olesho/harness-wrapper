@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"time"
@@ -53,34 +52,41 @@ func echoNeedle(text string) string {
 	return needle
 }
 
-// awaitComposerEcho blocks until the harness echoes needle back on the PTY, the
-// bound elapses, or ctx is cancelled. It reports whether the echo was seen.
+// awaitComposerEcho blocks until the composer echoes needle on the RENDERED
+// screen, the bound elapses, or ctx is cancelled. It reports whether the echo
+// was seen. preWrite is the rendered screen from just before the body was
+// written.
 //
-// Unlike pkg/chat's twin it polls the RAW byte buffer rather than a rendered
-// screen — scriptDriver has no emulator — which is the same buffer wait_for
-// matches against (see the schema comment in script.go). A composer echo is
-// plain text interleaved with SGR escapes, so a needle taken from the start of
-// the first line matches as long as it does not straddle a style change; the
-// recorded prompts are plain ASCII well past echoNeedleLen for that reason.
+// It mirrors pkg/chat's twin rule for rule. The needle is looked for on the
+// rendered screen, not in the raw byte buffer: Claude sometimes paints a
+// composer echo with cursor-column jumps instead of space bytes
+// ("what\x1b[8Gis…"), so the text is contiguous on screen but never in the
+// stream, and a raw search waited out the whole bound on every such send.
+// Past half the bound, ANY screen change since preWrite counts, which is what
+// covers a composer that transforms the echo.
 //
 // The return value is advisory. Callers write the submit key either way: a
 // missed echo degrades to the pre-echo timing, it must never skip the submit
 // and never write it twice.
-func (d *scriptDriver) awaitComposerEcho(ctx context.Context, needle string) bool {
-	if needle == "" {
-		return false
-	}
+func (d *scriptDriver) awaitComposerEcho(ctx context.Context, needle, preWrite string) bool {
 	bound := d.echoGap
 	if bound <= 0 {
 		bound = submitEchoGap
 	}
 	deadline := time.NewTimer(bound)
 	defer deadline.Stop()
+	half := time.NewTimer(bound / 2)
+	defer half.Stop()
+	halfDone := false
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
 
 	for {
-		if d.bufContains(needle) {
+		cur := d.screenText()
+		if needle != "" && strings.Contains(cur, needle) {
+			return true
+		}
+		if (halfDone || needle == "") && cur != preWrite {
 			return true
 		}
 		select {
@@ -88,14 +94,9 @@ func (d *scriptDriver) awaitComposerEcho(ctx context.Context, needle string) boo
 			return false
 		case <-deadline.C:
 			return false
+		case <-half.C:
+			halfDone = true
 		case <-tick.C:
 		}
 	}
-}
-
-// bufContains reports whether the rolling output buffer currently holds needle.
-func (d *scriptDriver) bufContains(needle string) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return bytes.Contains(d.buf, []byte(needle))
 }
