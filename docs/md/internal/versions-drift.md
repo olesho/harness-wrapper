@@ -148,18 +148,23 @@ shift a startup screen without a single corpus test going red.
   sits at a screen it does not recognise until the watchdog kills it. Two things move between releases
   — the dialog's wording, and **which option is highlighted by default** (2.1.247 defaulted to *Yes, I
   trust this folder*; 2.1.251 defaults to *No, exit*, so a script that answers with a bare Enter now
-  quits claude at startup and bakes a dead recording). Scripts answer it with Down-then-Enter
-  (`"\u001b[B\u001b[13u"`) as a **single** step — an `ESC [ B` split across two PTY writes is read as a
-  lone Esc, which cancels the dialog.
-- Reproducing it needs `screenbench-record --workdir` pointed at a freshly `git init`-ed directory
-  claude has never trusted — the Makefile runs the recorder from inside this repo, which claude already
-  trusts, so the dialog never paints:
+  quits claude at startup and bakes a dead recording). So no script hard-codes the answer: every
+  claude script starts with `{"answer_dialog": "Yes, I trust this folder"}`. If the dialog paints, the
+  recorder answers it with keys the production parser derives from the rendered screen, writing the
+  arrows first and Enter only once the highlight sits on the target row; in a trusted directory the
+  step finds no dialog and does nothing. A dialog with no such option, a highlight that never lands,
+  or a dialog that will not clear stops the recording instead of baking the wrong screen.
+- To record a scenario the way a fresh checkout starts it, point `screenbench-record --workdir` at a
+  freshly `git init`-ed directory claude has never trusted — the Makefile otherwise runs the recorder
+  from inside this repo, which claude already trusts:
   ```bash
   d=$(mktemp -d) && git -C "$d" init -q
-  make rebake-corpus HARNESS=claude SCENARIO=trust-dialog WORKDIR="$d"
+  make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn WORKDIR="$d"
   ```
-  Record the directory used in the scenario's `meta.json` notes (the Makefile does this for you) so the
-  rebake is reproducible.
+  The Makefile records the directory in the scenario's `meta.json` notes so the rebake is reproducible.
+  The two trust-dialog corpora (`trust-dialog-unnumbered`, `trust-dialog-confirmed`) are not rebaked
+  this way: a recording of the dialog itself must hold its frames before any answer, so they were
+  captured under tmux against a real claude — see their `meta.json` notes.
 
 ## When marker drift is real
 

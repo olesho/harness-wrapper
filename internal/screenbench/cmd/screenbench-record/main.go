@@ -278,6 +278,7 @@ type driverHandle struct {
 func launchDriver(ctx context.Context, sess *wrapper.Session, c recorderConfig, scr *script) (*driverHandle, func()) {
 	driver := newScriptDriver(sess, c.IdleTimeout, 0)
 	driver.submitKey = submitKeyForHarness(c.Harness)
+	driver.screen.Resize(c.Cols, c.Rows)
 	detach := sess.AttachOutput(driver)
 
 	h := &driverHandle{done: make(chan struct{})}

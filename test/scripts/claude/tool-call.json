@@ -1,5 +1,6 @@
 {
   "steps": [
+    {"answer_dialog": "Yes, I trust this folder"},
     {"wait_for": "> "},
     {"send": "use the Bash tool to list entries in the current directory and tell me how many .go files there are\n"},
     {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"}
