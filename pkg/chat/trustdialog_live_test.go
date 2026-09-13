@@ -59,7 +59,8 @@ func TestTrustDialogLive(t *testing.T) {
 		Harness:    chatClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: workDir,
-		Env: append(os.Environ(),
+		Env: append(
+			os.Environ(),
 			"CLAUDE_CONFIG_DIR="+configDir,
 			"HOME="+configDir,
 		),
