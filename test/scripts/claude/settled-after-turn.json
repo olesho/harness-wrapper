@@ -1,10 +1,7 @@
 {
   "steps": [
     {
-      "wait_for": "(project you created or one you trust|Yes, I trust this folder)"
-    },
-    {
-      "send": "\u001b[B\u001b[13u"
+      "answer_dialog": "Yes, I trust this folder"
     },
     {
       "sleep": "5s"
