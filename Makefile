@@ -76,13 +76,16 @@ docs-serve:
 # check produced no signal".
 #
 # The catch-all arm is deliberate: an exit code this target does not recognise
-# (a panic, a future code) must surface as a failure rather than fall into the
-# "drift is fine" arm. Collapsing unknown into benign is the exact bug above.
+# (a signal death, a future code) must surface as a failure rather than fall
+# into the "drift is fine" arm. Collapsing unknown into benign is the exact bug
+# above. A Go panic exits 2 and so already lands in the "no signal" arm.
+#
 # CHECK_VERSIONS_ARGS: extra flags for the sentry binary. Empty by default, so
 # the operator-facing `make check-versions` is unchanged. It exists so the
 # regression test in cmd/check-versions/makefile_exit_test.go can point THIS
-# recipe at a dead registry -- the defect it guards (a collapsed exit status)
-# lives in the recipe, not in Go code, and is untestable without a way in.
+# recipe at a controlled registry -- the defect it guards (a collapsed exit
+# status) lives in the recipe, not in Go code, and is untestable without a way
+# in.
 CHECK_VERSIONS_ARGS ?=
 
 check-versions:
