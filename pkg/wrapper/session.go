@@ -273,6 +273,11 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 	return s, nil
 }
 
+// ptyOutputReader wraps the PTY master for the output copy goroutine. It is the
+// identity in production; tests substitute a slow reader to reproduce the race
+// between reading a harness's final output and closing the master.
+var ptyOutputReader = func(ptmx io.Reader) io.Reader { return ptmx }
+
 // supervise owns the session's lifecycle. It runs the IO copy
 // goroutines, dispatches the classifier, waits for the harness to
 // exit (or for Stop / classification / context cancel to force
@@ -292,7 +297,7 @@ func (s *Session) supervise(ctx context.Context) {
 		defer outWG.Done()
 		// newLineSplitter is nil when no durable line tap is configured, and all
 		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
-		copyPTYOutput(s.ptmx, s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		copyPTYOutput(ptyOutputReader(s.ptmx), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
 	}()
 
 	stdinDone := s.startStdinCopy()
