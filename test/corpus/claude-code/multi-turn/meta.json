@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.185",
-  "recorded_at": "2026-06-21T03:03:17.119068Z",
+  "binary_version": "2.1.270",
+  "recorded_at": "2026-09-13T21:47:21.260785Z",
   "cols": 120,
   "rows": 40,
-  "notes": "rebake via Makefile on 2026-06-21T03:02:51Z"
+  "notes": "Three consecutive completed turns on Claude Code 2.1.270, each ending in its own \"✻ <verb> for Ns · done <H:MM PM>\" summary, so the recording exercises per-turn re-firing and the fingerprint de-duplication between turns. Prompts: what is 2 plus 2, then double that, twice. Recorded with `make rebake-corpus HARNESS=claude SCENARIO=multi-turn WORKDIR=/tmp/hw-rebake/multi-turn` from a fresh `git init` directory (holding add.go and sub.go) and an isolated CLAUDE_CONFIG_DIR (onboarding done, permissions.defaultMode auto, static CLAUDE_CODE_OAUTH_TOKEN, every inherited CLAUDE* session marker removed), so the recording carries no machine path, account setup or nesting warning. The script's answer_dialog step accepted the folder-trust dialog, which claude reset once, as it does to the first Enter. expected.txt is the last live frame rendered by tmux (bytes.raw replayed up to claude's teardown), not by the emulator under test."
 }

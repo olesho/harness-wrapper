@@ -1,5 +1,6 @@
 {
   "steps": [
+    {"answer_dialog": "Yes, I trust this folder"},
     {"wait_for": "> "},
     {"send": "say hi in one short word\n"},
     {"wait_for": "✻ [A-Z][a-zA-Z]+ for \\d+s"}
