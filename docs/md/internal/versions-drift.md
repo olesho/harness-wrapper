@@ -146,10 +146,17 @@ backwards-compatible.
    is frozen bytes and replays green against a version it has never seen, so it can neither confirm
    nor deny a new one:
    ```bash
+   for v in $(compgen -e | grep '^CLAUDE'); do unset "$v"; done   # bash; see below
    export CLAUDE_CONFIG_DIR=<a config dir with folder-trust already accepted>
    export HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1
    go test ./pkg/harness/ -run 'RealClaude' -v -timeout 15m -count=1
+   HW_LIVE_TRUST=1 HW_LIVE_TRUST_PROFILE="$CLAUDE_CONFIG_DIR/.claude.json" \
+     go test ./pkg/chat/ -run TrustDialogLive -v -count=1
    ```
+   The first line matters when the shell was started from a Claude Code session: a claude that
+   inherits one of its markers, such as `CLAUDE_CODE_CHILD_SESSION`, paints `⚠ Transcript saving is
+   off — inherited CLAUDE_CODE_CHILD_SESSION marker` and saves no transcript. `TestTrustDialogLive` is
+   the one live check of claude's folder-trust dialog being answered; it sends no prompt.
    Use `-run 'RealClaude'`, not `RealClaudeDogfood`: the narrower filter misses
    `TestRunTurn_RealClaudeLargePromptIntact`. `-v` is not optional: these tests **skip** when
    `claude` is off PATH or the env gate is unset, and `go test` prints `ok` for a package whose tests
@@ -226,6 +233,11 @@ re-run the canary.
 
 - **Auth on first launch** — codex/claude prompt for interactive login on a fresh machine; the
   scripted recorder can't survive it. Authenticate by hand once, then re-record.
+- **Session markers from an enclosing Claude Code session** — the recorder passes its environment
+  down, so a bake started from inside a Claude Code session records a claude that paints `⚠
+  Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker` into its frames. Unset every
+  inherited `CLAUDE*` variable before `make rebake-corpus`, then set the ones the bake needs, such as
+  `CLAUDE_CONFIG_DIR`.
 - **codex 0.142+ has no on-screen end-of-turn marker** — it dropped the `Token usage:` footer (and the
   `codex resume <uuid>` hint), so `wait_for "Token usage:"` is dead and completion is purely the
   recorder's idle-timeout. Record codex with `--idle-timeout 8s` (longer for `long-markdown`/`code-block`);
