@@ -25,7 +25,8 @@ const settledAfterTurn = "settled-after-turn"
 // regression. Anchoring the end is what carries the assertion: a reason that
 // still had the "· done <clock>" clause appended could not match.
 var bareEndOfTurnReasonRE = regexp.MustCompile(
-	`^` + regexp.QuoteMeta(reasonPrefix) + `✻ \p{L}+ for (?:\d+h )?(?:\d+m )?\d+s$`)
+	`^` + regexp.QuoteMeta(reasonPrefix) + `✻ \p{L}+ for (?:\d+h )?(?:\d+m )?\d+s$`,
+)
 
 // replaySettled feeds the recording through the screen emulator the way the
 // wrapper does in production — incrementally, snapshotting as bytes arrive —
