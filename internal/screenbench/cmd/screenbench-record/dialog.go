@@ -60,34 +60,77 @@ func (d *scriptDriver) answerDialog(ctx context.Context, label string, within ti
 	}
 }
 
-// answer writes opt's keys for req, confirming navigation before the confirm
-// key, then waits for req's dialog to leave the screen.
+// maxAnswers bounds the answers written to a dialog that keeps resetting —
+// the same count production uses (pkg/chat answerAttempts).
+const maxAnswers = 3
+
+// answer writes the keys for label into req's dialog, confirming navigation
+// before the confirm key, then waits for the dialog to leave the screen. It
+// mirrors production's evidence rules (pkg/chat answerAndConfirm): the one
+// state that licenses a second answer is the same dialog repainted with its
+// highlight OFF the row just confirmed — claude resetting the dialog, which
+// 2.1.261 and 2.1.270 both do to the first Enter after the dialog paints —
+// and the re-answer is computed from that live screen. A highlight that never
+// lands, or a dialog that stays exactly as it was, gets no further keys.
 func (d *scriptDriver) answer(ctx context.Context, req *turns.InputRequest, label string, opt *turns.InputOption) error {
 	keys := opt.Keys
-	if nav, confirm, ok := splitConfirm(keys); ok {
-		if _, err := d.stdin.WriteStdin(nav); err != nil {
+	for answered := 0; ; {
+		nav, confirm, split := splitConfirm(keys)
+		if split {
+			if _, err := d.stdin.WriteStdin(nav); err != nil {
+				return err
+			}
+			landed, err := d.awaitScreen(ctx, func(text string) bool { return highlightedOn(text, req.Prompt, label) })
+			if err != nil {
+				return err
+			}
+			if !landed {
+				return fmt.Errorf("answer_dialog: the highlight never reached %q; not pressing Enter on another row", label)
+			}
+			keys = confirm
+		}
+		if _, err := d.stdin.WriteStdin(keys); err != nil {
 			return err
 		}
-		landed, err := d.awaitScreen(ctx, func(text string) bool { return highlightedOn(text, req.Prompt, label) })
+		answered++
+		var reset bool
+		cleared, err := d.awaitScreen(ctx, func(text string) bool {
+			if !dialogShowing(text, req.Prompt) {
+				return true
+			}
+			reset = split && highlightedElsewhere(text, req.Prompt, label)
+			return reset
+		})
 		if err != nil {
 			return err
 		}
-		if !landed {
-			return fmt.Errorf("answer_dialog: the highlight never reached %q; not pressing Enter on another row", label)
+		switch {
+		case cleared && !reset:
+			return nil
+		case !reset || answered >= maxAnswers:
+			return fmt.Errorf("answer_dialog: dialog %q still up after %d answer(s) with %q", req.Prompt, answered, label)
 		}
-		keys = confirm
+		live, ok := claudecode.DetectInput(d.screenText())
+		if !ok || live.Prompt != req.Prompt {
+			return nil // it cleared while we looked
+		}
+		next := optionByLabel(live, label)
+		if next == nil {
+			return fmt.Errorf("answer_dialog: dialog %q no longer offers %q", req.Prompt, label)
+		}
+		keys = next.Keys
 	}
-	if _, err := d.stdin.WriteStdin(keys); err != nil {
-		return err
+}
+
+// highlightedElsewhere reports whether the dialog with prompt is on screen
+// with its highlight on a row other than label — the reset evidence.
+func highlightedElsewhere(text, prompt, label string) bool {
+	req, ok := claudecode.DetectInput(text)
+	if !ok || req.Prompt != prompt {
+		return false
 	}
-	cleared, err := d.awaitScreen(ctx, func(text string) bool { return !dialogShowing(text, req.Prompt) })
-	if err != nil {
-		return err
-	}
-	if !cleared {
-		return fmt.Errorf("answer_dialog: dialog %q still up after answering %q", req.Prompt, label)
-	}
-	return nil
+	opt := optionByLabel(req, label)
+	return opt != nil && string(opt.Keys) != "\r"
 }
 
 // splitConfirm splits a selector answer (arrows + CR) into its navigation and
