@@ -67,7 +67,58 @@ The canonical lists live in the `Makefile`:
 
 `make check-versions` runs `cmd/check-versions`, which compares each pin against
 `https://registry.npmjs.org/<package>/latest`. Exit codes: **0** all pins current, **1** drift
-detected, **2** registry unreachable.
+detected, **2** registry unreachable — but read the **verdict line** the command prints, not the
+status a wrapper saw. `go run` collapses a non-zero child status to 1, so anything invoking this
+through `go run` (as the target itself once did) cannot tell an outage from real drift; the program
+prints `✓ all pins match latest` / `⚠ drift detected …` / `✗ could not query the npm registry`
+itself for exactly that reason. A `✗` means **no signal** — it is not evidence the pins are fine.
+
+The table it prints has six columns — `harness | package | pinned | latest | status | detail`. The
+`detail` column is populated only on `status: error` rows and carries the probe failure, flattened to
+one line and truncated to 120 characters; `--format=json` carries the same text untruncated in each
+row's `error` field.
+
+Those exit codes are **contractual**, and the target is safe to invoke from a script: the recipe
+builds the binary into a tmpdir and runs it rather than using `go run`, so `make check-versions`
+exits **0** for current-or-drift (drift is the normal state at every upstream release and must not
+fail the target) and **2** when the sentry could not answer at all. Any other status is passed
+through unchanged with a `✗ check-versions failed unexpectedly` line, so an unrecognised failure is
+never mistaken for a clean run. Operator tooling that watches for new releases (the release-check
+cron some hosts run, which lives outside this repository) depends on exactly that split. The recipe
+also accepts `CHECK_VERSIONS_ARGS`, which is passed straight to the binary; it exists **for tests
+only** — `cmd/check-versions/makefile_exit_test.go` uses it to point the target at a local fake
+registry and replay current pins, drift, outages and a mix of the two — and should be left empty in
+operator and CI use.
+
+## When the table shows `error`
+
+An `error` row means **no comparison happened**. `latest` is `—` because the registry was never read,
+so the row is *not* drift and says nothing at all about whether that pin is current — read the
+`detail` column for the cause. Only a `drift` row is drift.
+
+This distinction is not academic: a run in which all four rows read `error` was filed as a P1
+pin-drift bug, because the target reported `⚠ drift detected` and exited 0 (`go run` had collapsed
+the command's exit 2 to 1) and the table dropped the cause on the floor. Both halves are fixed — the
+verdict now reads `✗ could not query the npm registry` and the target exits 2 — but the reflex to
+check is still the `status` column, not the verdict alone.
+
+The signature seen on macOS:
+
+```
+tls: failed to verify certificate: x509: “certificate” certificate is not trusted (OSStatus -26276)
+```
+
+That is a **host toolchain** problem, not a repo one, and it has three properties worth knowing before
+you spend an hour on it:
+
+- Go on darwin uses the platform (Security.framework) verifier, so **`SSL_CERT_FILE` is ignored** —
+  pointing it at a CA bundle changes nothing.
+- **`curl` and `npm` succeeding does not clear Go.** They use their own bundled roots and will fetch
+  `registry.npmjs.org` happily while every Go `http.Get` on the same machine fails.
+- It reproduces with a stock ten-line `http.Get`, so it is not something `cmd/check-versions` can fix.
+
+Until the host trust store is repaired, `make check-versions` cannot produce a verdict on this
+machine; verify a pin by hand (`npm view <package> version`) and treat the `✗` as what it says.
 
 ## When `check-versions` shows drift
 

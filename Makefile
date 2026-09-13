@@ -63,13 +63,40 @@ docs:
 docs-serve:
 	cd docs/gen && go run . serve
 
+# check-versions: the verdict line is printed by the PROGRAM (see its package
+# comment), not decided here. It has to be: this used to `go run` the command
+# and switch on $$? , but `go run` collapses any non-zero child status to 1, so
+# the "registry unreachable" arm was unreachable code and every npm outage
+# announced "drift detected".
+#
+# Build first, then run, so the documented exit codes (1 = drift, 2 = registry
+# or read error) survive. Only 2 is propagated: drift is the expected state at
+# every new upstream release and must not fail the target — callers tell drift
+# from an outage by the verdict text, and a non-zero status here means "this
+# check produced no signal".
+#
+# The catch-all arm is deliberate: an exit code this target does not recognise
+# (a signal death, a future code) must surface as a failure rather than fall
+# into the "drift is fine" arm. Collapsing unknown into benign is the exact bug
+# above. A Go panic exits 2 and so already lands in the "no signal" arm.
+#
+# CHECK_VERSIONS_ARGS: extra flags for the sentry binary. Empty by default, so
+# the operator-facing `make check-versions` is unchanged. It exists so the
+# regression test in cmd/check-versions/makefile_exit_test.go can point THIS
+# recipe at a controlled registry -- the defect it guards (a collapsed exit
+# status) lives in the recipe, not in Go code, and is untestable without a way
+# in.
+CHECK_VERSIONS_ARGS ?=
+
 check-versions:
-	@go run ./cmd/check-versions 2>/dev/null; \
-	code=$$?; \
+	@dir="$$(mktemp -d)"; \
+	go build -o "$$dir/check-versions" ./cmd/check-versions || { rm -rf "$$dir"; exit 2; }; \
+	"$$dir/check-versions" $(CHECK_VERSIONS_ARGS); code=$$?; \
+	rm -rf "$$dir"; \
 	case $$code in \
-		0) echo "" ; echo "✓ all pins match latest" ;; \
-		1) echo "" ; echo "⚠ drift detected — see docs/md/internal/versions-drift.md when ready" ;; \
-		2) echo "" ; echo "✗ sentry could not query the npm registry" ; exit 2 ;; \
+		0|1) exit 0 ;; \
+		2) exit 2 ;; \
+		*) echo "✗ check-versions failed unexpectedly (exit $$code)"; exit $$code ;; \
 	esac
 
 # rebake-corpus: re-record one scenario via screenbench-record --script.
