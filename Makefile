@@ -18,10 +18,15 @@ help:
 	@echo "  make docs                  build the docs site (docs/md/ -> docs/html/)"
 	@echo "  make docs-serve            preview the docs site at http://localhost:4321"
 	@echo "  make check-versions        offline upstream-version drift check (npm registry)"
-	@echo "  make rebake-corpus HARNESS=<name> SCENARIO=<name>"
+	@echo "  make rebake-corpus HARNESS=<name> SCENARIO=<name> [WORKDIR=<dir>]"
 	@echo "                             re-record one scenario via screenbench-record --script"
 	@echo "                               HARNESS in {codex, claude}"
-	@echo "                               SCENARIO in {$(SCENARIOS)}"
+	@echo "                               SCENARIO in {$(SCENARIOS)}  (not exhaustive: any"
+	@echo "                                 scenario whose test/scripts/<harness>/<name>.json"
+	@echo "                                 exists can be rebaked by name)"
+	@echo "                               WORKDIR runs the harness in that directory instead"
+	@echo "                                 of the repo; needed for screens that only appear"
+	@echo "                                 in an untrusted dir (claude's folder-trust dialog)"
 	@echo "  make rebake-corpus-all     refresh entire corpus across all harnesses"
 	@echo "                             (PAID for codex/claude API tokens)"
 	@echo "  make schema-canary-codex   re-record codex short-reply then re-run the"
@@ -102,10 +107,26 @@ check-versions:
 # rebake-corpus: re-record one scenario via screenbench-record --script.
 # Costs real API tokens for codex/claude.
 #
+# Optional WORKDIR=<dir> runs the harness in that directory instead of
+# $(CURDIR)/internal/screenbench — a directory claude already trusts, so no
+# startup dialog ever paints there. Use a freshly `git init`-ed directory to
+# record a scenario the way a fresh checkout starts it. The value is echoed
+# into the recording's meta.json notes so the rebake is reproducible, and it
+# reaches the recorder as ONE argument however many spaces it holds (the
+# recipe reads it from the environment, never splices it into shell text):
+#
+#   d=$$(mktemp -d) && git -C "$$d" init -q
+#   make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn WORKDIR="$$d"
+#
 # Resolves harness binary name (claude-code → claude) and dispatches.
 # The harness name passed to --harness matches the directory under
 # test/corpus/ and test/scripts/; the binary name is one of {codex,
 # claude}.
+# RECORDER is the command rebake-corpus runs from internal/screenbench. It is
+# overridable only so test/makerecipes can substitute a fake that records its
+# argv; leave it alone otherwise.
+RECORDER ?= go run -tags screenbench ./cmd/screenbench-record
+
 rebake-corpus:
 ifndef HARNESS
 	$(error HARNESS is required, e.g. HARNESS=codex)
@@ -127,15 +148,22 @@ endif
 	out_dir=test/corpus/$$corpus_dir/$(SCENARIO); \
 	if [ ! -f "$$script_path" ]; then echo "✗ missing script $$script_path"; exit 2; fi; \
 	echo "→ recording $$harness_dir/$(SCENARIO) via $$bin"; \
-	mkdir -p $$out_dir; \
-	( cd $(CURDIR)/internal/screenbench && \
-	  go run -tags screenbench ./cmd/screenbench-record \
+	mkdir -p "$$out_dir"; \
+	set --; \
+	workdir_note=""; \
+	if [ -n "$$WORKDIR" ]; then \
+	  set -- --workdir "$$WORKDIR"; \
+	  workdir_note=" in workdir $$WORKDIR"; \
+	fi; \
+	( cd "$(CURDIR)/internal/screenbench" && \
+	  $(RECORDER) \
 	    --harness $$corpus_dir \
 	    --bin "$$bin" \
 	    --out "$(CURDIR)/$$out_dir" \
 	    --auto-version \
+	    "$$@" \
 	    --script "$(CURDIR)/$$script_path" \
-	    --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)" )
+	    --notes "rebake via Makefile on $$(date -u +%Y-%m-%dT%H:%M:%SZ)$$workdir_note" )
 
 # rebake-corpus-all: refresh every canonical scenario across every
 # harness. Spends real API dollars for codex/claude. After recording,

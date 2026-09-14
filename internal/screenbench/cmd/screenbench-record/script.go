@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/screen"
 )
 
 // script is the parsed form of a JSON recording script.
@@ -27,9 +29,11 @@ import (
 //	  ]
 //	}
 //
-// Each step must populate exactly one of the WaitFor / Send / Sleep
-// fields. Empty steps and steps with more than one field error at load
-// time so misshapen scripts fail loudly rather than silently no-op.
+// Each step must populate exactly one of the WaitFor / Send / Sleep /
+// Interrupt / AnswerDialog fields. Empty steps and steps with more than one
+// field error at load time so misshapen scripts fail loudly rather than
+// silently no-op. A script meant to run from any directory starts with
+// {"answer_dialog": "Yes, I trust this folder"} (see AnswerDialog).
 type script struct {
 	Steps []scriptStep `json:"steps"`
 }
@@ -55,6 +59,21 @@ type scriptStep struct {
 	// harness's PTY. Exists as its own step kind because JSON cannot
 	// reasonably embed a raw 0x03 in a `send` string.
 	Interrupt bool `json:"interrupt,omitempty"`
+
+	// AnswerDialog answers a blocking dialog with the option carrying this
+	// label, IF the harness shows one — claude's folder-trust dialog paints
+	// only in a directory it has not trusted, so a script that must run from
+	// any directory starts with
+	//
+	//	{"answer_dialog": "Yes, I trust this folder"}
+	//
+	// Keys come from the production parser against the rendered screen, never
+	// from the script; see scriptDriver.answerDialog.
+	AnswerDialog string `json:"answer_dialog,omitempty"`
+
+	// Within bounds how long an answer_dialog step waits for a dialog before
+	// treating it as absent (default 30s). Only valid on answer_dialog.
+	Within string `json:"within,omitempty"`
 }
 
 func (s scriptStep) kind() (string, error) {
@@ -71,6 +90,9 @@ func (s scriptStep) kind() (string, error) {
 	if s.Interrupt {
 		count++
 	}
+	if s.AnswerDialog != "" {
+		count++
+	}
 	switch count {
 	case 1:
 		switch {
@@ -80,13 +102,15 @@ func (s scriptStep) kind() (string, error) {
 			return "send", nil
 		case s.Interrupt:
 			return "interrupt", nil
+		case s.AnswerDialog != "":
+			return "answer_dialog", nil
 		default:
 			return "sleep", nil
 		}
 	case 0:
-		return "", errors.New("step has no wait_for / send / sleep / interrupt field")
+		return "", errors.New("step has no wait_for / send / sleep / interrupt / answer_dialog field")
 	default:
-		return "", errors.New("step has more than one of wait_for / send / sleep / interrupt")
+		return "", errors.New("step has more than one of wait_for / send / sleep / interrupt / answer_dialog")
 	}
 }
 
@@ -128,6 +152,14 @@ func validateStep(step scriptStep) error {
 			return fmt.Errorf("invalid sleep duration: %w", err)
 		}
 	}
+	if step.Within != "" {
+		if step.AnswerDialog == "" {
+			return errors.New("within set on a step that is not an answer_dialog step")
+		}
+		if _, err := time.ParseDuration(step.Within); err != nil {
+			return fmt.Errorf("invalid within duration: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -151,6 +183,11 @@ type scriptDriver struct {
 	// CSI 13 u (the unmodified Enter). Nil preserves the legacy raw-byte
 	// behavior. See submitKeyForHarness.
 	submitKey []byte
+
+	// screen renders everything the harness prints, so steps that must read
+	// the screen as the user sees it (answer_dialog) do not match against raw
+	// escape-laden bytes. launchDriver sizes it to the recording's PTY.
+	screen *screen.Screen
 
 	mu        sync.Mutex
 	buf       []byte
@@ -177,8 +214,12 @@ func newScriptDriver(stdin stdinWriter, idleTimeout time.Duration, bufCap int) *
 		stdin:       stdin,
 		idleTimeout: idleTimeout,
 		bufCap:      bufCap,
+		screen:      screen.New(120, 40),
 	}
 }
+
+// screenText is the rendered screen as plain text.
+func (d *scriptDriver) screenText() string { return d.screen.Snapshot().Text }
 
 // Write captures bytes into the rolling buffer and signals any pending
 // wait_for that matches. Always returns (len(p), nil) — never blocks
@@ -189,6 +230,7 @@ func newScriptDriver(stdin stdinWriter, idleTimeout time.Duration, bufCap int) *
 // it, a wait_for for the same pattern in a later step would re-fire
 // instantly against the still-buffered match from the previous turn.
 func (d *scriptDriver) Write(p []byte) (int, error) {
+	_, _ = d.screen.Write(p)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.buf = append(d.buf, p...)
@@ -236,6 +278,12 @@ func (d *scriptDriver) runStep(ctx context.Context, step scriptStep) error {
 	case step.Interrupt:
 		_, err := d.stdin.WriteStdin([]byte{0x03})
 		return err
+	case step.AnswerDialog != "":
+		within := defaultAnswerWithin
+		if step.Within != "" {
+			within, _ = time.ParseDuration(step.Within)
+		}
+		return d.answerDialog(ctx, step.AnswerDialog, within)
 	case step.Sleep != "":
 		dur, _ := time.ParseDuration(step.Sleep)
 		select {

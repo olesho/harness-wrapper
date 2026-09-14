@@ -1,5 +1,6 @@
 {
   "steps": [
+    {"answer_dialog": "Yes, I trust this folder"},
     {"wait_for": "> "},
     {"send": "tell me a long detailed story about a wizard navigating a haunted library. take at least 1500 words and include vivid descriptions of every room.\n"},
     {"wait_for": "⏺"},
