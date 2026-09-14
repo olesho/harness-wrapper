@@ -30,6 +30,15 @@ const authGateStabilizeGap = 2 * time.Second
 // live screen before it is believed. Same dwell as the auth banner above.
 const unrecognizedDialogStabilizeGap = authGateStabilizeGap
 
+// Cross-language asymmetry, deliberate (PUPPET-315): the TS port has a second,
+// NON-throwing readiness helper (awaitPromptReadyUntil) used by input/answer,
+// setPermissionMode and probeCodexStatus, and that helper carries its own auth
+// classification so those callers can report an auth cause instead of a bare
+// timeout. Go has no such twin — every readiness wait here goes through
+// waitReadyForSend, which already classifies and returns ErrAuthRequired — so
+// there is nothing to mirror. If a bounded, non-throwing readiness wait is ever
+// added on this side, give it the same classification.
+
 func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// A prompt awaiting an external answer can never reach the ready state on
 	// its own; fail fast so the caller answers it first. (A prompt being
@@ -291,7 +300,9 @@ func readyForInput(harness, text string) bool {
 // test/corpus/auth for the captured screen each one matches:
 //   - claude-code: "Not logged in · Please run /login" (logged out); "Invalid API
 //     key · Fix external API key" (bad external key); the first-run onboarding
-//     "Choose the text style" theme picker and the "Select login method" screen.
+//     "Choose the text style" theme picker, the "Select login method" screen, and
+//     the OAuth browser sign-in screen the latter advances into ("Use the url
+//     below to sign in" / "Paste code here if prompted").
 //   - codex:       "401 Unauthorized: missing bearer or basic authentication"
 //     (bad/expired key); a logged-out TUI / `codex login status` say "Not logged
 //     in"; codex's own remediation is "run `codex login`"; the never-signed-in
@@ -311,13 +322,35 @@ var (
 	// and never become a usable composer on their own. readyForInput treats these
 	// as not-ready (so Send's auth gate short-circuits them), distinct from a
 	// normal composer showing a stale logged-out banner (which IS ready).
+	//
+	// Every wall anchor is the wall's OWN UI line, anchored at the start of a
+	// line (after indentation). A wall is checked BEFORE readiness and fails
+	// Send at once, so an anchor that matched anywhere on screen turned a reply
+	// that merely quoted one of these phrases into a spurious ErrAuthRequired
+	// for the next Send. Line anchoring rejects every mid-sentence quote; what
+	// it cannot reject is a reply line that itself begins with the exact UI
+	// wording, which needs the full phrase and (for the paste line) its input
+	// prompt to collide.
 	claudeOnboardingRE = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)choose the text style`), // theme picker
-		regexp.MustCompile(`(?i)select login method`),   // login-method screen
+		regexp.MustCompile(`(?im)^[^\S\n]*choose the text style\b`), // theme picker
+		regexp.MustCompile(`(?im)^[^\S\n]*select login method\b`),   // login-method screen
+		// The OAuth sign-in page the login-method menu advances into: the browser
+		// handoff / paste-the-code screen. It is a WALL — it never becomes a
+		// composer — and the "Select login method" anchor is gone from the screen
+		// by the time it paints, so without these anchors it matches nothing and
+		// waitReadyForSend blocks to the run deadline (PUPPET-315). Claude's
+		// counterpart to codex's "finish signing in via your browser". Either
+		// line alone suffices: on a short terminal the wrapped authorize URL
+		// between them can push the first one off screen.
+		regexp.MustCompile(`(?im)^[^\S\n]*browser didn't open\? use the url below to sign in\b`),
+		regexp.MustCompile(`(?im)^[^\S\n]*paste code here if prompted[^\S\n]*>`),
 	}
 	codexOnboardingRE = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)sign in with chatgpt`),               // never-signed-in menu
-		regexp.MustCompile(`(?i)finish signing in via your browser`), // the login flow the menu advances into (browser + device-code)
+		// The never-signed-in menu: its title line and its highlighted row
+		// ("> 1. Sign in with ChatGPT").
+		regexp.MustCompile(`(?im)^[^\S\n]*(?:[>›][^\S\n]*(?:\d+\.[^\S\n]*)?)?sign in with chatgpt\b`),
+		// The login flow the menu advances into (browser + device-code).
+		regexp.MustCompile(`(?im)^[^\S\n]*finish signing in via your browser\b`),
 	}
 	// Logged-out / bad-key banners left on an otherwise-ready screen. Handled on
 	// the completion path (a turn that yielded no reply), not by refusing to send.
