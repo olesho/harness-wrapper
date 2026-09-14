@@ -53,6 +53,9 @@ type Screen struct {
 	mu   sync.RWMutex
 	term vt10x.Terminal
 	gen  uint64
+	// csi drops the CSI sequences vt10x misinterprets (see csiFilter). Guarded
+	// by mu, like term: it carries a partial sequence from one Write to the next.
+	csi csiFilter
 
 	subMu sync.Mutex
 	subs  []chan struct{}
@@ -81,17 +84,22 @@ func New(cols, rows int) *Screen {
 // are returned verbatim from the underlying emulator.
 //
 // Write is the io.Writer entry point intended for wrapper.Session.AttachOutput.
+//
+// Bytes pass through csiFilter first, which drops the CSI sequences vt10x
+// would misinterpret; the returned count is always len(p) on success, as the
+// io.Writer contract requires, whatever was filtered.
 func (s *Screen) Write(p []byte) (int, error) {
 	s.mu.Lock()
-	n, err := s.term.Write(p)
+	_, err := s.term.Write(s.csi.filter(p))
 	if err == nil {
 		s.gen++
 	}
 	s.mu.Unlock()
 	if err == nil {
 		s.notify()
+		return len(p), nil
 	}
-	return n, err
+	return 0, err
 }
 
 // Snapshot returns a coherent point-in-time view of the emulated screen.

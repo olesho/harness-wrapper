@@ -383,6 +383,19 @@ func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 	return req, DetectOK
 }
 
+// AnchorPresent reports whether a blocking-dialog anchor is still painted on
+// screen. It is deliberately WEAKER than DetectInput: an anchor whose menu has
+// not rendered yet is DetectPending, so DetectInput says "no request" while the
+// dialog is very much still up. "Has my answer cleared it?" must therefore ask
+// this and not DetectInput, or a mid-paint frame reads as success.
+//
+// Exported so pkg/chat can confirm an answer landed without copying the anchor
+// list; anchorSplit stays the single source of truth for what an anchor is.
+func AnchorPresent(text string) bool {
+	_, _, ok := anchorSplit(text)
+	return ok
+}
+
 // parseMenuOptions extracts a dialog's choices, trying the two shapes claude
 // renders in a fixed order:
 //
