@@ -292,7 +292,8 @@ func TestStructuredTranscript_ClaudeFidelity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := readStructuredTranscript("claude", sessionID, wd)
+	// nil launch env: no config-root override, so the HOME default applies.
+	entries, err := readStructuredTranscript("claude", sessionID, wd, nil)
 	if err != nil {
 		t.Fatalf("readStructuredTranscript: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestStructuredTranscript_CodexFidelity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	entries, err := readStructuredTranscript("codex", sessionID, "/unused")
+	entries, err := readStructuredTranscript("codex", sessionID, "/unused", nil)
 	if err != nil {
 		t.Fatalf("readStructuredTranscript: %v", err)
 	}
@@ -377,6 +378,9 @@ func TestStructuredRun_UsagePopulatedBestEffort(t *testing.T) {
 			const sessionID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			// Structured-run honours a launch CLAUDE_CONFIG_DIR; a profiled host
+			// exports one, so blank it to keep this HOME-rooted fixture hermetic.
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
 			wd := t.TempDir()
 
 			projDir := filepath.Join(home, ".claude", "projects", claudecode.EncodedCWD(wd))
