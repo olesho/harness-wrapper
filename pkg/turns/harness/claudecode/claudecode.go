@@ -1,10 +1,15 @@
 // Package claudecode provides a turn-detection adapter for Anthropic's
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
-// Detection signals first observed on 2.1.141; re-verified against 2.1.185
-// (corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-// in versions.json is 2.1.201, adopted for cross-repo parity with
-// meta-harness; detection signals were last verified at 2.1.185:
+// Detection signals first observed on 2.1.141. Last verified against
+// 2.1.251 on 2026-08-29, which is also the pin in versions.json: the
+// settled-after-turn and multi-turn corpus were re-baked from that binary
+// (meta.json.binary_version is the recorded proof) and replayed through this
+// adapter unchanged. tool-call and interrupted-mid-reply are still the 2.1.185
+// recordings — their scripted drives no longer reach a turn on 2.1.251, which
+// is a recorder limitation and not adapter drift.
+//
+// The signals:
 //
 //   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
 //     line appears, where <verb> is a colorful word like Baked, Brewed,
