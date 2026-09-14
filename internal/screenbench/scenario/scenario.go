@@ -97,6 +97,13 @@ func Discover(root string) ([]*Scenario, error) {
 		if _, err := os.Stat(filepath.Join(path, metaFilename)); err != nil {
 			return nil
 		}
+		// A replayable scenario needs its byte stream too. Directories that
+		// carry only a meta.json beside a rendered screen.txt — the shared
+		// auth corpus under test/corpus/auth — are screen fixtures for the
+		// readiness tests, not recordings, and Load would reject them.
+		if _, err := os.Stat(filepath.Join(path, "bytes.raw")); err != nil {
+			return nil
+		}
 		s, err := Load(path)
 		if err != nil {
 			return fmt.Errorf("load %s: %w", path, err)

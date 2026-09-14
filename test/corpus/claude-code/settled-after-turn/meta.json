@@ -1,8 +1,8 @@
 {
   "harness": "claude-code",
-  "binary_version": "2.1.251",
-  "recorded_at": "2026-08-29T03:37:31.778158Z",
+  "binary_version": "2.1.270",
+  "recorded_at": "2026-09-13T21:46:35.993214Z",
   "cols": 120,
   "rows": 40,
-  "notes": "Settled post-turn screen on Claude Code 2.1.251, re-baked for the 2.1.251 verification pass (PUPPET-229): the end-of-turn summary still carries the trailing status clause \"· done <H:MM AM>\" introduced in 2.1.247, and the reply is long enough that the \"Claude Code\" startup banner has scrolled out of the viewport — the frame on which end-of-turn detection failed twice over (thinkingRE rejected the clause; readyForInput demanded the banner). Recorded via `make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn`. 2.1.251 runs its TUI on the alternate screen, so the tail of bytes.raw is the alt-screen exit followed by the \"claude --resume\" epilogue: replay incrementally and read the last frame carrying the harness footer, as production does."
+  "notes": "Settled post-turn screen on Claude Code 2.1.270: a 60-line reply long enough that the startup banner has scrolled out of the viewport, ending in the settled end-of-turn summary \"✻ <verb> for Ns · done <H:MM PM>\" (the trailing \"· done\" clause introduced in 2.1.247). This is the frame on which end-of-turn detection must work without the banner and with the trailing clause. Recorded with `make rebake-corpus HARNESS=claude SCENARIO=settled-after-turn WORKDIR=/tmp/hw-rebake/settled-after-turn` from a fresh `git init` directory (holding add.go and sub.go) and an isolated CLAUDE_CONFIG_DIR (onboarding done, permissions.defaultMode auto, static CLAUDE_CODE_OAUTH_TOKEN, every inherited CLAUDE* session marker removed), so the recording carries no machine path, account setup or nesting warning. The script's answer_dialog step accepted the folder-trust dialog, which claude reset once, as it does to the first Enter. expected.txt is the last live frame rendered by tmux (bytes.raw replayed up to claude's teardown), not by the emulator under test."
 }
