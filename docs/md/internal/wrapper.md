@@ -145,6 +145,12 @@ func (s *Session) Resize(cols, rows uint16) error
 func (s *Session) AcquireWriter() (release func(), ok bool) // claim the exclusive stdin writer
 ```
 
+`Wait` returns once the harness's output has been read to its end, so the `Result` and
+`RecentOutput` hold everything the harness printed before it exited. A process the harness left
+behind that keeps the terminal open gets one second, after which the output is cut off. On Linux a
+leftover that holds the terminal without writing still delays `Wait` until it exits, because closing
+the master cannot interrupt a read already waiting on it.
+
 `SessionEvent` carries the status plus optional parsed detail:
 
 ```go
@@ -202,6 +208,9 @@ func NewSlogAdapter(logger *slog.Logger) Emitter  // Kind → message, Fields �
 | Quiet thresholds | `output_quiet`, `output_classify_threshold`, `harness_stale` |
 | Classification | `harness_api_error`, `harness_blocked_by_cost`, `harness_retry_later`, `harness_waiting_for_input`, `harness_classified` |
 | Shutdown | `pty_closed`, `harness_exited` |
+
+`pty_closed` carries `output_drained`: `false` means the output was cut off because a process the
+harness left behind still held the terminal.
 
 The CLI adds two of its own around the supervised run: `wrapper_cli_signal` and `wrapper_cli_exited` —
 which is what makes [`harness-wrapper status --json`](../guide/cli.md#detached-tmux) able to report a
