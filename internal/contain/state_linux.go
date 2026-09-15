@@ -219,9 +219,16 @@ func OpenState(id string) (*State, error) {
 // Root returns the session root's path (never granted to the harness).
 func (s *State) Root() string { return s.root.canonical }
 
+// errStateInUse: another launch, or removal, holds the state's lock.
+var errStateInUse = errors.New("in use by another launch")
+
 // lock takes the state's exclusive lock for the life of a launch (or a
 // removal). A second owner is refused rather than queued: two launches into
 // one state would share, and could tamper with, each other's files.
+//
+// The lock belongs to its open file description, and a spawn thread's
+// private descriptor table refers to that description until the thread has
+// exited, which can be just after Start returns.
 func (s *State) lock() error {
 	if s.lockFD >= 0 {
 		return nil
@@ -233,7 +240,7 @@ func (s *State) lock() error {
 	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		_ = unix.Close(fd)
 		if errors.Is(err, unix.EWOULDBLOCK) {
-			return fmt.Errorf("managed state %s is in use by another launch", s.ID)
+			return fmt.Errorf("managed state %s is %w", s.ID, errStateInUse)
 		}
 		return fmt.Errorf("lock managed state %s: %w", s.ID, err)
 	}
