@@ -74,8 +74,11 @@ func runHelper(mode string, args []string) int {
 	return 2
 }
 
-// rawFDs lists this process's descriptors with raw syscalls, before anything
-// initialises the netpoller.
+// rawFDs lists the descriptors this process inherited, with raw syscalls,
+// before anything initialises the netpoller. A descriptor with close-on-exec
+// set cannot have come through exec: the child's own runtime or libc opened
+// it (glibc reads /proc/stat when the domain hides /sys), so it is left out,
+// as is one closed while the list is read.
 func rawFDs() map[string]string {
 	out := map[string]string{}
 	dfd, err := syscall.Open("/proc/self/fd", syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0)
@@ -98,6 +101,10 @@ func rawFDs() map[string]string {
 				continue
 			}
 			t, _ := os.Readlink("/proc/self/fd/" + name)
+			fd, _ := strconv.Atoi(name)
+			if fl, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err != nil || fl&unix.FD_CLOEXEC != 0 {
+				continue
+			}
 			out[name] = t
 		}
 	}

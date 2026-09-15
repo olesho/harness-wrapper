@@ -209,7 +209,7 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 				select {
 				case <-done:
 				case <-time.After(10 * time.Second):
-					fail("PTY master never reached EOF")
+					fail("PTY master never reached EOF: %s held by %s", want, ptyHolders(want))
 				}
 				_ = mf.Close()
 				rep, err := readReport(report)
@@ -244,6 +244,49 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 		}
 	}
 	return elapsed, failures
+}
+
+// ptyHolders names every descriptor that still refers to the terminal path:
+// this process's threads (a spawn thread's private table shows up under its
+// own task) and every other process.
+func ptyHolders(path string) string {
+	var out []string
+	scan := func(label, dir string) {
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			if t, _ := os.Readlink(filepath.Join(dir, e.Name())); t == path {
+				out = append(out, label+" fd "+e.Name())
+			}
+		}
+	}
+	self := strconv.Itoa(os.Getpid())
+	tasks, _ := os.ReadDir("/proc/self/task")
+	for _, task := range tasks {
+		comm, _ := os.ReadFile("/proc/self/task/" + task.Name() + "/comm")
+		stat, _ := os.ReadFile("/proc/self/task/" + task.Name() + "/stat")
+		scan("thread "+task.Name()+" ("+strings.TrimSpace(string(comm))+" "+threadState(stat)+")", "/proc/self/task/"+task.Name()+"/fd")
+	}
+	procs, _ := os.ReadDir("/proc")
+	for _, p := range procs {
+		if _, err := strconv.Atoi(p.Name()); err != nil || p.Name() == self {
+			continue
+		}
+		comm, _ := os.ReadFile("/proc/" + p.Name() + "/comm")
+		scan("process "+p.Name()+" ("+strings.TrimSpace(string(comm))+")", "/proc/"+p.Name()+"/fd")
+	}
+	if len(out) == 0 {
+		return "no descriptor"
+	}
+	return strings.Join(out, ", ")
+}
+
+// threadState is the state letter of a /proc stat line.
+func threadState(stat []byte) string {
+	s := string(stat)
+	if i := strings.LastIndexByte(s, ')'); i > 0 && len(s) > i+2 {
+		return s[i+2 : i+3]
+	}
+	return "?"
 }
 
 // readReport is readHelperReport without a *testing.T, for worker goroutines.
