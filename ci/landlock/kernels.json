@@ -1,0 +1,46 @@
+{
+  "_source": "https://kernel.ubuntu.com/mainline/<dir>/<arch>/CHECKSUMS (GPG-signed CHECKSUMS.gpg); packages are linux-image-unsigned-<kver>-generic_<kver>.<build>_<arch>.deb and linux-modules-<kver>-generic_<kver>.<build>_<arch>.deb",
+  "7.1.13": {
+    "abi": 9,
+    "dir": "v7.1.13",
+    "kver": "7.1.13-070113",
+    "build": "202609032040",
+    "source_commit": "cod/mainline/v7.1.13 a11e3dc9e41281e371994c832c1007ee3a643df5",
+    "amd64": {
+      "image": "9fbf0b2b9331dfe2d4f1226b711b863fc2ea5e1a77ce2a1bfa277827f6fb9a46",
+      "modules": "1737e4686fa8b72421cdf095ee3d26a537b7e334f77d2d36bba3bc653e947cfa"
+    },
+    "arm64": {
+      "image": "e5d15751717a99685df6aba33f854bbf0f0e3aac0141d58a7c6c2aa8dc71e50f",
+      "modules": "b613170e470bc3662f110cb73227b791fc491b66d0fc04ca36193c34484f2a20"
+    }
+  },
+  "7.2.6": {
+    "abi": 10,
+    "dir": "v7.2.6",
+    "kver": "7.2.6-070206",
+    "build": "202609141300",
+    "amd64": {
+      "image": "9d3929b017a488c8ca265ff14bb19f15217097247a709816e0875eaa7dcc4b61",
+      "modules": "bf1689c1a32e9cc141575fb551cbec60d2e6d42762587aa9ce9194301469066d"
+    },
+    "arm64": {
+      "image": "02aae8e32fe4d44d47d26b41b9800b9129f0e986840f5a72bdd04b7c78ef5ce8",
+      "modules": "15598e55ef06a03dd24b4550f5375e2ec021675f6cbb50af414cd3af41866486"
+    }
+  },
+  "7.0.14": {
+    "abi": 8,
+    "dir": "v7.0.14",
+    "kver": "7.0.14-070014",
+    "build": "202606271041",
+    "amd64": {
+      "image": "fb5e54e270e5aa40da7a404cbf448da176e26aba9c0deffb72639d1bc85b6ca9",
+      "modules": "1a2f03d00d24f2f2fcd1e8b1b9b3e5b3754310383f08cf7a0600f2924ddff29c"
+    },
+    "arm64": {
+      "image": "38cac0aaa583cd9d2642a60fb79928e372a1b9b3ed57d6b8fc1121334a3b233c",
+      "modules": "28b95a7275653251ffac0984891829b7fc9df1d5844843852639152f7c2c9f13"
+    }
+  }
+}
