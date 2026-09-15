@@ -1,0 +1,21 @@
+{
+  "harness": "claude-code",
+  "binary_path": "/usr/local/bin/claude",
+  "working_dir": "/repo",
+  "cols": 120,
+  "rows": 40,
+  "containment": {
+    "kind": "landlock",
+    "read_only": [
+      "/opt/reference"
+    ],
+    "read_write": [
+      "/repo/.cache"
+    ],
+    "restrict_tcp": true,
+    "min_abi": 9,
+    "pass_env": [
+      "GIT_AUTHOR_NAME"
+    ]
+  }
+}

@@ -44,8 +44,12 @@ type harnessWrapperArgs struct {
 	// wrapper.ErrInvalidConfig from wrapper.Start, in one place, for every
 	// entry point (passthrough, run, structured-run, tmux child).
 	PermissionMode string
-	HarnessName    string
-	HarnessArgs    []string
+	// Contain is the optional Landlock containment request (--contain*),
+	// forwarded to pkg/wrapper (Config.Containment), which owns its
+	// validation, exactly like PermissionMode.
+	Contain     containFlags
+	HarnessName string
+	HarnessArgs []string
 }
 
 // parseHarnessWrapperArgs splits the args after the "harness-wrapper"
@@ -103,6 +107,9 @@ func parseHarnessWrapperArgs(in []string) (harnessWrapperArgs, error) {
 			args.PermissionMode,
 		)
 	}
+	if err := args.Contain.validate(); err != nil {
+		return harnessWrapperArgs{}, err
+	}
 	if fs.NArg() == 0 {
 		return harnessWrapperArgs{}, fmt.Errorf("harness-wrapper: missing harness name before --")
 	}
@@ -132,5 +139,13 @@ func harnessWrapperFlagSet(a *harnessWrapperArgs) *flag.FlagSet {
 	fs.BoolVar(&a.AutoAccept, "auto-accept", false, "run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human")
 	fs.StringVar(&a.PermissionMode, "permission-mode", "", "launch-time permission rung for claude/codex: plan, manual, ask, auto, bypass (per-harness native spellings also pass through); bypass does NOT set IS_SANDBOX=1 (acceptance screen appears, root disallowed); combine with --sandbox-defaults for that, or --auto-accept to answer the screen in an interactive run; restrictive rungs bind fully only with a human at the TUI")
 	fs.BoolVar(&a.SandboxDefaults, "sandbox-defaults", false, "run/structured-run: claude only — DANGEROUS: inject --dangerously-skip-permissions into harness args and set IS_SANDBOX=1 in the harness env (meta-harness parity; IS_SANDBOX=1 also suppresses the bypass-permissions acceptance screen and allows root); no-op for other harnesses; rejected by the default passthrough mode")
+	fs.StringVar(&a.Contain.Kind, "contain", "", "run the harness inside an extra Landlock boundary (Linux, ABI 9+): landlock; unrelated to --sandbox-defaults, which removes guardrails instead of adding one")
+	fs.Var(&a.Contain.ReadWrite, "contain-rw", "with --contain: grant read-write access to an existing absolute path (repeatable)")
+	fs.Var(&a.Contain.ReadOnly, "contain-ro", "with --contain: grant read-only access to an existing absolute path (repeatable)")
+	fs.BoolVar(&a.Contain.RestrictTCP, "contain-restrict-tcp", false, "with --contain: deny TCP bind and every TCP connect except to --contain-allow-tcp ports (none listed: deny all TCP)")
+	fs.Var(&a.Contain.AllowTCP, "contain-allow-tcp", "with --contain-restrict-tcp: allow outbound TCP connects to this port (repeatable)")
+	fs.IntVar(&a.Contain.MinABI, "contain-min-abi", 0, "with --contain: require at least this Landlock ABI (default and minimum: 9)")
+	fs.StringVar(&a.Contain.StateDir, "contain-state-dir", "", "with --contain: keep HOME and harness state in this existing directory (shared, persistent) instead of private per-session state")
+	fs.Var(&a.Contain.PassEnv, "contain-pass-env", "with --contain: also pass this environment variable to the harness (repeatable; names only)")
 	return fs
 }

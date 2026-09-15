@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/containment"
 )
 
 // Layer 0 of the test pyramid (see TESTING.md): freeze the outward HTTP contract
@@ -37,6 +39,16 @@ func wireTypes() []any {
 		turnEventDTO{},
 		historyResponse{},
 		errorResponse{},
+		capabilitiesResponse{},
+		containmentCapabilities{},
+		// The containment request and applied-policy objects are wire types
+		// too: freeze their nested shape here.
+		containment.Request{},
+		containment.Applied{},
+		containment.Grant{},
+		containment.TCP{},
+		containment.State{},
+		containment.Supervision{},
 	}
 }
 

@@ -72,6 +72,15 @@ type StructuredTurnConfig struct {
 	// harnesses.
 	SandboxDefaults bool
 
+	// Containment requests Landlock containment for the turn inside the
+	// guest (see wrapper.Config.Containment). When set, the runner argv
+	// carries every --contain* option; when nil, none, so an older guest
+	// runner keeps working for uncontained turns. A runner built before
+	// containment rejects the unknown flags and fails the turn — it never
+	// runs a contained request uncontained. The applied policy comes back in
+	// the result's containment field.
+	Containment *wrapper.Containment
+
 	// Prompt is uploaded into the workspace and fed to the turn via
 	// `--prompt-file` — a prompt with quotes / newlines / leading dashes can
 	// never corrupt argv.
@@ -195,7 +204,7 @@ func uploadPrompt(ctx context.Context, ws ienv.Workspace, prompt, guestPath stri
 
 // buildRunnerArgv assembles the guest argv:
 //
-//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] [--permission-mode P] [--sandbox-defaults] <harness> -- <harnessArgs...>
+//	<runner...> --prompt-file <guestPrompt> [--effort E] [--model M] [--permission-mode P] [--sandbox-defaults] [--contain ...] <harness> -- <harnessArgs...>
 //
 // mirroring the structured-run subcommand's own extractPromptFile +
 // parseHarnessWrapperArgs contract (`[wrapper flags] <name> -- <args>`).
@@ -219,6 +228,7 @@ func buildRunnerArgv(cfg StructuredTurnConfig, guestPrompt string) []string {
 	if cfg.SandboxDefaults {
 		argv = append(argv, "--sandbox-defaults")
 	}
+	argv = append(argv, cfg.Containment.CLIFlags()...)
 	argv = append(argv, cfg.Harness, "--")
 	argv = append(argv, cfg.HarnessArgs...)
 	return argv

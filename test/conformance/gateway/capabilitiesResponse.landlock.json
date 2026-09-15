@@ -1,0 +1,7 @@
+{
+  "containment": {
+    "kinds": [
+      "landlock"
+    ]
+  }
+}

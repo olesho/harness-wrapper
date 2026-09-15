@@ -78,6 +78,13 @@ type Session struct {
 	pid       int
 	startedAt time.Time
 
+	// proc and contained are set only for a contained session, which is not
+	// started through exec.Cmd (see startContainedSession); procState is its
+	// exit state, written before the wait result is delivered.
+	proc      *os.Process
+	contained *containedState
+	procState *os.ProcessState
+
 	classifier   Classifier
 	lastOutput   *atomic.Int64
 	recentOutput *recentOutputBuffer
@@ -220,6 +227,12 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 		},
 	})
 
+	// A contained launch takes its own path; an uncontained one never
+	// reaches it and is started exactly as below.
+	if cfg.Containment != nil {
+		return startContainedSession(ctx, cfg)
+	}
+
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath, cfg.Args...)
 	cmd.Dir = cfg.WorkingDir
 	if cfg.Env != nil {
@@ -258,11 +271,18 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 		Fields: map[string]any{"pid": pid},
 	})
 
-	termState := setupTerminalIfTTY(cfg.Stdin, cfg.Stdout, ptmx, cfg.Trace)
+	s := newSession(cfg, ptmx, pid, startedAt, term)
+	s.cmd = cmd
+	go s.supervise(ctx)
+	return s, nil
+}
 
-	s := &Session{
+// newSession builds the Session both start paths share once the harness is
+// running under ptmx.
+func newSession(cfg Config, ptmx *os.File, pid int, startedAt time.Time, term *groupTerminator) *Session {
+	termState := setupTerminalIfTTY(cfg.Stdin, cfg.Stdout, ptmx, cfg.Trace)
+	return &Session{
 		cfg:          cfg,
-		cmd:          cmd,
 		ptmx:         ptmx,
 		pid:          pid,
 		startedAt:    startedAt,
@@ -278,9 +298,6 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 		fanout:       newOutputFanout(cfg.Stdout),
 		term:         term,
 	}
-
-	go s.supervise(ctx)
-	return s, nil
 }
 
 // outputDrainBudget bounds how long the supervisor waits, once the harness has
@@ -334,16 +351,25 @@ func (s *Session) supervise(ctx context.Context) {
 	stdinDone := s.startStdinCopy()
 
 	waitCh := make(chan waitResult, 1)
-	go func() {
-		waitCh <- waitResult{err: s.cmd.Wait(), endedAt: time.Now()}
-	}()
+	if s.contained != nil {
+		s.waitContained(ctx, waitCh)
+	} else {
+		go func() {
+			waitCh <- waitResult{err: s.cmd.Wait(), endedAt: time.Now()}
+		}()
+	}
 
 	out := s.awaitTermination(waitCh)
 	// The leader is reaped. A requested termination is not over until its
 	// process group is: finish SIGKILLs what outlives the grace period and
 	// waits for the group to empty, and doneCh — what Wait and Stop block on —
-	// closes only after it.
-	s.term.finish(s.cfg.WaitDelay)
+	// closes only after it. A contained session under cgroup supervision ends
+	// its whole cgroup instead, however the harness exited.
+	if s.contained != nil {
+		s.finishContained()
+	} else {
+		s.term.finish(s.cfg.WaitDelay)
+	}
 
 	close(s.classifierOn)
 	// Everything the harness wrote before exiting is still in the PTY. Read it
@@ -375,7 +401,7 @@ func (s *Session) supervise(ctx context.Context) {
 		res.LastOutputAt = time.Unix(0, last)
 	}
 
-	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.cmd.ProcessState, out.waitErr, ctx.Err())
+	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.processState(), out.waitErr, ctx.Err())
 
 	actionable := s.resolveActionable(&res, out)
 

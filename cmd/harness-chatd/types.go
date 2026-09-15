@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
+	"github.com/olesho/harness-wrapper/pkg/containment"
 )
 
 type runTurnRequest struct {
@@ -33,6 +34,12 @@ type runTurnRequest struct {
 	// and codex's approval prompts are auto-approved (only the `-s` sandbox
 	// axis still binds).
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// Containment requests Landlock containment for this one-shot turn: the
+	// complete request object (see containment.Request). Omitted runs the
+	// turn uncontained, exactly as before. Clients send it only after GET
+	// /v1/capabilities lists the kind: a chatd built before containment
+	// silently ignores unknown fields.
+	Containment *containment.Request `json:"containment,omitempty"`
 }
 
 type sessionDTO struct {
@@ -51,6 +58,9 @@ type runTurnResponse struct {
 	WrapperStatus           string     `json:"wrapper_status,omitempty"`
 	WrapperReason           string     `json:"wrapper_reason,omitempty"`
 	Error                   string     `json:"error,omitempty"`
+	// Containment echoes the applied containment policy of a contained turn,
+	// including its cleanup outcome; omitted for an uncontained one.
+	Containment *containment.Applied `json:"containment,omitempty"`
 }
 
 type openRequest struct {
@@ -99,10 +109,33 @@ type openRequest struct {
 	// instead of surfacing it as an input_request. Omitted/false surfaces the
 	// menu so a remote client can choose Update / Skip.
 	AutoSkipCodexUpdateNotice bool `json:"auto_skip_codex_update_notice,omitempty"`
+	// Containment requests Landlock containment for the conversation: the
+	// complete request object. Chosen at open and fixed for the
+	// conversation's life. Omitted opens it uncontained, exactly as before.
+	// Clients send it only after GET /v1/capabilities lists the kind.
+	Containment *containment.Request `json:"containment,omitempty"`
 }
 
 type openResponse struct {
 	ID string `json:"id"`
+	// Containment echoes the applied containment policy — a caller that
+	// sends containment without checking the capability route learns here
+	// whether it was honoured. Omitted for an uncontained conversation.
+	Containment *containment.Applied `json:"containment,omitempty"`
+}
+
+// capabilitiesResponse is GET /v1/capabilities: what this chatd build can
+// honour. A chatd built before containment has no such route (404), and the
+// clients then refuse to send containment rather than let it be ignored.
+type capabilitiesResponse struct {
+	Containment containmentCapabilities `json:"containment"`
+}
+
+type containmentCapabilities struct {
+	// Kinds lists the containment kinds this build supports on this host's
+	// platform; empty where none is (anything but Linux). Kernel support is
+	// checked per launch, and a launch that cannot enforce is refused.
+	Kinds []string `json:"kinds"`
 }
 
 type conversationSummary struct {
@@ -139,6 +172,9 @@ type conversationSummary struct {
 	// Nothing validates or observes that; this field keeps reporting the
 	// open-time value indefinitely.
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// Containment is the applied containment policy the conversation runs
+	// under; omitted for an uncontained conversation.
+	Containment *containment.Applied `json:"containment,omitempty"`
 }
 
 type controlResponse struct {
@@ -160,6 +196,11 @@ type screenResponse struct {
 type sendRequest struct {
 	Token string `json:"token"`
 	Text  string `json:"text"`
+	// Containment may restate a contained conversation's policy: it must
+	// normalize to the same policy. On an uncontained conversation any
+	// containment is refused (400) before the text reaches the harness —
+	// containment is chosen at open, never added to a running conversation.
+	Containment *containment.Request `json:"containment,omitempty"`
 }
 
 type sendResponse struct {
@@ -290,6 +331,6 @@ func toSessionDTO(s chat.Session) sessionDTO {
 		Harness:          s.Harness,
 		WorkingDir:       s.WorkingDir,
 		CreatedAt:        s.CreatedAt,
-		HarnessSessionID: s.HarnessSessionID,
+		HarnessSessionID: s.HarnessID(), // containment-aware
 	}
 }

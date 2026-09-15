@@ -5,6 +5,7 @@ usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
        harness-wrapper kill <session>
        harness-wrapper list
        harness-wrapper reap [--dry-run]
+       harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>
 
 wrapper flags (must come BEFORE the harness name):
   --trace-file PATH       write trace events as NDJSON to PATH
@@ -29,6 +30,17 @@ wrapper flags (must come BEFORE the harness name):
                           (bypass is the ONLY rung --sandbox-defaults accepts),
                           or pass --auto-accept to answer the screen in an
                           interactive run.
+  --contain landlock      Linux (Landlock ABI 9+): run the harness inside an
+                          extra kernel-enforced boundary with private HOME and
+                          state; refused, never downgraded, when it cannot be
+                          enforced. The harness's own permission settings keep
+                          their meaning inside it; codex runs contained only at
+                          the bypass rung. Refine with --contain-rw PATH,
+                          --contain-ro PATH, --contain-restrict-tcp,
+                          --contain-allow-tcp PORT, --contain-min-abi N,
+                          --contain-state-dir DIR, --contain-pass-env NAME.
+                          contain-check previews the policy without starting
+                          anything. Unrelated to --sandbox-defaults.
 
 Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a
 human is at the TUI (passthrough, or `run` from a terminal for codex). Under

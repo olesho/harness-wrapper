@@ -55,6 +55,46 @@ PermissionMode = Literal[
 ]
 
 
+@dataclass
+class Containment:
+    """An optional Landlock containment request (Linux, ABI 9+): an extra,
+    kernel-enforced boundary around the harness, outside whatever its own
+    permission settings enforce. Mirrors ``containment.Request`` in
+    ``pkg/containment``; the server validates it, and a request it cannot
+    honour is a 400 ``invalid_config`` -- never a silent downgrade.
+
+    Serialization preserves exactly what is set: ``None`` fields are omitted,
+    ``restrict_tcp=True`` with no (or an empty) ``connect_tcp`` means deny all
+    TCP, and ``connect_tcp`` without ``restrict_tcp`` is sent as written and
+    rejected by the server rather than "fixed" here.
+    """
+
+    kind: str = "landlock"
+    read_only: list[str] | None = None
+    read_write: list[str] | None = None
+    restrict_tcp: bool | None = None
+    connect_tcp: list[int] | None = None
+    min_abi: int | None = None
+    state_dir: str | None = None
+    pass_env: list[str] | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        body: dict[str, Any] = {"kind": self.kind}
+        for key in (
+            "read_only",
+            "read_write",
+            "restrict_tcp",
+            "connect_tcp",
+            "min_abi",
+            "state_dir",
+            "pass_env",
+        ):
+            value = getattr(self, key)
+            if value is not None:
+                body[key] = value
+        return body
+
+
 class HarnessChatError(RuntimeError):
     def __init__(self, status: int, code: str, message: str):
         super().__init__(f"{status} {code}: {message}")
@@ -127,10 +167,45 @@ def _parse_sse_block(lines: list[str]) -> str | None:
     return data or None
 
 
+_UNSET: Any = object()
+
+
 class Client:
     def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._caps: Any = _UNSET
+
+    def capabilities(self) -> dict[str, Any] | None:
+        """GET /v1/capabilities, or None for a harness-chatd built before the
+        route existed (404). Cached per client."""
+        if self._caps is _UNSET:
+            try:
+                self._caps = self._request("GET", "/v1/capabilities")
+            except HarnessChatError as e:
+                if e.status != 404:
+                    raise
+                self._caps = None
+        return self._caps
+
+    def _require_containment(self, kind: str) -> None:
+        """Raise unless the server lists ``kind`` among its containment kinds:
+        an older harness-chatd would silently drop the field and run the
+        harness uncontained."""
+        caps = self.capabilities()
+        kinds = list(((caps or {}).get("containment") or {}).get("kinds") or [])
+        if caps is None:
+            raise HarnessChatError(
+                0,
+                "containment_unsupported",
+                "server predates containment (no /v1/capabilities); refusing to send a request it would ignore",
+            )
+        if kind not in kinds:
+            raise HarnessChatError(
+                0,
+                "containment_unsupported",
+                f'server does not support containment kind "{kind}" (supports: {", ".join(kinds) or "none"})',
+            )
 
     def open(
         self,
@@ -145,6 +220,7 @@ class Client:
         effort: Effort | None = None,
         model: str | None = None,
         permission_mode: PermissionMode | None = None,
+        containment: Containment | None = None,
     ) -> "Conversation":
         """Open a conversation. ``effort``, ``model`` and ``permission_mode``
         are optional knobs translated per-harness by the server; all three are
@@ -198,7 +274,17 @@ class Client:
            ``input_policy`` with by_kind {"trust_prompt": ...}; otherwise
            claude-code stops on its acceptance screen as a trust_prompt input
            request and root is disallowed.
+
+        containment (Landlock, Linux) is fixed for the conversation's life. It
+        is sent only after GET /v1/capabilities lists its kind -- against an
+        older server ``open`` raises ``containment_unsupported`` without
+        posting -- and the server's echo of the applied policy is checked: a
+        response without it closes the conversation and raises
+        ``containment_not_applied``. The applied policy is
+        ``Conversation.containment``.
         """
+        if containment is not None:
+            self._require_containment(containment.kind)
         body = {
             "harness": harness,
             "binary_path": binary_path,
@@ -217,8 +303,19 @@ class Client:
             body["model"] = model
         if permission_mode is not None:
             body["permission_mode"] = permission_mode
+        if containment is not None:
+            body["containment"] = containment.to_json()
         resp = self._request("POST", "/v1/conversations", body)
-        return Conversation(self, resp["id"])
+        conv = Conversation(self, resp["id"], resp.get("containment"))
+        if containment is not None and not resp.get("containment"):
+            with contextlib.suppress(HarnessChatError):
+                conv.close()
+            raise HarnessChatError(
+                0,
+                "containment_not_applied",
+                "the server opened the conversation without echoing an applied containment policy",
+            )
+        return conv
 
     def list(self) -> list[dict[str, Any]]:
         return self._request("GET", "/v1/conversations") or []
@@ -251,9 +348,11 @@ class Client:
 
 
 class Conversation:
-    def __init__(self, client: Client, id: str):
+    def __init__(self, client: Client, id: str, containment: dict[str, Any] | None = None):
         self.client = client
         self.id = id
+        # The applied containment policy echoed at open; None when uncontained.
+        self.containment = containment
         self._token: str | None = None
 
     def acquire(self) -> str:
@@ -275,14 +374,17 @@ class Conversation:
         finally:
             self.release()
 
-    def send(self, text: str) -> str:
+    def send(self, text: str, *, containment: Containment | None = None) -> str:
+        """Send one message. ``containment`` may restate a contained
+        conversation's policy (it must be the same policy); on an uncontained
+        conversation the server refuses it -- containment is chosen at open."""
         if self._token is None:
             raise HarnessChatError(409, "no_control", "acquire control before send()")
-        resp = self.client._request(
-            "POST",
-            f"/v1/conversations/{self.id}/messages",
-            {"token": self._token, "text": text},
-        )
+        body: dict[str, Any] = {"token": self._token, "text": text}
+        if containment is not None:
+            self.client._require_containment(containment.kind)
+            body["containment"] = containment.to_json()
+        resp = self.client._request("POST", f"/v1/conversations/{self.id}/messages", body)
         return resp["turn_id"]
 
     def history(self) -> list[Turn]:

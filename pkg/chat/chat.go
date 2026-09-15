@@ -173,7 +173,16 @@ type Session struct {
 	// (turns.SessionIDExtractor) or the raw output line stream
 	// (turns.RawSessionIDExtractor, e.g. Claude Code's "claude --resume <uuid>"
 	// exit hint). Empty until then, and for harnesses with no extractor.
+	//
+	// A contained session keeps this field empty for good and records the id
+	// in Containment instead (the downgrade guard); read it with HarnessID.
 	HarnessSessionID string
+
+	// Containment is the containment record of a contained conversation, nil
+	// for every other. Tagged omitempty, so a store that serializes Session
+	// writes an uncontained session exactly as before. Only a Store that
+	// implements ContainmentStore may hold a contained session.
+	Containment *SessionContainment `json:",omitempty"`
 }
 
 // Sentinel errors.

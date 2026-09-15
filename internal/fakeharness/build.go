@@ -24,6 +24,12 @@ var (
 // be available; callers typically t.Skip on error.
 func BuildOnce() (string, error) {
 	buildOnce.Do(func() {
+		// A prebuilt binary lets the suites run where there is no Go
+		// toolchain, such as kernel test VMs.
+		if prebuilt := os.Getenv("HW_TEST_FAKEHARNESS"); prebuilt != "" {
+			builtPath = prebuilt
+			return
+		}
 		goBin, err := exec.LookPath("go")
 		if err != nil {
 			builtErr = fmt.Errorf("go toolchain unavailable: %w", err)

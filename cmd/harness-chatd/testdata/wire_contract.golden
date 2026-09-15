@@ -1,9 +1,63 @@
+Applied
+	SchemaVersion int `json:"schema_version"`
+	Kind string `json:"kind"`
+	ABI int `json:"abi"`
+	RequiredABI int `json:"required_abi"`
+	Profile string `json:"profile"`
+	ProfileVersion int `json:"profile_version"`
+	HandledFS []string `json:"handled_fs"`
+	Grants []containment.Grant `json:"grants"`
+	TCP containment.TCP `json:"tcp"`
+	PathnameSockets string `json:"pathname_unix_sockets"`
+	Scopes []string `json:"scopes"`
+	State containment.State `json:"state"`
+	Supervision containment.Supervision `json:"supervision"`
+	Env []string `json:"env"`
+	Omitted []string `json:"omitted,omitempty"`
+	Fingerprint string `json:"fingerprint"`
+Grant
+	Path string `json:"path"`
+	Access string `json:"access"`
+	Rights []string `json:"rights"`
+	Source string `json:"source"`
+	Requested string `json:"requested,omitempty"`
+Request
+	Kind string `json:"kind"`
+	ReadOnly []string `json:"read_only,omitempty"`
+	ReadWrite []string `json:"read_write,omitempty"`
+	RestrictTCP bool `json:"restrict_tcp,omitempty"`
+	ConnectTCP []uint16 `json:"connect_tcp,omitempty"`
+	MinABI int `json:"min_abi,omitempty"`
+	StateDir string `json:"state_dir,omitempty"`
+	PassEnv []string `json:"pass_env,omitempty"`
+State
+	Mode string `json:"mode"`
+	ID string `json:"id,omitempty"`
+	Home string `json:"home"`
+	Tmp string `json:"tmp"`
+	HarnessState string `json:"harness_state,omitempty"`
+	HarnessStateEnv string `json:"harness_state_env,omitempty"`
+	StateDir string `json:"state_dir,omitempty"`
+	StateDirRequested string `json:"state_dir_requested,omitempty"`
+Supervision
+	Mode string `json:"mode"`
+	Cgroup string `json:"cgroup,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Cleanup string `json:"cleanup,omitempty"`
+TCP
+	Mode string `json:"mode"`
+	Connect []uint16 `json:"connect,omitempty"`
+	Bind string `json:"bind"`
 answerRequest
 	Token string `json:"token"`
 	RequestID string `json:"request_id,omitempty"`
 	OptionID string `json:"option_id,omitempty"`
 	OptionIDs []string `json:"option_ids,omitempty"`
 	Text string `json:"text,omitempty"`
+capabilitiesResponse
+	Containment main.containmentCapabilities `json:"containment"`
+containmentCapabilities
+	Kinds []string `json:"kinds"`
 controlResponse
 	Token string `json:"token"`
 conversationSummary
@@ -11,6 +65,7 @@ conversationSummary
 	Harness string `json:"harness"`
 	SessionID string `json:"session_id,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	Containment *containment.Applied `json:"containment,omitempty"`
 errorResponse
 	Error string `json:"error"`
 	Code string `json:"code,omitempty"`
@@ -47,8 +102,10 @@ openRequest
 	PermissionMode string `json:"permission_mode,omitempty"`
 	DisableCodexAutoDismiss bool `json:"disable_codex_auto_dismiss,omitempty"`
 	AutoSkipCodexUpdateNotice bool `json:"auto_skip_codex_update_notice,omitempty"`
+	Containment *containment.Request `json:"containment,omitempty"`
 openResponse
 	ID string `json:"id"`
+	Containment *containment.Applied `json:"containment,omitempty"`
 runTurnRequest
 	Harness string `json:"harness"`
 	TurnHarness string `json:"turn_harness,omitempty"`
@@ -65,6 +122,7 @@ runTurnRequest
 	Effort string `json:"effort,omitempty"`
 	Model string `json:"model,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	Containment *containment.Request `json:"containment,omitempty"`
 runTurnResponse
 	Turn main.turnDTO `json:"turn"`
 	Session main.sessionDTO `json:"session"`
@@ -73,6 +131,7 @@ runTurnResponse
 	WrapperStatus string `json:"wrapper_status,omitempty"`
 	WrapperReason string `json:"wrapper_reason,omitempty"`
 	Error string `json:"error,omitempty"`
+	Containment *containment.Applied `json:"containment,omitempty"`
 screenResponse
 	Text string `json:"text"`
 	Cols int `json:"cols"`
@@ -83,6 +142,7 @@ screenResponse
 sendRequest
 	Token string `json:"token"`
 	Text string `json:"text"`
+	Containment *containment.Request `json:"containment,omitempty"`
 sendResponse
 	TurnID string `json:"turn_id"`
 sessionDTO

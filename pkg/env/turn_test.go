@@ -13,6 +13,7 @@ import (
 	ienv "github.com/olesho/harness-wrapper/internal/env"
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // TestRunStructuredTurn_RoundTripLocal is the B1-gated host/guest round-trip: it
@@ -314,3 +315,23 @@ type buildError struct {
 }
 
 func (e *buildError) Error() string { return e.err.Error() + "\n" + string(e.out) }
+
+// TestBuildRunnerArgvContainment: the runner argv carries every --contain*
+// option when containment is set and none when it is not, so an older guest
+// runner keeps working for uncontained turns and rejects contained ones.
+func TestBuildRunnerArgvContainment(t *testing.T) {
+	plain := buildRunnerArgv(StructuredTurnConfig{Harness: "claude"}, "/p")
+	for _, tok := range plain {
+		if strings.HasPrefix(tok, "--contain") {
+			t.Fatalf("uncontained argv carries %s: %v", tok, plain)
+		}
+	}
+	req := &wrapper.Containment{Kind: "landlock", ReadOnly: []string{"/r"}, RestrictTCP: true, ConnectTCP: []uint16{443}}
+	argv := buildRunnerArgv(StructuredTurnConfig{Harness: "codex", Containment: req, HarnessArgs: []string{"-x"}}, "/p")
+	want := append(append([]string{}, defaultRunner...), "--prompt-file", "/p")
+	want = append(want, req.CLIFlags()...)
+	want = append(want, "codex", "--", "-x")
+	if strings.Join(argv, " ") != strings.Join(want, " ") {
+		t.Fatalf("argv = %v, want %v", argv, want)
+	}
+}

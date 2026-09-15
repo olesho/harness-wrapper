@@ -49,6 +49,9 @@ func run(args []string) int {
 			// Structured sibling of `run`: drives one turn and emits a single
 			// machine-readable turnproto.StructuredTurnResult JSON line.
 			return runStructuredRun(args[1:])
+		case "contain-check":
+			// Preview a contained launch; starts nothing.
+			return runContainCheck(args[1:], os.Stdout, os.Stderr)
 		}
 	}
 	return runHarnessWrapper(args)
@@ -133,6 +136,7 @@ func runHarnessWrapper(args []string) int {
 		Effort:         parsed.Effort,
 		Model:          parsed.Model,
 		PermissionMode: parsed.PermissionMode,
+		Containment:    parsed.Contain.request(),
 	})
 	if err != nil {
 		emitCLIExitTrace(traceEmitter, res, err)
@@ -280,6 +284,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "       harness-wrapper kill <session>")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper list")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper reap [--dry-run]")
+	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "wrapper flags (must come BEFORE the harness name):")
 	_, _ = fmt.Fprintln(w, "  --trace-file PATH       write trace events as NDJSON to PATH")
@@ -304,6 +309,17 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          (bypass is the ONLY rung --sandbox-defaults accepts),")
 	_, _ = fmt.Fprintln(w, "                          or pass --auto-accept to answer the screen in an")
 	_, _ = fmt.Fprintln(w, "                          interactive run.")
+	_, _ = fmt.Fprintln(w, "  --contain landlock      Linux (Landlock ABI 9+): run the harness inside an")
+	_, _ = fmt.Fprintln(w, "                          extra kernel-enforced boundary with private HOME and")
+	_, _ = fmt.Fprintln(w, "                          state; refused, never downgraded, when it cannot be")
+	_, _ = fmt.Fprintln(w, "                          enforced. The harness's own permission settings keep")
+	_, _ = fmt.Fprintln(w, "                          their meaning inside it; codex runs contained only at")
+	_, _ = fmt.Fprintln(w, "                          the bypass rung. Refine with --contain-rw PATH,")
+	_, _ = fmt.Fprintln(w, "                          --contain-ro PATH, --contain-restrict-tcp,")
+	_, _ = fmt.Fprintln(w, "                          --contain-allow-tcp PORT, --contain-min-abi N,")
+	_, _ = fmt.Fprintln(w, "                          --contain-state-dir DIR, --contain-pass-env NAME.")
+	_, _ = fmt.Fprintln(w, "                          contain-check previews the policy without starting")
+	_, _ = fmt.Fprintln(w, "                          anything. Unrelated to --sandbox-defaults.")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a")
 	_, _ = fmt.Fprintln(w, "human is at the TUI (passthrough, or `run` from a terminal for codex). Under")

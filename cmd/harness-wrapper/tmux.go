@@ -174,6 +174,8 @@ func tmuxReexecArgv(a harnessWrapperArgs, self, tracePath string) []string {
 	if a.PermissionMode != "" {
 		argv = append(argv, "--permission-mode", a.PermissionMode)
 	}
+	// --contain*: a dropped flag here would run the pane UNCONTAINED.
+	argv = append(argv, a.Contain.request().CLIFlags()...)
 	argv = append(argv, a.HarnessName, "--")
 	return append(argv, a.HarnessArgs...)
 }

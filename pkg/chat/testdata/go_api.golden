@@ -8,6 +8,7 @@ type Options struct
 	field Effort string
 	field Model string
 	field PermissionMode string
+	field Containment *containment.Request
 	field Cols int
 	field Rows int
 	field Store chat.Store
@@ -31,11 +32,13 @@ type ReopenOptions struct
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
+	field Containment *containment.Request
 type Conversation struct
 	method AcquireControl(context.Context) (func(), error)
 	method Adapter() turns.Adapter
 	method Answer(context.Context, string, chat.InputAnswer) error
 	method Close(context.Context) error
+	method Containment() *containment.Applied
 	method Events() <-chan chat.ConversationEvent
 	method History(context.Context) ([]chat.Turn, error)
 	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
@@ -65,6 +68,8 @@ type Session struct
 	field WorkingDir string
 	field CreatedAt time.Time
 	field HarnessSessionID string
+	field Containment *chat.SessionContainment `json:",omitempty"`
+	method HarnessID() string
 type ConversationEvent struct
 	field Type chat.EventType
 	field Turn chat.Turn

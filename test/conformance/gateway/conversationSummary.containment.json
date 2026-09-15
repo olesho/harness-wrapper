@@ -1,0 +1,87 @@
+{
+  "id": "conv-1",
+  "harness": "claude-code",
+  "session_id": "sess-1",
+  "containment": {
+    "schema_version": 1,
+    "kind": "landlock",
+    "abi": 9,
+    "required_abi": 9,
+    "profile": "claude-code@2.1.270",
+    "profile_version": 1,
+    "handled_fs": [
+      "execute",
+      "write_file",
+      "read_file",
+      "read_dir"
+    ],
+    "grants": [
+      {
+        "path": "/usr",
+        "access": "rx",
+        "rights": [
+          "execute",
+          "read_file",
+          "read_dir"
+        ],
+        "source": "profile"
+      },
+      {
+        "path": "/repo",
+        "access": "rw",
+        "rights": [
+          "execute",
+          "write_file",
+          "read_file",
+          "read_dir"
+        ],
+        "source": "working_dir"
+      },
+      {
+        "path": "/work/checkout",
+        "access": "ro",
+        "rights": [
+          "read_file",
+          "read_dir"
+        ],
+        "source": "caller",
+        "requested": "/checkout"
+      }
+    ],
+    "tcp": {
+      "mode": "restricted",
+      "connect": [
+        443
+      ],
+      "bind": "denied"
+    },
+    "pathname_unix_sockets": "denied",
+    "scopes": [
+      "abstract_unix_socket",
+      "signal"
+    ],
+    "state": {
+      "mode": "private",
+      "id": "abcdefghijkl",
+      "home": "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/home",
+      "tmp": "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/tmp",
+      "harness_state": "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/home/.claude",
+      "harness_state_env": "CLAUDE_CONFIG_DIR"
+    },
+    "supervision": {
+      "mode": "cgroup",
+      "cgroup": "/sys/fs/cgroup/user.slice/hw.scope/hwc-abcdefghijkl-xyzabc",
+      "cleanup": "complete"
+    },
+    "env": [
+      "CLAUDE_CONFIG_DIR",
+      "HOME",
+      "PATH",
+      "TMPDIR"
+    ],
+    "omitted": [
+      "/etc/pki"
+    ],
+    "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

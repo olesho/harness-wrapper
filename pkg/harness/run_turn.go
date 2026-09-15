@@ -7,8 +7,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/contain"
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -101,6 +103,14 @@ type TurnConfig struct {
 	// prompts are auto-approved (only the `-s` sandbox axis still binds).
 	PermissionMode string
 
+	// Containment requests Landlock containment for the harness (Linux; see
+	// wrapper.Config.Containment). nil — the default — runs the turn exactly
+	// as before. RunTurn is stateless: its conversation is never reopened, so
+	// the private state lives for this one launch and cgroup supervision is
+	// reported rather than required. The applied policy is in
+	// TurnResult.Containment.
+	Containment *wrapper.Containment
+
 	// Prompt is submitted as one user message.
 	Prompt string
 
@@ -188,6 +198,11 @@ type TurnResult struct {
 	// This distinguishes expected process interruption from turn failure.
 	ProcessStoppedAfterTurn bool
 
+	// Containment is the applied containment policy of a contained turn —
+	// after ExitAfterTurn, including its cleanup outcome — and nil for an
+	// uncontained one.
+	Containment *containment.Applied
+
 	// Conversation is non-nil only when ExitAfterTurn is false. The caller owns
 	// the live interactive process and must eventually call Close.
 	Conversation *chat.Conversation
@@ -207,6 +222,12 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 	}
 
 	store := memstore.New()
+	if cfg.Containment != nil {
+		// A one-shot conversation is never reopened (its store is private).
+		lo := contain.LaunchOptionsFrom(ctx)
+		lo.SingleLaunch = true
+		ctx = contain.WithLaunchOptions(ctx, lo)
+	}
 	conv, err := chat.Open(ctx, chat.Options{
 		Harness:        turnHarnessName(cfg),
 		BinaryPath:     cfg.BinaryPath,
@@ -216,6 +237,7 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 		Effort:         cfg.Effort,
 		Model:          cfg.Model,
 		PermissionMode: cfg.PermissionMode,
+		Containment:    cfg.Containment,
 		Cols:           cfg.Cols,
 		Rows:           cfg.Rows,
 		Store:          store,
@@ -235,11 +257,16 @@ func RunTurn(ctx context.Context, cfg TurnConfig) (TurnResult, error) {
 	}
 
 	result, err := runConversationTurn(ctx, conv, store, cfg.Prompt)
+	result.Containment = conv.Containment()
 	if err != nil {
 		if detach != nil {
 			detach()
 		}
 		_ = conv.Close(context.Background())
+		if result.Containment != nil {
+			_, _ = conv.Wrapper().Wait()
+			result.Containment = conv.Containment()
+		}
 		return result, err
 	}
 
@@ -267,6 +294,7 @@ func stopHarnessAfterTurn(conv *chat.Conversation, store chat.Store, result Turn
 		detach()
 	}
 	result.WrapperResult = wres
+	result.Containment = conv.Containment()
 	return result, werr
 }
 

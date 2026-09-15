@@ -1,0 +1,40 @@
+{
+  "comment": "claude-code 2.1.270 is one Bun-compiled ELF per platform, byte-identical in the npm platform package and the release bucket; it re-executes itself as rg, so one read/execute rule on that file covers it. No node runtime or package directory is granted, and layouts that start claude through node are refused. Checksums are the release manifest's (downloads.claude.ai/claude-code-releases/2.1.270/manifest.json).",
+  "name": "claude-code",
+  "harnesses": ["claude", "claude-code"],
+  "manifest_version": 1,
+  "harness_version": "2.1.270",
+  "activated": false,
+  "activation": "pending the authenticated conformance runs of the landlock-security conformance job (plan step 3): a model-driven Write/Edit turn, a Task subagent, one stdio MCP server, --resume under the private layout, remote managed settings and a /login identity in a caller StateDir through a token refresh",
+  "executable": {
+    "kind": "native",
+    "platforms": {
+      "linux-x64": {"sha256": "3a624a5a7cd79bbad4d32bd7db36f1197ecf458bc5bf1e2aed81834a01ad3ef0", "size": 223981040},
+      "linux-arm64": {"sha256": "7bf9f33acc124df9abccf6f2366397a82a740378d535fa12d426fa77fdbc9946", "size": 223862184},
+      "linux-x64-musl": {"sha256": "38f98338ff23afce49c66c83ac57ea238f84e7f4e8c17ae7cc74b3eeaee9a299", "size": 217894976},
+      "linux-arm64-musl": {"sha256": "067b322dfca0ed81521b562ef05825e8be282eeb5c83441e4be824415572dbc0", "size": 216545032}
+    }
+  },
+  "paths": [
+    {"path": "/etc/claude-code", "access": "ro", "required": false, "reason": "managed-settings layer: claude refuses to start when managed settings exist but are unreadable"}
+  ],
+  "state": {
+    "config_env": "CLAUDE_CONFIG_DIR",
+    "config_dir": ".claude",
+    "config_under_home": true
+  },
+  "env": {
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1"
+  },
+  "env_reasons": {
+    "DISABLE_AUTOUPDATER": "without it each session copies the 224 MB binary into its private HOME",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "leaves api.anthropic.com as the only endpoint contacted",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "no plugin-marketplace download into private state"
+  },
+  "auth_env": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
+  "control_env": ["IS_SANDBOX"],
+  "max_tmpdir_bytes": 79,
+  "max_tmpdir_reason": "claude binds $TMPDIR/cc-socks/<pid>.sock; a path over 103 bytes falls back to /tmp/cc-socks-<uid>, which every same-user session shares and the domain denies"
+}

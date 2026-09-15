@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
 	"github.com/olesho/harness-wrapper/test/conformance/neutral"
@@ -131,6 +132,33 @@ func turnFixtures() []turnFixture {
 			TranscriptEntries: textEntries, WorkingDir: "/work",
 			PermissionMode: "bypass",
 		}},
+		// completed carrying containment — the applied Landlock policy beside
+		// permission_mode. Every other fixture is the omitted variant: ABSENT
+		// means no containment was applied. A refused containment request is a
+		// startup_error with no containment key.
+		{"StructuredTurnResult.completed_containment", turnproto.StructuredTurnResult{
+			Status: turnproto.StatusCompleted, Reply: "done", HarnessSessionID: "sess-8",
+			TranscriptEntries: textEntries, WorkingDir: "/work",
+			PermissionMode: "bypass",
+			Containment: &containment.Applied{
+				SchemaVersion: 1, Kind: containment.KindLandlock, ABI: 9, RequiredABI: 9,
+				Profile: "codex@0.144.5", ProfileVersion: 1,
+				HandledFS: []string{"execute", "write_file", "read_file", "read_dir"},
+				Grants: []containment.Grant{
+					{Path: "/work", Access: "rw", Rights: []string{"execute", "write_file", "read_file", "read_dir"}, Source: containment.SourceWorkingDir},
+				},
+				TCP:             containment.TCP{Mode: "unrestricted", Bind: "unrestricted"},
+				PathnameSockets: "denied",
+				Scopes:          []string{"abstract_unix_socket", "signal"},
+				State: containment.State{
+					Mode: "private", ID: "abcdefghijkl", Home: "/s/home", Tmp: "/s/tmp",
+					HarnessState: "/s/codex", HarnessStateEnv: "CODEX_HOME",
+				},
+				Supervision: containment.Supervision{Mode: containment.SupervisionNone, Reason: "not delegated", Cleanup: "incomplete: no cgroup supervision; private state kept at /s"},
+				Env:         []string{"CODEX_HOME", "HOME", "PATH", "TMPDIR"},
+				Fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+			},
+		}},
 	}
 }
 
@@ -142,6 +170,11 @@ func TestConformance_TurnResultFields(t *testing.T) {
 		turnproto.StructuredTurnResult{},
 		transcript.Event{},
 		transcript.Usage{},
+		containment.Applied{},
+		containment.Grant{},
+		containment.TCP{},
+		containment.State{},
+		containment.Supervision{},
 	))
 	if err != nil {
 		t.Fatalf("marshal neutral fields: %v", err)
@@ -370,6 +403,7 @@ func assertOptionalKeys(t *testing.T, golden []byte, value any) {
 		"transcript_error": res.TranscriptError != "",
 		"usage":            res.Usage != nil,
 		"permission_mode":  res.PermissionMode != "",
+		"containment":      res.Containment != nil,
 	}
 	for key, wantPresent := range checks {
 		_, present := raw[key]

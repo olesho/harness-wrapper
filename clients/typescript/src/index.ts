@@ -86,6 +86,84 @@ export type PermissionMode =
   | "workspace-write"
   | "danger-full-access";
 
+/**
+ * An optional Landlock containment request (Linux, ABI 9+): an extra,
+ * kernel-enforced boundary around the harness, outside whatever its own
+ * permission settings enforce. Mirrors `containment.Request` in
+ * `pkg/containment`; the server validates it, and a request it cannot honour
+ * is a 400 `invalid_config` — never a silent downgrade.
+ *
+ * Serialization preserves exactly what you set: unset fields are omitted,
+ * `restrictTcp: true` with no (or an empty) `connectTcp` means deny all TCP,
+ * and `connectTcp` without `restrictTcp` is sent as-is and rejected by the
+ * server rather than "fixed" here.
+ */
+export interface Containment {
+  /** The containment kind; only `"landlock"` exists. */
+  kind: "landlock" | (string & {});
+  /** Additional existing absolute paths the harness may read. */
+  readOnly?: string[];
+  /** Additional existing absolute paths the harness may read and write. */
+  readWrite?: string[];
+  /** Turn TCP filtering on: deny TCP bind and every connect except `connectTcp`. */
+  restrictTcp?: boolean;
+  /** Remote TCP ports the harness may connect to (with `restrictTcp`). */
+  connectTcp?: number[];
+  /** Minimum Landlock ABI; default and floor 9. */
+  minAbi?: number;
+  /** Caller-managed persistent state directory instead of private state. */
+  stateDir?: string;
+  /** Extra environment variable NAMES to pass to the harness. */
+  passEnv?: string[];
+}
+
+/** The applied containment policy the server echoes (see `containment.Applied`). */
+export interface AppliedContainment {
+  schema_version: number;
+  kind: string;
+  abi: number;
+  required_abi: number;
+  profile: string;
+  profile_version: number;
+  handled_fs: string[];
+  grants: Array<{ path: string; access: string; rights: string[]; source: string; requested?: string }>;
+  tcp: { mode: string; connect?: number[]; bind: string };
+  pathname_unix_sockets: string;
+  scopes: string[];
+  state: {
+    mode: string;
+    id?: string;
+    home: string;
+    tmp: string;
+    harness_state?: string;
+    harness_state_env?: string;
+    state_dir?: string;
+    state_dir_requested?: string;
+  };
+  supervision: { mode: string; cgroup?: string; reason?: string; cleanup?: string };
+  env: string[];
+  omitted?: string[];
+  fingerprint: string;
+}
+
+/** GET /v1/capabilities. */
+export interface Capabilities {
+  containment: { kinds: string[] };
+}
+
+/** Renders a Containment as the wire object, omitting unset fields. */
+export function containmentBody(c: Containment): Record<string, unknown> {
+  const body: Record<string, unknown> = { kind: c.kind };
+  if (c.readOnly !== undefined) body.read_only = c.readOnly;
+  if (c.readWrite !== undefined) body.read_write = c.readWrite;
+  if (c.restrictTcp !== undefined) body.restrict_tcp = c.restrictTcp;
+  if (c.connectTcp !== undefined) body.connect_tcp = c.connectTcp;
+  if (c.minAbi !== undefined) body.min_abi = c.minAbi;
+  if (c.stateDir !== undefined) body.state_dir = c.stateDir;
+  if (c.passEnv !== undefined) body.pass_env = c.passEnv;
+  return body;
+}
+
 export interface OpenOptions {
   harness: string;
   binaryPath: string;
@@ -163,6 +241,15 @@ export interface OpenOptions {
    *    request.
    */
   permissionMode?: PermissionMode;
+  /**
+   * Landlock containment for the conversation, fixed for its life. Sent only
+   * after `GET /v1/capabilities` lists the kind: a harness-chatd built before
+   * containment would silently drop the field and run the harness
+   * uncontained, so against such a server `open()` throws
+   * `containment_unsupported` without posting anything. The server's echo of
+   * the applied policy is verified too: an open response without it throws.
+   */
+  containment?: Containment;
 }
 
 export class HarnessChatError extends Error {
@@ -172,11 +259,43 @@ export class HarnessChatError extends Error {
 }
 
 export class Client {
+  private caps: Promise<Capabilities | null> | null = null;
+
   constructor(private readonly baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  /**
+   * The server's capabilities, or null for a harness-chatd built before the
+   * route existed (404). Cached per client.
+   */
+  async capabilities(): Promise<Capabilities | null> {
+    if (!this.caps) {
+      this.caps = this.request<Capabilities>("GET", "/v1/capabilities").catch((e) => {
+        if (e instanceof HarnessChatError && e.status === 404) return null;
+        this.caps = null; // a transient failure: ask again next time
+        throw e;
+      });
+    }
+    return this.caps;
+  }
+
+  /** @internal Throws unless the server lists `kind` among its containment kinds. */
+  async requireContainment(kind: string): Promise<void> {
+    const caps = await this.capabilities();
+    if (!caps || !(caps.containment?.kinds ?? []).includes(kind)) {
+      throw new HarnessChatError(
+        0,
+        "containment_unsupported",
+        caps
+          ? `server does not support containment kind "${kind}" (supports: ${(caps.containment?.kinds ?? []).join(", ") || "none"})`
+          : "server predates containment (no /v1/capabilities); refusing to send a request it would ignore",
+      );
+    }
+  }
+
   async open(opts: OpenOptions): Promise<Conversation> {
+    if (opts.containment) await this.requireContainment(opts.containment.kind);
     const body = {
       harness: opts.harness,
       binary_path: opts.binaryPath,
@@ -191,12 +310,28 @@ export class Client {
       effort: opts.effort,
       model: opts.model,
       permission_mode: opts.permissionMode,
+      containment: opts.containment ? containmentBody(opts.containment) : undefined,
     };
-    const res = await this.request<{ id: string }>("POST", "/v1/conversations", body);
-    return new Conversation(this, res.id);
+    const res = await this.request<{ id: string; containment?: AppliedContainment }>(
+      "POST",
+      "/v1/conversations",
+      body,
+    );
+    const conv = new Conversation(this, res.id, res.containment ?? null);
+    if (opts.containment && !res.containment) {
+      await conv.close().catch(() => {});
+      throw new HarnessChatError(
+        0,
+        "containment_not_applied",
+        "the server opened the conversation without echoing an applied containment policy",
+      );
+    }
+    return conv;
   }
 
-  async list(): Promise<Array<{ id: string; harness: string; session_id?: string }>> {
+  async list(): Promise<
+    Array<{ id: string; harness: string; session_id?: string; containment?: AppliedContainment }>
+  > {
     return (await this.request("GET", "/v1/conversations")) as any;
   }
 
@@ -233,7 +368,15 @@ export class Client {
 export class Conversation {
   private token: string | null = null;
 
-  constructor(public client: Client, public id: string) {}
+  /**
+   * @param containment the applied containment policy the server echoed at
+   *   open, or null for an uncontained conversation.
+   */
+  constructor(
+    public client: Client,
+    public id: string,
+    public containment: AppliedContainment | null = null,
+  ) {}
 
   async acquire(): Promise<string> {
     const res = await this.client.request<{ token: string }>(
@@ -260,12 +403,22 @@ export class Conversation {
     }
   }
 
-  async send(text: string): Promise<string> {
+  /**
+   * Send one message. `opts.containment` may restate a contained
+   * conversation's policy (it must be the same policy); on an uncontained
+   * conversation the server refuses it — containment is chosen at open.
+   */
+  async send(text: string, opts?: { containment?: Containment }): Promise<string> {
     if (!this.token) throw new HarnessChatError(409, "no_control", "acquire control before send()");
+    const body: Record<string, unknown> = { token: this.token, text };
+    if (opts?.containment) {
+      await this.client.requireContainment(opts.containment.kind);
+      body.containment = containmentBody(opts.containment);
+    }
     const res = await this.client.request<{ turn_id: string }>(
       "POST",
       `/v1/conversations/${this.id}/messages`,
-      { token: this.token, text },
+      body,
     );
     return res.turn_id;
   }
