@@ -1,0 +1,39 @@
+{
+  "comment": "Grants every contained harness receives, whatever its profile. Required entries must exist; an absent optional entry is reported as omitted. Paths are resolved (symlinks followed) and pinned before a rule is installed.",
+  "manifest_version": 1,
+  "paths": [
+    {"path": "/usr", "access": "rx", "required": true, "reason": "system runtime: shared libraries, the dynamic loader, interpreters and the tools harnesses run"},
+    {"path": "/bin", "access": "rx", "required": false, "merged_usr": true, "reason": "system binaries on hosts where /bin is a real directory, not a merged-/usr link"},
+    {"path": "/sbin", "access": "rx", "required": false, "merged_usr": true, "reason": "system binaries on hosts where /sbin is a real directory, not a merged-/usr link"},
+    {"path": "/lib", "access": "rx", "required": false, "merged_usr": true, "reason": "shared libraries on hosts where /lib is a real directory, not a merged-/usr link"},
+    {"path": "/lib64", "access": "rx", "required": false, "merged_usr": true, "reason": "the x86-64 dynamic loader on hosts where /lib64 is a real directory, not a merged-/usr link"},
+    {"path": "/proc", "access": "ro", "required": true, "reason": "runtime introspection: claude reads /proc/self/maps, statm and cgroup and /proc/stat at startup and aborts without them, and tools need it; /proc/self differs per process, so it cannot be granted more narrowly"},
+
+    {"path": "/etc/passwd", "access": "ro", "required": true, "reason": "user and home-directory lookups"},
+    {"path": "/etc/group", "access": "ro", "required": true, "reason": "group lookups"},
+    {"path": "/etc/hosts", "access": "ro", "required": true, "reason": "static name resolution, including localhost"},
+    {"path": "/etc/ssl", "access": "ro", "required": false, "one_of": "certificates", "reason": "TLS trust store (Debian and Ubuntu layout; Fedora links it into /etc/pki): codex scans the certificate directory, and git, curl and node need the bundle"},
+    {"path": "/etc/pki", "access": "ro", "required": false, "one_of": "certificates", "reason": "TLS trust store (Fedora and RHEL layout)"},
+    {"path": "/etc/crypto-policies", "access": "ro", "required": false, "reason": "system-wide TLS policy that OpenSSL reads on Fedora-family hosts"},
+    {"path": "/etc/resolv.conf", "access": "ro", "required": false, "reason": "DNS resolver configuration; the systemd-resolved socket is denied, so glibc falls back to DNS over UDP port 53. Absent (or a dangling link) in some VM guests"},
+    {"path": "/etc/nsswitch.conf", "access": "ro", "required": false, "reason": "name-service switch for glibc lookups; absent on musl hosts"},
+    {"path": "/etc/host.conf", "access": "ro", "required": false, "reason": "resolver options read by glibc"},
+    {"path": "/etc/gai.conf", "access": "ro", "required": false, "reason": "getaddrinfo address-sorting policy"},
+    {"path": "/etc/ld.so.cache", "access": "ro", "required": false, "reason": "the dynamic loader's library cache; loading still works without it, only slower"},
+    {"path": "/etc/localtime", "access": "ro", "required": false, "reason": "local time zone for timestamps"},
+    {"path": "/etc/os-release", "access": "ro", "required": false, "reason": "distribution identification (claude and codex report it)"},
+    {"path": "/etc/machine-id", "access": "ro", "required": false, "reason": "stable host identifier some runtimes read"},
+    {"path": "/etc/gitconfig", "access": "ro", "required": false, "reason": "system git configuration"},
+    {"path": "/etc/gitattributes", "access": "ro", "required": false, "reason": "system git attributes"},
+    {"path": "/etc/profile", "access": "ro", "required": false, "reason": "login-shell setup: claude's shell snapshot and codex's bash -lc read it and tolerate its absence"},
+    {"path": "/etc/profile.d", "access": "ro", "required": false, "reason": "login-shell setup fragments (as /etc/profile)"},
+    {"path": "/etc/bashrc", "access": "ro", "required": false, "reason": "interactive bash setup (Fedora layout)"},
+    {"path": "/etc/bash.bashrc", "access": "ro", "required": false, "reason": "interactive bash setup (Debian and Ubuntu layout)"},
+    {"path": "/etc/inputrc", "access": "ro", "required": false, "reason": "readline key bindings"},
+    {"path": "/etc/locale.conf", "access": "ro", "required": false, "reason": "system locale"},
+
+    {"path": "/dev/null", "access": "null", "required": true, "reason": "discarded output; claude opens it with O_TRUNC, so it needs truncate as well as read and write"},
+    {"path": "/dev/urandom", "access": "read", "required": true, "reason": "randomness for TLS and identifiers"},
+    {"path": "/dev/tty", "access": "dev", "required": true, "reason": "the controlling terminal, which the session's own terminal becomes"}
+  ]
+}

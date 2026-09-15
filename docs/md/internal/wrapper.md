@@ -383,6 +383,84 @@ For the same reason the compose path guards on the literal harness name `"claude
 are exactly `claude`, `codex`, `opencode`, `pi`, so the `claude-code` alias never reaches it from the
 CLI, and normalizing would quietly widen the set of invocations receiving the root-enabling env half.
 
+## Contained launches
+
+`Config.Containment` selects a separate start path, `startContainedSession`; with it nil, `Start`
+takes the `exec.Cmd` + `pty.Start` path exactly as before and never reaches `internal/contain`.
+
+1. `contain.Prepare` normalizes the request, resolves the harness profile, identifies the executable,
+   pins every granted path (openat2, `O_PATH`) and runs the overlap, managed-state and cgroupfs checks
+   against those objects, provisions private state and the minimal environment, creates the session
+   cgroup (recording it before launch), and builds the ruleset from the pinned descriptors. Any
+   failure is `ErrContainmentRefused` (stage in the trace) and nothing has started.
+2. The PTY pair is opened from raw descriptors (`/dev/ptmx`, `TIOCGPTPEER`), outside the netpoller;
+   the session terminal gets its own device rule.
+3. The child is started from a locked thread with a private descriptor table and a thread-scoped
+   domain ([ADR-004](decisions/adr-004-thread-scoped-landlock.md)); the master becomes an `*os.File`
+   through `os.NewFile` only afterwards. It stays a blocking descriptor, so its output is read in
+   `poll(2)` alongside an eventfd: after the drain budget the supervisor signals that eventfd, because
+   closing a blocking master would not end a read that a terminal holder keeps waiting.
+4. The session waits on an `os.Process` (pidfd), reproduces `exec.CommandContext`'s cancellation
+   (SIGTERM to the group, then SIGKILL to the harness after `WaitDelay`), and ends through
+   `finishContained`: under cgroup supervision SIGTERM to the group unless termination already sent it,
+   the grace period, `cgroup.kill`, `populated 0`, cgroup removed, ephemeral state deleted — so `Wait`
+   returns only once the cgroup is empty, however the harness exited. Without supervision it escalates
+   over the process group as an uncontained session does and keeps the private state
+   (`cleanup: incomplete`).
+
+`Session.Containment()` returns the applied policy (and, after `Wait`, the cleanup outcome). Trace
+events: `containment_applied` (the applied policy, after a successful start), `containment_refused`
+(`stage`, `error`) and `containment_cleanup` (`supervision`, `cleanup`). Errors:
+`ErrContainmentUnsupported` and `ErrContainmentRefused` wrap `ErrInvalidConfig`; an `EACCES` from exec
+is `ErrLaunchDenied`, which wraps `ErrPTYAllocation`; a missing binary is `ErrBinaryNotFound`. See
+[Landlock containment](../guide/containment.md) for the policy model.
+
+### Login launches
+
+`StartLogin` (login.go) is a thin client of `Start`. It resolves the profile's `LoginFlow`
+(`contain.LoginFlowFor`: the pinned login and status arguments and the patterns that read their
+output), makes the `StateDir` absolute and creates it, and starts the login command with
+`contain.LaunchOptions{Login: true}` on the context. That option reaches `Prepare` as `Input.Login`, and
+it is not reachable from outside the module. In login mode `Prepare`:
+
+- admits an inactive profile;
+- refuses any arguments but the flow's two commands, a request without `StateDir`, managed state, and
+  a login whose profile says it binds TCP (`tcp_bind`) under `RestrictTCP`;
+- skips codex's rung check;
+- removes the profile's `auth_env` names from the caller's environment before seeding and before
+  building the child's, so `PassEnv` cannot bring them back.
+
+The session runs in the `StateDir` with a classifier that never fires (signing in can take minutes of
+quiet) and a 1024-column terminal. `loginOutput` is its `Stdout`. Each write rescans the whole
+kept output (at most 1 MiB) rendered by `terminalText`: escapes removed, OSC 8 targets kept as words,
+cursor-forward and column moves rendered as spaces. The URL and the one-time code are read only from
+complete lines, so a write that ends mid-line never yields a truncated value. `Prompt` returns once
+the URL, the code (when the flow has one) and the code prompt (when it has one) are all there.
+`SubmitCode` types the code, waits 150 ms and presses Enter. Once the success text appears,
+`endAfterSuccess` gives a lingering command one Enter after 3 s, then a `Stop`. `Wait` runs the status
+command, again in login mode, and matches `LoggedIn` against its output.
+
+Tests beyond the mock harness, all Linux-only:
+
+- `internal/contain` exercises the domain with the test binary as the child: every controlled
+  operation, grants racing symlink and ancestor swaps, per-session state, cgroup escapes and
+  teardown, the main-thread hand-off, and `TestContainedSpawnStress` (`HW_CONTAIN_STRESS=200x320`,
+  the release gate).
+- `TestRealClaudeContained` and `TestRealCodexContained` (`pkg/wrapper`) are credential-free smoke
+  runs of the pinned binaries under their real profiles, skipped unless `HW_REAL_CLAUDE` names the
+  claude-code 2.1.270 binary or `HW_REAL_CODEX` the npm shim of an `@openai/codex` 0.144.5 package
+  (with `node` on PATH). Claude reaches its composer with all TCP denied and runs a `!` bash-mode
+  command; codex runs one tool call against an in-process fake model provider. The scheduled
+  `harness-smoke` job of the landlock-security workflow runs both in the ABI 9 floor kernel. They
+  are not the authenticated conformance runs that activate a profile.
+- `TestRealClaudeLoginPrompt` and `TestRealCodexLoginPrompt` drive the real login commands, contained,
+  up to their prompts. They contact the vendors' sign-in services without an account, so they also
+  need `HW_REAL_LOGIN=1`. Claude's made-up code must store no login; codex's device code is read and
+  the login stopped.
+- `TestRealClaudeSignedIn` and `TestRealCodexSignedIn` run one prompt, with TCP restricted to 443, as
+  the login a person stored with `contain-login` in `HW_REAL_CLAUDE_STATE_DIR` or
+  `HW_REAL_CODEX_STATE_DIR`. They use that account's quota.
+
 ## PTY execution & attach
 
 The wrapper starts each harness under a pseudoterminal with `pty.Start`; the PTY stream is the

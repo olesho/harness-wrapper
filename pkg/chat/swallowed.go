@@ -66,7 +66,7 @@ func (c *Conversation) transcriptProofOfCurrentTurn() swallowedPromptVerdict {
 		return swallowedPromptVerdict{diag: "adapter cannot read the harness transcript"}
 	}
 	c.mu.Lock()
-	sessionID := c.session.HarnessSessionID
+	sessionID := c.session.HarnessID()
 	c.mu.Unlock()
 	if sessionID == "" {
 		return swallowedPromptVerdict{diag: "harness session id not known yet"}

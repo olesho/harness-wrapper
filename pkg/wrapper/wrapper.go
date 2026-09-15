@@ -176,6 +176,25 @@ type Config struct {
 	// in pkg/harness). pkg/wrapper stays stateless: it owns no persistence and
 	// does not import pkg/harness.
 	OnLine func(line string)
+
+	// Containment, when non-nil, starts the harness inside a Landlock domain
+	// (Linux, ABI 9+): an extra kernel-enforced layer around the harness and
+	// everything it starts, which restricts file-content access to the
+	// harness profile's baseline, the working directory, private state and the
+	// request's extra paths; denies external pathname and abstract UNIX
+	// sockets and signals outside the domain; and optionally filters TCP. The
+	// harness's own permission settings keep their meanings inside it.
+	//
+	// nil — the default — means no containment: the launch is exactly the
+	// uncontained one. A request that cannot be honoured as asked (platform,
+	// kernel, profile, paths, supervision, or a codex sandbox mode that
+	// cannot nest in the domain) fails Start with ErrContainmentUnsupported
+	// or ErrContainmentRefused before the harness starts; it is never
+	// downgraded. Session.Containment reports the applied policy.
+	//
+	// Supported harnesses: claude (claude-code 2.1.270) and codex (0.144.5,
+	// bypass rung only). See docs/md/guide/permissions.md.
+	Containment *Containment
 }
 
 // Status is the normalized run status returned by the wrapper.
@@ -367,7 +386,7 @@ func validateConfig(cfg *Config) error {
 	if err := validatePermissionMode(cfg); err != nil {
 		return err
 	}
-	return nil
+	return validateContainment(cfg)
 }
 
 // validatePermissionMode rejects, BEFORE the harness process is launched, every

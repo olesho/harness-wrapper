@@ -1,4 +1,102 @@
 {
+  "Applied": [
+    {
+      "name": "SchemaVersion",
+      "json_tag": "schema_version",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Kind",
+      "json_tag": "kind",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "ABI",
+      "json_tag": "abi",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "RequiredABI",
+      "json_tag": "required_abi",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Profile",
+      "json_tag": "profile",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "ProfileVersion",
+      "json_tag": "profile_version",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "HandledFS",
+      "json_tag": "handled_fs",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "Grants",
+      "json_tag": "grants",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "TCP",
+      "json_tag": "tcp",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "PathnameSockets",
+      "json_tag": "pathname_unix_sockets",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Scopes",
+      "json_tag": "scopes",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "State",
+      "json_tag": "state",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "Supervision",
+      "json_tag": "supervision",
+      "type": "ref",
+      "optional": false
+    },
+    {
+      "name": "Env",
+      "json_tag": "env",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "Omitted",
+      "json_tag": "omitted",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "Fingerprint",
+      "json_tag": "fingerprint",
+      "type": "string",
+      "optional": false
+    }
+  ],
   "Event": [
     {
       "name": "Seq",
@@ -61,6 +159,88 @@
       "optional": true
     }
   ],
+  "Grant": [
+    {
+      "name": "Path",
+      "json_tag": "path",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Access",
+      "json_tag": "access",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Rights",
+      "json_tag": "rights",
+      "type": "array",
+      "optional": false
+    },
+    {
+      "name": "Source",
+      "json_tag": "source",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Requested",
+      "json_tag": "requested",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "State": [
+    {
+      "name": "Mode",
+      "json_tag": "mode",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "ID",
+      "json_tag": "id",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Home",
+      "json_tag": "home",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Tmp",
+      "json_tag": "tmp",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "HarnessState",
+      "json_tag": "harness_state",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "HarnessStateEnv",
+      "json_tag": "harness_state_env",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "StateDir",
+      "json_tag": "state_dir",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "StateDirRequested",
+      "json_tag": "state_dir_requested",
+      "type": "string",
+      "optional": true
+    }
+  ],
   "StructuredTurnResult": [
     {
       "name": "Status",
@@ -115,6 +295,58 @@
       "json_tag": "permission_mode",
       "type": "string",
       "optional": true
+    },
+    {
+      "name": "Containment",
+      "json_tag": "containment",
+      "type": "ref",
+      "optional": true
+    }
+  ],
+  "Supervision": [
+    {
+      "name": "Mode",
+      "json_tag": "mode",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Cgroup",
+      "json_tag": "cgroup",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Reason",
+      "json_tag": "reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Cleanup",
+      "json_tag": "cleanup",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "TCP": [
+    {
+      "name": "Mode",
+      "json_tag": "mode",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Connect",
+      "json_tag": "connect",
+      "type": "array",
+      "optional": true
+    },
+    {
+      "name": "Bind",
+      "json_tag": "bind",
+      "type": "string",
+      "optional": false
     }
   ],
   "Usage": [

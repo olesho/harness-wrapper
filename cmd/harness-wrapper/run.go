@@ -112,6 +112,7 @@ func runOneShot(args []string) int {
 		Effort:         parsed.Effort,
 		Model:          parsed.Model,
 		PermissionMode: parsed.PermissionMode,
+		Containment:    parsed.Contain.request(),
 		WorkingDir:     wd,
 		Env:            env,
 		Prompt:         string(prompt),

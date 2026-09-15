@@ -1,4 +1,12 @@
 --auto-accept <*flag.boolValue> = "false" : run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human
+--contain <*flag.stringValue> = "" : run the harness inside an extra Landlock boundary (Linux, ABI 9+): landlock; unrelated to --sandbox-defaults, which removes guardrails instead of adding one
+--contain-allow-tcp <*main.portList> = "" : with --contain-restrict-tcp: allow outbound TCP connects to this port (repeatable)
+--contain-min-abi <*flag.intValue> = "0" : with --contain: require at least this Landlock ABI (default and minimum: 9)
+--contain-pass-env <*main.stringList> = "" : with --contain: also pass this environment variable to the harness (repeatable; names only)
+--contain-restrict-tcp <*flag.boolValue> = "false" : with --contain: deny TCP bind and every TCP connect except to --contain-allow-tcp ports (none listed: deny all TCP)
+--contain-ro <*main.stringList> = "" : with --contain: grant read-only access to an existing absolute path (repeatable)
+--contain-rw <*main.stringList> = "" : with --contain: grant read-write access to an existing absolute path (repeatable)
+--contain-state-dir <*flag.stringValue> = "" : with --contain: keep HOME and harness state in this existing directory (shared, persistent) instead of private per-session state
 --effort <*flag.stringValue> = "" : reasoning effort for supported harnesses (low, medium, high, xhigh, max)
 --model <*flag.stringValue> = "" : model id for supported harnesses (claude --model, codex -c model)
 --permission-mode <*flag.stringValue> = "" : launch-time permission rung for claude/codex: plan, manual, ask, auto, bypass (per-harness native spellings also pass through); bypass does NOT set IS_SANDBOX=1 (acceptance screen appears, root disallowed); combine with --sandbox-defaults for that, or --auto-accept to answer the screen in an interactive run; restrictive rungs bind fully only with a human at the TUI

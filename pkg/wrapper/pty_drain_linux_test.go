@@ -10,6 +10,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/olesho/harness-wrapper/internal/contain"
+	"github.com/olesho/harness-wrapper/internal/landlock"
 )
 
 // TestLeftoverTerminalHolderCannotHoldWaitOpen: a harness that exits on its
@@ -54,6 +57,69 @@ func TestLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
 	case <-waited:
 	case <-time.After(10 * time.Second):
 		t.Fatal("Wait did not return while a leftover process held the terminal")
+	}
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read leftover pid: %v", err)
+	}
+	if pid, _ := strconv.Atoi(strings.TrimSpace(string(b))); pid <= 1 || !alive(pid) {
+		t.Fatalf("leftover %q is not running, so it held nothing open", strings.TrimSpace(string(b)))
+	}
+	if got := log.fields(t, "pty_closed")["output_drained"]; got != false {
+		t.Fatalf("pty_closed output_drained = %v, want false while a leftover process held the terminal", got)
+	}
+}
+
+// TestContainedLeftoverTerminalHolderCannotHoldWaitOpen is the same for a
+// contained session, whose master is a blocking descriptor outside the
+// netpoller: closing it does not end a read already blocked on it, so the
+// supervisor has to wake that read itself. The leftover here holds the
+// terminal silently — output would end the blocked read on its own — and,
+// without cgroup supervision, outlives the harness.
+func TestContainedLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
+	if _, err := landlock.Probe(); err != nil {
+		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
+			t.Fatalf("Landlock ABI 9 required: %v", err)
+		}
+		t.Skipf("Landlock ABI 9 unavailable: %v", err)
+	}
+	sh, err := filepath.EvalSymlinks("/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(contain.RegisterTestProfile(contain.TestProfile{Harness: "sh", ExecDirs: []string{filepath.Dir(sh)}}))
+	t.Cleanup(contain.DisableSupervisionForTest())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	wd := t.TempDir()
+	pidFile := filepath.Join(wd, "leftover.pid")
+	var log traceLog
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Config{
+		Harness:     "sh",
+		BinaryPath:  sh,
+		Args:        []string{"-c", `trap "" HUP; (while :; do sleep 0.1; done) & echo $! > "$1"; exit 0`, "harness", pidFile},
+		WorkingDir:  wd,
+		Env:         []string{"PATH=/usr/bin:/bin"},
+		Stdout:      io.Discard,
+		Trace:       &log,
+		Containment: &Containment{Kind: ContainmentLandlock},
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pgid := s.PID()
+	t.Cleanup(func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
+
+	waited := make(chan struct{})
+	go func() {
+		defer close(waited)
+		_, _ = s.Wait()
+	}()
+	select {
+	case <-waited:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Wait did not return while a leftover process held the contained session's terminal")
 	}
 	b, err := os.ReadFile(pidFile)
 	if err != nil {

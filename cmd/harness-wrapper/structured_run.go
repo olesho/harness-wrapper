@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/olesho/harness-wrapper/internal/contain"
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -75,6 +77,30 @@ func runStructuredRun(args []string) int {
 		harnessArgs, env = applySandboxDefaults(parsed.HarnessName, parsed.PermissionMode, harnessArgs, env)
 	}
 
+	// A contained turn keeps the harness's files in private state that its
+	// launch would delete on exit; the runner still has to read the transcript
+	// and usage back. So it owns that state itself: allocated here, lent to the
+	// launch, read after the turn and removed last (kept, and reported, when no
+	// cgroup supervision proves the tree gone).
+	containReq := parsed.Contain.request()
+	var state *contain.State
+	if containReq != nil {
+		st, serr := contain.NewState(false)
+		switch {
+		case serr == nil:
+			state = st
+			ctx = contain.WithLaunchOptions(ctx, contain.LaunchOptions{State: st, SingleLaunch: true})
+			defer func() {
+				_ = state.Remove(context.Background())
+				state.Close()
+			}()
+		case errors.Is(serr, contain.ErrUnsupported):
+			// The launch reports ErrContainmentUnsupported itself.
+		default:
+			return emitStartupError(wd, fmt.Errorf("containment: allocate private state: %w", serr))
+		}
+	}
+
 	// The classification core + auto-accept-trust wiring + reply extraction now
 	// live in pkg/oneshot (the in-process one-shot library). This guest runner
 	// composes that core with the exit map (turnproto.ExitCode), the JSON emit,
@@ -86,6 +112,7 @@ func runStructuredRun(args []string) int {
 		Effort:         parsed.Effort,
 		Model:          parsed.Model,
 		PermissionMode: parsed.PermissionMode,
+		Containment:    containReq,
 		WorkingDir:     wd,
 		Env:            env,
 		Prompt:         prompt,
@@ -124,13 +151,23 @@ func runStructuredRun(args []string) int {
 		result.PermissionMode = wrapper.EffectiveLaunchRung(
 			parsed.HarnessName, harnessArgs, parsed.PermissionMode,
 		)
+		// Present only for a turn that ran contained; a refused request is a
+		// startup_error above and never claims a policy.
+		result.Containment = outcome.Containment
+	}
+
+	// A contained harness wrote its session files into its private state:
+	// read them there, never from the caller's own config roots.
+	readerEnv := env
+	if outcome.Containment != nil {
+		readerEnv = containedReaderEnv(outcome.Containment)
 	}
 
 	// Read the canonical transcript back in-guest — best-effort, so a Reader
 	// failure never erases a successful reply. An empty/absent session id makes
 	// Read error (missing files), which is tolerated: entries stay empty and the
 	// failure is recorded in transcript_error.
-	entries, terr := readStructuredTranscript(parsed.HarnessName, outcome.HarnessSessionID, wd, env)
+	entries, terr := readStructuredTranscript(parsed.HarnessName, outcome.HarnessSessionID, wd, readerEnv)
 	if terr != nil {
 		result.TranscriptError = terr.Error()
 	} else {
@@ -145,7 +182,7 @@ func runStructuredRun(args []string) int {
 	// omitempty tag drops the field. No usage_error sibling is emitted (a
 	// failure-observability field would be an additive follow-up, not this
 	// ticket).
-	if reader, ok := transcriptReaderFor(parsed.HarnessName, env, wd); ok {
+	if reader, ok := transcriptReaderFor(parsed.HarnessName, readerEnv, wd); ok {
 		if ur, ok := reader.(transcript.UsageReader); ok {
 			if u, uerr := ur.ReadUsage(outcome.HarnessSessionID, wd); uerr == nil && u != nil {
 				result.Usage = u
@@ -202,6 +239,16 @@ func transcriptReaderFor(harnessName string, env []string, workingDir string) (t
 	default:
 		return nil, false
 	}
+}
+
+// containedReaderEnv points the transcript and usage readers at a contained
+// turn's private (or caller-managed) harness state.
+func containedReaderEnv(a *containment.Applied) []string {
+	root := a.State.HarnessState
+	if root == "" {
+		root = filepath.Join(a.State.Home, ".harness-wrapper-no-state")
+	}
+	return []string{"CLAUDE_CONFIG_DIR=" + root, "CODEX_HOME=" + root}
 }
 
 // structuredWorkingDir mirrors MH: the guest worktree path if the host set it,

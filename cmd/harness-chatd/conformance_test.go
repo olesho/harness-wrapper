@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/test/conformance/neutral"
 )
 
@@ -151,6 +152,62 @@ func gatewayFixtures() []gatewayFixture {
 			Error: `permission mode "nonsense" is not supported`,
 			Code:  "invalid_config",
 		}},
+		// containment: the complete request object on the way in (deny-all TCP
+		// is restrict_tcp with no ports — the distinction the clients must
+		// preserve), the applied policy echoed on the way out, absent when the
+		// conversation is uncontained, and the capability route clients consult
+		// before sending it.
+		{"openRequest.containment", openRequest{
+			Harness: "claude-code", BinaryPath: "/usr/local/bin/claude",
+			WorkingDir: "/repo", Cols: 120, Rows: 40,
+			Containment: &containment.Request{
+				Kind:        containment.KindLandlock,
+				ReadOnly:    []string{"/opt/reference"},
+				ReadWrite:   []string{"/repo/.cache"},
+				RestrictTCP: true,
+				MinABI:      9,
+				PassEnv:     []string{"GIT_AUTHOR_NAME"},
+			},
+		}},
+		{"openResponse.containment", openResponse{ID: "conv-1", Containment: sampleApplied()}},
+		{"openResponse.containment_omitted", openResponse{ID: "conv-2"}},
+		{"conversationSummary.containment", conversationSummary{
+			ID: "conv-1", Harness: "claude-code", SessionID: "sess-1", Containment: sampleApplied(),
+		}},
+		{"capabilitiesResponse.landlock", capabilitiesResponse{
+			Containment: containmentCapabilities{Kinds: []string{containment.KindLandlock}},
+		}},
+		{"capabilitiesResponse.none", capabilitiesResponse{
+			Containment: containmentCapabilities{Kinds: []string{}},
+		}},
+	}
+}
+
+// sampleApplied is an illustrative applied policy for the corpus.
+func sampleApplied() *containment.Applied {
+	return &containment.Applied{
+		SchemaVersion: 1, Kind: containment.KindLandlock, ABI: 9, RequiredABI: 9,
+		Profile: "claude-code@2.1.270", ProfileVersion: 1,
+		HandledFS: []string{"execute", "write_file", "read_file", "read_dir"},
+		Grants: []containment.Grant{
+			{Path: "/usr", Access: "rx", Rights: []string{"execute", "read_file", "read_dir"}, Source: containment.SourceProfile},
+			{Path: "/repo", Access: "rw", Rights: []string{"execute", "write_file", "read_file", "read_dir"}, Source: containment.SourceWorkingDir},
+			{Path: "/work/checkout", Access: "ro", Rights: []string{"read_file", "read_dir"}, Source: containment.SourceCaller, Requested: "/checkout"},
+		},
+		TCP:             containment.TCP{Mode: "restricted", Connect: []uint16{443}, Bind: "denied"},
+		PathnameSockets: "denied",
+		Scopes:          []string{"abstract_unix_socket", "signal"},
+		State: containment.State{
+			Mode: "private", ID: "abcdefghijkl",
+			Home:            "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/home",
+			Tmp:             "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/tmp",
+			HarnessState:    "/home/u/.local/state/harness-wrapper/contain/abcdefghijkl/home/.claude",
+			HarnessStateEnv: "CLAUDE_CONFIG_DIR",
+		},
+		Supervision: containment.Supervision{Mode: containment.SupervisionCgroup, Cgroup: "/sys/fs/cgroup/user.slice/hw.scope/hwc-abcdefghijkl-xyzabc", Cleanup: "complete"},
+		Env:         []string{"CLAUDE_CONFIG_DIR", "HOME", "PATH", "TMPDIR"},
+		Omitted:     []string{"/etc/pki"},
+		Fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 	}
 }
 

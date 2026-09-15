@@ -37,9 +37,11 @@ import (
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/turnproto"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // Config carries the fields oneshot needs to build a harness.TurnConfig, EXCEPT
@@ -75,6 +77,10 @@ type Config struct {
 	// are not detected (the turn stalls to the deadline) and codex's approval
 	// prompts are auto-approved (only the `-s` sandbox axis still binds).
 	PermissionMode string
+	// Containment requests Landlock containment for the harness (Linux; see
+	// wrapper.Config.Containment); nil runs the turn exactly as before. A
+	// refused request classifies as startup_error with the refusal as reason.
+	Containment *wrapper.Containment
 	// WorkingDir is the directory the turn runs in.
 	WorkingDir string
 	// Env is the harness process environment. The caller has already stripped
@@ -100,6 +106,11 @@ type Outcome struct {
 	// HarnessSessionID is the harness's own session id ("" when unrecoverable,
 	// e.g. a startup_error before any session opened).
 	HarnessSessionID string
+	// Containment is the applied containment policy of a contained turn that
+	// reached the harness, nil otherwise. A contained turn's private state is
+	// deleted with its launch, so HarnessSessionID cannot be used to read its
+	// transcript afterwards.
+	Containment *containment.Applied
 }
 
 // RunOneShot drives ONE headless turn and returns its typed status.
@@ -135,7 +146,8 @@ func RunOneShotDetailed(ctx context.Context, cfg Config) (Outcome, error) {
 	out := Outcome{
 		Status:           status,
 		Reason:           reason,
-		HarnessSessionID: res.Session.HarnessSessionID,
+		HarnessSessionID: res.Session.HarnessID(),
+		Containment:      res.Containment,
 	}
 	// Follow the STRUCTURED runner rule: reply text only on a completed turn.
 	if status == turnproto.StatusCompleted {
@@ -194,6 +206,7 @@ func turnConfig(cfg Config) harness.TurnConfig {
 		Effort:         cfg.Effort,
 		Model:          cfg.Model,
 		PermissionMode: cfg.PermissionMode,
+		Containment:    cfg.Containment,
 		WorkingDir:     cfg.WorkingDir,
 		Env:            cfg.Env,
 		Prompt:         cfg.Prompt,

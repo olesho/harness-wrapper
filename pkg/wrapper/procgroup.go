@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -39,6 +40,9 @@ const groupPollInterval = 20 * time.Millisecond
 // so a leader that exited on SIGTERM left a TERM-ignoring child running.
 type groupTerminator struct {
 	cmd *exec.Cmd
+	// proc is the harness of a contained session, which is not started
+	// through exec.Cmd; exactly one of cmd and proc is set.
+	proc *os.Process
 
 	mu       sync.Mutex
 	resolved bool
@@ -51,11 +55,20 @@ type groupTerminator struct {
 // sets Process before it can invoke Cancel, and every caller runs before the
 // supervisor reaps the leader, so this always sees an unreaped leader.
 func (g *groupTerminator) resolveLocked() {
-	if g.resolved || g.cmd.Process == nil {
+	p := g.process()
+	if g.resolved || p == nil {
 		return
 	}
 	g.resolved = true
-	g.pgid = resolveSessionGroup(g.cmd.Process.Pid)
+	g.pgid = resolveSessionGroup(p.Pid)
+}
+
+// process returns the harness's process handle, nil before it started.
+func (g *groupTerminator) process() *os.Process {
+	if g.cmd != nil {
+		return g.cmd.Process
+	}
+	return g.proc
 }
 
 // signal delivers sig to the harness's process group, or to the harness alone
@@ -75,8 +88,8 @@ func (g *groupTerminator) signal(sig syscall.Signal) error {
 		return nil // the group is gone; its ID may already name another group
 	case g.pgid > 0:
 		return ignoreProcessGone(killGroup(g.pgid, sig))
-	case !g.reaped && g.cmd.Process != nil:
-		return ignoreProcessGone(g.cmd.Process.Signal(sig))
+	case !g.reaped && g.process() != nil:
+		return ignoreProcessGone(g.process().Signal(sig))
 	}
 	return nil
 }

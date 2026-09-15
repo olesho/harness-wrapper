@@ -10,7 +10,10 @@
 // constants, so do not rename fields or change JSON tag spellings.
 package turnproto
 
-import "github.com/olesho/harness-wrapper/pkg/transcript"
+import (
+	"github.com/olesho/harness-wrapper/pkg/containment"
+	"github.com/olesho/harness-wrapper/pkg/transcript"
+)
 
 // Exit codes — the coarse orchestration signal. The JSON payload on stdout is
 // the source of truth; these mirror the orchestrator's headless reply() parser.
@@ -153,4 +156,13 @@ type StructuredTurnResult struct {
 	// CANONICAL RUNG and never emits a native spelling. Do not reuse one
 	// parser/type/zod schema for both.
 	PermissionMode string `json:"permission_mode,omitempty"`
+
+	// Containment is the normalized effective containment policy of a turn
+	// that ran contained: grants, TCP and IPC scopes, private state, the
+	// supervision mode with its cleanup outcome, and the policy fingerprint.
+	// ABSENT means no containment was applied — never "contained by default".
+	// A requested-but-refused containment never reaches the harness: it
+	// reports status startup_error with the refusal as reason, and no
+	// containment key.
+	Containment *containment.Applied `json:"containment,omitempty"`
 }

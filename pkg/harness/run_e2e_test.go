@@ -31,10 +31,16 @@ func TestMain(m *testing.M) {
 	}
 
 	mockBin = filepath.Join(tmp, "mock")
-	build := exec.Command("go", "build", "-o", mockBin, "github.com/olesho/harness-wrapper/test/fakeharness/mock")
-	if out, err := build.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "build mock: %v\n%s", err, out)
-		os.Exit(1)
+	if prebuilt := os.Getenv("HW_TEST_MOCK_HARNESS"); prebuilt != "" {
+		// A prebuilt mock for hosts without a Go toolchain, and for the
+		// Landlock CI guests, whose build cache is shared over 9p.
+		mockBin = prebuilt
+	} else {
+		build := exec.Command("go", "build", "-o", mockBin, "github.com/olesho/harness-wrapper/test/fakeharness/mock")
+		if out, err := build.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "build mock: %v\n%s", err, out)
+			os.Exit(1)
+		}
 	}
 	// run_turn_test.go drives the scriptable fake harness (built lazily via
 	// fakeharness.BuildOnce); clean its binary up alongside the mock. os.Exit

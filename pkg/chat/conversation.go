@@ -68,6 +68,18 @@ type Options struct {
 	// prompts are auto-approved (only the `-s` sandbox axis still binds).
 	PermissionMode string
 
+	// Containment requests Landlock containment for the harness (Linux; see
+	// wrapper.Config.Containment). nil — the default — opens an uncontained
+	// conversation exactly as before.
+	//
+	// A contained conversation is selected at creation and stays contained:
+	// its containment record — the normalized policy, profile and private
+	// state — is persisted to Store BEFORE the harness starts (the Store must
+	// implement ContainmentStore), the conversation needs cgroup supervision,
+	// and Reopen inherits the record. Resume it through Reopen; read its
+	// harness session id with Session.HarnessID.
+	Containment *wrapper.Containment
+
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
 
@@ -242,6 +254,12 @@ type ReopenOptions struct {
 	DisableCodexAutoDismiss bool
 	OnInputRequest          func(InputRequest) (InputAnswer, bool)
 
+	// Containment, for a contained session, may restate its policy: nil
+	// inherits the stored record, and an explicit request must normalize to
+	// the same policy. For an uncontained session a non-nil value is refused:
+	// containment is chosen when a conversation is created, never added later.
+	Containment *wrapper.Containment
+
 	// idleGap, markerGap mirror the unexported Options test knobs; only
 	// same-package tests set them. See Options.idleGap / Options.markerGap.
 	idleGap, markerGap time.Duration
@@ -260,7 +278,18 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rec.HarnessSessionID == "" {
+	// No in-place conversion: containment is chosen when a conversation is
+	// created. Refused before any prompt reaches a harness or any process
+	// starts; the stored record is not touched.
+	if rec.Containment == nil && opts.Containment != nil {
+		return nil, fmt.Errorf("%w: session %s is uncontained, and containment cannot be added to an existing conversation; open a new contained conversation", ErrInvalidOptions, opts.SessionID)
+	}
+	if rec.Containment != nil {
+		if err := validContainmentRecord(rec); err != nil {
+			return nil, err
+		}
+	}
+	if rec.HarnessID() == "" {
 		return nil, fmt.Errorf("chat: session %s has no harness session id: %w", opts.SessionID, ErrNoHarnessSession)
 	}
 
@@ -270,10 +299,11 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 		Args:                    opts.Args,
 		WorkingDir:              rec.WorkingDir,
 		Env:                     opts.Env,
-		Resume:                  rec.HarnessSessionID,
+		Resume:                  rec.HarnessID(),
 		Effort:                  opts.Effort,
 		Model:                   opts.Model,
 		PermissionMode:          opts.PermissionMode,
+		Containment:             opts.Containment,
 		Cols:                    opts.Cols,
 		Rows:                    opts.Rows,
 		Store:                   opts.Store,
@@ -315,7 +345,30 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	if err != nil {
 		return nil, err
 	}
-	configureAdapterEnv(adapter, opts.Env)
+
+	// A contained conversation — requested now, or recorded — is prepared
+	// before anything else: its record validated or created, and private
+	// state allocated. Its adapter reads the private layout, configured once
+	// the launch exists (below); never the caller's environment.
+	contained := opts.Containment != nil || session.Containment != nil
+	var cl *containedLaunch
+	if contained {
+		if cl, err = prepareContainment(ctx, opts, &session, persist); err != nil {
+			return nil, err
+		}
+		opts.Containment = session.Containment.Required.Clone()
+		// Until the launch is running, every failure gives back what
+		// prepareContainment took: state allocated for a new conversation is
+		// removed (and a record already persisted is marked so), state of a
+		// reopened one is left intact.
+		defer func() {
+			if !cl.launched {
+				cl.abandon(context.Background(), opts.Store, session)
+			}
+		}()
+	} else {
+		configureAdapterEnv(adapter, opts.Env)
+	}
 
 	// Resolve resume args up front so an unsupported harness fails before launch.
 	var resumeArgs []string
@@ -339,8 +392,9 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		// Seed the session's harness id with the resume id so History and
 		// session-id capture reflect the resumed session immediately. This composes
 		// with the existing first-write-wins guards (maybeExtractSessionID /
-		// captureRawSessionID both short-circuit on a non-empty id).
-		session.HarnessSessionID = opts.Resume
+		// captureRawSessionID both short-circuit on a non-empty id). A contained
+		// session keeps it in its record, never in the legacy field.
+		session = session.withHarnessID(opts.Resume)
 	}
 
 	scr := screen.New(opts.Cols, opts.Rows)
@@ -380,6 +434,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		Effort:         opts.Effort,
 		Model:          opts.Model,
 		PermissionMode: opts.PermissionMode,
+		Containment:    opts.Containment,
 	}
 	// When the adapter can recover the harness's own session id from a raw
 	// output line, tap the wrapper's durable, no-drop line stream to capture
@@ -392,7 +447,21 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		cfg.OnLine = c.captureRawSessionID
 	}
 
-	sess, err := wrapper.Start(ctx, cfg)
+	// A contained conversation's record is persisted BEFORE its first launch:
+	// failure to persist prevents the launch. (Uncontained conversations keep
+	// the old order, below.)
+	startCtx := ctx
+	if contained {
+		if persist {
+			sessionRec := session.clone()
+			if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
+				return nil, fmt.Errorf("chat: store CreateSession: %w", err)
+			}
+		}
+		startCtx = cl.ctx
+	}
+
+	sess, err := wrapper.Start(startCtx, cfg)
 	if err != nil {
 		// An invalid wrapper.Config reaching Start from here means a caller-supplied
 		// option (in practice Effort — see the reachability note in Options) failed
@@ -405,6 +474,12 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		return nil, fmt.Errorf("chat: wrapper start: %w", err)
 	}
 	c.sess = sess
+	if contained {
+		if err := c.recordLaunch(ctx, cl); err != nil {
+			_ = sess.Stop(context.Background())
+			return nil, err
+		}
+	}
 
 	releaseWriter, ok := sess.AcquireWriter()
 	if !ok {
@@ -428,7 +503,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	// skips this — the record already exists. Pass a copy taken under c.mu: the
 	// PTY read loop is already live, so the tap may write c.session (under c.mu)
 	// concurrently — the read must be synchronized and the store must not alias it.
-	if persist {
+	if persist && !contained {
 		c.mu.Lock()
 		sessionRec := c.session
 		c.mu.Unlock()
@@ -444,6 +519,10 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	go c.consumeWatcher()
 	go c.idleCompletionWatcher()
 
+	if contained {
+		cl.launched = true
+		cl.keepUntilEnd(sess)
+	}
 	return c, nil
 }
 
@@ -900,7 +979,7 @@ func (c *Conversation) maybeIdleComplete() {
 // adapters that implement neither capability.
 func (c *Conversation) maybeExtractSessionID() {
 	c.mu.Lock()
-	if c.session.HarnessSessionID != "" {
+	if c.session.HarnessID() != "" {
 		c.mu.Unlock()
 		return
 	}
@@ -912,8 +991,8 @@ func (c *Conversation) maybeExtractSessionID() {
 	}
 
 	c.mu.Lock()
-	c.session.HarnessSessionID = id
-	updated := c.session
+	c.session.setHarnessID(id)
+	updated := c.session.clone()
 	c.mu.Unlock()
 	_ = c.store.UpdateSession(context.Background(), &updated)
 }
@@ -944,7 +1023,7 @@ func (c *Conversation) extractSessionID() (string, bool) {
 // the ID is still unknown.
 func (c *Conversation) captureRawSessionID(line string) {
 	c.mu.Lock()
-	already := c.session.HarnessSessionID != ""
+	already := c.session.HarnessID() != ""
 	c.mu.Unlock()
 	if already {
 		return
@@ -960,12 +1039,12 @@ func (c *Conversation) captureRawSessionID(line string) {
 	}
 
 	c.mu.Lock()
-	if c.session.HarnessSessionID != "" {
+	if c.session.HarnessID() != "" {
 		c.mu.Unlock()
 		return
 	}
-	c.session.HarnessSessionID = id
-	updated := c.session
+	c.session.setHarnessID(id)
+	updated := c.session.clone()
 	c.mu.Unlock()
 	_ = c.store.UpdateSession(context.Background(), &updated)
 }
@@ -1093,12 +1172,12 @@ func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySo
 	c.mu.Unlock()
 
 	reader, hasReader := c.adapter.(turns.TranscriptReader)
-	if !hasReader || sessionCopy.HarnessSessionID == "" {
+	if !hasReader || sessionCopy.HarnessID() == "" {
 		out, err := c.store.ListTurns(ctx, sessionCopy.ID)
 		return out, HistorySourceStore, err
 	}
 
-	tturns, err := reader.ReadTranscript(sessionCopy.HarnessSessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionCopy.HarnessID(), c.opts.WorkingDir)
 	if err != nil {
 		return nil, HistorySourceTranscript, fmt.Errorf("chat: read transcript: %w", err)
 	}

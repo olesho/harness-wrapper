@@ -1,6 +1,7 @@
 DELETE /v1/conversations/{id}
 DELETE /v1/conversations/{id}/control/{token}
 GET /healthz
+GET /v1/capabilities
 GET /v1/conversations
 GET /v1/conversations/{id}/events
 GET /v1/conversations/{id}/history

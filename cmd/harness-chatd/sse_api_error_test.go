@@ -40,6 +40,13 @@ func runTests(m *testing.M) int {
 	// here for the other chatd tests (screen, sse_input).
 	defer fakeharness.Cleanup()
 
+	// A prebuilt mock serves hosts without a Go toolchain, and the Landlock
+	// CI guests, whose build cache is shared over 9p: concurrent go commands
+	// started by several test binaries have hung on it.
+	if prebuilt := os.Getenv("HW_TEST_MOCK_HARNESS"); prebuilt != "" {
+		mockHarnessBin = prebuilt
+		return m.Run()
+	}
 	mockHarnessBin = filepath.Join(tmp, "mock")
 	cmd := exec.Command("go", "build", "-o", mockHarnessBin,
 		"github.com/olesho/harness-wrapper/test/fakeharness/mock")

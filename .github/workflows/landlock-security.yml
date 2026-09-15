@@ -1,0 +1,334 @@
+# Required security job for harness-wrapper's optional Landlock containment.
+#
+# The hosted runner's own kernel (ubuntu-24.04: 6.17, Landlock ABI 7) is only
+# the VM host. Each kernel cell boots a pinned Ubuntu mainline kernel under
+# virtme-ng with KVM, on the runner's own userspace, and runs the probe and the
+# containment suites inside it as the unprivileged `runner` user. A cell fails,
+# never skips, when its kernel cannot do what the cell requires. The ordinary
+# `ci` workflow (veracity) is unchanged.
+name: landlock-security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 1" # weekly: runner-image and toolchain drift
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: landlock-security-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # virtme-ng pinned by hash; its runtime deps come from Ubuntu packages.
+  VIRTME_NG_REQUIREMENT: "virtme-ng==1.41 --hash=sha256:2031f0f2c67947829e030d66b28950adcef351a17a8455483b57d27b6246f2d2"
+  STRESS: "200x320"
+
+jobs:
+  kernel:
+    name: kernel / ${{ matrix.cell }} / go ${{ matrix.go }} / cgo=${{ matrix.cgo }}
+    # x86_64 only: GitHub's arm64 runners expose no /dev/kvm.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The ABI 9 floor, at the module's Go floor and at current stable, cgo on and off.
+          - { cell: abi9, kernel: "7.1.13", go: floor, cgo: "0", mode: require }
+          - { cell: abi9, kernel: "7.1.13", go: floor, cgo: "1", mode: require }
+          - { cell: abi9, kernel: "7.1.13", go: stable, cgo: "0", mode: require }
+          - { cell: abi9, kernel: "7.1.13", go: stable, cgo: "1", mode: require }
+          # Forward compatibility: newer ABI, same required behaviour.
+          - { cell: abi10-forward, kernel: "7.2.6", go: stable, cgo: "1", mode: require }
+          # Refusal cells: contained launches must be refused, never downgraded.
+          - { cell: abi8-below-min, kernel: "7.0.14", go: stable, cgo: "1", mode: expect-unavailable }
+          - cell: landlock-disabled
+            kernel: "7.1.13"
+            go: stable
+            cgo: "1"
+            mode: expect-unavailable
+            append: "lsm=lockdown,yama,integrity,apparmor"
+          - { cell: seccomp-blocked, kernel: "7.1.13", go: stable, cgo: "1", mode: expect-unavailable, wrap: seccomp }
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: matrix.go == 'floor'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: matrix.go == 'stable'
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          # trigger only queues the change: wait until udev has applied it.
+          sudo udevadm settle
+          if ! test -r /dev/kvm || ! test -w /dev/kvm; then
+            ls -l /dev/kvm || true
+            echo "::error::/dev/kvm is not usable on this runner"
+            exit 1
+          fi
+
+      - name: Install QEMU and the pinned virtme-ng
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            qemu-system-x86 virtiofsd udev busybox-static kmod zstd jq file \
+            python3-venv python3-requests python3-argcomplete
+          python3 -m venv --system-site-packages "$RUNNER_TEMP/vng"
+          printf '%s\n' "$VIRTME_NG_REQUIREMENT" > "$RUNNER_TEMP/vng-req.txt"
+          "$RUNNER_TEMP/vng/bin/pip" install --no-deps --require-hashes -r "$RUNNER_TEMP/vng-req.txt"
+          echo "$RUNNER_TEMP/vng/bin" >> "$GITHUB_PATH"
+
+      # Caches the .deb files only; fetch-kernel.sh re-verifies them every run.
+      - name: Restore kernel packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kernel-debs
+          key: kernel-debs-amd64-${{ matrix.kernel }}-${{ hashFiles('ci/landlock/kernels.json') }}
+
+      - name: Fetch and verify the pinned kernel
+        env:
+          KERNEL_DEB_CACHE: ${{ runner.temp }}/kernel-debs
+        run: ci/landlock/fetch-kernel.sh "${{ matrix.kernel }}" amd64 "$RUNNER_TEMP/kernel"
+
+      - name: Build the probe and the helper harnesses
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          mkdir -p out "$RUNNER_TEMP/helpers"
+          CGO_ENABLED=0 go build -o out/kernelprobe ./ci/landlock/kernelprobe
+          # The helper harnesses the suites start, prebuilt so that no test
+          # binary runs a go command in the guest (see guest.sh).
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/mock" ./test/fakeharness/mock
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/fakeharness" ./cmd/fakeharness
+          # A compile check before booting, which also fetches every module
+          # the guest's build reads from this module cache.
+          go mod download
+          go test -count=1 -run '^$' ./...
+          {
+            echo "runner_image=$ImageOS/$ImageVersion"
+            uname -a
+            lscpu | grep -E '^(Model name|CPU\(s\)):'
+            qemu-system-x86_64 --version | head -1
+            vng --version
+            go version
+            go env CGO_ENABLED GOMODCACHE
+          } | tee out/host-env.txt
+
+      - name: Boot the pinned kernel and run the suites
+        env:
+          CELL: ${{ matrix.cell }}
+          MODE: ${{ matrix.mode }}
+          APPEND: ${{ matrix.append }}
+          WRAP: ${{ matrix.wrap }}
+          CGO: ${{ matrix.cgo }}
+        run: |
+          kimg=$(ls "$RUNNER_TEMP"/kernel/boot/vmlinuz-*-generic)
+          kcfg=$(ls "$RUNNER_TEMP"/kernel/boot/config-*-generic)
+          cp "$kcfg" out/
+          # Only out/ is shared back to the host. The guest builds into its own
+          # tmpfs cache: go commands writing a cache over a 9p share have hung
+          # (see guest.sh).
+          args=(--run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out")
+          if [ -n "$APPEND" ]; then args+=(--append "$APPEND"); fi
+          set +e
+          vng "${args[@]}" -- env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" \
+            CGO_ENABLED="$CGO" KCONFIG="$kcfg" WRAP="$WRAP" STRESS="$STRESS" \
+            HW_TEST_MOCK_HARNESS="$RUNNER_TEMP/helpers/mock" HW_TEST_FAKEHARNESS="$RUNNER_TEMP/helpers/fakeharness" \
+            ci/landlock/guest.sh "$CELL" "$MODE" "$PWD/out"
+          rc=$?
+          set -e
+          echo "vng exit status: $rc; guest status: $(cat out/guest-status 2>/dev/null || echo missing)"
+          cat out/probe.txt || true
+          grep -q '^clocksource=kvm-clock$' out/guest-env.txt
+          test "$rc" = 0
+          test "$(cat out/guest-status)" = 0
+
+      - name: Summarize the suites
+        if: always()
+        run: |
+          if [ -f out/go-test.json ]; then
+            jq -r 'select(.Action=="fail" and .Test!=null) | "FAIL \(.Package) \(.Test)"' out/go-test.json | sort -u || true
+            jq -r 'select(.Action=="skip" and .Test!=null) | "SKIP \(.Package) \(.Test)"' out/go-test.json | sort -u | head -50 || true
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: landlock-${{ matrix.cell }}-go-${{ matrix.go }}-cgo${{ matrix.cgo }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
+
+  # Credential-free smoke runs of the pinned harness binaries under their
+  # built-in profiles, in the ABI 9 floor kernel: claude reaches its composer
+  # with all TCP denied and runs a bash-mode command; codex runs one tool call
+  # against an in-process fake model provider. Scheduled and manual only: they
+  # download the pinned binaries (claude by the profile's checksum), and they
+  # are not the authenticated conformance runs that activate a profile.
+  harness-smoke:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          # trigger only queues the change: wait until udev has applied it.
+          sudo udevadm settle
+          if ! test -r /dev/kvm || ! test -w /dev/kvm; then
+            ls -l /dev/kvm || true
+            echo "::error::/dev/kvm is not usable on this runner"
+            exit 1
+          fi
+
+      - name: Install QEMU and the pinned virtme-ng
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            qemu-system-x86 virtiofsd udev busybox-static kmod zstd jq file \
+            python3-venv python3-requests python3-argcomplete
+          python3 -m venv --system-site-packages "$RUNNER_TEMP/vng"
+          printf '%s\n' "$VIRTME_NG_REQUIREMENT" > "$RUNNER_TEMP/vng-req.txt"
+          "$RUNNER_TEMP/vng/bin/pip" install --no-deps --require-hashes -r "$RUNNER_TEMP/vng-req.txt"
+          echo "$RUNNER_TEMP/vng/bin" >> "$GITHUB_PATH"
+
+      - name: Restore kernel packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/kernel-debs
+          key: kernel-debs-amd64-7.1.13-${{ hashFiles('ci/landlock/kernels.json') }}
+
+      - name: Fetch and verify the pinned kernel
+        env:
+          KERNEL_DEB_CACHE: ${{ runner.temp }}/kernel-debs
+        run: ci/landlock/fetch-kernel.sh 7.1.13 amd64 "$RUNNER_TEMP/kernel"
+
+      - name: Fetch the pinned harnesses
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/harness"
+          p=internal/contain/profiles
+          ver=$(jq -r .harness_version "$p/claude-code.json")
+          sum=$(jq -r '.executable.platforms["linux-x64"].sha256' "$p/claude-code.json")
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/harness/claude" \
+            "https://downloads.claude.ai/claude-code-releases/$ver/linux-x64/claude"
+          echo "$sum  $RUNNER_TEMP/harness/claude" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/harness/claude"
+          npm install --global --no-audit --no-fund --prefix "$RUNNER_TEMP/harness/codex" \
+            "@openai/codex@$(jq -r .harness_version "$p/codex.json")"
+          node --version
+
+      - name: Build the probe and the helper harnesses
+        run: |
+          mkdir -p out "$RUNNER_TEMP/helpers"
+          CGO_ENABLED=0 go build -o out/kernelprobe ./ci/landlock/kernelprobe
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/mock" ./test/fakeharness/mock
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/fakeharness" ./cmd/fakeharness
+          go mod download
+          go test -count=1 -run '^$' ./pkg/wrapper/
+
+      - name: Boot the ABI 9 floor kernel and run the smoke tests
+        run: |
+          kimg=$(ls "$RUNNER_TEMP"/kernel/boot/vmlinuz-*-generic)
+          kcfg=$(ls "$RUNNER_TEMP"/kernel/boot/config-*-generic)
+          set +e
+          vng --run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out" -- \
+            env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" \
+            CGO_ENABLED=0 KCONFIG="$kcfg" \
+            HW_TEST_MOCK_HARNESS="$RUNNER_TEMP/helpers/mock" HW_TEST_FAKEHARNESS="$RUNNER_TEMP/helpers/fakeharness" \
+            HW_REAL_CLAUDE="$RUNNER_TEMP/harness/claude" HW_REAL_CODEX="$RUNNER_TEMP/harness/codex/bin/codex" \
+            ci/landlock/guest.sh abi9-smoke smoke "$PWD/out"
+          rc=$?
+          set -e
+          echo "vng exit status: $rc; guest status: $(cat out/guest-status 2>/dev/null || echo missing)"
+          jq -r 'select(.Test!=null and (.Action=="pass" or .Action=="fail" or .Action=="skip")) | "\(.Action) \(.Test)"' out/go-test.json || true
+          test "$rc" = 0
+          test "$(cat out/guest-status)" = 0
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: landlock-harness-smoke
+          path: out/
+          if-no-files-found: error
+          retention-days: 90
+
+  # The concurrent-spawn stress, native on both hosted architectures, because
+  # every failure the prototype saw was on arm64. These kernels lack ABI 9, so
+  # the private-table spawn runs without a domain here; the kernel cells run the
+  # same stress inside it. Any failure fails the job.
+  stress:
+    name: stress / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: "Concurrent-spawn stress (cgo on: C threads open descriptors too)"
+        env:
+          CGO_ENABLED: "1"
+          HW_CONTAIN_STRESS: ${{ env.STRESS }}
+        run: go test -count=1 -timeout 40m -v -run 'TestContainedSpawnStress|TestDescriptorContract|TestMainThreadHandOff' ./internal/contain/
+
+  # G9: nothing changes for callers that do not ask. Only compatible API
+  # changes against the previous release, the darwin build, and the previous
+  # release's binaries and readers against this one.
+  compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Previous release
+        id: prev
+        run: echo "tag=$(git describe --tags --abbrev=0 --exclude 'v0.7.8' HEAD^)" >> "$GITHUB_OUTPUT"
+      - name: Builds (linux and darwin, cgo on and off)
+        run: |
+          for os in linux darwin; do for cgo in 0 1; do
+            [ "$os/$cgo" = darwin/1 ] && continue
+            GOOS=$os CGO_ENABLED=$cgo go build ./... && GOOS=$os CGO_ENABLED=$cgo go vet ./...
+          done; done
+      - name: apidiff against the previous release
+        run: |
+          go install golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
+          git worktree add --detach "$RUNNER_TEMP/prev" "${{ steps.prev.outputs.tag }}"
+          for os in linux darwin; do
+            (cd "$RUNNER_TEMP/prev" && GOOS=$os apidiff -m -w "$RUNNER_TEMP/prev-$os.bin" .)
+            GOOS=$os apidiff -m -incompatible "$RUNNER_TEMP/prev-$os.bin" . | tee "$RUNNER_TEMP/incompatible-$os.txt"
+            if grep -q '^Incompatible changes' "$RUNNER_TEMP/incompatible-$os.txt"; then exit 1; fi
+          done
+      - name: Previous release's runner, readers and gateway
+        env:
+          HW_COMPAT_PREVIOUS: ${{ steps.prev.outputs.tag }}
+        run: go test -count=1 -v ./test/compat/

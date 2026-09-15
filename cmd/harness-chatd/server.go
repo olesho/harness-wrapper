@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/contain"
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
+	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
@@ -28,6 +31,11 @@ type convEntry struct {
 	fan            *fanout
 	harness        string
 	permissionMode string
+	// containment is the applied policy (nil when uncontained) and required
+	// the request it was opened with; both immutable after publish, like the
+	// fields above.
+	containment *containment.Applied
+	required    *containment.Request
 
 	mu     sync.Mutex
 	tokens map[string]func() // control token -> release()
@@ -97,6 +105,7 @@ type routeDef struct {
 func (s *Server) routes() []routeDef {
 	return []routeDef{
 		{"GET", "/healthz", s.healthz},
+		{"GET", "/v1/capabilities", s.capabilities},
 		{"POST", "/v1/turns", s.runTurn},
 		{"POST", "/v1/conversations", s.openConv},
 		{"GET", "/v1/conversations", s.listConvs},
@@ -113,6 +122,16 @@ func (s *Server) routes() []routeDef {
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// capabilities reports what this build can honour. Clients check it before
+// sending containment, because an older chatd would silently drop the field.
+func (s *Server) capabilities(w http.ResponseWriter, _ *http.Request) {
+	kinds := []string{}
+	if runtime.GOOS == "linux" {
+		kinds = append(kinds, wrapper.ContainmentLandlock)
+	}
+	writeJSON(w, http.StatusOK, capabilitiesResponse{Containment: containmentCapabilities{Kinds: kinds}})
 }
 
 func (s *Server) Routes() http.Handler {
@@ -171,6 +190,7 @@ func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
 		Effort:         req.Effort,
 		Model:          req.Model,
 		PermissionMode: req.PermissionMode,
+		Containment:    req.Containment,
 		Prompt:         req.Prompt,
 		ExitAfterTurn:  true,
 		Cols:           req.Cols,
@@ -189,6 +209,7 @@ func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
 		ProcessStoppedAfterTurn: res.ProcessStoppedAfterTurn,
 		WrapperStatus:           string(res.WrapperResult.Status),
 		WrapperReason:           res.WrapperResult.Reason,
+		Containment:             res.Containment,
 	}
 	for _, t := range res.History {
 		out.History = append(out.History, toTurnDTO(t))
@@ -208,7 +229,13 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 	// Use a background context: chat.Open hands this to wrapper.Start,
 	// which keeps it for the lifetime of the harness process. r.Context()
 	// would cancel as soon as this handler returns.
-	conv, err := chat.Open(context.Background(), chat.Options{
+	openCtx := context.Background()
+	if req.Containment != nil {
+		// chatd has no reopen route and keeps each record in a per-conversation
+		// memstore: every conversation is single-launch.
+		openCtx = contain.WithLaunchOptions(openCtx, contain.LaunchOptions{SingleLaunch: true})
+	}
+	conv, err := chat.Open(openCtx, chat.Options{
 		Harness:        req.Harness,
 		BinaryPath:     req.BinaryPath,
 		Args:           req.Args,
@@ -217,6 +244,7 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		Effort:         req.Effort,
 		Model:          req.Model,
 		PermissionMode: req.PermissionMode,
+		Containment:    req.Containment,
 		Cols:           req.Cols,
 		Rows:           req.Rows,
 		Store:          memstore.New(),
@@ -235,12 +263,14 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		fan:            newFanout(conv.Events()),
 		harness:        req.Harness,
 		permissionMode: req.PermissionMode,
+		containment:    conv.Containment(),
+		required:       req.Containment.Clone(),
 		tokens:         make(map[string]func()),
 	}
 	s.mu.Lock()
 	s.convs[entry.id] = entry
 	s.mu.Unlock()
-	writeJSON(w, http.StatusCreated, openResponse{ID: entry.id})
+	writeJSON(w, http.StatusCreated, openResponse{ID: entry.id, Containment: entry.containment})
 }
 
 func (s *Server) listConvs(w http.ResponseWriter, r *http.Request) {
@@ -252,6 +282,7 @@ func (s *Server) listConvs(w http.ResponseWriter, r *http.Request) {
 			Harness:        e.harness,
 			SessionID:      e.conv.SessionID(),
 			PermissionMode: e.permissionMode,
+			Containment:    e.containment,
 		})
 	}
 	s.mu.RUnlock()
@@ -315,6 +346,19 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	if !entry.hasToken(req.Token) {
 		writeError(w, http.StatusConflict, "no_control", "caller does not hold the control token")
 		return
+	}
+	// Containment on a turn is never a way in: refused on an uncontained
+	// conversation, and on a contained one it must restate the same policy.
+	// Checked before the text reaches the harness.
+	if req.Containment != nil {
+		switch {
+		case entry.required == nil:
+			writeError(w, http.StatusBadRequest, "invalid_config", "containment cannot be added to an uncontained conversation; open a new contained conversation")
+			return
+		case !containment.Equal(req.Containment, entry.required):
+			writeError(w, http.StatusBadRequest, "invalid_config", "containment differs from the policy this conversation was opened with; policy changes need a new conversation")
+			return
+		}
 	}
 	turnID, err := entry.conv.Send(r.Context(), req.Text)
 	if err != nil {

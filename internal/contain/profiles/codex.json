@@ -1,0 +1,40 @@
+{
+  "comment": "codex-cli 0.144.5's npm layout starts through a node shim (bin/codex.js) that runs the native binary from the platform package's vendor/<triple>/ directory, so the profile grants the exact @openai/codex package root (never the whole global npm prefix) and the node executable the shim's #!/usr/bin/env node resolves to. Codex's own bubblewrap sandbox cannot run inside a Landlock domain, so a contained codex runs only at the rung that bypasses it.",
+  "name": "codex",
+  "harnesses": ["codex"],
+  "manifest_version": 1,
+  "harness_version": "0.144.5",
+  "activated": false,
+  "activation": "pending the authenticated conformance runs of the landlock-security conformance job (plan step 3): tools, one stdio MCP server, resume under the private layout and a ChatGPT identity in a caller StateDir through a token refresh, at the bypass rung",
+  "executable": {
+    "kind": "npm-shim",
+    "package": "@openai/codex",
+    "platform_packages": {
+      "amd64": {"alias": "@openai/codex-linux-x64", "triple": "x86_64-unknown-linux-musl"},
+      "arm64": {"alias": "@openai/codex-linux-arm64", "triple": "aarch64-unknown-linux-musl"}
+    },
+    "interpreter": "node"
+  },
+  "paths": [
+    {"path": "/etc/codex", "access": "ro", "required": false, "reason": "managed-configuration layer, granted when present"}
+  ],
+  "state": {
+    "config_env": "CODEX_HOME",
+    "config_dir": "codex",
+    "config_under_home": false
+  },
+  "env": {},
+  "env_reasons": {},
+  "auth_env": ["CODEX_API_KEY"],
+  "control_env": [],
+  "max_tmpdir_bytes": 0,
+  "login": {
+    "args": ["login", "--device-auth"],
+    "status": ["login", "status"],
+    "url": "https://\\S*/codex/device\\S*",
+    "user_code": "\\b([A-Z0-9]{4,5}-[A-Z0-9]{4,6})\\b",
+    "success": "Successfully logged in",
+    "logged_in": "(?m)^\\s*Logged in using",
+    "reason": "codex login --device-auth prints a URL and a one-time code to enter there, then polls until the person has signed in: no localhost callback, which --contain-restrict-tcp would block. The login is stored in CODEX_HOME/auth.json; codex login status reports it."
+  }
+}

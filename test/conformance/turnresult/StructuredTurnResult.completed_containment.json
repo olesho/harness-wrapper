@@ -1,0 +1,79 @@
+{
+  "status": "completed",
+  "reply": "done",
+  "harnessSessionID": "sess-8",
+  "transcript_entries": [
+    {
+      "seq": 1,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "user",
+      "type": "text",
+      "text": "do the thing"
+    },
+    {
+      "seq": 2,
+      "timestamp": "2026-07-21T10:00:00Z",
+      "role": "assistant",
+      "type": "text",
+      "text": "done"
+    }
+  ],
+  "working_dir": "/work",
+  "permission_mode": "bypass",
+  "containment": {
+    "schema_version": 1,
+    "kind": "landlock",
+    "abi": 9,
+    "required_abi": 9,
+    "profile": "codex@0.144.5",
+    "profile_version": 1,
+    "handled_fs": [
+      "execute",
+      "write_file",
+      "read_file",
+      "read_dir"
+    ],
+    "grants": [
+      {
+        "path": "/work",
+        "access": "rw",
+        "rights": [
+          "execute",
+          "write_file",
+          "read_file",
+          "read_dir"
+        ],
+        "source": "working_dir"
+      }
+    ],
+    "tcp": {
+      "mode": "unrestricted",
+      "bind": "unrestricted"
+    },
+    "pathname_unix_sockets": "denied",
+    "scopes": [
+      "abstract_unix_socket",
+      "signal"
+    ],
+    "state": {
+      "mode": "private",
+      "id": "abcdefghijkl",
+      "home": "/s/home",
+      "tmp": "/s/tmp",
+      "harness_state": "/s/codex",
+      "harness_state_env": "CODEX_HOME"
+    },
+    "supervision": {
+      "mode": "none",
+      "reason": "not delegated",
+      "cleanup": "incomplete: no cgroup supervision; private state kept at /s"
+    },
+    "env": [
+      "CODEX_HOME",
+      "HOME",
+      "PATH",
+      "TMPDIR"
+    ],
+    "fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

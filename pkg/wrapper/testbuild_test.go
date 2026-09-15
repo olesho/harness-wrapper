@@ -17,6 +17,13 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	// A prebuilt mock harness serves hosts without a Go toolchain, and the
+	// Landlock CI guests, whose build cache is shared over 9p: concurrent go
+	// commands started by several test binaries have hung on it.
+	if prebuilt := os.Getenv("HW_TEST_MOCK_HARNESS"); prebuilt != "" {
+		mockHarnessBin = prebuilt
+		return m.Run()
+	}
 	tmpDir, err := os.MkdirTemp("", "wrapper-test-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)

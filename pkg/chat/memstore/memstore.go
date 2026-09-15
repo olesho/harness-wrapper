@@ -32,6 +32,20 @@ func New() *Store {
 	}
 }
 
+// StoresContainment declares that the store round-trips a contained
+// session's containment record intact (chat.ContainmentStore).
+func (s *Store) StoresContainment() {
+	// Marker: the store keeps every Session field, containment included.
+}
+
+// copySession returns sess with its containment record deep-copied, so the
+// store never aliases a record the caller still holds.
+func copySession(sess *chat.Session) chat.Session {
+	out := *sess
+	out.Containment = sess.Containment.Clone()
+	return out
+}
+
 // CreateSession inserts a new session. Returns an error if a session
 // with the same ID already exists.
 func (s *Store) CreateSession(_ context.Context, sess *chat.Session) error {
@@ -43,7 +57,7 @@ func (s *Store) CreateSession(_ context.Context, sess *chat.Session) error {
 	if _, exists := s.sessions[sess.ID]; exists {
 		return fmt.Errorf("memstore: session %s already exists", sess.ID)
 	}
-	s.sessions[sess.ID] = *sess
+	s.sessions[sess.ID] = copySession(sess)
 	return nil
 }
 
@@ -56,7 +70,8 @@ func (s *Store) GetSession(_ context.Context, id string) (*chat.Session, error) 
 	if !ok {
 		return nil, fmt.Errorf("memstore: session %s not found", id)
 	}
-	return &sess, nil
+	out := copySession(&sess)
+	return &out, nil
 }
 
 // UpdateSession replaces an existing session record.
@@ -69,7 +84,7 @@ func (s *Store) UpdateSession(_ context.Context, sess *chat.Session) error {
 	if _, exists := s.sessions[sess.ID]; !exists {
 		return fmt.Errorf("memstore: session %s not found", sess.ID)
 	}
-	s.sessions[sess.ID] = *sess
+	s.sessions[sess.ID] = copySession(sess)
 	return nil
 }
 
