@@ -965,7 +965,10 @@ func TestStateReuseRecoversPreviousLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a crashed wrapper: never Finish, drop the lock.
+	// Simulate a crashed wrapper: never Finish, drop the lock. A crash ends
+	// every thread at once; here the spawn thread may still be exiting, and
+	// its private descriptor table keeps the lock held until it has, so the
+	// next owner waits for that last reference.
 	st.unlock()
 	cg := l.Applied().Supervision.Cgroup
 	// The next owner recovers the recorded cgroup before reuse.
@@ -973,7 +976,13 @@ func TestStateReuseRecoversPreviousLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st2.Remove(t.Context()); err != nil {
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		err = st2.Remove(t.Context())
+		if !errors.Is(err, errStateInUse) || time.Now().After(deadline) {
+			break
+		}
+	}
+	if err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	st2.Close()
