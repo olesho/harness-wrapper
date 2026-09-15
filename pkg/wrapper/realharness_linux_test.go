@@ -411,7 +411,9 @@ func lastOutput(s string, n int) string {
 }
 
 // signedInPrompt's answer appears nowhere in the prompt, which codex echoes.
-const signedInPrompt = "Reply with the word contained in uppercase letters, and nothing else."
+// (Asked for "the word contained in uppercase letters", claude answered with
+// an uppercase word from its own instructions.)
+const signedInPrompt = `Write the word "contained" in capital letters. Output only that one word.`
 
 // signedInStateDir is the StateDir a person signed the harness in to with
 // contain-login, named by env; the test is skipped without it.
@@ -449,7 +451,7 @@ func TestRealClaudeSignedIn(t *testing.T) {
 	}
 	res := waitOrFail(t, s, 3*time.Minute)
 	text := screenText(out)
-	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 300))
+	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 1500))
 	if res.ExitCode != 0 || !strings.Contains(text, "CONTAINED") {
 		t.Fatalf("no reply from a contained claude signed in with the stored login")
 	}
@@ -485,7 +487,7 @@ func TestRealCodexSignedIn(t *testing.T) {
 	}
 	res := waitOrFail(t, s, 3*time.Minute)
 	text := screenText(out)
-	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 300))
+	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 1500))
 	if res.ExitCode != 0 || !strings.Contains(text, "CONTAINED") {
 		t.Fatalf("no reply from a contained codex signed in with the stored login")
 	}
