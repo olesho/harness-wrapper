@@ -6,6 +6,7 @@ usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
        harness-wrapper list
        harness-wrapper reap [--dry-run]
        harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>
+       harness-wrapper contain-login [--status] [--timeout DUR] --contain-state-dir DIR [--contain-* flags] <name>
 
 wrapper flags (must come BEFORE the harness name):
   --trace-file PATH       write trace events as NDJSON to PATH
@@ -40,7 +41,9 @@ wrapper flags (must come BEFORE the harness name):
                           --contain-allow-tcp PORT, --contain-min-abi N,
                           --contain-state-dir DIR, --contain-pass-env NAME.
                           contain-check previews the policy without starting
-                          anything. Unrelated to --sandbox-defaults.
+                          anything. contain-login runs the harness's own sign-in
+                          inside the boundary and keeps the login in
+                          --contain-state-dir DIR. Unrelated to --sandbox-defaults.
 
 Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a
 human is at the TUI (passthrough, or `run` from a terminal for codex). Under

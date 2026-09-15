@@ -129,6 +129,7 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 		State:              opts.State,
 		RequireSupervision: opts.RequireSupervision,
 		ExpectTargets:      opts.ExpectTargets,
+		Login:              opts.Login,
 	})
 	if err != nil {
 		return nil, containmentStartError(cfg, "prepare", err)

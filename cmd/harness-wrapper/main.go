@@ -52,6 +52,10 @@ func run(args []string) int {
 		case "contain-check":
 			// Preview a contained launch; starts nothing.
 			return runContainCheck(args[1:], os.Stdout, os.Stderr)
+		case "contain-login":
+			// Sign a harness in from inside the boundary, keeping the login
+			// in a caller state directory.
+			return runContainLogin(args[1:], os.Stdin, os.Stdout, os.Stderr)
 		}
 	}
 	return runHarnessWrapper(args)
@@ -285,6 +289,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "       harness-wrapper list")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper reap [--dry-run]")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>")
+	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-login [--status] [--timeout DUR] --contain-state-dir DIR [--contain-* flags] <name>")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "wrapper flags (must come BEFORE the harness name):")
 	_, _ = fmt.Fprintln(w, "  --trace-file PATH       write trace events as NDJSON to PATH")
@@ -319,7 +324,9 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          --contain-allow-tcp PORT, --contain-min-abi N,")
 	_, _ = fmt.Fprintln(w, "                          --contain-state-dir DIR, --contain-pass-env NAME.")
 	_, _ = fmt.Fprintln(w, "                          contain-check previews the policy without starting")
-	_, _ = fmt.Fprintln(w, "                          anything. Unrelated to --sandbox-defaults.")
+	_, _ = fmt.Fprintln(w, "                          anything. contain-login runs the harness's own sign-in")
+	_, _ = fmt.Fprintln(w, "                          inside the boundary and keeps the login in")
+	_, _ = fmt.Fprintln(w, "                          --contain-state-dir DIR. Unrelated to --sandbox-defaults.")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a")
 	_, _ = fmt.Fprintln(w, "human is at the TUI (passthrough, or `run` from a terminal for codex). Under")

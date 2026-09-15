@@ -13,12 +13,48 @@ behaves exactly as it did before the feature existed. And it is an *outer* layer
 codex's own Linux sandbox, which cannot run inside a Landlock domain, so a contained codex runs only at
 the rung that bypasses it (see [Harness profiles](#harness-profiles)).
 
+## Quickstart
+
+On a Linux host with Landlock ABI 9 (Linux 7.1 or later), with `claude` or `codex` on `PATH`:
+
+1. **Check the host.** `contain-check` prints the policy a launch would get and every reason it would
+   be refused, and starts nothing:
+
+   ```bash
+   harness-wrapper contain-check claude --
+   ```
+
+2. **Sign in once**, into a directory you keep for it:
+
+   ```bash
+   harness-wrapper contain-login --contain-state-dir ~/.local/state/hw-claude claude
+   ```
+
+   It prints a sign-in page. Open it in any browser, on any device, and paste the code the page shows
+   back at the prompt. For codex, it prints a page and a one-time code to enter there instead. See
+   [Signing in](#signing-in).
+
+3. **Start the harness contained**, as that login, in the current directory:
+
+   ```bash
+   harness-wrapper --contain landlock --contain-state-dir ~/.local/state/hw-claude \
+     --contain-restrict-tcp --contain-allow-tcp 443 claude --
+   ```
+
+   The harness can write the working directory. Your home directory, other checkouts, SSH agent and
+   D-Bus are out of its reach, and TCP reaches only port 443. A contained codex also needs
+   `--permission-mode bypass` (see [Harness profiles](#harness-profiles)).
+
+> **Both profiles are inactive for now**, so step 3 is refused at the `profile` stage until their
+> authenticated conformance runs pass. Steps 1 and 2 work today: a login does not need an activated
+> profile.
+
 ## Requesting it
 
 | Surface | How |
 |---|---|
-| CLI | `--contain landlock`, plus `--contain-rw PATH`, `--contain-ro PATH`, `--contain-restrict-tcp`, `--contain-allow-tcp PORT`, `--contain-min-abi N`, `--contain-state-dir DIR`, `--contain-pass-env NAME` — on passthrough, `run`, `structured-run` and tmux runs. `contain-check` previews the policy. See [CLI](cli.md#containment-flags). |
-| Go | `wrapper.Config.Containment`, `chat.Options.Containment` (and `ReopenOptions`), `harness.TurnConfig.Containment`, `oneshot.Config.Containment`, `pkg/env.StructuredTurnConfig.Containment`. |
+| CLI | `--contain landlock`, plus `--contain-rw PATH`, `--contain-ro PATH`, `--contain-restrict-tcp`, `--contain-allow-tcp PORT`, `--contain-min-abi N`, `--contain-state-dir DIR`, `--contain-pass-env NAME` — on passthrough, `run`, `structured-run` and tmux runs. `contain-check` previews the policy; `contain-login` signs a harness in. See [CLI](cli.md#containment-flags). |
+| Go | `wrapper.Config.Containment`, `chat.Options.Containment` (and `ReopenOptions`), `harness.TurnConfig.Containment`, `oneshot.Config.Containment`, `pkg/env.StructuredTurnConfig.Containment`; `wrapper.StartLogin` and `wrapper.LoginStatus` for [signing in](#signing-in). |
 | HTTP | a `containment` object on `POST /v1/conversations` and `POST /v1/turns`, after checking `GET /v1/capabilities`. See [Gateway](gateway.md#containment). |
 | Clients | `containment` on the TypeScript and Python `open()`; both check the capability route first. |
 
@@ -69,11 +105,11 @@ naming the stage:
 
 | Stage | Examples |
 |---|---|
-| `request` | unknown kind, relative path, ports without `restrict_tcp`, `min_abi` below 9, a reserved `pass_env` name |
-| `profile` | no profile for the harness; a profile not yet activated; codex below the bypass rung |
+| `request` | unknown kind, relative path, ports without `restrict_tcp`, `min_abi` below 9, a reserved `pass_env` name; a login launch of any command but the profile's login and status commands |
+| `profile` | no profile for the harness; a profile not yet activated; codex below the bypass rung; a claude login under `restrict_tcp` |
 | `executable` | an install layout or version the profile does not know |
 | `paths` | a missing grant; a read-only grant inside a writable one (it would not be read-only); a grant that exposes the managed-state directory; a writable grant that exposes cgroupfs; a resumed path that now resolves elsewhere |
-| `state` | private or caller state unusable; a claude TMPDIR too long for its socket path |
+| `state` | private or caller state unusable; a claude TMPDIR too long for its socket path; a login without a `state_dir` |
 | `kernel` | Landlock missing, disabled at boot, blocked by seccomp, or below the required ABI |
 | `supervision` | a stored conversation on a host that delegates no cgroup |
 
@@ -99,7 +135,8 @@ the only boundary.
 
 Each profile is **activated** only once its authenticated conformance runs pass (a real model turn
 with file edits, a subagent, one stdio MCP server, resume, managed settings and a login in a caller
-StateDir). Until then a contained launch of that harness is refused at the `profile` stage.
+StateDir). Until then a contained launch of that harness is refused at the `profile` stage, except
+its login (see [Signing in](#signing-in)).
 
 ## Private state
 
@@ -120,6 +157,70 @@ session that logs in that way runs from a `state_dir` that holds its own login, 
 
 Wrapper-side readers — session-id discovery, history, transcripts, usage — read the harness's files
 from the same private layout, never from your own `~/.claude` or `~/.codex`.
+
+## Signing in
+
+A contained session cannot use your own harness login: `~/.claude` and `~/.codex` are outside the
+domain, and a copy of their rotating OAuth credentials would break both copies at the next refresh.
+It authenticates in one of two ways:
+
+- **From the environment**: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` for claude,
+  `CODEX_API_KEY` for codex.
+- **With a login of its own**, kept in a `state_dir`. A person signs in once, and every session that
+  names the same directory runs as that login and refreshes it in place.
+
+`harness-wrapper contain-login` (or `wrapper.StartLogin`) creates that login. It runs the harness's
+**own** login command inside the same boundary a session gets, with the `state_dir` as its HOME and
+harness state:
+
+| Harness | Command | The person | TCP |
+|---|---|---|---|
+| claude | `claude auth login` | opens the printed page, signs in, and pastes the code the page shows back at the prompt | Must stay unrestricted. claude starts a localhost callback listener even when the code is pasted, so its login is refused under `restrict_tcp`. |
+| codex | `codex login --device-auth` | opens the printed page and enters the one-time code printed with it, valid for 15 minutes; the login then finishes by itself | `--contain-restrict-tcp --contain-allow-tcp 443` works. |
+
+Then it runs the harness's status command (`claude auth status --json`, `codex login status`) in the
+same directory, and reports a login only if that command finds one; `contain-login --status` runs just
+this check. Neither command receives the harness's credential variables, so the answer is about the
+directory alone.
+
+A login launch runs only those two commands, which the versioned profile pins, and nothing else. That
+is why it works before the profile is activated for sessions. The pinned commands and what the wrapper
+reads from their output are part of the profile, so a harness version bump re-verifies them.
+
+The directory holds live credentials (`home/.claude/.credentials.json` for claude, `codex/auth.json`
+for codex) in 0700 directories. Every session that names it shares them, deliberately. Do not copy it:
+give each independent login its own directory.
+
+From Go:
+
+```go
+l, err := wrapper.StartLogin(ctx, wrapper.LoginConfig{
+	Harness:    "codex",
+	BinaryPath: codexPath,
+	StateDir:   "/srv/hw/codex-login", // created 0700 when missing
+	Containment: &wrapper.Containment{
+		Kind: wrapper.ContainmentLandlock, RestrictTCP: true, ConnectTCP: []uint16{443},
+	},
+})
+if err != nil {
+	return err
+}
+p, err := l.Prompt(ctx) // p.URL, and p.UserCode for codex
+if err != nil {
+	return err
+}
+show(p) // to the person signing in
+// claude: p.WantsCode is true; pass on the code the page showed:
+//   err = l.SubmitCode(code)
+res, err := l.Wait() // res.LoggedIn comes from the harness's status command
+```
+
+Sessions then name the directory: `Containment: &wrapper.Containment{Kind: wrapper.ContainmentLandlock,
+StateDir: "/srv/hw/codex-login"}`. `wrapper.LoginStatus` reports whether a directory holds a login.
+
+A session in a working directory the state directory has not seen before may ask claude's or codex's
+folder-trust question once, as the harness does uncontained: the seeds that pre-answer it are written
+only into a new state directory.
 
 ## Supervision and cleanup
 

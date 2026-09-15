@@ -415,6 +415,31 @@ events: `containment_applied` (the applied policy, after a successful start), `c
 is `ErrLaunchDenied`, which wraps `ErrPTYAllocation`; a missing binary is `ErrBinaryNotFound`. See
 [Landlock containment](../guide/containment.md) for the policy model.
 
+### Login launches
+
+`StartLogin` (login.go) is a thin client of `Start`. It resolves the profile's `LoginFlow`
+(`contain.LoginFlowFor`: the pinned login and status arguments and the patterns that read their
+output), makes the `StateDir` absolute and creates it, and starts the login command with
+`contain.LaunchOptions{Login: true}` on the context. That option reaches `Prepare` as `Input.Login`, and
+it is not reachable from outside the module. In login mode `Prepare`:
+
+- admits an inactive profile;
+- refuses any arguments but the flow's two commands, a request without `StateDir`, managed state, and
+  a login whose profile says it binds TCP (`tcp_bind`) under `RestrictTCP`;
+- skips codex's rung check;
+- removes the profile's `auth_env` names from the caller's environment before seeding and before
+  building the child's, so `PassEnv` cannot bring them back.
+
+The session runs in the `StateDir` with a classifier that never fires (signing in can take minutes of
+quiet) and a 1024-column terminal. `loginOutput` is its `Stdout`. Each write rescans the whole
+kept output (at most 1 MiB) rendered by `terminalText`: escapes removed, OSC 8 targets kept as words,
+cursor-forward and column moves rendered as spaces. The URL and the one-time code are read only from
+complete lines, so a write that ends mid-line never yields a truncated value. `Prompt` returns once
+the URL, the code (when the flow has one) and the code prompt (when it has one) are all there.
+`SubmitCode` types the code, waits 150 ms and presses Enter. Once the success text appears,
+`endAfterSuccess` gives a lingering command one Enter after 3 s, then a `Stop`. `Wait` runs the status
+command, again in login mode, and matches `LoggedIn` against its output.
+
 Tests beyond the mock harness, all Linux-only:
 
 - `internal/contain` exercises the domain with the test binary as the child: every controlled
@@ -428,6 +453,13 @@ Tests beyond the mock harness, all Linux-only:
   command; codex runs one tool call against an in-process fake model provider. The scheduled
   `harness-smoke` job of the landlock-security workflow runs both in the ABI 9 floor kernel. They
   are not the authenticated conformance runs that activate a profile.
+- `TestRealClaudeLoginPrompt` and `TestRealCodexLoginPrompt` drive the real login commands, contained,
+  up to their prompts. They contact the vendors' sign-in services without an account, so they also
+  need `HW_REAL_LOGIN=1`. Claude's made-up code must store no login; codex's device code is read and
+  the login stopped.
+- `TestRealClaudeSignedIn` and `TestRealCodexSignedIn` run one prompt, with TCP restricted to 443, as
+  the login a person stored with `contain-login` in `HW_REAL_CLAUDE_STATE_DIR` or
+  `HW_REAL_CODEX_STATE_DIR`. They use that account's quota.
 
 ## PTY execution & attach
 

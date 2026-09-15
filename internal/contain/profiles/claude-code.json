@@ -36,5 +36,15 @@
   "auth_env": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
   "control_env": ["IS_SANDBOX"],
   "max_tmpdir_bytes": 79,
-  "max_tmpdir_reason": "claude binds $TMPDIR/cc-socks/<pid>.sock; a path over 103 bytes falls back to /tmp/cc-socks-<uid>, which every same-user session shares and the domain denies"
+  "max_tmpdir_reason": "claude binds $TMPDIR/cc-socks/<pid>.sock; a path over 103 bytes falls back to /tmp/cc-socks-<uid>, which every same-user session shares and the domain denies",
+  "login": {
+    "args": ["auth", "login"],
+    "status": ["auth", "status", "--json"],
+    "url": "https://\\S+/oauth/authorize\\?\\S+",
+    "code_prompt": "Paste code here if prompted",
+    "success": "Login successful",
+    "logged_in": "\"loggedIn\":\\s*true",
+    "tcp_bind": "a 127.0.0.1 OAuth callback server, which claude starts even when the person pastes the code; without it the login fails with \"Failed to start OAuth callback server\"",
+    "reason": "claude auth login prints a sign-in URL whose page shows a code once the person has signed in, and waits at \"Paste code here if prompted\" for it, so no browser is needed on this host. The login is stored in CLAUDE_CONFIG_DIR/.credentials.json; claude auth status --json reports loggedIn for exactly that directory."
+  }
 }

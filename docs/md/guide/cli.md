@@ -188,7 +188,23 @@ starting anything: the planned grants (placeholders for private directories not 
 kernel's Landlock ABI, whether cgroup supervision is available, optional paths absent on this host,
 and every requirement that would refuse the launch. It exits 0 when the launch would proceed and 1
 when it would be refused. `structured-run` reports the applied policy as the result's `containment`
-key; a refused request is a `startup_error`.
+key; a refused request is a `startup_error`. Both subcommands default `--contain` to `landlock`.
+
+`harness-wrapper contain-login --contain-state-dir DIR [--contain-* flags] <name>` signs the harness in
+from inside the boundary and keeps the login in `DIR`, for contained sessions that pass the same
+`--contain-state-dir` (see [Signing in](containment.md#signing-in)). It runs the harness's own login
+command, prints the sign-in page (and codex's one-time code), reads the code claude's page shows from
+standard input, then runs the harness's status command in `DIR`:
+
+| Flag | Meaning |
+|---|---|
+| `--status` | Only run the status command. |
+| `--timeout DUR` | Give up after `DUR` (default `15m`, the life of codex's one-time code). |
+| `--verbose`, `-v` | Also print the login command's output. |
+
+It takes no harness arguments; `--trace-file`/`--trace-stderr` work as elsewhere. It exits 0 when the
+status command reports a login in `DIR`, 1 when it does not or the login was refused, 2 on a usage
+error and 130 when interrupted.
 
 ### `--permission-mode` rungs
 

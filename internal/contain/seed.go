@@ -47,6 +47,8 @@ func claudeSeed(workingDir, apiKey string) ([]byte, error) {
 
 // codexConfig returns codex's seeded config.toml:
 //   - check_for_update_on_startup = false: no update check or menu;
+//   - cli_auth_credentials_store = "file": a login stays in CODEX_HOME/auth.json,
+//     where a caller StateDir keeps it; the OS keyring is outside the domain;
 //   - [features] plugins = false: avoids an 88 MB plugin fetch;
 //   - [features] unified_exec = false (0.144.5 replaces the PTY-backed
 //     exec_command with the pipe-only shell_command) and unified_exec_tty =
@@ -61,7 +63,8 @@ func codexConfig(workingDir string) ([]byte, error) {
 	}
 	var b strings.Builder
 	b.WriteString("# Seeded by harness-wrapper for a contained session.\n")
-	b.WriteString("check_for_update_on_startup = false\n\n")
+	b.WriteString("check_for_update_on_startup = false\n")
+	b.WriteString("cli_auth_credentials_store = \"file\"\n\n")
 	b.WriteString("[features]\nplugins = false\nunified_exec = false\nunified_exec_tty = false\n\n")
 	fmt.Fprintf(&b, "[projects.%s]\ntrust_level = \"trusted\"\n", quoted)
 	return []byte(b.String()), nil

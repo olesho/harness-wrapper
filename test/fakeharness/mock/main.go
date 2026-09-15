@@ -10,6 +10,9 @@
 //	needs-input   prints a prompt, reads a line from stdin, exits 0 if it matches --expected-input
 //	cost-limited  prints a quota-exhausted message, exits with --exit-code
 //	api-error     prints --api-error-msg (optionally --api-error-repeat times) then either heartbeats until signal or, if --api-error-recover, continues to completed-style progress and exits 0
+//	login         claude-style sign-in: a URL, then a code prompt; the right code stores a login in $MOCK_CONFIG_DIR
+//	login-device  codex-style device sign-in: a URL and a one-time code, then a login stored after a moment
+//	login-status  prints {"loggedIn": ...}: whether $MOCK_CONFIG_DIR holds a login or MOCK_AUTH_TOKEN is set
 //
 // This binary has no external dependencies on a particular consumer.
 // It's a standalone fake harness invoked as a subprocess by tests
@@ -22,13 +25,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
-	mode := flag.String("mode", "completed", "completed|failed|stuck|needs-input|trust|emit|cost-limited|api-error")
+	mode := flag.String("mode", "completed", "completed|failed|stuck|needs-input|trust|emit|cost-limited|api-error|login|login-device|login-status")
 	delay := flag.Duration("delay", 50*time.Millisecond, "delay between progress lines")
 	exitCode := flag.Int("exit-code", 1, "exit code for failed and cost-limited modes")
 	steps := flag.Int("steps", 3, "progress steps for completed mode")
@@ -78,6 +82,12 @@ func main() {
 		os.Exit(*exitCode)
 	case "api-error":
 		runAPIError(*apiErrorMsg, *apiErrorRepeat, *apiErrorRepeatGap, *apiErrorRecover, *apiErrorHeartbeat, *steps, *delay)
+	case "login":
+		runLogin()
+	case "login-device":
+		runLoginDevice()
+	case "login-status":
+		runLoginStatus()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown mode %q\n", *mode)
 		os.Exit(2)
@@ -184,6 +194,64 @@ func runEmit(path string) {
 		os.Exit(2)
 	}
 	_, _ = os.Stdout.Write(data)
+}
+
+// mockLoginCode is the code the login mode's sign-in page "shows".
+const mockLoginCode = "mock-code#mock-state"
+
+// mockLoginURL is the login mode's sign-in page.
+const mockLoginURL = "https://login.example.test/oauth/authorize?code=true&state=mock"
+
+// runLogin simulates claude's `auth login`: the sign-in URL as an OSC 8 link
+// and as text, written in two pieces, then a code prompt. The right code
+// stores a login and pauses for Enter; a wrong one is asked for again, up to
+// three tries.
+func runLogin() {
+	fmt.Print("Opening browser to sign in\r\nIf the browser didn't open, visit: \x1b]8;;" + mockLoginURL[:30])
+	time.Sleep(50 * time.Millisecond)
+	fmt.Print(mockLoginURL[30:] + "\x07\x1b[94m" + mockLoginURL + "\x1b[39m\x1b]8;;\x07\r\n")
+	reader := bufio.NewReader(os.Stdin)
+	for range 3 {
+		fmt.Print("Paste code here if prompted > ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			os.Exit(1)
+		}
+		if strings.TrimSpace(line) == mockLoginCode {
+			storeMockLogin()
+			fmt.Print("Login successful. Press Enter to continue\r\n")
+			_, _ = reader.ReadString('\n')
+			return
+		}
+		fmt.Print("Invalid code. Please make sure the full code was copied\r\n")
+	}
+	os.Exit(1)
+}
+
+// runLoginDevice simulates codex's `login --device-auth`: a URL and a
+// one-time code, then a login the "server" completes after a moment.
+func runLoginDevice() {
+	fmt.Print("Follow these steps to sign in with ChatGPT using device code authorization:\r\n\r\n" +
+		"1. Open this link in your browser and sign in to your account\r\n" +
+		"   \x1b[94mhttps://login.example.test/codex/device\x1b[0m\r\n\r\n" +
+		"2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\r\n" +
+		"   \x1b[94mMOCK-C0DE1\x1b[0m\r\n")
+	time.Sleep(300 * time.Millisecond)
+	storeMockLogin()
+	fmt.Print("Successfully logged in\r\n")
+}
+
+func runLoginStatus() {
+	_, err := os.Stat(filepath.Join(os.Getenv("MOCK_CONFIG_DIR"), ".credentials.json"))
+	fmt.Printf("{\"loggedIn\": %v}\n", err == nil || os.Getenv("MOCK_AUTH_TOKEN") != "")
+}
+
+func storeMockLogin() {
+	path := filepath.Join(os.Getenv("MOCK_CONFIG_DIR"), ".credentials.json")
+	if err := os.WriteFile(path, []byte(`{"mock": true}`+"\n"), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, "store login:", err)
+		os.Exit(1)
+	}
 }
 
 func installSignalCleanup() {

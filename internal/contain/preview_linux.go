@@ -48,7 +48,7 @@ func PreviewLaunch(in Input) (*Preview, error) {
 		return x, err
 	}
 
-	m, err := profileFor(in.Harness)
+	m, err := profileFor(in.Harness, false)
 	if err != nil {
 		missing("%v", err)
 		if m = inactiveProfile(in.Harness); m == nil {

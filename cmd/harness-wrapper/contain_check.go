@@ -38,13 +38,10 @@ func runContainCheck(args []string, stdout, stderr io.Writer) int {
 		}
 		rest = append(rest, a)
 	}
-	parsed, err := parseHarnessWrapperArgs(rest)
+	parsed, err := parseHarnessWrapperArgs(withContainKind(rest))
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 2
-	}
-	if parsed.Contain.Kind == "" {
-		parsed.Contain.Kind = wrapper.ContainmentLandlock
 	}
 	binPath, err := resolveHarness(parsed.HarnessName)
 	if err != nil {

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -77,11 +79,16 @@ func Prepare(in Input) (l *Launch, err error) {
 	if req == nil {
 		return nil, refuse(StageRequest, "no containment requested")
 	}
-	m, err := profileFor(in.Harness)
+	m, err := profileFor(in.Harness, in.Login)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkHarnessMode(m, in); err != nil {
+	if in.Login {
+		err = checkLogin(m, req, in)
+	} else {
+		err = checkHarnessMode(m, in)
+	}
+	if err != nil {
 		return nil, err
 	}
 	abi, err := landlock.Probe()
@@ -95,6 +102,14 @@ func Prepare(in Input) (l *Launch, err error) {
 	callerEnv := in.Env
 	if callerEnv == nil {
 		callerEnv = os.Environ()
+	}
+	if in.Login {
+		// Neither passed nor seeded: the status must report the login the
+		// StateDir holds, which an inherited credential would mask.
+		callerEnv = slices.DeleteFunc(slices.Clone(callerEnv), func(kv string) bool {
+			name, _, _ := strings.Cut(kv, "=")
+			return slices.Contains(m.AuthEnv, name)
+		})
 	}
 
 	l = &Launch{req: req, m: m}
@@ -282,6 +297,29 @@ func checkHarnessMode(m *manifest, in Input) error {
 		}
 		return refuse(StageProfile,
 			"a contained codex runs only at the bypass rung (--permission-mode bypass or danger-full-access, or --dangerously-bypass-approvals-and-sandbox): codex's own sandbox cannot run inside a Landlock domain, and %s would start codex and then fail every tool call", rung)
+	}
+	return nil
+}
+
+// checkLogin admits a login launch: the profile's own login or status command
+// and nothing else, into a caller StateDir. Private state would be deleted,
+// login and all, when the launch ends, and managed state belongs to a stored
+// conversation.
+func checkLogin(m *manifest, req *containment.Request, in Input) error {
+	if req.StateDir == "" {
+		return refuse(StageState, "a login needs a StateDir to keep the login in: private state is deleted when the launch ends")
+	}
+	if in.State != nil {
+		return refuse(StageState, "a login keeps its login in the request's StateDir, not in managed state")
+	}
+	if !slices.Equal(in.Args, m.Login.Args) && !slices.Equal(in.Args, m.Login.Status) {
+		return refuse(StageRequest, "a login launch runs only the %s profile's login command %q or its status command %q, not %q",
+			m.Name, m.Login.Args, m.Login.Status, in.Args)
+	}
+	if req.RestrictTCP && m.Login.TCPBind != "" && slices.Equal(in.Args, m.Login.Args) {
+		return refuse(StageProfile,
+			"the %s login (%s) binds a TCP listener (%s), which restricted TCP denies; sign in with TCP unrestricted, and restrict it for the sessions that use this StateDir",
+			m.Name, m.HarnessVersion, m.Login.TCPBind)
 	}
 	return nil
 }

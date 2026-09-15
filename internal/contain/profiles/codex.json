@@ -27,5 +27,14 @@
   "env_reasons": {},
   "auth_env": ["CODEX_API_KEY"],
   "control_env": [],
-  "max_tmpdir_bytes": 0
+  "max_tmpdir_bytes": 0,
+  "login": {
+    "args": ["login", "--device-auth"],
+    "status": ["login", "status"],
+    "url": "https://\\S*/codex/device\\S*",
+    "user_code": "\\b([A-Z0-9]{4,5}-[A-Z0-9]{4,6})\\b",
+    "success": "Successfully logged in",
+    "logged_in": "(?m)^\\s*Logged in using",
+    "reason": "codex login --device-auth prints a URL and a one-time code to enter there, then polls until the person has signed in: no localhost callback, which --contain-restrict-tcp would block. The login is stored in CODEX_HOME/auth.json; codex login status reports it."
+  }
 }

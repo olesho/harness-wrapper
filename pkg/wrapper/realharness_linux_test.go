@@ -5,6 +5,7 @@ package wrapper_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -262,4 +263,230 @@ func TestRealCodexContained(t *testing.T) {
 		t.Error("the tool's write outside every grant succeeded")
 	}
 	checkCleanup(t, s)
+}
+
+// realLoginSetup is realHarnessSetup for a login, which needs no activated
+// profile. A login contacts the harness vendor's sign-in service, so these
+// tests also need HW_REAL_LOGIN=1; they use no account.
+func realLoginSetup(t *testing.T, env string) string {
+	t.Helper()
+	bin := os.Getenv(env)
+	if bin == "" || os.Getenv("HW_REAL_LOGIN") != "1" {
+		t.Skipf("set %s and HW_REAL_LOGIN=1 to drive a real harness's sign-in up to its prompt", env)
+	}
+	if _, err := landlock.Probe(); err != nil {
+		t.Fatalf("Landlock ABI 9 unavailable: %v", err)
+	}
+	state, err := os.MkdirTemp("", "hw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(state) })
+	t.Setenv("XDG_STATE_HOME", state)
+	return bin
+}
+
+// waitLogin waits for a login's result, stopping the login command first if it
+// has not ended within d.
+func waitLogin(t *testing.T, l *wrapper.Login, d time.Duration) wrapper.LoginResult {
+	t.Helper()
+	type waited struct {
+		res wrapper.LoginResult
+		err error
+	}
+	ch := make(chan waited, 1)
+	go func() {
+		res, err := l.Wait()
+		ch <- waited{res, err}
+	}()
+	select {
+	case w := <-ch:
+		if w.err != nil {
+			t.Fatal(w.err)
+		}
+		return w.res
+	case <-time.After(d):
+	}
+	_ = l.Stop(context.Background())
+	select {
+	case w := <-ch:
+		if w.err != nil {
+			t.Fatal(w.err)
+		}
+		return w.res
+	case <-time.After(2 * time.Minute):
+		t.Fatal("the login did not end after Stop")
+	}
+	return wrapper.LoginResult{}
+}
+
+// TestRealClaudeLoginPrompt drives the pinned claude's `auth login` inside its
+// profile's domain up to the code prompt: the sign-in page is read from the
+// real output, a made-up code stores no login, and the status command reports
+// none in the StateDir. TCP stays unrestricted: the login binds a localhost
+// callback listener, which restricted TCP denies, so that login is refused.
+func TestRealClaudeLoginPrompt(t *testing.T) {
+	bin := realLoginSetup(t, "HW_REAL_CLAUDE")
+	stateDir := filepath.Join(t.TempDir(), "claude")
+	out := &lockedBuffer{}
+	l, err := wrapper.StartLogin(context.Background(), wrapper.LoginConfig{
+		Harness: "claude", BinaryPath: bin, StateDir: stateDir, Output: out,
+		Env: []string{"PATH=/usr/bin:/bin", "TERM=xterm-256color", "LANG=C.UTF-8"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	p, err := l.Prompt(ctx)
+	if err != nil {
+		_ = l.Stop(context.Background())
+		t.Fatalf("Prompt: %v\noutput: %s", err, screenText(out))
+	}
+	if !strings.HasPrefix(p.URL, "https://") || !strings.Contains(p.URL, "/oauth/authorize?") || !p.WantsCode {
+		t.Fatalf("prompt = %+v", p)
+	}
+	if err := l.SubmitCode("not-a-real-code#not-a-real-state"); err != nil {
+		t.Fatal(err)
+	}
+	res := waitLogin(t, l, 45*time.Second)
+	t.Logf("login %+v; output tail: %s", res.Result, lastOutput(res.Output, 200))
+	if res.LoggedIn {
+		t.Fatalf("a made-up code signed claude in: %s", res.Status)
+	}
+	if !regexp.MustCompile(`"loggedIn":\s*false`).MatchString(res.Status) {
+		t.Errorf("status: %s", res.Status)
+	}
+	if a := res.Containment; a == nil || a.State.Mode != "caller" || a.Profile != "claude-code@2.1.270" {
+		t.Errorf("login policy = %+v", a)
+	}
+
+	_, err = wrapper.StartLogin(context.Background(), wrapper.LoginConfig{
+		Harness: "claude", BinaryPath: bin, StateDir: stateDir,
+		Containment: &wrapper.Containment{Kind: wrapper.ContainmentLandlock, RestrictTCP: true, ConnectTCP: []uint16{443}},
+	})
+	if !errors.Is(err, wrapper.ErrContainmentRefused) || !strings.Contains(err.Error(), "TCP listener") {
+		t.Errorf("a claude login under restricted TCP: got %v, want a refusal", err)
+	}
+}
+
+// TestRealCodexLoginPrompt drives the pinned codex's `login --device-auth`
+// inside its profile's domain with TCP restricted to 443: the page and the
+// one-time code are read from the real output, and once the login is stopped
+// the status command reports no login in the StateDir.
+func TestRealCodexLoginPrompt(t *testing.T) {
+	bin := realLoginSetup(t, "HW_REAL_CODEX")
+	path := filepath.Dir(bin) + ":/usr/bin:/bin"
+	if node, err := exec.LookPath("node"); err == nil {
+		path = filepath.Dir(node) + ":" + path
+	}
+	out := &lockedBuffer{}
+	l, err := wrapper.StartLogin(context.Background(), wrapper.LoginConfig{
+		Harness: "codex", BinaryPath: bin, StateDir: filepath.Join(t.TempDir(), "codex"), Output: out,
+		Containment: &wrapper.Containment{Kind: wrapper.ContainmentLandlock, RestrictTCP: true, ConnectTCP: []uint16{443}},
+		Env:         []string{"PATH=" + path, "TERM=xterm-256color", "LANG=C.UTF-8"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	p, err := l.Prompt(ctx)
+	if err != nil {
+		_ = l.Stop(context.Background())
+		t.Fatalf("Prompt: %v\noutput: %s", err, screenText(out))
+	}
+	if p.URL != "https://auth.openai.com/codex/device" || !regexp.MustCompile(`^[A-Z0-9]{4,5}-[A-Z0-9]{4,6}$`).MatchString(p.UserCode) || p.WantsCode {
+		t.Fatalf("prompt = %+v", p)
+	}
+	res := waitLogin(t, l, time.Second)
+	if res.LoggedIn || !strings.Contains(res.Status, "Not logged in") {
+		t.Fatalf("status after a stopped login: %+v", res)
+	}
+}
+
+func lastOutput(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	return s[max(0, len(s)-n):]
+}
+
+// signedInPrompt's answer appears nowhere in the prompt, which codex echoes.
+const signedInPrompt = "Reply with the word contained in uppercase letters, and nothing else."
+
+// signedInStateDir is the StateDir a person signed the harness in to with
+// contain-login, named by env; the test is skipped without it.
+func signedInStateDir(t *testing.T, env string) string {
+	t.Helper()
+	dir := os.Getenv(env)
+	if dir == "" {
+		t.Skipf("set %s to a StateDir signed in with `harness-wrapper contain-login` to run one prompt as that login", env)
+	}
+	return dir
+}
+
+// TestRealClaudeSignedIn runs one prompt through the pinned claude, contained
+// with TCP restricted to 443, as the login a person stored in
+// HW_REAL_CLAUDE_STATE_DIR with contain-login: the reply proves that login
+// authenticates a contained session. It uses the account's quota.
+func TestRealClaudeSignedIn(t *testing.T) {
+	bin := realHarnessSetup(t, "HW_REAL_CLAUDE")
+	stateDir := signedInStateDir(t, "HW_REAL_CLAUDE_STATE_DIR")
+	out := &lockedBuffer{}
+	s, err := wrapper.Start(context.Background(), wrapper.Config{
+		Harness:    "claude",
+		BinaryPath: bin,
+		Args:       []string{"-p", signedInPrompt},
+		WorkingDir: t.TempDir(),
+		Stdout:     out,
+		WaitDelay:  time.Second,
+		Env:        []string{"PATH=/usr/bin:/bin", "TERM=xterm-256color", "LANG=C.UTF-8"},
+		Containment: &wrapper.Containment{
+			Kind: wrapper.ContainmentLandlock, RestrictTCP: true, ConnectTCP: []uint16{443}, StateDir: stateDir,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := waitOrFail(t, s, 3*time.Minute)
+	text := screenText(out)
+	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 300))
+	if res.ExitCode != 0 || !strings.Contains(text, "CONTAINED") {
+		t.Fatalf("no reply from a contained claude signed in with the stored login")
+	}
+}
+
+// TestRealCodexSignedIn is TestRealClaudeSignedIn for the pinned codex, at the
+// bypass rung its profile requires, as the login in HW_REAL_CODEX_STATE_DIR.
+func TestRealCodexSignedIn(t *testing.T) {
+	bin := realHarnessSetup(t, "HW_REAL_CODEX")
+	stateDir := signedInStateDir(t, "HW_REAL_CODEX_STATE_DIR")
+	path := filepath.Dir(bin) + ":/usr/bin:/bin"
+	if node, err := exec.LookPath("node"); err == nil {
+		path = filepath.Dir(node) + ":" + path
+	}
+	out := &lockedBuffer{}
+	s, err := wrapper.Start(context.Background(), wrapper.Config{
+		Harness:    "codex",
+		BinaryPath: bin,
+		Args: []string{
+			"exec", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check",
+			signedInPrompt,
+		},
+		WorkingDir: t.TempDir(),
+		Stdout:     out,
+		WaitDelay:  time.Second,
+		Env:        []string{"PATH=" + path, "TERM=xterm-256color", "LANG=C.UTF-8"},
+		Containment: &wrapper.Containment{
+			Kind: wrapper.ContainmentLandlock, RestrictTCP: true, ConnectTCP: []uint16{443}, StateDir: stateDir,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := waitOrFail(t, s, 3*time.Minute)
+	text := screenText(out)
+	t.Logf("result %s exit %d; output: %s", res.Status, res.ExitCode, lastOutput(text, 300))
+	if res.ExitCode != 0 || !strings.Contains(text, "CONTAINED") {
+		t.Fatalf("no reply from a contained codex signed in with the stored login")
+	}
 }

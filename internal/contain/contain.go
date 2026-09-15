@@ -37,6 +37,8 @@ type LaunchOptions struct {
 	// conversation was created (see Targets); a resumed launch whose paths
 	// now resolve elsewhere is refused.
 	ExpectTargets map[string]string
+	// Login marks a human-led sign-in; see Input.Login.
+	Login bool
 }
 
 type launchOptionsKey struct{}
@@ -141,6 +143,15 @@ type Input struct {
 	// directory, caller grants, StateDir) to the canonical target it must
 	// still resolve to.
 	ExpectTargets map[string]string
+
+	// Login runs the harness's own login or status command for a human-led
+	// sign-in (see LoginFlowFor), keeping the login in the request's
+	// StateDir, which it requires. Args must be exactly one of those
+	// commands; the profile need not be activated yet; codex's rung check
+	// does not apply, as neither command runs tools; and the harness's
+	// authentication variables are neither passed nor seeded, so the status
+	// reports the stored login alone.
+	Login bool
 }
 
 // Targets returns the requested-path → canonical-target map of an applied
@@ -177,7 +188,7 @@ func Targets(a *containment.Applied) map[string]string {
 // version. It refuses exactly as a launch would for an unknown harness or an
 // inactive profile.
 func ProfileID(harness string) (string, int, error) {
-	m, err := profileFor(harness)
+	m, err := profileFor(harness, false)
 	if err != nil {
 		return "", 0, err
 	}
