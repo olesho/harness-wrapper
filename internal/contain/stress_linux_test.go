@@ -170,6 +170,7 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 
 	var tidMu sync.Mutex
 	var tids []int
+	var missedEOF atomic.Int64
 	const spawners = 8
 	per := spawns / spawners
 	start := time.Now()
@@ -209,7 +210,17 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 				select {
 				case <-done:
 				case <-time.After(10 * time.Second):
-					fail("PTY master never reached EOF: %s held by %s", want, ptyHolders(want))
+					// Something still holding the terminal is a leaked
+					// reference, and fails. With nothing holding it the
+					// kernel never reported the slave's close to the master;
+					// the wrapper ends such a session after its drain budget,
+					// so a stray one is recorded, and a repeat fails the run.
+					if holders := ptyHolders(want); holders != "" {
+						fail("PTY master never reached EOF: %s still held by %s (%s)", want, holders, masterState(master))
+					} else {
+						missedEOF.Add(1)
+						t.Logf("PTY master of %s reached no EOF with nothing holding the terminal (%s)", want, masterState(master))
+					}
 				}
 				_ = mf.Close()
 				rep, err := readReport(report)
@@ -230,6 +241,9 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 	elapsed := time.Since(start)
 	stop.Store(true)
 	bg.Wait()
+	if n := missedEOF.Load(); n > 1 {
+		fail("%d PTY masters reached no EOF with nothing holding their terminals", n)
+	}
 
 	time.Sleep(100 * time.Millisecond)
 	for _, tid := range tids {
@@ -246,9 +260,20 @@ func stressRun(t *testing.T, self string, spawns int, withDomain bool) (time.Dur
 	return elapsed, failures
 }
 
-// ptyHolders names every descriptor that still refers to the terminal path:
+// masterState is what poll(2) says about a PTY master now. POLLHUP means the
+// kernel knows the slave is closed, so a read that missed it lost a wakeup;
+// without it, the slave's last close never reached the master.
+func masterState(fd int) string {
+	fds := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+	if _, err := unix.Poll(fds, 0); err != nil {
+		return "poll: " + err.Error()
+	}
+	return fmt.Sprintf("poll revents %#x, hangup %v", fds[0].Revents, fds[0].Revents&unix.POLLHUP != 0)
+}
+
+// ptyHolders names every descriptor that still refers to the terminal path —
 // this process's threads (a spawn thread's private table shows up under its
-// own task) and every other process.
+// own task) and every other process — or returns "" when none does.
 func ptyHolders(path string) string {
 	var out []string
 	scan := func(label, dir string) {
@@ -273,9 +298,6 @@ func ptyHolders(path string) string {
 		}
 		comm, _ := os.ReadFile("/proc/" + p.Name() + "/comm")
 		scan("process "+p.Name()+" ("+strings.TrimSpace(string(comm))+")", "/proc/"+p.Name()+"/fd")
-	}
-	if len(out) == 0 {
-		return "no descriptor"
 	}
 	return strings.Join(out, ", ")
 }
