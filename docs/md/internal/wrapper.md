@@ -397,7 +397,9 @@ takes the `exec.Cmd` + `pty.Start` path exactly as before and never reaches `int
    the session terminal gets its own device rule.
 3. The child is started from a locked thread with a private descriptor table and a thread-scoped
    domain ([ADR-004](decisions/adr-004-thread-scoped-landlock.md)); the master becomes an `*os.File`
-   through `os.NewFile` only afterwards.
+   through `os.NewFile` only afterwards. It stays a blocking descriptor, so its output is read in
+   `poll(2)` alongside an eventfd: after the drain budget the supervisor signals that eventfd, because
+   closing a blocking master would not end a read that a terminal holder keeps waiting.
 4. The session waits on an `os.Process` (pidfd), reproduces `exec.CommandContext`'s cancellation
    (SIGTERM to the group, then SIGKILL to the harness after `WaitDelay`), and ends through
    `finishContained`: under cgroup supervision SIGTERM to the group unless termination already sent it,

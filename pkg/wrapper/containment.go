@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"sync"
@@ -68,9 +69,34 @@ func validateContainment(cfg *Config) error {
 // containedState is the contained-session half of a Session.
 type containedState struct {
 	launch *contain.Launch
+	out    *masterReader
 
 	mu      sync.Mutex
 	applied *containment.Applied
+}
+
+// outputSource is what the output goroutine reads: the master itself, or for a
+// contained session the reader the supervisor can interrupt.
+func (s *Session) outputSource() io.Reader {
+	if s.contained != nil {
+		return s.contained.out
+	}
+	return s.ptmx
+}
+
+// stopOutput ends a contained session's output read, which closing its
+// blocking master would not; closing an uncontained master already does.
+func (s *Session) stopOutput() {
+	if s.contained != nil {
+		s.contained.out.stop()
+	}
+}
+
+// releaseOutput frees what stopOutput needed, once the output goroutine is done.
+func (s *Session) releaseOutput() {
+	if s.contained != nil {
+		s.contained.out.close()
+	}
 }
 
 // Containment returns the effective policy of a contained session — the
@@ -113,9 +139,17 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 		launch.Release()
 		return nil, containmentStartError(cfg, "pty", fmt.Errorf("%w: %v", ErrPTYAllocation, err))
 	}
+	wake, err := openWake()
+	if err != nil {
+		_ = syscall.Close(slaveFD)
+		_ = syscall.Close(masterFD)
+		launch.Release()
+		return nil, containmentStartError(cfg, "pty", fmt.Errorf("%w: %v", ErrPTYAllocation, err))
+	}
 	if err := launch.AddTerminal(slaveFD); err != nil {
 		_ = syscall.Close(slaveFD)
 		_ = syscall.Close(masterFD)
+		_ = syscall.Close(wake)
 		launch.Release()
 		return nil, containmentStartError(cfg, "terminal", err)
 	}
@@ -125,6 +159,7 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 	_ = syscall.Close(slaveFD)
 	if err != nil {
 		_ = syscall.Close(masterFD)
+		_ = syscall.Close(wake)
 		launch.Release()
 		return nil, containmentStartError(cfg, "start", err)
 	}
@@ -132,10 +167,16 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 	// blocking descriptor out of the netpoller.
 	ptmx := os.NewFile(uintptr(masterFD), "/dev/ptmx")
 
-	proc, err := os.FindProcess(pid) // pidfd_open, on an ordinary thread
+	out, err := newMasterReader(ptmx, wake)
+	var proc *os.Process
+	if err == nil {
+		proc, err = os.FindProcess(pid) // pidfd_open, on an ordinary thread
+	}
 	if err != nil {
-		// Cannot happen for an unreaped child; kill it through the cgroup.
+		// Cannot happen for a fresh file and an unreaped child; kill it
+		// through the cgroup.
 		_ = ptmx.Close()
+		_ = syscall.Close(wake)
 		launch.Finish(pid, false, time.Now())
 		return nil, containmentStartError(cfg, "start", fmt.Errorf("%w: open process handle: %v", ErrPTYAllocation, err))
 	}
@@ -150,7 +191,7 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 
 	s := newSession(cfg, ptmx, pid, startedAt, term)
 	s.proc = proc
-	s.contained = &containedState{launch: launch, applied: applied}
+	s.contained = &containedState{launch: launch, out: out, applied: applied}
 	go s.supervise(ctx)
 	return s, nil
 }

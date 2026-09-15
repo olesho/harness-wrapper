@@ -345,7 +345,7 @@ func (s *Session) supervise(ctx context.Context) {
 		defer close(outDone)
 		// newLineSplitter is nil when no durable line tap is configured, and all
 		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
-		copyPTYOutput(ptyOutputReader(s.ptmx), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		copyPTYOutput(ptyOutputReader(s.outputSource()), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
 	}()
 
 	stdinDone := s.startStdinCopy()
@@ -375,10 +375,14 @@ func (s *Session) supervise(ctx context.Context) {
 	// Everything the harness wrote before exiting is still in the PTY. Read it
 	// to the end before closing the master: on Linux a process can exit with
 	// its last output unread, and closing the master discards it — the exit
-	// classifier then misses the very line that explains a fast failure.
+	// classifier then misses the very line that explains a fast failure. A
+	// contained session's read is woken first: closing its blocking master
+	// would not end a read that nothing else ends.
 	drained := awaitOutputEnd(outDone, outputDrainBudget)
+	s.stopOutput()
 	_ = s.ptmx.Close()
 	<-outDone
+	s.releaseOutput()
 
 	s.cfg.Trace.Emit(trace.Event{
 		At:     time.Now(),
