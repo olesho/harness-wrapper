@@ -221,5 +221,22 @@ A rung is a launch argument. Whether it *binds* depends on who is watching the h
 The practical reading: on unattended paths only codex's sandbox axis is a real restriction. Do not
 treat `"permission_mode": "manual"` on a structured run as evidence that the turn was supervised — it
 is evidence of how the process was launched, nothing more. If you need real containment for an
-unattended run, put the run in a [contained workspace](../internal/env.md) rather than relying on the
-rung.
+unattended run, don't rely on the rung: run the harness under [Landlock containment](containment.md)
+on Linux, or put the run in a [contained workspace](../internal/env.md).
+
+## Landlock containment
+
+`--contain landlock` (and `Containment` on every Go, gateway and client surface) adds an optional,
+kernel-enforced boundary **outside** the rung: the harness and everything it starts can open only the
+profile's baseline, the working directory, private HOME and state, and the paths you grant; external
+pathname and abstract UNIX sockets and signals outside the domain are denied; TCP can be filtered. It
+works on unattended paths exactly as with a human at the TUI, because the kernel enforces it.
+
+It composes with the rungs and changes none of them — with one exception: codex's own Linux sandbox
+cannot run inside a Landlock domain, so a contained codex runs only at the bypass rung, and codex's
+`read-only` / `workspace-write` (the manual, ask and auto rungs) are refused rather than rewritten.
+`--sandbox-defaults` keeps its meaning too; it removes guardrails, containment adds one, and the two
+are unrelated. A request that cannot be enforced fails before the harness starts. The whole model —
+what it enforces, what it does not, profiles, private state, supervision and stored conversations — is
+in [Landlock containment](containment.md). The applied policy is reported beside `permission_mode`, as
+the structured result's `containment` key.

@@ -18,13 +18,14 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `GET` | `/healthz` | — | `{"ok": true}` |
-| `POST` | `/v1/turns` | `{harness, turn_harness?, binary_path, prompt, args?, working_dir?, env?, exit_after_turn?, cols?, rows?, input_policy?, timeout_seconds?, effort?, model?, permission_mode?}` | one-shot turn result |
-| `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?, input_policy?, effort?, model?, permission_mode?, disable_codex_auto_dismiss?, auto_skip_codex_update_notice?}` | `{id}` |
-| `GET` | `/v1/conversations` | — | `[{id, harness, session_id?, permission_mode?}]` |
+| `GET` | `/v1/capabilities` | — | `{containment: {kinds: [...]}}` |
+| `POST` | `/v1/turns` | `{harness, turn_harness?, binary_path, prompt, args?, working_dir?, env?, exit_after_turn?, cols?, rows?, input_policy?, timeout_seconds?, effort?, model?, permission_mode?, containment?}` | one-shot turn result (`containment?` echoed) |
+| `POST` | `/v1/conversations` | `{harness, binary_path, args?, working_dir?, env?, cols?, rows?, input_policy?, effort?, model?, permission_mode?, disable_codex_auto_dismiss?, auto_skip_codex_update_notice?, containment?}` | `{id, containment?}` |
+| `GET` | `/v1/conversations` | — | `[{id, harness, session_id?, permission_mode?, containment?}]` |
 | `DELETE` | `/v1/conversations/{id}` | — | `204` |
 | `POST` | `/v1/conversations/{id}/control` | — | `{token}` |
 | `DELETE` | `/v1/conversations/{id}/control/{token}` | — | `204` |
-| `POST` | `/v1/conversations/{id}/messages` | `{token, text}` | `{turn_id}` |
+| `POST` | `/v1/conversations/{id}/messages` | `{token, text, containment?}` | `{turn_id}` |
 | `POST` | `/v1/conversations/{id}/input` | `{token, request_id?, option_id?, text?}` | `204` |
 | `GET` | `/v1/conversations/{id}/events` | — | **SSE** stream |
 | `GET` | `/v1/conversations/{id}/history` | — | `{turns: [...]}` |
@@ -129,6 +130,30 @@ acceptance screen has its **own** kind, distinct from the folder-trust dialog's 
 policy that names only `trust_prompt` does **not** cover it (that is deliberate — it lets a caller
 trust a folder without also accepting a skip-all-permissions launch). chatd is precisely the containerized/remote entry point where this bites, so use
 one of the two levers explicitly.
+
+### Containment
+
+`containment` on `POST /v1/conversations` and `POST /v1/turns` is the **complete**
+[Landlock containment](containment.md) request — `{kind, read_only?, read_write?, restrict_tcp?,
+connect_tcp?, min_abi?, state_dir?, pass_env?}` — and omitting it launches uncontained, exactly as
+before. `restrict_tcp: true` with no `connect_tcp` denies all TCP; `connect_tcp` without
+`restrict_tcp` is a 400.
+
+**Check `GET /v1/capabilities` first.** chatd decodes request bodies without rejecting unknown fields,
+so a gateway built before containment would drop the object and start the harness uncontained. The
+route lists the kinds this build supports on its platform (`["landlock"]` on Linux, `[]` elsewhere);
+an older gateway answers 404. The shipped clients refuse to send containment unless the kind is
+listed. The open response, the listing and the turn response echo the **applied** policy (grants,
+TCP, scopes, state, supervision and fingerprint), so a client that skipped the check still sees
+whether containment applied: its absence means none was.
+
+A request that cannot be enforced is 400 `invalid_config` before the harness starts: not Linux, the
+kernel lacks Landlock ABI 9, an unknown harness or install layout, a codex rung other than bypass, a
+missing or overlapping path. Containment is fixed for a conversation's life: a `containment` on a
+message may restate the same policy, and anything else — including containment on an uncontained
+conversation — is 400 `invalid_config`, refused before the text reaches the harness. Conversations
+opened here are single-launch (chatd has no reopen), so cgroup supervision is reported rather than
+required; the applied policy's `supervision` says which.
 
 ### The event stream
 

@@ -153,6 +153,7 @@ Wrapper flags go *before* the harness name:
 | `--auto-accept` | `run` only: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human. |
 | `--sandbox-defaults` | `run` and `structured-run` only; **dangerous**. For `claude`, injects `--dangerously-skip-permissions` into the harness args and sets `IS_SANDBOX=1` in the harness env (parity with meta-harness; see the [wrapper spec note](../internal/wrapper.md#sandbox-defaults-injection)). No-op for every other harness. The default passthrough mode **rejects** it with an error — an interactive session should make that policy call in the harness itself. |
 | `--permission-mode RUNG` | Launch-time permission posture for `claude` / `codex`: `plan`, `manual`, `ask`, `auto`, `bypass` (per-harness native spellings also pass through). Accepted in **every** mode **including passthrough**, unlike `--sandbox-defaults` — see the composition rule below. `plan` is **rejected** for `codex` (no launch-time flag exists; use `/plan` after launch). Unsupported for `opencode` and `pi`. |
+| `--contain landlock` and `--contain-*` | Optional [Landlock containment](containment.md) (Linux); see [Containment flags](#containment-flags). |
 
 `--effort` / `--model` reach the same per-harness translation as the gateway's `effort` / `model`
 fields (via `wrapper.Start` / `wrapper.Run`), so behaviors 1, 3 and 4 of
@@ -164,6 +165,30 @@ the flag, and codex remaps `max` → `xhigh`. **Behavior 2 differs**: this CLI's
 names are `codex` and `claude`, not the gateway's `codex` and `claude-code`. (`run` maps `claude` →
 `claude-code` internally before `chat.Open` sees it, so the two never disagree about which harness
 runs — only about which name you type.)
+
+### Containment flags
+
+`--contain landlock` starts the harness inside a [Landlock domain](containment.md) (Linux, ABI 9+) in
+every mode — passthrough, `run`, `structured-run` and tmux (the pane re-exec forwards every
+`--contain*` flag). The other flags refine it and are rejected without it:
+
+| Flag | Meaning |
+|---|---|
+| `--contain landlock` | Turn containment on. Refused (exit status of an invalid config) when it cannot be enforced, never downgraded. |
+| `--contain-rw PATH` | Grant read-write access to an existing absolute path. Repeatable. |
+| `--contain-ro PATH` | Grant read-only access. Repeatable. A read-only path inside a writable one is refused. |
+| `--contain-restrict-tcp` | Deny TCP bind and every TCP connect except to the allowed ports; alone, it denies all TCP. |
+| `--contain-allow-tcp PORT` | Allow outbound TCP connects to `PORT`. Repeatable; invalid without `--contain-restrict-tcp`. |
+| `--contain-min-abi N` | Require at least Landlock ABI `N` (default and minimum 9). |
+| `--contain-state-dir DIR` | Keep HOME and harness state in `DIR` (persistent, shared) instead of private per-session state. |
+| `--contain-pass-env NAME` | Also pass the environment variable `NAME` to the harness. Repeatable; names only. |
+
+`harness-wrapper contain-check [--json] [wrapper flags] <name> -- [args]` previews the policy without
+starting anything: the planned grants (placeholders for private directories not yet allocated), the
+kernel's Landlock ABI, whether cgroup supervision is available, optional paths absent on this host,
+and every requirement that would refuse the launch. It exits 0 when the launch would proceed and 1
+when it would be refused. `structured-run` reports the applied policy as the result's `containment`
+key; a refused request is a `startup_error`.
 
 ### `--permission-mode` rungs
 

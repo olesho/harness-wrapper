@@ -50,14 +50,17 @@ conv.close()
 class Client:
     def __init__(self, base_url: str, timeout: float = 30.0) -> None: ...
     def open(self, *, harness, binary_path, args=None, working_dir="", env=None,
-             cols=0, rows=0, effort=None, model=None, permission_mode=None) -> Conversation: ...
+             cols=0, rows=0, effort=None, model=None, permission_mode=None,
+             containment: Containment | None = None) -> Conversation: ...
+    def capabilities(self) -> dict | None: ...  # GET /v1/capabilities; None on an older gateway
     def list(self) -> list[dict]: ...
 
 class Conversation:
+    containment: dict | None               # the applied policy echoed at open; None if uncontained
     def acquire(self) -> str: ...          # returns the control token
     def release(self) -> None: ...
     def control(self): ...                 # context manager around acquire/release
-    def send(self, text: str) -> str: ...  # returns turn_id
+    def send(self, text: str, *, containment=None) -> str: ...  # returns turn_id
     def history(self) -> list[Turn]: ...
     def events(self) -> Iterator[TurnEvent]: ...
     def close(self) -> None: ...           # swallows a 404 (already closed)
@@ -135,6 +138,17 @@ set.
 counterparts (Python) protect against typos in an editor. They do not stop an invalid combination —
 notably `permissionMode: "plan"` against codex, which is a 400 from the server
 ([why](gateway.md#permission-mode-semantics)).
+
+**Containment is sent only to a gateway that says it supports it.** `containment` (a `Containment`
+object with `kind`, `read_only`, `read_write`, `restrict_tcp`, `connect_tcp`, `min_abi`, `state_dir`,
+`pass_env`; `readOnly`, `readWrite`, `restrictTcp`… in TypeScript) makes `open()` first call
+`GET /v1/capabilities`. Against a gateway built before containment (404) or one that does not list the
+kind, `open()` throws `containment_unsupported` **without posting anything** — an older gateway would
+silently drop the field and start the harness uncontained. The open response must echo the applied
+policy; if it does not, the client closes the conversation and throws `containment_not_applied`.
+Serialization preserves exactly what you set: `restrictTcp: true` with an empty `connectTcp` is deny-all
+TCP, and `connectTcp` without `restrictTcp` is sent as written for the server to reject. See
+[Landlock containment](containment.md).
 
 ## Running both suites
 

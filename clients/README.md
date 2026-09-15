@@ -12,6 +12,10 @@ dropped on a harness that has no model flag, and `permission_mode` is validated 
 [`effort` and `model` semantics](../docs/md/guide/gateway.md#effort-and-model-semantics) and
 [`permission_mode` semantics](../docs/md/guide/gateway.md#permission-mode-semantics).
 
+Both clients also take an optional `containment` request ([Landlock containment](../docs/md/guide/containment.md),
+Linux). They send it only after `GET /v1/capabilities` lists the kind, and refuse — without posting —
+against a gateway built before containment, which would silently ignore the field.
+
 ## Run the sidecar
 
 ```sh

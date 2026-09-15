@@ -37,6 +37,8 @@ two transports (an HTTP gateway and a CLI) that import the chat layer:
 - **[Client libraries](guide/clients.md)** — the shipped Python and TypeScript clients.
 - **[Permissions & sandboxing](guide/permissions.md)** — the rung vocabulary, what it enforces, and
   what it does not.
+- **[Landlock containment](guide/containment.md)** — the optional kernel-enforced boundary around a
+  harness on Linux: what it restricts, what it does not, and how to request it.
 - **[Adapter Matrix](guide/adapters.md)** — exactly what each harness supports today.
 - **[Troubleshooting](guide/troubleshooting.md)** — when a harness stalls, hangs, or won't authenticate.
 

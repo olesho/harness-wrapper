@@ -125,6 +125,10 @@ Some contracts are HTTP/CLI *behavior*, represented by a fixture plus a row here
 | `option_ids` on a non-`multi_select` prompt | HTTP **400** | `gateway/errorResponse.not_multi_select.json` |
 | turn status `deadline` | exit **124** + `DeadlineLine` on stderr | `cli/emit_pairing.json` |
 | invalid `permission_mode` (or `effort`) | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
+| containment that cannot be enforced (platform, kernel, profile, paths), or changed on a message | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
+| containment requested | the open response and listing echo the applied policy; absent means none applied | `gateway/openResponse.containment.json`, `gateway/openResponse.containment_omitted.json`, `gateway/conversationSummary.containment.json` |
+| clients check support before sending containment | `GET /v1/capabilities` lists the kinds (`[]` off Linux) | `gateway/capabilitiesResponse.landlock.json`, `gateway/capabilitiesResponse.none.json` |
+| a turn ran contained | the structured result carries `containment`; a refused request is `startup_error` without it | `turnresult/StructuredTurnResult.completed_containment.json` |
 
 The HTTP status itself is asserted by chatd's own handler tests (HARNESS-WRAPPER-49),
 not by the corpus round-trip.
