@@ -86,14 +86,22 @@ smoke)
 	;;
 *)
 	# Every Landlock or supervision skip is a failure here, and the stress
-	# run goes inside the domain.
+	# run goes inside the domain. It saturates every CPU on purpose, so it
+	# runs on its own after the suites, whose timing-bound tests it would
+	# otherwise starve.
 	envs+=(HW_LANDLOCK_REQUIRE_ABI=9 HW_LANDLOCK_REQUIRE_SUPERVISION=1 HW_CONTAIN_STRESS="${STRESS:-200x320}")
+	run=(-skip '^TestContainedSpawnStress$')
 	;;
 esac
 as_runner "${wrap[@]}" env "${envs[@]}" \
 	go test -count=1 -timeout 45m -json "${run[@]}" "${pkgs[@]}" \
 	>"$out/go-test.json" 2>"$out/go-test.stderr"
 status=$?
+if [ "$mode" = require ]; then
+	as_runner "${wrap[@]}" env "${envs[@]}" \
+		go test -count=1 -timeout 45m -json -run '^TestContainedSpawnStress$' ./internal/contain/ \
+		>>"$out/go-test.json" 2>>"$out/go-test.stderr" || status=1
+fi
 # A smoke test that skipped or never ran is a failure, not a pass.
 if [ "$mode" = smoke ] && [ "$status" = 0 ]; then
 	for t in "${smoke[@]}"; do
