@@ -30,15 +30,18 @@ is never unlocked**:
    concurrent opens, and without touching the wrapper's table or flags;
    `prctl(PR_SET_NO_NEW_PRIVS)` and `landlock_restrict_self(fd, 0)` (no TSYNC) restrict this thread
    only; `syscall.ForkExec` with the slave as descriptors 0–2, `Setsid`, `Setctty` and `UseCgroupFD`
-   starts the child from it. The pid is reported, and the last act empties the private table.
-3. The goroutine returns while locked, so the runtime terminates the thread; it never creates new
-   threads from a locked one (`newm` uses the template thread).
+   starts the child from it. The pid is reported.
+3. The goroutine returns while locked, so the runtime terminates the thread, and the kernel releases
+   the private table with it. The runtime never creates new threads from a locked one (`newm` uses the
+   template thread).
 4. On an ordinary thread the wrapper opens a process handle (`os.FindProcess`, pidfd), wraps the master
    with `os.NewFile`, and supervises the session through the handle and the cgroup.
 
 The main thread is the exception: the runtime parks it forever instead of terminating it (`mexit`),
-so a spawn goroutine that lands on it (`gettid() == getpid()`) keeps it locked, hands the work to a
-fresh goroutine, and unlocks the untouched main thread afterwards.
+and a parked thread would keep its private table. A spawn goroutine that lands on it keeps it locked,
+hands the work to a fresh goroutine, and unlocks the untouched main thread afterwards. The main
+thread is recognized by the tid recorded during package initialization, which the runtime runs
+locked to it in every build mode, or as the thread-group leader.
 
 The Landlock syscalls are made through `golang.org/x/sys/unix`. go-landlock is not imported: its
 low-level syscall package imports libcap's cgo `psx` unless the final build sets `landlocktsync`,
@@ -63,8 +66,11 @@ What it does not:
 
 - For about a millisecond the private copy references every file the process had open, which delays a
   concurrent last close by that long.
-- Nothing may use a descriptor on the spawn thread after the table is emptied, the runtime's poller
-  descriptors included, so that step is last and allocates nothing.
+- The private table is never emptied before the thread exits. The runtime's own exit path (`mexit` →
+  `handoffp` → `wakeNetPoller` → `netpollBreak`) can write the netpoller's eventfd from the spawn
+  thread; with the table emptied, that write fails with EBADF and the runtime throws, killing the
+  process with the message lost, since descriptor 2 is gone on that thread too.
+  `TestSpawnThreadExitUnderTimerLoad` reproduces it within seconds.
 - `exec.Cmd.Start` and `os.StartProcess` must never run on the spawn thread: they request
   `CLONE_PIDFD`, the kernel installs the pidfd in the thread's private table, and `os.Process` would
   later use that number on other threads, where it names nothing or an unrelated wrapper file. Hence
@@ -72,9 +78,9 @@ What it does not:
   escalation).
 - `PR_SET_PDEATHSIG` must never be set: it fires when the forking *thread* exits, which this design
   does at once.
-- In c-archive and c-shared builds the runtime's main thread need not be the thread-group leader; the
-  emptied private table keeps a parked thread from holding a descriptor, and its domain constrains a
-  thread that runs no goroutine again.
+- A Go plugin initializes on the thread that opens it, so there the main thread is recognized only as
+  the thread-group leader. A spawn that still landed on a parked main thread would keep that thread's
+  private table, and the session's terminal with it, open.
 - Landlock itself leaves `stat`, `chmod`, `chown`, `flock`, `fcntl` and `access` unmediated, and the
   profile grants `/proc` read-only (see [containment](../../guide/containment.md)).
 

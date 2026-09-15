@@ -370,6 +370,20 @@ func TestMainThreadHandOff(t *testing.T) {
 	t.Logf("%s", strings.TrimSpace(string(out)))
 }
 
+// TestSpawnThreadExitUnderTimerLoad: a spawn thread leaves through the
+// runtime's exit path, which may write the netpoller's eventfd after the
+// spawn has reported. It runs in a subprocess because a failure kills the
+// whole process without a message.
+func TestSpawnThreadExitUnderTimerLoad(t *testing.T) {
+	self, _ := os.Executable()
+	cmd := exec.Command(self, "100000")
+	cmd.Env = append(os.Environ(), helperEnv+"=exitrace", "GOMAXPROCS=4", "GODEBUG=containermaxprocs=0")
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "exitrace ok") {
+		t.Fatalf("spawns under timer load: %v (a silent exit status 2 is a runtime throw on a spawn thread)\n%s", err, out)
+	}
+}
+
 // TestEnforcement runs a contained helper that tries each controlled
 // operation and reports the errno.
 func TestEnforcement(t *testing.T) {

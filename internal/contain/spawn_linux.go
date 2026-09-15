@@ -36,6 +36,15 @@ type spawnResult struct {
 	err       error
 }
 
+// mainThreadTID is the runtime's main thread: package initialization runs
+// locked to it in every build mode, including c-archive and c-shared, where
+// it need not be the thread-group leader.
+var mainThreadTID = unix.Gettid()
+
+// forkExec is forkExecContained. A test replaces it to run the spawn thread's
+// life many times without forking.
+var forkExec = forkExecContained
+
 // spawn starts the child from a dedicated, locked OS thread that is never
 // unlocked (ADR-004):
 //
@@ -49,23 +58,27 @@ type spawnResult struct {
 //     terminal on 0-2. exec.Cmd and os.StartProcess are never used here: they
 //     ask for CLONE_PIDFD, and the pidfd would land in this thread's private
 //     table, where other threads cannot use it;
-//  4. the pid is reported, and the last act empties the private table so a
-//     thread the runtime parks instead of terminating holds nothing.
+//  4. the pid is reported and the goroutine returns while locked, so the
+//     runtime terminates the thread and the kernel releases its private table
+//     with it. The table is not emptied first: the runtime's exit path can
+//     still write the netpoller's eventfd from this thread (mexit → handoffp →
+//     wakeNetPoller → netpollBreak), and an emptied table turns that write
+//     into a fatal error for the whole process.
 //
-// The goroutine returns while locked, so the runtime terminates the thread,
-// and it never creates new threads from a locked one. The main thread is the
-// exception — the runtime parks it forever instead — so a goroutine that lands
+// The runtime never creates new threads from a locked one. The main thread is
+// the exception to termination — the runtime parks it forever instead, and a
+// parked thread would keep its private table — so a goroutine that lands
 // there hands the work to a fresh goroutine, keeping the main thread locked
 // (so the retry cannot land on it too) and untouched, and unlocks it after.
 func spawn(s spawnSpec) spawnResult {
 	ch := make(chan spawnResult, 1)
 	go func() {
 		runtime.LockOSThread()
-		if unix.Gettid() == unix.Getpid() {
+		if tid := unix.Gettid(); tid == mainThreadTID || tid == unix.Getpid() {
 			inner := make(chan spawnResult, 1)
 			go func() {
 				runtime.LockOSThread() // never unlocked
-				spawnOnThisThread(s, inner, false)
+				spawnOnThisThread(s, inner)
 			}()
 			r := <-inner
 			runtime.UnlockOSThread() // the main thread was never changed
@@ -73,29 +86,23 @@ func spawn(s spawnSpec) spawnResult {
 			ch <- r
 			return
 		}
-		spawnOnThisThread(s, ch, false)
+		spawnOnThisThread(s, ch)
 		// Returning while locked: the runtime terminates this thread.
 	}()
 	return <-ch
 }
 
-// spawnOnThisThread runs steps 1-4 on the calling, locked thread and reports
-// on ch. keepTable skips step 4 for a test that inspects the table.
-func spawnOnThisThread(s spawnSpec, ch chan<- spawnResult, keepTable bool) {
+// spawnOnThisThread runs steps 1-3 on the calling, locked thread and reports
+// on ch; its caller returns while locked (step 4).
+func spawnOnThisThread(s spawnSpec, ch chan<- spawnResult) {
 	res := spawnResult{tid: unix.Gettid()}
 	if err := unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_UNSHARE|unix.CLOSE_RANGE_CLOEXEC); err != nil {
 		res.stage, res.err = "close_range", err
-		ch <- res // the table was not unshared: nothing to empty
+		ch <- res
 		return
 	}
-	res.pid, res.stage, res.err = forkExecContained(s)
+	res.pid, res.stage, res.err = forkExec(s)
 	ch <- res
-	if !keepTable {
-		// The last act: nothing on this thread uses a descriptor — the
-		// runtime's poller descriptors included — after this, and it
-		// allocates nothing.
-		_ = unix.CloseRange(0, ^uint(0), 0)
-	}
 }
 
 // forkExecContained enforces the domain on the calling thread and forks the

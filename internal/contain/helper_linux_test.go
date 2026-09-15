@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -66,6 +67,8 @@ func runHelper(mode string, args []string) int {
 		}
 	case "m0":
 		return helperM0(args)
+	case "exitrace":
+		return helperExitRace(args)
 	}
 	fmt.Fprintln(os.Stderr, "unknown helper mode", mode)
 	return 2
@@ -353,6 +356,48 @@ func helperM0(args []string) int {
 	if !handedOff {
 		return 1
 	}
+	return 0
+}
+
+// helperExitRace runs the spawn thread's life (lock, unshare, fork, report,
+// return while locked) many times with the fork stubbed out, while short
+// timers keep every P busy and an idle thread waits in the netpoller. The
+// thread's exit then often hands off a P with a timer due before the poller's
+// deadline, and the runtime wakes the poller by writing its eventfd from that
+// thread (mexit → handoffp → wakeNetPoller → netpollBreak). The write needs
+// the thread's descriptor table intact: were it emptied, the runtime throws
+// and the process dies with the message lost (fd 2 is gone on that thread),
+// so the parent sees no "exitrace ok".
+//
+//	exitrace <iterations>
+func helperExitRace(args []string) int {
+	n, _ := strconv.Atoi(args[0])
+	forkExec = func(spawnSpec) (int, string, error) { return 1, "", nil }
+	var stop atomic.Bool
+	for i := 0; i < 32; i++ {
+		d := time.Duration(i%50+1) * time.Microsecond
+		go func() {
+			for !stop.Load() {
+				time.Sleep(d)
+			}
+		}()
+	}
+	// A descriptor in the netpoller, so idle threads block in epoll_wait.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		fmt.Println("exitrace:", err)
+		return 1
+	}
+	defer func() { _ = pr.Close(); _ = pw.Close() }()
+	go func() { _, _ = pr.Read(make([]byte, 1)) }()
+	for i := 0; i < n; i++ {
+		if r := spawn(spawnSpec{tty: -1, cgroupFD: -1}); r.err != nil {
+			fmt.Println("exitrace: spawn:", r.stage, r.err)
+			return 1
+		}
+	}
+	stop.Store(true)
+	fmt.Println("exitrace ok")
 	return 0
 }
 
