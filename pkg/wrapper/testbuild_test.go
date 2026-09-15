@@ -17,8 +17,9 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
-	// A prebuilt mock harness lets the suite run on a host without a Go
-	// toolchain, such as the Landlock CI guests and the kernel test VMs.
+	// A prebuilt mock harness serves hosts without a Go toolchain, and the
+	// Landlock CI guests, whose build cache is shared over 9p: concurrent go
+	// commands started by several test binaries have hung on it.
 	if prebuilt := os.Getenv("HW_TEST_MOCK_HARNESS"); prebuilt != "" {
 		mockHarnessBin = prebuilt
 		return m.Run()

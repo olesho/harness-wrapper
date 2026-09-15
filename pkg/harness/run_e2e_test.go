@@ -32,7 +32,8 @@ func TestMain(m *testing.M) {
 
 	mockBin = filepath.Join(tmp, "mock")
 	if prebuilt := os.Getenv("HW_TEST_MOCK_HARNESS"); prebuilt != "" {
-		// A prebuilt mock for hosts without a Go toolchain (kernel test VMs).
+		// A prebuilt mock for hosts without a Go toolchain, and for the
+		// Landlock CI guests, whose build cache is shared over 9p.
 		mockBin = prebuilt
 	} else {
 		build := exec.Command("go", "build", "-o", mockBin, "github.com/olesho/harness-wrapper/test/fakeharness/mock")

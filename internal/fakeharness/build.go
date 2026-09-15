@@ -24,8 +24,9 @@ var (
 // be available; callers typically t.Skip on error.
 func BuildOnce() (string, error) {
 	buildOnce.Do(func() {
-		// A prebuilt binary lets the suites run where there is no Go
-		// toolchain, such as kernel test VMs.
+		// A prebuilt binary serves hosts without a Go toolchain, and the
+		// Landlock CI guests, whose build cache is shared over 9p: concurrent
+		// go commands started by several test binaries have hung on it.
 		if prebuilt := os.Getenv("HW_TEST_FAKEHARNESS"); prebuilt != "" {
 			builtPath = prebuilt
 			return

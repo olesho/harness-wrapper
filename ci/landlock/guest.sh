@@ -17,7 +17,8 @@
 #
 # Environment from the host: KCONFIG (kernel config path), CGO_ENABLED,
 # WRAP=seccomp for the seccomp refusal cell, STRESS (<runs>x<spawns>),
-# HW_REAL_CLAUDE/HW_REAL_CODEX in smoke mode, PATH/GOCACHE/GOMODCACHE.
+# HW_TEST_MOCK_HARNESS/HW_TEST_FAKEHARNESS (prebuilt helper harnesses),
+# HW_REAL_CLAUDE/HW_REAL_CODEX in smoke mode, PATH/GOMODCACHE.
 set -uo pipefail
 cell=$1 mode=$2 out=$3
 status=1
@@ -53,7 +54,19 @@ as_runner "${wrap[@]}" "$out/kernelprobe" "${probe[@]}" >"$out/probe.txt" 2>&1 |
 
 # 2. The suites, unprivileged, against the host toolchain and module cache.
 pkgs=(./internal/landlock/... ./internal/contain/... ./pkg/wrapper/... ./pkg/chat/... ./pkg/harness/... ./cmd/harness-chatd/...)
-envs=(GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local HW_LANDLOCK_CELL="$cell")
+# The build cache lives on the guest's tmpfs, never on a share of the host's:
+# go commands writing a cache over virtme-ng's 9p mounts have hung for the
+# whole job, before a single test ran.
+envs=(GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local GOCACHE=/mnt/gocache HW_LANDLOCK_CELL="$cell")
+# The helper harnesses come prebuilt from the host, so no test binary runs a
+# go command of its own.
+for v in HW_TEST_MOCK_HARNESS HW_TEST_FAKEHARNESS; do
+	if [ ! -x "${!v:-}" ]; then
+		echo "guest.sh: $v must name a prebuilt binary" >"$out/go-test.stderr"
+		exit 1
+	fi
+	envs+=("$v=${!v}")
+done
 run=()
 smoke=(TestRealClaudeContained TestRealCodexContained)
 case $mode in

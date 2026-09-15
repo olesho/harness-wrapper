@@ -71,7 +71,13 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm && test -w /dev/kvm
+          # trigger only queues the change: wait until udev has applied it.
+          sudo udevadm settle
+          if ! test -r /dev/kvm || ! test -w /dev/kvm; then
+            ls -l /dev/kvm || true
+            echo "::error::/dev/kvm is not usable on this runner"
+            exit 1
+          fi
 
       - name: Install QEMU and the pinned virtme-ng
         run: |
@@ -96,12 +102,18 @@ jobs:
           KERNEL_DEB_CACHE: ${{ runner.temp }}/kernel-debs
         run: ci/landlock/fetch-kernel.sh "${{ matrix.kernel }}" amd64 "$RUNNER_TEMP/kernel"
 
-      - name: Build the probe and warm the build cache
+      - name: Build the probe and the helper harnesses
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          mkdir -p out
+          mkdir -p out "$RUNNER_TEMP/helpers"
           CGO_ENABLED=0 go build -o out/kernelprobe ./ci/landlock/kernelprobe
+          # The helper harnesses the suites start, prebuilt so that no test
+          # binary runs a go command in the guest (see guest.sh).
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/mock" ./test/fakeharness/mock
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/fakeharness" ./cmd/fakeharness
+          # A compile check before booting, which also fetches every module
+          # the guest's build reads from this module cache.
           go mod download
           go test -count=1 -run '^$' ./...
           {
@@ -111,7 +123,7 @@ jobs:
             qemu-system-x86_64 --version | head -1
             vng --version
             go version
-            go env CGO_ENABLED GOCACHE GOMODCACHE
+            go env CGO_ENABLED GOMODCACHE
           } | tee out/host-env.txt
 
       - name: Boot the pinned kernel and run the suites
@@ -125,13 +137,15 @@ jobs:
           kimg=$(ls "$RUNNER_TEMP"/kernel/boot/vmlinuz-*-generic)
           kcfg=$(ls "$RUNNER_TEMP"/kernel/boot/config-*-generic)
           cp "$kcfg" out/
-          # The guest sees the host root read-only; the build cache must stay
-          # writable for the suites to build their fake harnesses.
-          args=(--run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out" --rwdir "$(go env GOCACHE)")
+          # Only out/ is shared back to the host. The guest builds into its own
+          # tmpfs cache: go commands writing a cache over a 9p share have hung
+          # (see guest.sh).
+          args=(--run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out")
           if [ -n "$APPEND" ]; then args+=(--append "$APPEND"); fi
           set +e
-          vng "${args[@]}" -- env PATH="$PATH" GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)" \
+          vng "${args[@]}" -- env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" \
             CGO_ENABLED="$CGO" KCONFIG="$kcfg" WRAP="$WRAP" STRESS="$STRESS" \
+            HW_TEST_MOCK_HARNESS="$RUNNER_TEMP/helpers/mock" HW_TEST_FAKEHARNESS="$RUNNER_TEMP/helpers/fakeharness" \
             ci/landlock/guest.sh "$CELL" "$MODE" "$PWD/out"
           rc=$?
           set -e
@@ -179,7 +193,13 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm && test -w /dev/kvm
+          # trigger only queues the change: wait until udev has applied it.
+          sudo udevadm settle
+          if ! test -r /dev/kvm || ! test -w /dev/kvm; then
+            ls -l /dev/kvm || true
+            echo "::error::/dev/kvm is not usable on this runner"
+            exit 1
+          fi
 
       - name: Install QEMU and the pinned virtme-ng
         run: |
@@ -218,10 +238,12 @@ jobs:
             "@openai/codex@$(jq -r .harness_version "$p/codex.json")"
           node --version
 
-      - name: Build the probe and warm the build cache
+      - name: Build the probe and the helper harnesses
         run: |
-          mkdir -p out
+          mkdir -p out "$RUNNER_TEMP/helpers"
           CGO_ENABLED=0 go build -o out/kernelprobe ./ci/landlock/kernelprobe
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/mock" ./test/fakeharness/mock
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/helpers/fakeharness" ./cmd/fakeharness
           go mod download
           go test -count=1 -run '^$' ./pkg/wrapper/
 
@@ -230,9 +252,10 @@ jobs:
           kimg=$(ls "$RUNNER_TEMP"/kernel/boot/vmlinuz-*-generic)
           kcfg=$(ls "$RUNNER_TEMP"/kernel/boot/config-*-generic)
           set +e
-          vng --run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out" --rwdir "$(go env GOCACHE)" -- \
-            env PATH="$PATH" GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)" \
+          vng --run "$kimg" --cpus 4 --memory 8G --rwdir "$PWD/out" -- \
+            env PATH="$PATH" GOMODCACHE="$(go env GOMODCACHE)" \
             CGO_ENABLED=0 KCONFIG="$kcfg" \
+            HW_TEST_MOCK_HARNESS="$RUNNER_TEMP/helpers/mock" HW_TEST_FAKEHARNESS="$RUNNER_TEMP/helpers/fakeharness" \
             HW_REAL_CLAUDE="$RUNNER_TEMP/harness/claude" HW_REAL_CODEX="$RUNNER_TEMP/harness/codex/bin/codex" \
             ci/landlock/guest.sh abi9-smoke smoke "$PWD/out"
           rc=$?
