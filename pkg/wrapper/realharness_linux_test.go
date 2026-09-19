@@ -41,8 +41,10 @@ func realHarnessSetup(t *testing.T, env string) string {
 	if bin == "" {
 		t.Skipf("set %s to run this smoke test against a real harness", env)
 	}
-	if _, err := landlock.Probe(0); err != nil {
-		t.Fatalf("Landlock ABI 9 unavailable: %v", err)
+	// ABI 6 is the floor: below ABI 9 the launch itself insists on the
+	// AppArmor socket layer and names it when it is missing.
+	if _, err := landlock.Probe(landlock.MinimumABI); err != nil {
+		t.Fatalf("Landlock unavailable: %v", err)
 	}
 	t.Cleanup(contain.ActivateProfilesForTest())
 	// A short state root: claude refuses a private TMPDIR over 79 bytes, and
@@ -126,7 +128,8 @@ func TestRealClaudeContained(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	a := s.Containment()
-	t.Logf("profile %s v%d, ABI %d, supervision %s, fingerprint %s", a.Profile, a.ProfileVersion, a.ABI, a.Supervision.Mode, a.Fingerprint)
+	t.Logf("profile %s v%d, ABI %d, pathname sockets %s, apparmor %+v, supervision %s, fingerprint %s",
+		a.Profile, a.ProfileVersion, a.ABI, a.PathnameSockets, a.AppArmor, a.Supervision.Mode, a.Fingerprint)
 	if _, err := os.Stat(filepath.Join(a.State.HarnessState, ".claude.json")); err != nil {
 		t.Errorf("no seeded .claude.json in the private CLAUDE_CONFIG_DIR: %v", err)
 	}
@@ -243,7 +246,8 @@ func TestRealCodexContained(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	a := s.Containment()
-	t.Logf("profile %s v%d, ABI %d, supervision %s, fingerprint %s", a.Profile, a.ProfileVersion, a.ABI, a.Supervision.Mode, a.Fingerprint)
+	t.Logf("profile %s v%d, ABI %d, pathname sockets %s, apparmor %+v, supervision %s, fingerprint %s",
+		a.Profile, a.ProfileVersion, a.ABI, a.PathnameSockets, a.AppArmor, a.Supervision.Mode, a.Fingerprint)
 	if _, err := os.Stat(filepath.Join(a.State.HarnessState, "config.toml")); err != nil {
 		t.Errorf("no seeded config.toml in the private CODEX_HOME: %v", err)
 	}
@@ -274,8 +278,10 @@ func realLoginSetup(t *testing.T, env string) string {
 	if bin == "" || os.Getenv("HW_REAL_LOGIN") != "1" {
 		t.Skipf("set %s and HW_REAL_LOGIN=1 to drive a real harness's sign-in up to its prompt", env)
 	}
-	if _, err := landlock.Probe(0); err != nil {
-		t.Fatalf("Landlock ABI 9 unavailable: %v", err)
+	// ABI 6 is the floor: below ABI 9 the launch itself insists on the
+	// AppArmor socket layer and names it when it is missing.
+	if _, err := landlock.Probe(landlock.MinimumABI); err != nil {
+		t.Fatalf("Landlock unavailable: %v", err)
 	}
 	state, err := os.MkdirTemp("", "hw")
 	if err != nil {
