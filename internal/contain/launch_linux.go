@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/apparmor"
 	"github.com/olesho/harness-wrapper/internal/landlock"
 	"github.com/olesho/harness-wrapper/pkg/containment"
 	"golang.org/x/sys/unix"
@@ -34,6 +35,9 @@ type Launch struct {
 	pins       []*pinned
 	callerPins []*pinned // the request's own grants, for the target check
 	ruleset    *landlock.Ruleset
+	// sockets is the AppArmor socket layer, set when the kernel's Landlock
+	// predates RESOLVE_UNIX (ADR-005).
+	sockets *apparmor.Layer
 
 	state     *State
 	ownsState bool
@@ -91,12 +95,15 @@ func Prepare(in Input) (l *Launch, err error) {
 	if err != nil {
 		return nil, err
 	}
-	abi, err := landlock.Probe()
+	abi, err := landlock.Probe(req.MinABI)
 	if err != nil {
 		return nil, refuseErr(StageKernel, err)
 	}
-	if abi < req.MinABI {
-		return nil, refuse(StageKernel, "kernel Landlock ABI %d is below the requested minimum %d", abi, req.MinABI)
+	var sockets *apparmor.Layer
+	if abi < landlock.ResolveUnixABI {
+		if sockets, err = socketLayer(abi); err != nil {
+			return nil, refuseErr(StageKernel, err)
+		}
 	}
 
 	callerEnv := in.Env
@@ -112,7 +119,7 @@ func Prepare(in Input) (l *Launch, err error) {
 		})
 	}
 
-	l = &Launch{req: req, m: m}
+	l = &Launch{req: req, m: m, sockets: sockets}
 	defer func() {
 		if err != nil {
 			l.Release()
@@ -173,6 +180,17 @@ func Prepare(in Input) (l *Launch, err error) {
 	if err = checkTargets(in.ExpectTargets, append([]*pinned{l.wd, stateDir}, l.callerPins...)); err != nil {
 		return l, err
 	}
+	if sockets != nil {
+		var writable []*pinned
+		for _, g := range grants {
+			if g.class == "rw" {
+				writable = append(writable, g.pin)
+			}
+		}
+		if err = checkSocketRoots(sockets, writable); err != nil {
+			return l, err
+		}
+	}
 
 	env, names := childEnv(m, req, callerEnv, lay, l.wd.canonical)
 	l.env = env
@@ -224,8 +242,8 @@ func Prepare(in Input) (l *Launch, err error) {
 		RequiredABI:     req.MinABI,
 		Profile:         m.id(),
 		ProfileVersion:  m.ManifestVersion,
-		HandledFS:       landlock.HandledFS.Names(),
-		PathnameSockets: "denied",
+		HandledFS:       l.ruleset.HandledFS().Names(),
+		PathnameSockets: containment.PathnameSocketsDenied,
 		Scopes:          landlock.Scopes().Names(),
 		State: containment.State{
 			Mode:            map[bool]string{true: "caller", false: "private"}[req.StateDir != ""],
@@ -239,6 +257,10 @@ func Prepare(in Input) (l *Launch, err error) {
 		Env:         names,
 		Omitted:     omitted,
 	}
+	if sockets != nil {
+		l.applied.PathnameSockets = containment.PathnameSocketsDeniedOutsideRoots
+		l.applied.AppArmor = &containment.AppArmorLayer{Profile: apparmor.ProfileName, Roots: slices.Clone(sockets.Roots)}
+	}
 	if req.RestrictTCP {
 		l.applied.TCP = containment.TCP{Mode: "restricted", Connect: req.ConnectTCP, Bind: "denied"}
 	} else {
@@ -246,7 +268,7 @@ func Prepare(in Input) (l *Launch, err error) {
 	}
 	for _, g := range grants {
 		rule := landlock.Rule{Access: g.access, IsDir: g.pin.isDir()}
-		ag := containment.Grant{Path: g.pin.canonical, Access: g.class, Rights: rule.Effective().Names(), Source: g.source}
+		ag := containment.Grant{Path: g.pin.canonical, Access: g.class, Rights: (rule.Effective() & l.ruleset.HandledFS()).Names(), Source: g.source}
 		if g.pin.requested != g.pin.canonical {
 			ag.Requested = g.pin.requested
 		}
@@ -603,6 +625,8 @@ func (l *Launch) Start(slave int) (int, error) {
 		tty:      slave,
 		cgroupFD: cgfd,
 		ruleset:  l.ruleset,
+
+		apparmorStack: l.sockets != nil,
 	})
 	l.releasePins()
 	// CLONE_INTO_CGROUP was the descriptor's only use; Finish and recovery
@@ -613,6 +637,19 @@ func (l *Launch) Start(slave int) (int, error) {
 			return 0, r.err
 		}
 		return 0, refuseErr(StageLaunch, fmt.Errorf("%s: %w", r.stage, r.err))
+	}
+	if l.sockets != nil {
+		// The stack was requested before exec, which fails when it cannot be
+		// applied; this confirms the running harness carries it.
+		if err := apparmor.CheckConfined(r.pid); err != nil {
+			_ = syscall.Kill(r.pid, syscall.SIGKILL)
+			if l.cg != nil {
+				_ = l.cg.kill()
+			}
+			var ws syscall.WaitStatus
+			_, _ = syscall.Wait4(r.pid, &ws, 0, nil)
+			return 0, refuseErr(StageLaunch, err)
+		}
 	}
 	l.started = true
 	if rec, err := l.state.readLifecycle(); err == nil && rec.Launch != nil {

@@ -15,7 +15,8 @@ the rung that bypasses it (see [Harness profiles](#harness-profiles)).
 
 ## Quickstart
 
-On a Linux host with Landlock ABI 9 (Linux 7.1 or later), with `claude` or `codex` on `PATH`:
+On a Linux host with Landlock ABI 9 (Linux 7.1 or later), with `claude` or `codex` on `PATH` (on
+Linux 6.12–7.0, see [Kernels before Landlock ABI 9](#kernels-before-landlock-abi-9) first):
 
 1. **Check the host.** `contain-check` prints the policy a launch would get and every reason it would
    be refused, and starts nothing:
@@ -66,13 +67,15 @@ The request (`containment.Request`, aliased as `wrapper.Containment`):
 | `read_only` / `read_write` | Extra **existing absolute** paths the harness may read, or read and write. |
 | `restrict_tcp` | Off by default (TCP unrestricted, and reported so). On: every TCP bind is denied, and every connect except to `connect_tcp`. |
 | `connect_tcp` | Permitted remote ports. Empty with `restrict_tcp` denies all TCP. Ports without `restrict_tcp` are invalid. |
-| `min_abi` | Minimum Landlock ABI; default and floor **9** (Linux 7.1). |
+| `min_abi` | Lowest Landlock ABI to accept; default **9** (Linux 7.1), floor **6** (Linux 6.12). Below 9 the launch needs the [AppArmor socket layer](#kernels-before-landlock-abi-9). |
 | `state_dir` | Caller-managed, persistent, shareable state instead of private state (see [State](#private-state)). |
 | `pass_env` | Extra environment variable **names** to inherit. HOME, temporary and harness-state variables cannot be named. |
 
 ## What the domain enforces
 
-Every contained launch handles every ABI 9 filesystem right, and the harness gets only:
+Every contained launch handles every ABI 9 filesystem right (every right but `RESOLVE_UNIX` on an
+older kernel a request accepted — see [below](#kernels-before-landlock-abi-9)), and the harness gets
+only:
 
 - the harness profile's baseline — `/usr` (and `/bin`, `/lib`, `/lib64`, `/sbin` where they are real
   directories) read/execute; `/proc` read-only; an enumerated list of `/etc` files; `/dev/null`,
@@ -105,17 +108,69 @@ naming the stage:
 
 | Stage | Examples |
 |---|---|
-| `request` | unknown kind, relative path, ports without `restrict_tcp`, `min_abi` below 9, a reserved `pass_env` name; a login launch of any command but the profile's login and status commands |
+| `request` | unknown kind, relative path, ports without `restrict_tcp`, `min_abi` below 6, a reserved `pass_env` name; a login launch of any command but the profile's login and status commands |
 | `profile` | no profile for the harness; a profile not yet activated; codex below the bypass rung; a claude login under `restrict_tcp` |
 | `executable` | an install layout or version the profile does not know |
-| `paths` | a missing grant; a read-only grant inside a writable one (it would not be read-only); a grant that exposes the managed-state directory; a writable grant that exposes cgroupfs; a resumed path that now resolves elsewhere |
+| `paths` | a missing grant; a read-only grant inside a writable one (it would not be read-only); a grant that exposes the managed-state directory; a writable grant that exposes cgroupfs; a resumed path that now resolves elsewhere; under the AppArmor socket layer, a writable grant outside its roots |
 | `state` | private or caller state unusable; a claude TMPDIR too long for its socket path; a login without a `state_dir` |
-| `kernel` | Landlock missing, disabled at boot, blocked by seccomp, or below the required ABI |
+| `kernel` | Landlock missing, disabled at boot, blocked by seccomp, or below the required ABI; below ABI 9, the AppArmor socket layer not installed, not loaded, not enforcing, or not effective on this kernel |
 | `supervision` | a stored conversation on a host that delegates no cgroup |
 
 An `EACCES` from exec itself is `ErrLaunchDenied` (it matches `ErrPTYAllocation`): it keeps the errno
 and names the binary, but does not prove Landlock was responsible. A missing binary stays
 `ErrBinaryNotFound`.
+
+## Kernels before Landlock ABI 9
+
+`RESOLVE_UNIX`, the right with which the domain denies pathname UNIX sockets, arrived in Landlock ABI 9
+(Linux 7.1). Every other right a contained launch uses exists from ABI 6 (Linux 6.12), which covers
+Debian 13's stock 6.12 kernel and Ubuntu 26.04's 7.0. On such a kernel a request can **opt in** with
+`min_abi` 6, 7 or 8
+(`--contain-min-abi 6`), and the launch then stacks an **AppArmor socket layer** onto the harness
+([ADR-005](../internal/decisions/adr-005-apparmor-socket-layer.md)). A request that does not opt in
+is refused there, as before.
+
+The layer is one static profile that root installs once. It withholds write access — which connecting
+to a pathname UNIX socket requires — everywhere except beneath the **roots** you give it and the devices
+a harness writes. Landlock stays the filesystem, network and IPC boundary; AppArmor only closes the
+socket gap.
+
+1. **Choose roots** that cover every directory a contained harness writes: the working directories you
+   run in, your `read_write` paths, your `state_dir`, and the managed-state directory
+   (`$XDG_STATE_HOME/harness-wrapper`, by default `~/.local/state/harness-wrapper`). A launch whose
+   writable grant falls outside every root is refused at the `paths` stage, because the profile would
+   deny the harness's writes there.
+2. **Install it as root:**
+
+   ```bash
+   harness-wrapper contain-apparmor-profile --root /srv/work --root /home/me/.local/state/harness-wrapper \
+     | sudo tee /etc/apparmor.d/harness-wrapper-contain >/dev/null
+   sudo apparmor_parser -r /etc/apparmor.d/harness-wrapper-contain
+   ```
+
+   Change the roots by regenerating, reinstalling and reloading: a launch reads them from the file's
+   first line, and the file must be owned by root and writable by no one else.
+3. **Check and run** with `--contain-min-abi 6`: `contain-check` shows `pathname:
+   denied_outside_roots` and an `apparmor` row naming the roots.
+
+Before every launch the wrapper stacks the profile onto a throwaway thread and connects to a socket
+outside the roots; only `EACCES` lets the launch proceed. So a profile that is missing, not loaded,
+loaded in complain mode, or on a kernel whose AppArmor does not mediate pathname socket connects
+refuses the launch at the `kernel` stage, naming which. After the harness starts, the wrapper checks its
+AppArmor label and kills it if the profile is not in it.
+
+What differs from ABI 9:
+
+- The rule is **by path, not by creator**: a socket beneath a root is reachable whoever created it,
+  including another same-user session's socket in the managed-state directory (its path is visible in
+  that process's `/proc` environment). A socket outside the roots is denied even if the harness's own
+  tools created it there — they can only create one where they can write, which is beneath a root.
+- `/dev/null`, `/dev/tty` and the session terminal stay writable; no other device is.
+- The applied policy reports `pathname_unix_sockets: "denied_outside_roots"`, the kernel ABI, handled
+  rights without `resolve_unix`, and an `apparmor` object with the profile and its roots. Its
+  fingerprint differs from an ABI 9 launch's.
+- It needs AppArmor enabled (Ubuntu and Debian enable it by default) and a kernel whose AppArmor
+  mediates pathname sockets through file rules; the self-test is the authority, not the distribution.
 
 ## Harness profiles
 

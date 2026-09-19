@@ -12,6 +12,9 @@
 // kernel's include/uapi/linux/landlock.h, and uapi_test.go pins every value
 // the package uses against it.
 //
+// Rulesets need ABI 9 unless the caller explicitly accepts an older kernel
+// (Config.MinABI, down to ABI 6); see ADR-005.
+//
 // On platforms other than Linux every entry point returns ErrUnsupported.
 package landlock
 
@@ -59,19 +62,45 @@ const (
 	ScopeSignal             Scope = 1 << 1
 )
 
-// RequiredABI is the Landlock ABI every ruleset this package builds needs: the
-// handled set includes RESOLVE_UNIX, which ABI 9 introduced.
-const RequiredABI = 9
+// ResolveUnixABI is the Landlock ABI that introduced RESOLVE_UNIX. A ruleset
+// created on it or later handles every right in HandledFS, and it is the ABI a
+// Config with a zero MinABI requires.
+const ResolveUnixABI = 9
 
-// HandledFS is the explicit, versioned set of filesystem rights every ruleset
-// handles: all ABI 9 rights. Rights later kernels add are NOT picked up
-// automatically — widening the handled set changes what a policy means, so it
-// is a deliberate change here, with its own tests.
+// MinimumABI is the lowest Landlock ABI this package builds a ruleset for: ABI
+// 6 adds the IPC scopes every ruleset sets. A ruleset created below
+// ResolveUnixABI handles every right but RESOLVE_UNIX, so Landlock does not
+// mediate connecting to pathname UNIX sockets at all; a caller that accepts
+// such a kernel must deny those connects some other way.
+const MinimumABI = 6
+
+// HandledFS is the explicit, versioned set of filesystem rights a ruleset
+// handles on ResolveUnixABI and later: all ABI 9 rights. Rights later kernels
+// add are NOT picked up automatically — widening the handled set changes what
+// a policy means, so it is a deliberate change here, with its own tests.
 const HandledFS = AccessFSExecute | AccessFSWriteFile | AccessFSReadFile | AccessFSReadDir |
 	AccessFSRemoveDir | AccessFSRemoveFile | AccessFSMakeChar | AccessFSMakeDir |
 	AccessFSMakeReg | AccessFSMakeSock | AccessFSMakeFifo | AccessFSMakeBlock |
 	AccessFSMakeSym | AccessFSRefer | AccessFSTruncate | AccessFSIoctlDev |
 	AccessFSResolveUnix
+
+// HandledFSFor returns the rights a ruleset created under kernel ABI abi
+// handles: HandledFS, less RESOLVE_UNIX below ResolveUnixABI. Every other
+// right in HandledFS exists from MinimumABI on.
+func HandledFSFor(abi int) AccessFS {
+	if abi < ResolveUnixABI {
+		return HandledFS &^ AccessFSResolveUnix
+	}
+	return HandledFS
+}
+
+// requiredABI returns the kernel ABI a Config's MinABI demands.
+func requiredABI(minABI int) int {
+	if minABI == 0 {
+		return ResolveUnixABI
+	}
+	return minABI
+}
 
 // FileRights are the rights that apply to a non-directory. The kernel rejects
 // a path-beneath rule on a file that carries any other right, so every file
@@ -158,8 +187,10 @@ func (s Scope) Names() []string {
 
 // Config describes a ruleset to create.
 type Config struct {
-	// MinABI is the lowest kernel ABI to accept. Values below RequiredABI are
-	// raised to it.
+	// MinABI is the lowest kernel ABI to accept. Zero means ResolveUnixABI;
+	// values below MinimumABI are rejected. A value below ResolveUnixABI
+	// accepts a kernel on which the ruleset leaves pathname UNIX socket
+	// connects unmediated (see HandledFSFor).
 	MinABI int
 	// RestrictTCP handles TCP bind and connect: both are denied except for
 	// connect rules added with AddConnectTCP.

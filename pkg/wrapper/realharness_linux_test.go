@@ -41,7 +41,7 @@ func realHarnessSetup(t *testing.T, env string) string {
 	if bin == "" {
 		t.Skipf("set %s to run this smoke test against a real harness", env)
 	}
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		t.Fatalf("Landlock ABI 9 unavailable: %v", err)
 	}
 	t.Cleanup(contain.ActivateProfilesForTest())
@@ -274,7 +274,7 @@ func realLoginSetup(t *testing.T, env string) string {
 	if bin == "" || os.Getenv("HW_REAL_LOGIN") != "1" {
 		t.Skipf("set %s and HW_REAL_LOGIN=1 to drive a real harness's sign-in up to its prompt", env)
 	}
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		t.Fatalf("Landlock ABI 9 unavailable: %v", err)
 	}
 	state, err := os.MkdirTemp("", "hw")

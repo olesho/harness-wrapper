@@ -109,7 +109,7 @@ export interface Containment {
   restrictTcp?: boolean;
   /** Remote TCP ports the harness may connect to (with `restrictTcp`). */
   connectTcp?: number[];
-  /** Minimum Landlock ABI; default and floor 9. */
+  /** Lowest Landlock ABI to accept; default 9, floor 6 (below 9 the server needs the AppArmor socket layer). */
   minAbi?: number;
   /** Caller-managed persistent state directory instead of private state. */
   stateDir?: string;
@@ -128,7 +128,10 @@ export interface AppliedContainment {
   handled_fs: string[];
   grants: Array<{ path: string; access: string; rights: string[]; source: string; requested?: string }>;
   tcp: { mode: string; connect?: number[]; bind: string };
+  /** "denied" (Landlock RESOLVE_UNIX) or "denied_outside_roots" (the AppArmor socket layer). */
   pathname_unix_sockets: string;
+  /** The AppArmor socket layer, present only with "denied_outside_roots". */
+  apparmor?: { profile: string; roots: string[] };
   scopes: string[];
   state: {
     mode: string;

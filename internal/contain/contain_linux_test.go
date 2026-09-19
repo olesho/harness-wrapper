@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var landlockProbe = landlock.Probe
+var landlockProbe = func() (int, error) { return landlock.Probe(0) }
 
 // testHarness registers a profile for the test binary and isolates managed
 // state in a per-test directory.

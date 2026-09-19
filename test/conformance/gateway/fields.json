@@ -61,6 +61,12 @@
       "optional": false
     },
     {
+      "name": "AppArmor",
+      "json_tag": "apparmor",
+      "type": "ref",
+      "optional": true
+    },
+    {
       "name": "Scopes",
       "json_tag": "scopes",
       "type": "array",

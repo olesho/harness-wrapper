@@ -53,8 +53,27 @@ func TestUAPIValues(t *testing.T) {
 	if HandledFS != (1<<17)-1 {
 		t.Errorf("HandledFS = %#x, want every ABI 9 right (%#x) and nothing newer", uint64(HandledFS), (1<<17)-1)
 	}
-	if RequiredABI != 9 {
-		t.Error("RESOLVE_UNIX is ABI 9: the required ABI must say so")
+	if ResolveUnixABI != 9 {
+		t.Error("RESOLVE_UNIX is ABI 9: ResolveUnixABI must say so")
+	}
+	if MinimumABI != 6 {
+		t.Error("the IPC scopes every ruleset sets are ABI 6: MinimumABI must say so")
+	}
+}
+
+func TestHandledFSFor(t *testing.T) {
+	for abi := MinimumABI; abi < ResolveUnixABI; abi++ {
+		if got := HandledFSFor(abi); got != HandledFS&^AccessFSResolveUnix {
+			t.Errorf("HandledFSFor(%d) = %v, want every right but resolve_unix", abi, got.Names())
+		}
+	}
+	for _, abi := range []int{ResolveUnixABI, ResolveUnixABI + 1} {
+		if got := HandledFSFor(abi); got != HandledFS {
+			t.Errorf("HandledFSFor(%d) = %v, want HandledFS", abi, got.Names())
+		}
+	}
+	if requiredABI(0) != ResolveUnixABI || requiredABI(7) != 7 {
+		t.Error("a zero MinABI must demand ResolveUnixABI, and a nonzero one itself")
 	}
 }
 

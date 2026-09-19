@@ -46,7 +46,7 @@ func TestContainedSpawnStress(t *testing.T) {
 	}
 	self, _ := os.Executable()
 	self, _ = filepath.EvalSymlinks(self)
-	_, abiErr := landlock.Probe()
+	_, abiErr := landlock.Probe(0)
 	t.Logf("go=%s cgo-openers=%v landlock=%v GOMAXPROCS=%d", runtime.Version(), cfd.Available, abiErr == nil, runtime.GOMAXPROCS(0))
 	var total time.Duration
 	for run := 0; run < runs; run++ {

@@ -24,9 +24,9 @@ func TestNetPortAttrLayout(t *testing.T) {
 
 func requireABI(t *testing.T) {
 	t.Helper()
-	if _, err := Probe(); err != nil {
+	if _, err := Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
-			t.Fatalf("Landlock ABI %d required: %v", RequiredABI, err)
+			t.Fatalf("Landlock ABI %d required: %v", ResolveUnixABI, err)
 		}
 		t.Skipf("Landlock unavailable: %v", err)
 	}

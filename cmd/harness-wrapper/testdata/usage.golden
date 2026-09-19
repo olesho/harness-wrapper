@@ -7,6 +7,7 @@ usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
        harness-wrapper reap [--dry-run]
        harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>
        harness-wrapper contain-login [--status] [--timeout DUR] --contain-state-dir DIR [--contain-* flags] <name>
+       harness-wrapper contain-apparmor-profile --root DIR [--root DIR ...]
 
 wrapper flags (must come BEFORE the harness name):
   --trace-file PATH       write trace events as NDJSON to PATH
@@ -44,6 +45,11 @@ wrapper flags (must come BEFORE the harness name):
                           anything. contain-login runs the harness's own sign-in
                           inside the boundary and keeps the login in
                           --contain-state-dir DIR. Unrelated to --sandbox-defaults.
+                          On Landlock ABI 6-8 (Linux 6.12-7.0), pass
+                          --contain-min-abi 6 and have root install the profile
+                          contain-apparmor-profile prints: it denies pathname
+                          UNIX sockets outside its roots, which Landlock cannot
+                          before ABI 9.
 
 Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a
 human is at the TUI (passthrough, or `run` from a terminal for codex). Under

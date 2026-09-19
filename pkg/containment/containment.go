@@ -26,10 +26,24 @@ import (
 // KindLandlock is the only containment kind this release implements.
 const KindLandlock = "landlock"
 
-// MinimumABI is the lowest Landlock ABI a contained launch accepts. ABI 9
-// (Linux 7.1) adds LANDLOCK_ACCESS_FS_RESOLVE_UNIX, without which the domain
-// could not deny connections to external pathname UNIX sockets.
-const MinimumABI = 9
+// DefaultABI is the Landlock ABI a contained launch requires unless the
+// request lowers it. ABI 9 (Linux 7.1) adds LANDLOCK_ACCESS_FS_RESOLVE_UNIX,
+// with which the domain itself denies connections to external pathname UNIX
+// sockets.
+const DefaultABI = 9
+
+// LowestABI is the lowest Landlock ABI a request may accept (Linux 6.12). On
+// a kernel below DefaultABI, Landlock cannot deny pathname UNIX socket
+// connects, so the launch stacks harness-wrapper's AppArmor socket layer and
+// is refused when that layer is not installed or not effective (ADR-005).
+const LowestABI = 6
+
+// MinimumABI is DefaultABI, under the name it had before a request could
+// lower the ABI.
+//
+// Deprecated: it is the default, not the lowest ABI a request may accept. Use
+// DefaultABI, or LowestABI for the floor.
+const MinimumABI = DefaultABI
 
 // SchemaVersion versions the canonical serialization of Applied and of the
 // stored requirement record. Readers must refuse versions they do not know.
@@ -60,8 +74,12 @@ type Request struct {
 	// ports without RestrictTCP are invalid.
 	ConnectTCP []uint16 `json:"connect_tcp,omitempty"`
 
-	// MinABI raises the required Landlock ABI. Zero means MinimumABI; a nonzero
-	// value below MinimumABI is invalid.
+	// MinABI is the lowest Landlock ABI the launch accepts. Zero means
+	// DefaultABI; a value below LowestABI is invalid. A value below DefaultABI
+	// opts into kernels whose Landlock predates RESOLVE_UNIX, where pathname
+	// UNIX socket connects are denied by the AppArmor socket layer instead —
+	// by path, outside its installed roots, rather than by who created the
+	// socket (ADR-005).
 	MinABI int `json:"min_abi,omitempty"`
 
 	// StateDir selects caller-managed persistent state (HOME and harness state
@@ -130,9 +148,9 @@ func Normalize(r *Request) (*Request, error) {
 
 	switch {
 	case r.MinABI == 0:
-		out.MinABI = MinimumABI
-	case r.MinABI < MinimumABI:
-		return nil, fmt.Errorf("%w: MinABI %d is below the supported minimum %d", ErrInvalidRequest, r.MinABI, MinimumABI)
+		out.MinABI = DefaultABI
+	case r.MinABI < LowestABI:
+		return nil, fmt.Errorf("%w: MinABI %d is below the supported minimum %d", ErrInvalidRequest, r.MinABI, LowestABI)
 	default:
 		out.MinABI = r.MinABI
 	}
@@ -322,6 +340,28 @@ type Supervision struct {
 	Cleanup string `json:"cleanup,omitempty"`
 }
 
+// PathnameSockets values.
+const (
+	// PathnameSocketsDenied: Landlock (RESOLVE_UNIX) refuses connecting to a
+	// pathname UNIX socket created outside the domain, on every path.
+	PathnameSocketsDenied = "denied"
+	// PathnameSocketsDeniedOutsideRoots: the kernel's Landlock predates
+	// RESOLVE_UNIX, and the AppArmor socket layer refuses connecting to a
+	// pathname UNIX socket outside its roots (and the devices a harness
+	// writes). A socket beneath a root is reachable whoever created it.
+	PathnameSocketsDeniedOutsideRoots = "denied_outside_roots"
+)
+
+// AppArmorLayer is the AppArmor profile stacked onto a harness whose kernel's
+// Landlock predates RESOLVE_UNIX.
+type AppArmorLayer struct {
+	// Profile is the stacked profile's name.
+	Profile string `json:"profile"`
+	// Roots are the directories beneath which the profile allows writes and
+	// pathname UNIX socket connects.
+	Roots []string `json:"roots"`
+}
+
 // Supervision modes.
 const (
 	SupervisionCgroup = "cgroup"
@@ -347,9 +387,12 @@ type Applied struct {
 	HandledFS []string `json:"handled_fs"`
 	Grants    []Grant  `json:"grants"`
 	TCP       TCP      `json:"tcp"`
-	// PathnameSockets is "denied": connecting to a pathname UNIX socket
-	// created outside the domain is refused on every path.
+	// PathnameSockets is PathnameSocketsDenied or
+	// PathnameSocketsDeniedOutsideRoots.
 	PathnameSockets string `json:"pathname_unix_sockets"`
+	// AppArmor describes the AppArmor socket layer, set only when it enforces
+	// PathnameSockets (PathnameSocketsDeniedOutsideRoots).
+	AppArmor *AppArmorLayer `json:"apparmor,omitempty"`
 	// Scopes lists the IPC scopes: "abstract_unix_socket" and "signal".
 	Scopes      []string    `json:"scopes"`
 	State       State       `json:"state"`
@@ -379,6 +422,11 @@ func (a *Applied) Clone() *Applied {
 	c.Scopes = slices.Clone(a.Scopes)
 	c.Env = slices.Clone(a.Env)
 	c.Omitted = slices.Clone(a.Omitted)
+	if a.AppArmor != nil {
+		aa := *a.AppArmor
+		aa.Roots = slices.Clone(a.AppArmor.Roots)
+		c.AppArmor = &aa
+	}
 	return &c
 }
 
@@ -395,9 +443,12 @@ type fingerprintView struct {
 	Grants          []Grant  `json:"grants"`
 	TCP             TCP      `json:"tcp"`
 	PathnameSockets string   `json:"pathname_unix_sockets"`
-	Scopes          []string `json:"scopes"`
-	StateMode       string   `json:"state_mode"`
-	Env             []string `json:"env"`
+	// AppArmor is omitted when nil, so a policy without the socket layer keeps
+	// the fingerprint it had before the layer existed.
+	AppArmor  *AppArmorLayer `json:"apparmor,omitempty"`
+	Scopes    []string       `json:"scopes"`
+	StateMode string         `json:"state_mode"`
+	Env       []string       `json:"env"`
 }
 
 // Fingerprint returns a stable identifier of a's policy: the SHA-256 of its
@@ -416,6 +467,7 @@ func Fingerprint(a *Applied) string {
 		HandledFS:       a.HandledFS,
 		TCP:             a.TCP,
 		PathnameSockets: a.PathnameSockets,
+		AppArmor:        a.AppArmor,
 		Scopes:          a.Scopes,
 		StateMode:       a.State.Mode,
 		Env:             a.Env,
