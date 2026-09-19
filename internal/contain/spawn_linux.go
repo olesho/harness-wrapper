@@ -25,9 +25,10 @@ type spawnSpec struct {
 	// ruleset is nil only in tests that drive the spawn on kernels without
 	// Landlock ABI 9 (the hosted-runner stress job).
 	ruleset *landlock.Ruleset
-	// apparmorStack stacks the AppArmor socket layer onto the child at exec
-	// (ADR-005): set when the kernel's Landlock predates RESOLVE_UNIX.
-	apparmorStack bool
+	// apparmorProfile names the AppArmor socket layer to stack onto the child
+	// at exec (ADR-005); empty unless the kernel's Landlock predates
+	// RESOLVE_UNIX.
+	apparmorProfile string
 }
 
 // spawnResult reports a spawn. tid is the spawn thread; handedOff records that
@@ -129,8 +130,8 @@ func spawnOnThisThread(s spawnSpec) spawnResult {
 // child from it. The AppArmor stack is requested first: it takes effect at the
 // child's exec, and writing the request needs no privilege the domain removes.
 func forkExecContained(s spawnSpec) (int, string, error) {
-	if s.apparmorStack {
-		if err := apparmor.StackOnExec(); err != nil {
+	if s.apparmorProfile != "" {
+		if err := apparmor.StackOnExec(s.apparmorProfile); err != nil {
 			return 0, "apparmor", err
 		}
 	}

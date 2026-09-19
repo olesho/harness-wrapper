@@ -262,7 +262,7 @@ func Prepare(in Input) (l *Launch, err error) {
 	}
 	if sockets != nil {
 		l.applied.PathnameSockets = containment.PathnameSocketsDeniedOutsideRoots
-		l.applied.AppArmor = &containment.AppArmorLayer{Profile: apparmor.ProfileName, Roots: slices.Clone(sockets.Roots)}
+		l.applied.AppArmor = &containment.AppArmorLayer{Profile: sockets.Profile, Roots: slices.Clone(sockets.Roots)}
 	}
 	if req.RestrictTCP {
 		l.applied.TCP = containment.TCP{Mode: "restricted", Connect: req.ConnectTCP, Bind: "denied"}
@@ -629,7 +629,7 @@ func (l *Launch) Start(slave int) (int, error) {
 		cgroupFD: cgfd,
 		ruleset:  l.ruleset,
 
-		apparmorStack: l.sockets != nil,
+		apparmorProfile: l.socketProfile(),
 	})
 	l.releasePins()
 	// CLONE_INTO_CGROUP was the descriptor's only use; Finish and recovery
@@ -644,7 +644,7 @@ func (l *Launch) Start(slave int) (int, error) {
 	if l.sockets != nil {
 		// The stack was requested before exec, which fails when it cannot be
 		// applied; this confirms the running harness carries it.
-		if err := apparmor.CheckConfined(r.pid); err != nil {
+		if err := apparmor.CheckConfined(r.pid, l.sockets.Profile); err != nil {
 			_ = syscall.Kill(r.pid, syscall.SIGKILL)
 			if l.cg != nil {
 				_ = l.cg.kill()
@@ -660,6 +660,15 @@ func (l *Launch) Start(slave int) (int, error) {
 		_ = l.state.writeLifecycle(rec)
 	}
 	return r.pid, nil
+}
+
+// socketProfile is the AppArmor socket layer's profile name, or "" without
+// the layer.
+func (l *Launch) socketProfile() string {
+	if l.sockets == nil {
+		return ""
+	}
+	return l.sockets.Profile
 }
 
 func (l *Launch) releasePins() {

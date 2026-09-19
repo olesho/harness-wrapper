@@ -150,8 +150,13 @@ socket gap.
    sudo apparmor_parser -r /etc/apparmor.d/harness-wrapper-contain
    ```
 
-   Change the roots by regenerating, reinstalling and reloading: a launch reads them from the file's
-   first line, and the file must be owned by root and writable by no one else.
+   Change the roots by regenerating, reinstalling and reloading. The loaded profile is named
+   `harness-wrapper-contain-<digest>`, a digest of the policy the file describes, and a launch stacks
+   only the name the installed file implies: until the new policy is loaded, launches are refused
+   rather than run under the old roots while reporting the new ones. The file must be exactly what
+   `contain-apparmor-profile` generates, owned by root and writable by no one else. Reloading leaves
+   the previous policy loaded under its old name, unused; remove it with
+   `echo -n harness-wrapper-contain-<old digest> | sudo tee /sys/kernel/security/apparmor/.remove`.
 3. **Check and run** as usual: `contain-check` shows `pathname: denied_outside_roots` and an
    `apparmor` row naming the roots.
 

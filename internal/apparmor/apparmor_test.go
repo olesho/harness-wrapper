@@ -29,7 +29,11 @@ func TestProfileRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	roots, err := ParseRoots([]byte(src))
+	layer, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := layer.Roots
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +42,7 @@ func TestProfileRoundTrip(t *testing.T) {
 	}
 	for _, want := range []string{
 		"abi <abi/3.0>,",
-		"profile " + ProfileName + " flags=(attach_disconnected,mediate_deleted) {",
+		"profile " + NameFor(roots) + " flags=(attach_disconnected,mediate_deleted) {",
 		"  /** rmixlk,",
 		"  /dev/null rw,",
 		"  /dev/tty rw,",
@@ -66,6 +70,55 @@ func TestProfileRoundTrip(t *testing.T) {
 	want := []string{"/dev/null", "/dev/tty", "/dev/pts/[0-9]*", `"/home/u/state/{,**}"`, `"/srv/work/{,**}"`}
 	if !slices.Equal(writes, want) {
 		t.Errorf("write rules = %v, want exactly %v", writes, want)
+	}
+}
+
+// The loaded profile's name is bound to the policy: the same roots name the
+// same profile, and any change to them — narrowing included — names another,
+// so a source regenerated without a reload names a profile that is not loaded.
+func TestProfileNameBindsPolicy(t *testing.T) {
+	wide, err := Profile([]string{"/srv/work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _ := Profile([]string{"/srv/work", "/srv/work"})
+	narrow, _ := Profile([]string{"/srv/work/project"})
+	lw, err := Parse([]byte(wide))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := Parse([]byte(narrow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	la, _ := Parse([]byte(again))
+	if lw.Profile == ln.Profile {
+		t.Fatalf("narrowing the roots kept the profile name %s", lw.Profile)
+	}
+	if la.Profile != lw.Profile {
+		t.Fatalf("the same roots named %s and %s", la.Profile, lw.Profile)
+	}
+	if !strings.HasPrefix(lw.Profile, ProfileName+"-") || len(lw.Profile) != len(ProfileName)+1+digestLen {
+		t.Fatalf("profile name %q is not %s-<%d hex digits>", lw.Profile, ProfileName, digestLen)
+	}
+	if !strings.Contains(wide, "profile "+lw.Profile+" flags=") {
+		t.Fatalf("the source does not declare the profile it names:\n%s", wide)
+	}
+}
+
+// A source that is not exactly what Profile generates for its header's roots
+// describes no profile the wrapper can vouch for: its body may say anything.
+func TestParseRefusesEditedSource(t *testing.T) {
+	src, _ := Profile([]string{"/srv/work"})
+	for name, edited := range map[string]string{
+		"widened body":  strings.Replace(src, `"/srv/work/{,**}" rw,`, `"/srv/{,**}" rw,`, 1),
+		"extra rule":    strings.Replace(src, "  /** rmixlk,", "  /** rmixlk,\n  /run/** w,", 1),
+		"renamed":       strings.Replace(src, NameFor([]string{"/srv/work"}), ProfileName, 1),
+		"trailing text": src + "# note\n",
+	} {
+		if _, err := Parse([]byte(edited)); err == nil {
+			t.Errorf("%s: Parse accepted an edited source", name)
+		}
 	}
 }
 

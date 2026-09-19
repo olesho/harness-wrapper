@@ -30,7 +30,12 @@ installed it, and is refused otherwise:
 2. **Roots are static; grants are per launch.** The profile's first line records its roots, read from
    `/etc/apparmor.d/harness-wrapper-contain` (root-owned, writable only by root). A launch refuses, at
    the `paths` stage, any writable grant outside every root — the profile would deny the harness's
-   writes there. A per-session profile would match `RESOLVE_UNIX` more closely but needs a privileged
+   writes there. **The loaded profile is bound to that file:** it is named
+   `harness-wrapper-contain-<digest>`, the first 64 bits of the SHA-256 of the policy rendered under the
+   bare stem, and the file must be byte-for-byte what the generator produces for its roots. A launch
+   stacks only the name the file implies, so a file changed without a reload — roots narrowed, say —
+   names a profile that is not loaded and the launch is refused, instead of reporting roots the kernel
+   does not enforce. A per-session profile would match `RESOLVE_UNIX` more closely but needs a privileged
    loader on every launch; it was rejected.
 3. **Applied per thread, at exec.** The spawn thread (ADR-004) writes `stack harness-wrapper-contain` to
    `/proc/thread-self/attr/apparmor/exec` before `PR_SET_NO_NEW_PRIVS` and `landlock_restrict_self`, so

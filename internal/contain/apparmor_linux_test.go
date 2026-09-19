@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/internal/apparmor"
@@ -148,8 +149,8 @@ func TestAppArmorSocketLayer(t *testing.T) {
 	if applied.PathnameSockets != containment.PathnameSocketsDeniedOutsideRoots {
 		t.Errorf("pathname sockets %q, want %q", applied.PathnameSockets, containment.PathnameSocketsDeniedOutsideRoots)
 	}
-	if applied.AppArmor == nil || applied.AppArmor.Profile != apparmor.ProfileName || !slices.Equal(applied.AppArmor.Roots, layer.Roots) {
-		t.Errorf("applied socket layer %+v, want %s with roots %v", applied.AppArmor, apparmor.ProfileName, layer.Roots)
+	if applied.AppArmor == nil || applied.AppArmor.Profile != layer.Profile || !slices.Equal(applied.AppArmor.Roots, layer.Roots) {
+		t.Errorf("applied socket layer %+v, want %s with roots %v", applied.AppArmor, layer.Profile, layer.Roots)
 	}
 	if slices.Contains(applied.HandledFS, "resolve_unix") {
 		t.Errorf("handled rights %v claim resolve_unix on ABI %d", applied.HandledFS, applied.ABI)
@@ -168,6 +169,35 @@ func TestAppArmorSocketLayer(t *testing.T) {
 		if got := readHelperReport(t, report).Checks["connect-unix="+outside]; got != "EACCES" {
 			t.Fatalf("outside socket: %s, want EACCES", got)
 		}
+	})
+	// The installed source narrowed (or otherwise changed) without a reload:
+	// it describes a profile that is not loaded, so the launch must be
+	// refused rather than report roots the loaded profile does not enforce.
+	// Staging it for real needs root; the source is swapped in-process, and
+	// the kernel still holds only the profile for the real roots.
+	t.Run("source changed without a reload refused", func(t *testing.T) {
+		narrowed := []string{filepath.Join(layer.Roots[0], "narrowed")}
+		src, err := apparmor.Profile(narrowed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stale, err := apparmor.Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		orig := installedSocketLayer
+		installedSocketLayer = func() (*apparmor.Layer, error) { return stale, nil }
+		defer func() { installedSocketLayer = orig }()
+		l, err := Prepare(helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock}, report))
+		if err == nil {
+			l.Release()
+			t.Fatal("a launch was prepared under a source whose profile is not loaded")
+		}
+		var re *RefusalError
+		if !errors.As(err, &re) || re.Stage != StageKernel || !strings.Contains(err.Error(), "not loaded") {
+			t.Fatalf("refusal %v, want stage %q naming the unloaded profile", err, StageKernel)
+		}
+		t.Logf("refused as designed: %v", err)
 	})
 	t.Run("min_abi 9 refused", func(t *testing.T) {
 		wantRefusal(t, helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock, MinABI: containment.ResolveUnixABI}, report), StageKernel)

@@ -22,7 +22,7 @@ import (
 // — profile not loaded, loaded in complain mode, or a kernel whose AppArmor
 // does not mediate pathname socket connects — without privilege.
 func socketLayer(abi int) (*apparmor.Layer, error) {
-	layer, err := apparmor.Installed()
+	layer, err := installedSocketLayer()
 	if err == nil {
 		err = socketSelfTest(layer)
 	}
@@ -32,6 +32,11 @@ func socketLayer(abi int) (*apparmor.Layer, error) {
 	}
 	return layer, nil
 }
+
+// installedSocketLayer is apparmor.Installed. A test replaces it to present a
+// source that no longer matches the loaded profile, which needs root to stage
+// for real.
+var installedSocketLayer = apparmor.Installed
 
 // socketSelfTest listens on a pathname socket outside every root, stacks the
 // profile onto a disposable thread and connects from it: only EACCES passes.
@@ -50,7 +55,7 @@ func socketSelfTest(layer *apparmor.Layer) error {
 
 	var stackErr, connErr error
 	onDisposableThread(func() {
-		if stackErr = apparmor.StackCurrentThread(); stackErr == nil {
+		if stackErr = apparmor.StackCurrentThread(layer.Profile); stackErr == nil {
 			connErr = connectUnix(path)
 		}
 	})
@@ -59,11 +64,11 @@ func socketSelfTest(layer *apparmor.Layer) error {
 		return stackErr
 	case connErr == nil:
 		return fmt.Errorf("%w: a thread under %s connected to %s, outside its roots: this kernel's AppArmor does not mediate pathname UNIX socket connects",
-			apparmor.ErrUnavailable, apparmor.ProfileName, path)
+			apparmor.ErrUnavailable, layer.Profile, path)
 	case errors.Is(connErr, unix.EACCES):
 		return nil
 	default:
-		return fmt.Errorf("%w: self-test connect to %s under %s: %w", apparmor.ErrUnavailable, path, apparmor.ProfileName, connErr)
+		return fmt.Errorf("%w: self-test connect to %s under %s: %w", apparmor.ErrUnavailable, path, layer.Profile, connErr)
 	}
 }
 
@@ -98,7 +103,7 @@ func checkSocketRoots(layer *apparmor.Layer, writable []*pinned) error {
 		if w != nil && !layer.Covers(w.canonical) {
 			return refuse(StagePaths,
 				"writable grant %s lies outside the AppArmor socket layer's roots %v, where %s denies writes; add a root that covers it (harness-wrapper contain-apparmor-profile) and reload the profile",
-				w.canonical, layer.Roots, apparmor.ProfileName)
+				w.canonical, layer.Roots, layer.Profile)
 		}
 	}
 	return nil

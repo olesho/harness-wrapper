@@ -97,7 +97,7 @@ func PreviewLaunch(in Input) (*Preview, error) {
 	}
 	if sockets != nil {
 		planned.PathnameSockets = containment.PathnameSocketsDeniedOutsideRoots
-		planned.AppArmor = &containment.AppArmorLayer{Profile: apparmor.ProfileName, Roots: slices.Clone(sockets.Roots)}
+		planned.AppArmor = &containment.AppArmorLayer{Profile: sockets.Profile, Roots: slices.Clone(sockets.Roots)}
 	}
 	grant := func(path, requested, class, source string, isDir bool) {
 		access, _ := classAccess(class)
@@ -275,7 +275,7 @@ func PreviewLaunch(in Input) (*Preview, error) {
 		}
 		if err == nil && !sockets.Covers(parent) {
 			missing("the managed-state directory %s, which holds the private TMPDIR, lies outside the AppArmor socket layer's roots %v, where %s denies writes; add a root that covers it and reload the profile",
-				parent, sockets.Roots, apparmor.ProfileName)
+				parent, sockets.Roots, sockets.Profile)
 		}
 	}
 	cgroupfs, cgErr := pin(cgroupRoot)
