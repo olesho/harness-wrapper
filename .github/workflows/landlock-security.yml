@@ -329,8 +329,8 @@ jobs:
         run: go test -count=1 -v -run 'TestAppArmorSocketLayer|TestUnavailableKernelRefuses' ./internal/contain/
 
   # G9: nothing changes for callers that do not ask. Only compatible API
-  # changes against the previous release, the darwin build, and the previous
-  # release's binaries and readers against this one.
+  # changes against the previous release, the darwin build, and the last
+  # pre-containment release's binaries and readers against this one.
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -359,7 +359,10 @@ jobs:
             GOOS=$os apidiff -m -incompatible "$RUNNER_TEMP/prev-$os.bin" . | tee "$RUNNER_TEMP/incompatible-$os.txt"
             if grep -q '^Incompatible changes' "$RUNNER_TEMP/incompatible-$os.txt"; then exit 1; fi
           done
-      - name: Previous release's runner, readers and gateway
+      # These checks are about components built BEFORE containment existed
+      # (they must reject or refuse it), so they run against the last release
+      # before it, not the latest tag: v0.9.0 onwards ship containment.
+      - name: Pre-containment release's runner, readers and gateway
         env:
-          HW_COMPAT_PREVIOUS: ${{ steps.prev.outputs.tag }}
+          HW_COMPAT_PREVIOUS: v0.8.5
         run: go test -count=1 -v ./test/compat/
