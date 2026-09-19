@@ -23,7 +23,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var landlockProbe = landlock.Probe
+var landlockProbe = func() (int, error) { return landlock.Probe(0) }
 
 // testHarness registers a profile for the test binary and isolates managed
 // state in a per-test directory.
@@ -997,9 +997,11 @@ func TestStateReuseRecoversPreviousLaunch(t *testing.T) {
 
 // TestUnavailableKernelRefuses is the refusal cells' test: on a kernel that
 // cannot enforce ABI 9 (below it, Landlock left out of lsm=, or its syscalls
-// blocked by seccomp) a valid contained launch is refused at the kernel
-// stage and starts nothing. Where Landlock is available it is skipped —
-// unless HW_LANDLOCK_EXPECT_UNAVAILABLE says this cell exists to prove refusal.
+// blocked by seccomp) and has no working AppArmor socket layer, a valid
+// contained launch is refused at the kernel stage and starts nothing. Where
+// Landlock ABI 9, or ABI 6-8 with the socket layer, is available it is skipped
+// — unless HW_LANDLOCK_EXPECT_UNAVAILABLE says this cell exists to prove
+// refusal.
 func TestUnavailableKernelRefuses(t *testing.T) {
 	_, perr := landlockProbe()
 	if perr == nil {
@@ -1007,6 +1009,14 @@ func TestUnavailableKernelRefuses(t *testing.T) {
 			t.Fatal("this cell must lack Landlock ABI 9, but it is available")
 		}
 		t.Skip("Landlock ABI 9 is available here")
+	}
+	if abi, err := landlock.ABI(); err == nil && abi >= landlock.MinimumABI {
+		if _, err := socketLayer(abi); err == nil {
+			if os.Getenv("HW_LANDLOCK_EXPECT_UNAVAILABLE") != "" {
+				t.Fatal("this cell must refuse, but the AppArmor socket layer is usable")
+			}
+			t.Skip("the AppArmor socket layer makes this kernel usable")
+		}
 	}
 	self := testHarness(t)
 	wd := t.TempDir()

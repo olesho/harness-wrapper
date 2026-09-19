@@ -43,7 +43,7 @@ func (l *lockedBuffer) String() string {
 // mock harness and isolates managed state.
 func containedTestSetup(t *testing.T) {
 	t.Helper()
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
 			t.Fatalf("Landlock ABI 9 required: %v", err)
 		}
@@ -264,7 +264,7 @@ func TestContainedBinaryNotFound(t *testing.T) {
 // never runs. Skipped where Landlock is available, unless
 // HW_LANDLOCK_EXPECT_UNAVAILABLE says the cell must lack it.
 func TestContainedStartRefusedWithoutLandlock(t *testing.T) {
-	if _, err := landlock.Probe(); err == nil {
+	if _, err := landlock.Probe(0); err == nil {
 		if os.Getenv("HW_LANDLOCK_EXPECT_UNAVAILABLE") != "" {
 			t.Fatal("this cell must lack Landlock ABI 9, but it is available")
 		}

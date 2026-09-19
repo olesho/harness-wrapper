@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/olesho/harness-wrapper/internal/apparmor"
 	"github.com/olesho/harness-wrapper/internal/landlock"
 	"github.com/olesho/harness-wrapper/pkg/containment"
 	"golang.org/x/sys/unix"
@@ -61,13 +63,21 @@ func PreviewLaunch(in Input) (*Preview, error) {
 	}
 	abi, err := landlock.ABI()
 	p.KernelABI = abi
+	handled := landlock.HandledFS
+	var sockets *apparmor.Layer
 	switch {
 	case err != nil:
 		p.Kernel = err.Error()
 		missing("kernel: %v", err)
-	case abi < req.MinABI:
-		p.Kernel = fmt.Sprintf("Landlock ABI %d is below the required %d", abi, req.MinABI)
+	case abi < max(req.MinABI, containment.LowestABI):
+		p.Kernel = fmt.Sprintf("Landlock ABI %d is below the required %d", abi, max(req.MinABI, containment.LowestABI))
 		missing("kernel: %s", p.Kernel)
+	case abi < landlock.ResolveUnixABI:
+		handled = landlock.HandledFSFor(abi)
+		if sockets, err = socketLayer(abi); err != nil {
+			p.Kernel = err.Error()
+			missing("kernel: %v", err)
+		}
 	}
 
 	callerEnv := in.Env
@@ -78,17 +88,21 @@ func PreviewLaunch(in Input) (*Preview, error) {
 		SchemaVersion:   containment.SchemaVersion,
 		Kind:            req.Kind,
 		ABI:             abi,
-		RequiredABI:     req.MinABI,
+		RequiredABI:     req.RequiredABI(abi),
 		Profile:         m.id(),
 		ProfileVersion:  m.ManifestVersion,
-		HandledFS:       landlock.HandledFS.Names(),
-		PathnameSockets: "denied",
+		HandledFS:       handled.Names(),
+		PathnameSockets: containment.PathnameSocketsDenied,
 		Scopes:          landlock.Scopes().Names(),
+	}
+	if sockets != nil {
+		planned.PathnameSockets = containment.PathnameSocketsDeniedOutsideRoots
+		planned.AppArmor = &containment.AppArmorLayer{Profile: sockets.Profile, Roots: slices.Clone(sockets.Roots)}
 	}
 	grant := func(path, requested, class, source string, isDir bool) {
 		access, _ := classAccess(class)
 		rule := landlock.Rule{Access: access, IsDir: isDir}
-		g := containment.Grant{Path: path, Access: class, Rights: rule.Effective().Names(), Source: source}
+		g := containment.Grant{Path: path, Access: class, Rights: (rule.Effective() & handled).Names(), Source: source}
 		if requested != "" && requested != path {
 			g.Requested = requested
 		}
@@ -241,6 +255,27 @@ func PreviewLaunch(in Input) (*Preview, error) {
 			if w.contains(ro) {
 				missing("read-only grant %s lies inside the writable grant %s, so it would not be read-only", ro.canonical, w.canonical)
 			}
+		}
+	}
+	if sockets != nil {
+		// Private TMPDIR (and, without a StateDir, HOME and harness state)
+		// live beneath the managed-state parent, which may not exist yet.
+		stateRW := append([]*pinned{}, writable...)
+		if stateDir != nil {
+			stateRW = append(stateRW, stateDir)
+		}
+		for _, w := range stateRW {
+			if err := checkSocketRoots(sockets, []*pinned{w}); err != nil {
+				missing("%v", err)
+			}
+		}
+		parent, err := StateParent()
+		if resolved, rerr := filepath.EvalSymlinks(parent); rerr == nil {
+			parent = resolved
+		}
+		if err == nil && !sockets.Covers(parent) {
+			missing("the managed-state directory %s, which holds the private TMPDIR, lies outside the AppArmor socket layer's roots %v, where %s denies writes; add a root that covers it and reload the profile",
+				parent, sockets.Roots, sockets.Profile)
 		}
 	}
 	cgroupfs, cgErr := pin(cgroupRoot)

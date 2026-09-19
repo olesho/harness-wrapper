@@ -77,7 +77,7 @@ func TestLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
 // terminal silently — output would end the blocked read on its own — and,
 // without cgroup supervision, outlives the harness.
 func TestContainedLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
 			t.Fatalf("Landlock ABI 9 required: %v", err)
 		}

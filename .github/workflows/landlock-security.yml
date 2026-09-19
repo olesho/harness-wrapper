@@ -297,9 +297,40 @@ jobs:
           HW_CONTAIN_STRESS: ${{ env.STRESS }}
         run: go test -count=1 -timeout 40m -v -run 'TestContainedSpawnStress|TestDescriptorContract|TestMainThreadHandOff' ./internal/contain/
 
+  # ADR-005: the AppArmor socket layer on the hosted runner's own kernel
+  # (ubuntu-24.04: 6.17, Landlock ABI 7, AppArmor on). Root installs the
+  # generated profile; the unprivileged `runner` user then launches under it and
+  # must be refused a pathname socket outside the root. HW_APPARMOR_REQUIRE
+  # turns every skip into a failure.
+  apparmor:
+    name: apparmor socket layer / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install the socket layer
+        run: |
+          root="$RUNNER_TEMP/aa-root"
+          mkdir -p "$root"
+          go run ./cmd/harness-wrapper contain-apparmor-profile --root "$root" > "$RUNNER_TEMP/profile"
+          sudo install -o root -g root -m 0644 "$RUNNER_TEMP/profile" /etc/apparmor.d/harness-wrapper-contain
+          sudo apparmor_parser -r /etc/apparmor.d/harness-wrapper-contain
+          head -1 /etc/apparmor.d/harness-wrapper-contain
+      - name: Contained launch under the socket layer
+        env:
+          HW_APPARMOR_REQUIRE: "1"
+        run: go test -count=1 -v -run 'TestAppArmorSocketLayer|TestUnavailableKernelRefuses' ./internal/contain/
+
   # G9: nothing changes for callers that do not ask. Only compatible API
-  # changes against the previous release, the darwin build, and the previous
-  # release's binaries and readers against this one.
+  # changes against the previous release, the darwin build, and the last
+  # pre-containment release's binaries and readers against this one.
   compatibility:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -328,7 +359,10 @@ jobs:
             GOOS=$os apidiff -m -incompatible "$RUNNER_TEMP/prev-$os.bin" . | tee "$RUNNER_TEMP/incompatible-$os.txt"
             if grep -q '^Incompatible changes' "$RUNNER_TEMP/incompatible-$os.txt"; then exit 1; fi
           done
-      - name: Previous release's runner, readers and gateway
+      # These checks are about components built BEFORE containment existed
+      # (they must reject or refuse it), so they run against the last release
+      # before it, not the latest tag: v0.9.0 onwards ship containment.
+      - name: Pre-containment release's runner, readers and gateway
         env:
-          HW_COMPAT_PREVIOUS: ${{ steps.prev.outputs.tag }}
+          HW_COMPAT_PREVIOUS: v0.8.5
         run: go test -count=1 -v ./test/compat/

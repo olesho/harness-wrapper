@@ -148,8 +148,8 @@ TCP, scopes, state, supervision and fingerprint), so a client that skipped the c
 whether containment applied: its absence means none was.
 
 A request that cannot be enforced is 400 `invalid_config` before the harness starts: not Linux, the
-kernel lacks Landlock ABI 9, an unknown harness or install layout, a codex rung other than bypass, a
-missing or overlapping path. Containment is fixed for a conversation's life: a `containment` on a
+kernel lacks the requested Landlock ABI (or, below ABI 9, the AppArmor socket layer), an unknown
+harness or install layout, a codex rung other than bypass, a missing or overlapping path. Containment is fixed for a conversation's life: a `containment` on a
 message may restate the same policy, and anything else — including containment on an uncontained
 conversation — is 400 `invalid_config`, refused before the text reaches the harness. Conversations
 opened here are single-launch (chatd has no reopen), so cgroup supervision is reported rather than

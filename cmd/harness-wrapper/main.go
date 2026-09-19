@@ -56,6 +56,9 @@ func run(args []string) int {
 			// Sign a harness in from inside the boundary, keeping the login
 			// in a caller state directory.
 			return runContainLogin(args[1:], os.Stdin, os.Stdout, os.Stderr)
+		case "contain-apparmor-profile":
+			// Print the AppArmor socket layer for kernels below Landlock ABI 9.
+			return runContainAppArmorProfile(args[1:], os.Stdout, os.Stderr)
 		}
 	}
 	return runHarnessWrapper(args)
@@ -290,6 +293,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "       harness-wrapper reap [--dry-run]")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-check [--json] [wrapper-flags] <name> -- <harness args>")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-login [--status] [--timeout DUR] --contain-state-dir DIR [--contain-* flags] <name>")
+	_, _ = fmt.Fprintln(w, "       harness-wrapper contain-apparmor-profile --root DIR [--root DIR ...]")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "wrapper flags (must come BEFORE the harness name):")
 	_, _ = fmt.Fprintln(w, "  --trace-file PATH       write trace events as NDJSON to PATH")
@@ -314,7 +318,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          (bypass is the ONLY rung --sandbox-defaults accepts),")
 	_, _ = fmt.Fprintln(w, "                          or pass --auto-accept to answer the screen in an")
 	_, _ = fmt.Fprintln(w, "                          interactive run.")
-	_, _ = fmt.Fprintln(w, "  --contain landlock      Linux (Landlock ABI 9+): run the harness inside an")
+	_, _ = fmt.Fprintln(w, "  --contain landlock      Linux (Landlock ABI 6+): run the harness inside an")
 	_, _ = fmt.Fprintln(w, "                          extra kernel-enforced boundary with private HOME and")
 	_, _ = fmt.Fprintln(w, "                          state; refused, never downgraded, when it cannot be")
 	_, _ = fmt.Fprintln(w, "                          enforced. The harness's own permission settings keep")
@@ -327,6 +331,11 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "                          anything. contain-login runs the harness's own sign-in")
 	_, _ = fmt.Fprintln(w, "                          inside the boundary and keeps the login in")
 	_, _ = fmt.Fprintln(w, "                          --contain-state-dir DIR. Unrelated to --sandbox-defaults.")
+	_, _ = fmt.Fprintln(w, "                          On Landlock ABI 6-8 (Linux 6.12-7.0) root must first")
+	_, _ = fmt.Fprintln(w, "                          install the profile contain-apparmor-profile prints:")
+	_, _ = fmt.Fprintln(w, "                          it denies pathname UNIX sockets outside its roots,")
+	_, _ = fmt.Fprintln(w, "                          which Landlock cannot before ABI 9. It is detected;")
+	_, _ = fmt.Fprintln(w, "                          --contain-min-abi 9 refuses it instead.")
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Restrictive rungs (`plan`, `manual`, `ask`) are fully enforced only when a")
 	_, _ = fmt.Fprintln(w, "human is at the TUI (passthrough, or `run` from a terminal for codex). Under")

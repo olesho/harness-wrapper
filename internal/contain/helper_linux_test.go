@@ -143,6 +143,12 @@ func helperReportMode(args []string) int {
 		case "rename":
 			from, to, _ := strings.Cut(v, ":")
 			rep.Checks[c] = errName(os.Rename(from, to))
+		case "link":
+			from, to, _ := strings.Cut(v, ":")
+			rep.Checks[c] = errName(os.Link(from, to))
+		case "symlink":
+			target, name, _ := strings.Cut(v, ":")
+			rep.Checks[c] = errName(os.Symlink(target, name))
 		case "cgroup-move", "cgroup-mkdir":
 			rep.Checks[c] = errName(leaveCgroup(k == "cgroup-mkdir"))
 		case "mkdir":

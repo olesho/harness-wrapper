@@ -45,18 +45,18 @@ func Errata() int {
 	return int(r)
 }
 
-// Probe reports whether the kernel can enforce the rulesets this package
-// builds: it returns the ABI and a non-nil error when that ABI is below
-// RequiredABI or Landlock is unavailable. It is advisory — ruleset creation
-// and enforcement remain authoritative, and every contained launch performs
-// both.
-func Probe() (int, error) {
+// Probe reports whether the kernel can enforce a ruleset created with
+// Config{MinABI: minABI}: it returns the ABI and a non-nil error when that ABI
+// is below the one minABI demands (zero: ResolveUnixABI) or Landlock is
+// unavailable. It is advisory — ruleset creation and enforcement remain
+// authoritative, and every contained launch performs both.
+func Probe(minABI int) (int, error) {
 	abi, err := ABI()
 	if err != nil {
 		return 0, err
 	}
-	if abi < RequiredABI {
-		return abi, fmt.Errorf("%w: kernel Landlock ABI %d is below the required %d", ErrUnavailable, abi, RequiredABI)
+	if want := requiredABI(minABI); abi < want {
+		return abi, fmt.Errorf("%w: kernel Landlock ABI %d is below the required %d", ErrUnavailable, abi, want)
 	}
 	return abi, nil
 }
@@ -76,24 +76,29 @@ func unavailable(e unix.Errno) error {
 type Ruleset struct {
 	fd          int
 	abi         int
+	handled     AccessFS
 	restrictTCP bool
 }
 
-// New creates a ruleset handling HandledFS, both IPC scopes and, when
-// cfg.RestrictTCP is set, TCP bind and connect. It fails with ErrUnavailable
-// when the kernel's ABI is below max(cfg.MinABI, RequiredABI): kernel
-// availability alone is not enough, every handled field must be accepted.
+// New creates a ruleset handling HandledFSFor(kernel ABI), both IPC scopes
+// and, when cfg.RestrictTCP is set, TCP bind and connect. It fails with
+// ErrUnavailable when the kernel's ABI is below the one cfg.MinABI demands:
+// kernel availability alone is not enough, every handled field must be
+// accepted.
 func New(cfg Config) (*Ruleset, error) {
+	if cfg.MinABI != 0 && cfg.MinABI < MinimumABI {
+		return nil, fmt.Errorf("%w: MinABI %d is below the lowest supported ABI %d", ErrRuleset, cfg.MinABI, MinimumABI)
+	}
 	abi, err := ABI()
 	if err != nil {
 		return nil, err
 	}
-	minABI := max(cfg.MinABI, RequiredABI)
-	if abi < minABI {
-		return nil, fmt.Errorf("%w: kernel Landlock ABI %d is below the required %d", ErrUnavailable, abi, minABI)
+	if want := requiredABI(cfg.MinABI); abi < want {
+		return nil, fmt.Errorf("%w: kernel Landlock ABI %d is below the required %d", ErrUnavailable, abi, want)
 	}
+	handled := HandledFSFor(abi)
 	attr := unix.LandlockRulesetAttr{
-		Access_fs: uint64(HandledFS),
+		Access_fs: uint64(handled),
 		Scoped:    uint64(Scopes()),
 	}
 	if cfg.RestrictTCP {
@@ -103,17 +108,20 @@ func New(cfg Config) (*Ruleset, error) {
 	if e != 0 {
 		return nil, fmt.Errorf("%w: landlock_create_ruleset (abi %d): %w", ErrRuleset, abi, e)
 	}
-	return &Ruleset{fd: int(fd), abi: abi, restrictTCP: cfg.RestrictTCP}, nil
+	return &Ruleset{fd: int(fd), abi: abi, handled: handled, restrictTCP: cfg.RestrictTCP}, nil
 }
 
 // ABI returns the kernel ABI the ruleset was created under.
 func (r *Ruleset) ABI() int { return r.abi }
 
+// HandledFS returns the filesystem rights the ruleset handles.
+func (r *Ruleset) HandledFS() AccessFS { return r.handled }
+
 // AddPath installs a path-beneath rule on rule.FD, the descriptor the caller
 // validated, never a pathname reopened here. A rule whose effective rights are
 // empty is an error: it would grant nothing while reading as a grant.
 func (r *Ruleset) AddPath(rule Rule) error {
-	access := rule.Effective()
+	access := rule.Effective() & r.handled
 	if access == 0 {
 		return fmt.Errorf("%w: rule on fd %d grants no applicable right (requested %#x)", ErrRuleset, rule.FD, uint64(rule.Access))
 	}

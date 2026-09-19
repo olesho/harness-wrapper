@@ -9,6 +9,7 @@ Applied
 	Grants []containment.Grant `json:"grants"`
 	TCP containment.TCP `json:"tcp"`
 	PathnameSockets string `json:"pathname_unix_sockets"`
+	AppArmor *containment.AppArmorLayer `json:"apparmor,omitempty"`
 	Scopes []string `json:"scopes"`
 	State containment.State `json:"state"`
 	Supervision containment.Supervision `json:"supervision"`

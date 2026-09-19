@@ -113,6 +113,9 @@ func printPreview(w io.Writer, p *contain.Preview) {
 		}
 		row("tcp", tcp)
 		row("unix sockets", "pathname: "+pl.PathnameSockets+"; scopes: "+strings.Join(pl.Scopes, ", "))
+		if pl.AppArmor != nil {
+			row("apparmor", fmt.Sprintf("%s stacked; writes and pathname sockets allowed only beneath %s", pl.AppArmor.Profile, strings.Join(pl.AppArmor.Roots, ", ")))
+		}
 		state := fmt.Sprintf("%s: HOME=%s TMPDIR=%s", pl.State.Mode, pl.State.Home, pl.State.Tmp)
 		if pl.State.HarnessStateEnv != "" {
 			state += fmt.Sprintf(" %s=%s", pl.State.HarnessStateEnv, pl.State.HarnessState)

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"syscall"
 
+	"github.com/olesho/harness-wrapper/internal/apparmor"
 	"github.com/olesho/harness-wrapper/internal/landlock"
 	"golang.org/x/sys/unix"
 )
@@ -24,6 +25,10 @@ type spawnSpec struct {
 	// ruleset is nil only in tests that drive the spawn on kernels without
 	// Landlock ABI 9 (the hosted-runner stress job).
 	ruleset *landlock.Ruleset
+	// apparmorProfile names the AppArmor socket layer to stack onto the child
+	// at exec (ADR-005); empty unless the kernel's Landlock predates
+	// RESOLVE_UNIX.
+	apparmorProfile string
 }
 
 // spawnResult reports a spawn. tid is the spawn thread; handedOff records that
@@ -52,7 +57,9 @@ var forkExec = forkExecContained
 //     thread a private copy of the descriptor table with every descriptor
 //     from 3 up marked close-on-exec — in one call no concurrent open can
 //     race, and without touching the wrapper's own table or flags;
-//  2. the Landlock domain is enforced on this thread only (no TSYNC);
+//  2. the Landlock domain is enforced on this thread only (no TSYNC), after
+//     the AppArmor socket layer, when the launch needs it, is requested for
+//     this thread's next exec (ADR-005);
 //  3. syscall.ForkExec forks from this thread, so the child inherits the
 //     private table and the domain and, after exec, holds exactly its
 //     terminal on 0-2. exec.Cmd and os.StartProcess are never used here: they
@@ -71,43 +78,63 @@ var forkExec = forkExecContained
 // there hands the work to a fresh goroutine, keeping the main thread locked
 // (so the retry cannot land on it too) and untouched, and unlocks it after.
 func spawn(s spawnSpec) spawnResult {
-	ch := make(chan spawnResult, 1)
+	var r spawnResult
+	handedOff := onDisposableThread(func() { r = spawnOnThisThread(s) })
+	r.handedOff = handedOff
+	return r
+}
+
+// onDisposableThread runs fn on a locked OS thread that is never unlocked, so
+// the runtime terminates it once fn returns and whatever fn changed about the
+// thread — its descriptor table, a Landlock domain, an AppArmor label — dies
+// with it. When the first goroutine lands on the main thread, which the
+// runtime would park instead of terminating, it hands fn to a fresh goroutine,
+// keeping the main thread locked (so the retry cannot land on it too) and
+// untouched, and unlocks it after; the result reports that hand-off.
+func onDisposableThread(fn func()) (handedOff bool) {
+	done := make(chan bool, 1)
 	go func() {
 		runtime.LockOSThread()
 		if tid := unix.Gettid(); tid == mainThreadTID || tid == unix.Getpid() {
-			inner := make(chan spawnResult, 1)
+			inner := make(chan struct{})
 			go func() {
 				runtime.LockOSThread() // never unlocked
-				spawnOnThisThread(s, inner)
+				fn()
+				close(inner)
 			}()
-			r := <-inner
+			<-inner
 			runtime.UnlockOSThread() // the main thread was never changed
-			r.handedOff = true
-			ch <- r
+			done <- true
 			return
 		}
-		spawnOnThisThread(s, ch)
+		fn()
+		done <- false
 		// Returning while locked: the runtime terminates this thread.
 	}()
-	return <-ch
+	return <-done
 }
 
-// spawnOnThisThread runs steps 1-3 on the calling, locked thread and reports
-// on ch; its caller returns while locked (step 4).
-func spawnOnThisThread(s spawnSpec, ch chan<- spawnResult) {
+// spawnOnThisThread runs steps 1-3 on the calling, locked thread; its caller
+// returns while locked (step 4).
+func spawnOnThisThread(s spawnSpec) spawnResult {
 	res := spawnResult{tid: unix.Gettid()}
 	if err := unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_UNSHARE|unix.CLOSE_RANGE_CLOEXEC); err != nil {
 		res.stage, res.err = "close_range", err
-		ch <- res
-		return
+		return res
 	}
 	res.pid, res.stage, res.err = forkExec(s)
-	ch <- res
+	return res
 }
 
 // forkExecContained enforces the domain on the calling thread and forks the
-// child from it.
+// child from it. The AppArmor stack is requested first: it takes effect at the
+// child's exec, and writing the request needs no privilege the domain removes.
 func forkExecContained(s spawnSpec) (int, string, error) {
+	if s.apparmorProfile != "" {
+		if err := apparmor.StackOnExec(s.apparmorProfile); err != nil {
+			return 0, "apparmor", err
+		}
+	}
 	if s.ruleset != nil {
 		if err := s.ruleset.RestrictCurrentThread(); err != nil {
 			return 0, "landlock", err

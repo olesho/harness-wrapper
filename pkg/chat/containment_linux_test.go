@@ -37,7 +37,7 @@ func (s *orderStore) CreateSession(ctx context.Context, sess *chat.Session) erro
 // script and write the argv dump.
 func containedFake(t *testing.T, argvOut string) (string, []string, *wrapper.Containment) {
 	t.Helper()
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
 			t.Fatalf("Landlock ABI 9 required: %v", err)
 		}

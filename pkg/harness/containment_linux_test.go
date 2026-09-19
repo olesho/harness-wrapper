@@ -20,7 +20,7 @@ import (
 
 func requireLandlock(t *testing.T) {
 	t.Helper()
-	if _, err := landlock.Probe(); err != nil {
+	if _, err := landlock.Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
 			t.Fatalf("Landlock ABI 9 required: %v", err)
 		}

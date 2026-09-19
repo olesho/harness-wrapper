@@ -9,7 +9,7 @@ func ABI() (int, error) { return 0, ErrUnsupported }
 func Errata() int { return 0 }
 
 // Probe reports ErrUnsupported.
-func Probe() (int, error) { return 0, ErrUnsupported }
+func Probe(int) (int, error) { return 0, ErrUnsupported }
 
 // Ruleset is never created on this platform.
 type Ruleset struct{}
@@ -19,6 +19,9 @@ func New(Config) (*Ruleset, error) { return nil, ErrUnsupported }
 
 // ABI returns 0.
 func (*Ruleset) ABI() int { return 0 }
+
+// HandledFS returns 0.
+func (*Ruleset) HandledFS() AccessFS { return 0 }
 
 // AddPath reports ErrUnsupported.
 func (*Ruleset) AddPath(Rule) error { return ErrUnsupported }

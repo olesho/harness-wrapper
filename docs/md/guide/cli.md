@@ -168,7 +168,8 @@ runs — only about which name you type.)
 
 ### Containment flags
 
-`--contain landlock` starts the harness inside a [Landlock domain](containment.md) (Linux, ABI 9+) in
+`--contain landlock` starts the harness inside a [Landlock domain](containment.md) (Linux, ABI 9+, or
+ABI 6+ with the [AppArmor socket layer](containment.md#kernels-before-landlock-abi-9) installed) in
 every mode — passthrough, `run`, `structured-run` and tmux (the pane re-exec forwards every
 `--contain*` flag). The other flags refine it and are rejected without it:
 
@@ -179,9 +180,13 @@ every mode — passthrough, `run`, `structured-run` and tmux (the pane re-exec f
 | `--contain-ro PATH` | Grant read-only access. Repeatable. A read-only path inside a writable one is refused. |
 | `--contain-restrict-tcp` | Deny TCP bind and every TCP connect except to the allowed ports; alone, it denies all TCP. |
 | `--contain-allow-tcp PORT` | Allow outbound TCP connects to `PORT`. Repeatable; invalid without `--contain-restrict-tcp`. |
-| `--contain-min-abi N` | Require at least Landlock ABI `N` (default and minimum 9). |
+| `--contain-min-abi N` | Lowest Landlock ABI to accept, 6 or more. Unset, the ABI is detected: Landlock alone on ABI 9+, and below it the [AppArmor socket layer](containment.md#kernels-before-landlock-abi-9) when root has installed it (refused otherwise). `9` refuses the socket layer. |
 | `--contain-state-dir DIR` | Keep HOME and harness state in `DIR` (persistent, shared) instead of private per-session state. |
 | `--contain-pass-env NAME` | Also pass the environment variable `NAME` to the harness. Repeatable; names only. |
+
+`harness-wrapper contain-apparmor-profile --root DIR [--root DIR ...]` prints that socket layer's
+profile for root to install as `/etc/apparmor.d/harness-wrapper-contain`; each root must exist and is
+recorded with symlinks resolved. Exit 2 on a usage error.
 
 `harness-wrapper contain-check [--json] [wrapper flags] <name> -- [args]` previews the policy without
 starting anything: the planned grants (placeholders for private directories not yet allocated), the
