@@ -1,7 +1,7 @@
 --auto-accept <*flag.boolValue> = "false" : run: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human
---contain <*flag.stringValue> = "" : run the harness inside an extra Landlock boundary (Linux, ABI 9+, or 6+ with --contain-min-abi and the AppArmor socket layer): landlock; unrelated to --sandbox-defaults, which removes guardrails instead of adding one
+--contain <*flag.stringValue> = "" : run the harness inside an extra Landlock boundary (Linux, Landlock ABI 9+, or 6+ with the AppArmor socket layer installed): landlock; unrelated to --sandbox-defaults, which removes guardrails instead of adding one
 --contain-allow-tcp <*main.portList> = "" : with --contain-restrict-tcp: allow outbound TCP connects to this port (repeatable)
---contain-min-abi <*flag.intValue> = "0" : with --contain: the lowest Landlock ABI to accept (default 9, minimum 6); below 9 pathname UNIX sockets are denied by the AppArmor socket layer (see contain-apparmor-profile)
+--contain-min-abi <*flag.intValue> = "0" : with --contain: the lowest Landlock ABI to accept (6-10; default: detect — Landlock alone on ABI 9+, the AppArmor socket layer below it when installed); 9 refuses the socket layer
 --contain-pass-env <*main.stringList> = "" : with --contain: also pass this environment variable to the harness (repeatable; names only)
 --contain-restrict-tcp <*flag.boolValue> = "false" : with --contain: deny TCP bind and every TCP connect except to --contain-allow-tcp ports (none listed: deny all TCP)
 --contain-ro <*main.stringList> = "" : with --contain: grant read-only access to an existing absolute path (repeatable)

@@ -76,10 +76,10 @@ func wantRefusal(t *testing.T, in Input, stage string) {
 }
 
 // TestAppArmorSocketLayer is the fallback's end-to-end cell: on Landlock ABI
-// 6-8, a request that accepts such a kernel stacks the socket layer, so the
-// harness is refused a pathname socket outside the roots and reaches one
-// beneath them; a request that does not, or a writable grant the profile would
-// break, is refused before anything starts.
+// 6-8, a request that leaves MinABI unset detects the installed socket layer
+// and stacks it, so the harness is refused a pathname socket outside the roots
+// and reaches one beneath them; a request that requires Landlock alone, or a
+// writable grant the profile would break, is refused before anything starts.
 func TestAppArmorSocketLayer(t *testing.T) {
 	layer := requireSocketLayer(t)
 	self := testHarness(t)
@@ -121,7 +121,7 @@ func TestAppArmorSocketLayer(t *testing.T) {
 		"connect-unix=" + soft,
 		"connect-unix=" + viaProc,
 	}
-	in := helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock, MinABI: landlock.MinimumABI},
+	in := helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock},
 		append([]string{report}, checks...)...)
 	applied, st, _ := runContained(t, in)
 	if !st.Success() {
@@ -154,22 +154,36 @@ func TestAppArmorSocketLayer(t *testing.T) {
 	if slices.Contains(applied.HandledFS, "resolve_unix") {
 		t.Errorf("handled rights %v claim resolve_unix on ABI %d", applied.HandledFS, applied.ABI)
 	}
+	if applied.RequiredABI != containment.LowestABI {
+		t.Errorf("required ABI %d, want %d under the socket layer", applied.RequiredABI, containment.LowestABI)
+	}
 
-	t.Run("default request refused", func(t *testing.T) {
-		wantRefusal(t, helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock}, report), StageKernel)
+	t.Run("explicit floor below the kernel stacks it too", func(t *testing.T) {
+		kernelABI := applied.ABI
+		applied, st, _ := runContained(t, helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock, MinABI: kernelABI},
+			report, "connect-unix="+outside))
+		if !st.Success() || applied.AppArmor == nil || applied.RequiredABI != kernelABI {
+			t.Fatalf("exit %v, applied %+v", st, applied)
+		}
+		if got := readHelperReport(t, report).Checks["connect-unix="+outside]; got != "EACCES" {
+			t.Fatalf("outside socket: %s, want EACCES", got)
+		}
+	})
+	t.Run("min_abi 9 refused", func(t *testing.T) {
+		wantRefusal(t, helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock, MinABI: containment.ResolveUnixABI}, report), StageKernel)
 	})
 	t.Run("writable grant outside the roots refused", func(t *testing.T) {
 		wantRefusal(t, helperInput(t, self, wd, &containment.Request{
-			Kind: containment.KindLandlock, MinABI: landlock.MinimumABI, ReadWrite: []string{outDir},
+			Kind: containment.KindLandlock, ReadWrite: []string{outDir},
 		}, report), StagePaths)
 	})
 	t.Run("working directory outside the roots refused", func(t *testing.T) {
 		wantRefusal(t, helperInput(t, self, outDir, &containment.Request{
-			Kind: containment.KindLandlock, MinABI: landlock.MinimumABI,
+			Kind: containment.KindLandlock,
 		}, report), StagePaths)
 	})
 	t.Run("preview reports the layer", func(t *testing.T) {
-		p, err := PreviewLaunch(helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock, MinABI: landlock.MinimumABI}))
+		p, err := PreviewLaunch(helperInput(t, self, wd, &containment.Request{Kind: containment.KindLandlock}))
 		if err != nil {
 			t.Fatal(err)
 		}

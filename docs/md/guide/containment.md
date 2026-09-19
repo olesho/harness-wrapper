@@ -67,14 +67,14 @@ The request (`containment.Request`, aliased as `wrapper.Containment`):
 | `read_only` / `read_write` | Extra **existing absolute** paths the harness may read, or read and write. |
 | `restrict_tcp` | Off by default (TCP unrestricted, and reported so). On: every TCP bind is denied, and every connect except to `connect_tcp`. |
 | `connect_tcp` | Permitted remote ports. Empty with `restrict_tcp` denies all TCP. Ports without `restrict_tcp` are invalid. |
-| `min_abi` | Lowest Landlock ABI to accept; default **9** (Linux 7.1), floor **6** (Linux 6.12). Below 9 the launch needs the [AppArmor socket layer](#kernels-before-landlock-abi-9). |
+| `min_abi` | Lowest Landlock ABI to accept, **6** (Linux 6.12) or more. Unset, the ABI is **detected**: Landlock alone on ABI 9 (Linux 7.1) and later; below it, the [AppArmor socket layer](#kernels-before-landlock-abi-9) when root has installed it. **9** requires Landlock alone and refuses the layer. |
 | `state_dir` | Caller-managed, persistent, shareable state instead of private state (see [State](#private-state)). |
 | `pass_env` | Extra environment variable **names** to inherit. HOME, temporary and harness-state variables cannot be named. |
 
 ## What the domain enforces
 
 Every contained launch handles every ABI 9 filesystem right (every right but `RESOLVE_UNIX` on an
-older kernel a request accepted — see [below](#kernels-before-landlock-abi-9)), and the harness gets
+older kernel with the socket layer — see [below](#kernels-before-landlock-abi-9)), and the harness gets
 only:
 
 - the harness profile's baseline — `/usr` (and `/bin`, `/lib`, `/lib64`, `/sbin` where they are real
@@ -124,11 +124,13 @@ and names the binary, but does not prove Landlock was responsible. A missing bin
 
 `RESOLVE_UNIX`, the right with which the domain denies pathname UNIX sockets, arrived in Landlock ABI 9
 (Linux 7.1). Every other right a contained launch uses exists from ABI 6 (Linux 6.12), which covers
-Debian 13's stock 6.12 kernel and Ubuntu 26.04's 7.0. On such a kernel a request can **opt in** with
-`min_abi` 6, 7 or 8
-(`--contain-min-abi 6`), and the launch then stacks an **AppArmor socket layer** onto the harness
-([ADR-005](../internal/decisions/adr-005-apparmor-socket-layer.md)). A request that does not opt in
-is refused there, as before.
+Debian 13's stock 6.12 kernel and Ubuntu 26.04's 7.0. On such a kernel the launch stacks an
+**AppArmor socket layer** onto the harness
+([ADR-005](../internal/decisions/adr-005-apparmor-socket-layer.md)) — **if root has installed it**.
+Installing it is the host's opt-in: without it the launch is refused, as before, and the refusal says
+how to install it. The wrapper detects the kernel's ABI and the layer itself; a request needs no flag.
+A caller that must have ABI 9's stronger rule (below) sets `min_abi` 9, and is then refused on these
+kernels whatever is installed.
 
 The layer is one static profile that root installs once. It withholds write access — which connecting
 to a pathname UNIX socket requires — everywhere except beneath the **roots** you give it and the devices
@@ -150,8 +152,8 @@ socket gap.
 
    Change the roots by regenerating, reinstalling and reloading: a launch reads them from the file's
    first line, and the file must be owned by root and writable by no one else.
-3. **Check and run** with `--contain-min-abi 6`: `contain-check` shows `pathname:
-   denied_outside_roots` and an `apparmor` row naming the roots.
+3. **Check and run** as usual: `contain-check` shows `pathname: denied_outside_roots` and an
+   `apparmor` row naming the roots.
 
 Before every launch the wrapper stacks the profile onto a throwaway thread and connects to a socket
 outside the roots; only `EACCES` lets the launch proceed. So a profile that is missing, not loaded,
@@ -166,7 +168,7 @@ What differs from ABI 9:
   that process's `/proc` environment). A socket outside the roots is denied even if the harness's own
   tools created it there — they can only create one where they can write, which is beneath a root.
 - `/dev/null`, `/dev/tty` and the session terminal stay writable; no other device is.
-- The applied policy reports `pathname_unix_sockets: "denied_outside_roots"`, the kernel ABI, handled
+- The applied policy reports `pathname_unix_sockets: "denied_outside_roots"`, `required_abi` 6, the kernel ABI, handled
   rights without `resolve_unix`, and an `apparmor` object with the profile and its roots. Its
   fingerprint differs from an ABI 9 launch's.
 - It needs AppArmor enabled (Ubuntu and Debian enable it by default) and a kernel whose AppArmor

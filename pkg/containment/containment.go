@@ -26,24 +26,26 @@ import (
 // KindLandlock is the only containment kind this release implements.
 const KindLandlock = "landlock"
 
-// DefaultABI is the Landlock ABI a contained launch requires unless the
-// request lowers it. ABI 9 (Linux 7.1) adds LANDLOCK_ACCESS_FS_RESOLVE_UNIX,
-// with which the domain itself denies connections to external pathname UNIX
-// sockets.
-const DefaultABI = 9
+// ResolveUnixABI is the Landlock ABI (Linux 7.1) that adds
+// LANDLOCK_ACCESS_FS_RESOLVE_UNIX, with which the domain itself denies
+// connections to external pathname UNIX sockets. A request with MinABI set to
+// it never uses the AppArmor socket layer.
+const ResolveUnixABI = 9
 
-// LowestABI is the lowest Landlock ABI a request may accept (Linux 6.12). On
-// a kernel below DefaultABI, Landlock cannot deny pathname UNIX socket
-// connects, so the launch stacks harness-wrapper's AppArmor socket layer and
-// is refused when that layer is not installed or not effective (ADR-005).
+// LowestABI is the lowest Landlock ABI a contained launch accepts (Linux
+// 6.12). On a kernel below ResolveUnixABI, Landlock cannot deny pathname UNIX
+// socket connects, so the launch stacks harness-wrapper's AppArmor socket
+// layer and is refused when that layer is not installed or not effective
+// (ADR-005).
 const LowestABI = 6
 
-// MinimumABI is DefaultABI, under the name it had before a request could
-// lower the ABI.
+// MinimumABI is the ABI every contained launch required before the AppArmor
+// socket layer existed.
 //
-// Deprecated: it is the default, not the lowest ABI a request may accept. Use
-// DefaultABI, or LowestABI for the floor.
-const MinimumABI = DefaultABI
+// Deprecated: a request with MinABI zero now accepts LowestABI when the socket
+// layer is installed. Use ResolveUnixABI to require Landlock alone, or
+// LowestABI for the floor.
+const MinimumABI = ResolveUnixABI
 
 // SchemaVersion versions the canonical serialization of Applied and of the
 // stored requirement record. Readers must refuse versions they do not know.
@@ -74,12 +76,13 @@ type Request struct {
 	// ports without RestrictTCP are invalid.
 	ConnectTCP []uint16 `json:"connect_tcp,omitempty"`
 
-	// MinABI is the lowest Landlock ABI the launch accepts. Zero means
-	// DefaultABI; a value below LowestABI is invalid. A value below DefaultABI
-	// opts into kernels whose Landlock predates RESOLVE_UNIX, where pathname
-	// UNIX socket connects are denied by the AppArmor socket layer instead —
-	// by path, outside its installed roots, rather than by who created the
-	// socket (ADR-005).
+	// MinABI is the lowest Landlock ABI the launch accepts; a nonzero value
+	// below LowestABI is invalid. Zero (unset) detects: Landlock alone on
+	// ResolveUnixABI and later, and below it the AppArmor socket layer when
+	// root has installed it — which denies pathname UNIX socket connects by
+	// path, outside its roots, rather than by who created the socket
+	// (ADR-005). ResolveUnixABI requires Landlock alone; 6-8 behave as zero
+	// with a raised floor.
 	MinABI int `json:"min_abi,omitempty"`
 
 	// StateDir selects caller-managed persistent state (HOME and harness state
@@ -115,7 +118,7 @@ func ReservedEnv(name string) bool {
 
 // Normalize validates r and returns its canonical form: kind checked, paths
 // cleaned (still as the caller wrote them — canonical targets are resolved at
-// launch), duplicates removed, lists sorted and the minimum ABI made explicit.
+// launch), duplicates removed and lists sorted.
 // Two requests that normalize to equal values ask for the same policy.
 //
 // A nil request normalizes to nil: no containment.
@@ -148,7 +151,8 @@ func Normalize(r *Request) (*Request, error) {
 
 	switch {
 	case r.MinABI == 0:
-		out.MinABI = DefaultABI
+		// Kept unset: detection is a policy of its own, distinct from any
+		// explicit floor.
 	case r.MinABI < LowestABI:
 		return nil, fmt.Errorf("%w: MinABI %d is below the supported minimum %d", ErrInvalidRequest, r.MinABI, LowestABI)
 	default:
@@ -172,6 +176,21 @@ func Normalize(r *Request) (*Request, error) {
 	}
 	out.PassEnv = sortedUnique(r.PassEnv)
 	return out, nil
+}
+
+// RequiredABI returns the kernel ABI a launch of r (normalized) requires on a
+// kernel with Landlock ABI kernelABI: r's explicit MinABI, or, for a request
+// that detects, ResolveUnixABI where the kernel has it and LowestABI (where
+// the AppArmor socket layer must stand in) where it does not.
+func (r *Request) RequiredABI(kernelABI int) int {
+	switch {
+	case r.MinABI != 0:
+		return r.MinABI
+	case kernelABI >= ResolveUnixABI:
+		return ResolveUnixABI
+	default:
+		return LowestABI
+	}
 }
 
 func normalizePaths(label string, in []string) ([]string, error) {
@@ -374,8 +393,10 @@ const (
 type Applied struct {
 	SchemaVersion int    `json:"schema_version"`
 	Kind          string `json:"kind"`
-	// ABI is the kernel's Landlock ABI; RequiredABI is the minimum the
-	// request demanded.
+	// ABI is the kernel's Landlock ABI; RequiredABI is the minimum the launch
+	// enforced: the request's MinABI when set, otherwise ResolveUnixABI for
+	// Landlock alone and LowestABI (raised to MinABI) under the AppArmor
+	// socket layer.
 	ABI         int `json:"abi"`
 	RequiredABI int `json:"required_abi"`
 	// Profile is the harness profile, "<name>@<harness version>", and

@@ -16,8 +16,9 @@ seccomp cannot close the gap either — it cannot read the `sockaddr` a pointer 
 
 ## Decision
 
-A request may accept ABI 6–8 by lowering `min_abi` (default still 9). On such a kernel the launch
-stacks one static AppArmor profile, `harness-wrapper-contain`, onto the harness:
+The wrapper detects the kernel's ABI. On ABI 9 and later nothing changes. On ABI 6–8 the launch
+stacks one static AppArmor profile, `harness-wrapper-contain`, onto the harness — when root has
+installed it, and is refused otherwise:
 
 1. **The profile** (`harness-wrapper contain-apparmor-profile --root DIR…`, installed and loaded by
    root) allows everything but write and append everywhere (`/** rmixlk`), and write beneath its roots
@@ -45,6 +46,12 @@ stacks one static AppArmor profile, `harness-wrapper-contain`, onto the harness:
    and a kernel whose AppArmor lets the connect through. It costs about 0.2 ms. The thread is locked
    and never unlocked, and the main thread is handed off exactly as for the spawn, so the confinement
    dies with the thread.
+5. **Detected, not requested.** A request with `min_abi` unset detects; it is kept unset when
+   normalized, so it is a distinct policy from `min_abi` 9, which a stored conversation or a turn
+   restatement compares exactly. A per-request opt-in was rejected: every caller would have had to
+   know the host's kernel, and the consent that matters — accepting a path-based socket rule — is the
+   host owner's, given by installing the profile. `required_abi` reports what the launch enforced: 9
+   for Landlock alone, 6 (or the request's higher floor) under the layer.
 
 The applied policy reports `pathname_unix_sockets: "denied_outside_roots"`, handled rights without
 `resolve_unix`, and `apparmor: {profile, roots}`. A policy without the layer serializes exactly as
@@ -58,8 +65,10 @@ What this guarantees on ABI 6–8, with the layer installed:
   including through a symlink or `/proc/<pid>/root`, which AppArmor resolves to the real path. A hard
   link that would give the socket a name beneath a root is refused by Landlock, which lacks `REFER` on
   the source. `TestAppArmorSocketLayer` exercises all three.
-- **No weaker launch than asked.** A request that did not lower `min_abi` is refused on these kernels
-  as before; a missing or ineffective layer refuses at the `kernel` stage.
+- **No weaker launch than asked, and none unannounced.** Installing the profile is the host's opt-in:
+  without it, ABI 6–8 refuses as before, and a missing or ineffective layer refuses at the `kernel`
+  stage. A request that must have ABI 9's creator-based rule sets `min_abi` 9 and is refused on these
+  kernels whatever is installed. The applied policy always says which rule applied.
 
 What it does not:
 

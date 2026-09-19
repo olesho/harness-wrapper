@@ -87,7 +87,7 @@ export type PermissionMode =
   | "danger-full-access";
 
 /**
- * An optional Landlock containment request (Linux, ABI 9+): an extra,
+ * An optional Landlock containment request (Linux, ABI 9+, or 6+ with the AppArmor socket layer): an extra,
  * kernel-enforced boundary around the harness, outside whatever its own
  * permission settings enforce. Mirrors `containment.Request` in
  * `pkg/containment`; the server validates it, and a request it cannot honour
@@ -109,7 +109,7 @@ export interface Containment {
   restrictTcp?: boolean;
   /** Remote TCP ports the harness may connect to (with `restrictTcp`). */
   connectTcp?: number[];
-  /** Lowest Landlock ABI to accept; default 9, floor 6 (below 9 the server needs the AppArmor socket layer). */
+  /** Lowest Landlock ABI to accept (6+). Unset detects: Landlock alone on ABI 9+, the AppArmor socket layer below it when installed; 9 refuses the layer. */
   minAbi?: number;
   /** Caller-managed persistent state directory instead of private state. */
   stateDir?: string;

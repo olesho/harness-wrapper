@@ -95,10 +95,13 @@ func Prepare(in Input) (l *Launch, err error) {
 	if err != nil {
 		return nil, err
 	}
-	abi, err := landlock.Probe(req.MinABI)
+	abi, err := landlock.Probe(max(req.MinABI, containment.LowestABI))
 	if err != nil {
 		return nil, refuseErr(StageKernel, err)
 	}
+	// A detecting request (MinABI unset) or one that accepts ABI 6-8 needs
+	// the socket layer below RESOLVE_UNIX; MinABI 9 was refused just above.
+	required := req.RequiredABI(abi)
 	var sockets *apparmor.Layer
 	if abi < landlock.ResolveUnixABI {
 		if sockets, err = socketLayer(abi); err != nil {
@@ -218,7 +221,7 @@ func Prepare(in Input) (l *Launch, err error) {
 		return l, refuseErr(StageState, err)
 	}
 
-	if l.ruleset, err = landlock.New(landlock.Config{MinABI: req.MinABI, RestrictTCP: req.RestrictTCP}); err != nil {
+	if l.ruleset, err = landlock.New(landlock.Config{MinABI: required, RestrictTCP: req.RestrictTCP}); err != nil {
 		if errors.Is(err, landlock.ErrUnavailable) {
 			return l, refuseErr(StageKernel, err)
 		}
@@ -239,7 +242,7 @@ func Prepare(in Input) (l *Launch, err error) {
 		SchemaVersion:   containment.SchemaVersion,
 		Kind:            req.Kind,
 		ABI:             l.ruleset.ABI(),
-		RequiredABI:     req.MinABI,
+		RequiredABI:     required,
 		Profile:         m.id(),
 		ProfileVersion:  m.ManifestVersion,
 		HandledFS:       l.ruleset.HandledFS().Names(),

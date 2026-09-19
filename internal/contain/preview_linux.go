@@ -69,8 +69,8 @@ func PreviewLaunch(in Input) (*Preview, error) {
 	case err != nil:
 		p.Kernel = err.Error()
 		missing("kernel: %v", err)
-	case abi < req.MinABI:
-		p.Kernel = fmt.Sprintf("Landlock ABI %d is below the required %d", abi, req.MinABI)
+	case abi < max(req.MinABI, containment.LowestABI):
+		p.Kernel = fmt.Sprintf("Landlock ABI %d is below the required %d", abi, max(req.MinABI, containment.LowestABI))
 		missing("kernel: %s", p.Kernel)
 	case abi < landlock.ResolveUnixABI:
 		handled = landlock.HandledFSFor(abi)
@@ -88,7 +88,7 @@ func PreviewLaunch(in Input) (*Preview, error) {
 		SchemaVersion:   containment.SchemaVersion,
 		Kind:            req.Kind,
 		ABI:             abi,
-		RequiredABI:     req.MinABI,
+		RequiredABI:     req.RequiredABI(abi),
 		Profile:         m.id(),
 		ProfileVersion:  m.ManifestVersion,
 		HandledFS:       handled.Names(),

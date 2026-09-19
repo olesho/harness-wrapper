@@ -8,7 +8,7 @@ import (
 )
 
 func TestNormalizeMinABI(t *testing.T) {
-	for in, want := range map[int]int{0: DefaultABI, 6: 6, 8: 8, 9: 9, 10: 10} {
+	for in, want := range map[int]int{0: 0, 6: 6, 8: 8, 9: 9, 10: 10} {
 		r, err := Normalize(&Request{Kind: KindLandlock, MinABI: in})
 		if err != nil {
 			t.Fatalf("MinABI %d: %v", in, err)
@@ -22,11 +22,30 @@ func TestNormalizeMinABI(t *testing.T) {
 			t.Errorf("MinABI %d: %v, want ErrInvalidRequest", in, err)
 		}
 	}
-	if DefaultABI != 9 || LowestABI != 6 {
-		t.Error("the default must stay at RESOLVE_UNIX (ABI 9) and the floor at the IPC scopes (ABI 6)")
+	if Equal(&Request{Kind: KindLandlock}, &Request{Kind: KindLandlock, MinABI: 9}) {
+		t.Error("a detecting request equals one that requires Landlock alone")
+	}
+	if ResolveUnixABI != 9 || LowestABI != 6 {
+		t.Error("RESOLVE_UNIX is ABI 9 and the IPC scopes are ABI 6")
 	}
 	if MinimumABI != 9 {
 		t.Error("MinimumABI is a released constant: its value must not change")
+	}
+}
+
+func TestRequiredABI(t *testing.T) {
+	for _, tc := range []struct{ min, kernel, want int }{
+		{0, 10, 9},
+		{0, 9, 9},
+		{0, 8, 6},
+		{0, 6, 6},
+		{9, 8, 9},
+		{7, 8, 7},
+		{7, 9, 7},
+	} {
+		if got := (&Request{MinABI: tc.min}).RequiredABI(tc.kernel); got != tc.want {
+			t.Errorf("MinABI %d on kernel ABI %d requires %d, want %d", tc.min, tc.kernel, got, tc.want)
+		}
 	}
 }
 
