@@ -12,6 +12,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/harnessenv"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"golang.org/x/term"
@@ -91,7 +92,7 @@ func runOneShot(args []string) int {
 	}
 
 	// Strip Claude Code's nesting markers (CLAUDECODE / CLAUDE_CODE_*, minus
-	// the credential exemption in nestingExemptEnvKeys): when harness-wrapper
+	// the credential exemption in pkg/harnessenv): when harness-wrapper
 	// itself runs inside a Claude Code session, a nested `claude` disables
 	// session persistence and never writes the JSONL transcript we read back.
 	// A top-level env makes it persist normally.
@@ -149,76 +150,20 @@ func runOneShot(args []string) int {
 	return 0
 }
 
-// nestingEnvKey is Claude Code's exact-match session-nesting marker;
-// nestingEnvPrefix is the family prefix every other marker shares.
-const (
-	nestingEnvKey    = "CLAUDECODE"
-	nestingEnvPrefix = "CLAUDE_CODE_"
-)
-
-// nestingExemptEnvKeys are keys that match nestingEnvPrefix but are NOT nesting
-// markers, so they must survive the scrub.
+// The Claude Code session-nesting env policy lives in pkg/harnessenv — the
+// predicate, the CLAUDE_CODE_OAUTH_TOKEN exemption and the reasons for both.
+// It was promoted out of this file so every library entrypoint (pkg/harness,
+// pkg/oneshot and their live tests) can reuse the one implementation instead of
+// mirroring it. (PUPPET-671)
 //
-// CLAUDE_CODE_OAUTH_TOKEN is claude's long-lived headless credential, minted by
-// `claude setup-token`. It is the equivalent of a ~/.claude login, not something
-// a running claude exports into its children — it just happens to share the
-// prefix. Stripping it made the spawned harness start UNAUTHENTICATED anywhere
-// the token is the only working auth (a fresh host, a container, a CI runner):
-// claude paints the login wall, no turn ever completes, and the run dies at the
-// deadline (PUPPET-317; meta-harness saw the same as PUPPET-309, measured as
-// ~285s deadline deaths in LIVE_CLAUDE=1 live_question.test.ts).
-//
-// Precedent for exempting a credential from an env filter: meta-harness
-// src/chat/env.ts NESTING_EXEMPT (commit 379d162), loomcli
-// internal/cli/envfilter/envfilter.go (exact allowlist) and
-// internal/driver/env.go trustedLocalProviderCredentials.
-//
-// BOUNDARY: this is a NESTING predicate, not a containment filter. It says
-// nothing about what may cross into a guest or sandbox —
-// internal/env/daytona/leak_probe.go independently and correctly lists
-// CLAUDE_CODE_OAUTH_TOKEN in CredentialSensitiveEnvNames. Do not reuse this set
-// there, and do not "reconcile" the two: they answer different questions and
-// both answers are right.
-//
-// Exact match only. CLAUDE_CODE_OAUTH_TOKEN_FILE, CLAUDE_CODE_OAUTH_TOKENX and
-// friends are still stripped.
-var nestingExemptEnvKeys = map[string]bool{
-	"CLAUDE_CODE_OAUTH_TOKEN": true,
-}
-
-// isClaudeNestingEnvKey reports whether key is one of Claude Code's session
-// nesting markers. The exemption set is consulted first; see
-// nestingExemptEnvKeys.
-func isClaudeNestingEnvKey(key string) bool {
-	if nestingExemptEnvKeys[key] {
-		return false
-	}
-	return key == nestingEnvKey || strings.HasPrefix(key, nestingEnvPrefix)
-}
-
-// filterNestingEnv returns src minus the Claude Code nesting markers, keeping
-// the relative order of the survivors (a later duplicate key wins in exec, so
-// reordering would be observable). Pure — it takes the environment as an
-// argument so the policy is testable without mutating the process environment.
-func filterNestingEnv(src []string) []string {
-	out := make([]string, 0, len(src))
-	for _, kv := range src {
-		k := kv
-		if i := strings.IndexByte(kv, '='); i >= 0 {
-			k = kv[:i]
-		}
-		if isClaudeNestingEnvKey(k) {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return out
-}
+// These two names stay as delegates: they are the spelling the rest of cmd/
+// already calls.
+func filterNestingEnv(src []string) []string { return harnessenv.Filter(src) }
 
 // cleanedEnv returns the current environment minus Claude Code's nesting
 // markers, so a spawned `claude` runs as a top-level (persisting) session.
-// CLAUDE_CODE_OAUTH_TOKEN is deliberately preserved — see nestingExemptEnvKeys.
-func cleanedEnv() []string { return filterNestingEnv(os.Environ()) }
+// CLAUDE_CODE_OAUTH_TOKEN is deliberately preserved — see pkg/harnessenv.
+func cleanedEnv() []string { return harnessenv.Cleaned() }
 
 // inputHandling builds the InputPolicy + OnInputRequest callback for the chosen
 // mode. Factored out of runOneShot so the two wirings are unit-testable without
