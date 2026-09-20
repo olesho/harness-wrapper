@@ -149,6 +149,18 @@ const (
 	bypassAnchor = "Bypass Permissions mode"
 )
 
+// DialogAnchors returns the literal lines a BLOCKING dialog paints, for a
+// caller that needs to tell "this screen is a modal" from "this screen is a
+// login wall" — a verdict taken over a folder-trust or bypass-acceptance
+// dialog is about the dialog, not the credential.
+//
+// Exported because loom was carrying its own copy of these three strings to
+// answer exactly that question, which is one more place a claude-code UI
+// change has to be chased by hand.
+func DialogAnchors() []string {
+	return []string{trustAnchor, trustAnchorAlt, bypassAnchor}
+}
+
 // Input kinds this adapter stamps on turns.InputRequest.Kind. They are the keys
 // a declarative policy matches on (chat.InputPolicy.ByKind, and loomcli's
 // domain.RoleInputPolicy.Kinds), so they are exported: a consumer that wants to
