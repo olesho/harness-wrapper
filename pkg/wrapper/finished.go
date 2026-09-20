@@ -104,21 +104,53 @@ type residualRow struct {
 // naming both a quota and a 500 is a rate limit, because that is the verdict
 // that recovers on its own.
 //
-// These rows are deliberately UNCHANGED from the table they were moved out of
-// (loom's internal/agenterr), so the move could be tested differentially.
-// Narrowing them — `residual.billing` matches a bare "billing"; `residual.auth`
-// matches API-key VARIABLE NAMES — is the follow-up this move makes possible,
-// not part of it.
+// A row may only match text that NAMES AN API FAILURE. That rule was learned:
+// the rows arrived here matching ordinary agent output, and two of them produce
+// FATAL verdicts downstream, so a row that can fire on prose is not a weak
+// signal but a way to stop a healthy agent. Measured before narrowing, 10 of 12
+// ordinary outputs produced a fatal verdict — a filesystem `permission denied`,
+// an `ANTHROPIC_API_KEY` mentioned in passing, the word `billing` in a filename.
+//
+// Removed for that reason, with the alternative that still covers the real case
+// in parentheses:
+//
+//	residual.auth     permission.?denied   — filesystem EACCES, not an API refusal
+//	                  invalid.*key         (invalid.?api.?key keeps the real one)
+//	                  *_API_KEY x5         (apiKeyVarUnset keeps the real one)
+//	residual.billing  \bbilling\b          — a word, in filenames and prose
+//	                  \bquota\b \bcredits\b (insufficient_/quota.?exceeded keep the real ones)
+//	residual.context  too.?long            (prompt.?too.?long keeps the real one)
+//
+// What makes the removals affordable rather than merely safer: a genuine wall
+// is now named by the harness itself (pkg/chat/apierror.go), so these rows no
+// longer have to guess at one. Their production yield over three retained weeks
+// was six verdicts, one of which was false and parked the fleet.
 var residualRows = []residualRow{
 	{"residual.ratelimit", regexp.MustCompile(`(?i)\b429\b|too many requests|tokens per min|overloaded_error|resource.?exhausted|resource_exhausted|rate.?limit|usage.?limit|session.?limit|resets at|resets \d{1,2}:\d{2}|try again at\s+\d`), ErrRateLimited, "rate limit exceeded"},
-	{"residual.auth", regexp.MustCompile(`(?i)\b401\b|unauthorized|unauthenticated|permission.?denied|forbidden|invalid.?api.?key|incorrect.?api.?key|invalid.*key|authentication.?failed|ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|CURSOR_API_KEY`), ErrAuth, "authentication failed"},
-	{"residual.billing", regexp.MustCompile(`(?i)\b402\b|payment.?required|insufficient.?(?:credits|quota)|insufficient_quota|exceeded.*quota|quota.?exceeded|\bquota\b|\bcredits\b|\bbilling\b`), ErrBilling, "billing error"},
+	{"residual.auth", regexp.MustCompile(`(?i)\b401\b|unauthorized|unauthenticated|forbidden|invalid.?api.?key|incorrect.?api.?key|authentication.?failed|` + apiKeyVarUnset), ErrAuth, "authentication failed"},
+	{"residual.billing", regexp.MustCompile(`(?i)\b402\b|payment.?required|insufficient.?(?:credits|quota)|insufficient_quota|exceeded.*quota|quota.?exceeded`), ErrBilling, "billing error"},
 	{"residual.model_version", regexp.MustCompile(`(?i)model requires a newer version|requires a newer version of (?:codex|claude)|upgrade to the latest (?:app or )?cli`), ErrModelNotFound, "backend CLI is incompatible with the selected model"},
 	{"residual.model_not_found", regexp.MustCompile(`(?i)model.?not.?found|model.*not found|model.*does not exist|model.*not.*exist|model_not_found|unsupported.?model|unknown.?model|invalid.?model|selected model.*may not exist|selected model.*may not have access to it|\b404\b.*model`), ErrModelNotFound, "model not found"},
-	{"residual.context", regexp.MustCompile(`(?i)context.?length|context.?window|context_length_exceeded|maximum context length|max.?tokens|max.*tokens|token.?limit|prompt.?too.?long|too.?long`), ErrContextOverflow, "context length exceeded"},
+	{"residual.context", regexp.MustCompile(`(?i)context.?length|context.?window|context_length_exceeded|maximum context length|max.?tokens|max.*tokens|token.?limit|prompt.?too.?long`), ErrContextOverflow, "context length exceeded"},
 	{"residual.timeout", regexp.MustCompile(`(?i)\btimeout\b|etimedout|connection.?timed?.?out|timed?.?out|deadline.?exceeded`), ErrTimeout, "connection timeout"},
 	{"residual.transient", regexp.MustCompile(`(?i)\b50[023]\b|\b529\b|server.?error|server_error|internal.?server.?error|internal.?error|service.?unavailable|backend.?error|overloaded`), ErrTransient, "server error"},
 }
+
+// apiKeyVarUnset matches a credential VARIABLE NAME only when a failure word
+// keeps it company on the same line.
+//
+// The bare names were listed as literals, so `reading ANTHROPIC_API_KEY from
+// the environment` — an agent narrating its own work — fatally stopped that
+// agent. But `Error: OPENAI_API_KEY is not set` is a real credential failure
+// and must keep classifying, so the name cannot simply be dropped. What
+// separates them is not the name, it is whether anything says the name is
+// a PROBLEM.
+//
+// Both orders, because CLIs write it both ways ("X is not set", "missing X").
+// The window is line-scoped and bounded: `.` does not cross a newline, so a
+// failure word further down the log cannot reach back and condemn a mention.
+const apiKeyVarUnset = `(?:ANTHROPIC|OPENAI|GEMINI|GOOGLE|CURSOR)_API_KEY[^\n]{0,40}?(?:not set|unset|missing|required|invalid|empty)` +
+	`|(?:not set|unset|missing|required|invalid|empty)[^\n]{0,40}?(?:ANTHROPIC|OPENAI|GEMINI|GOOGLE|CURSOR)_API_KEY`
 
 // matchResidual runs the residual rows in order and builds a FRESH
 // Classification for the first usable hit — it never inherits Status, HTTPCode
