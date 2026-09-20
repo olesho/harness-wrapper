@@ -2,11 +2,11 @@
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
 // Detection signals first observed on 2.1.141. The pin in versions.json is
-// 2.1.270, verified LIVE against that binary on 2026-09-14 by pkg/harness's
+// 2.1.278, verified LIVE against that binary on 2026-09-20 by pkg/harness's
 // TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 // TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 // TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
-// 2.1.270 end-of-turn summary and Busy() gates the in-flight frames, so those
+// 2.1.278 end-of-turn summary and Busy() gates the in-flight frames, so those
 // runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
 // path, a large prompt arriving intact, and the folder-trust dialog, both
 // reported in a directory claude has not trusted and answered.
@@ -14,12 +14,13 @@
 // The four scripted claude scenarios under test/corpus/claude-code/ —
 // settled-after-turn, multi-turn, tool-call and interrupted-mid-reply — are
 // recorded at 2.1.270 from a directory claude had never trusted
-// (meta.json.binary_version is the recorded proof), so interruptMarker and the
-// tool-call rendering are verified at the pin by replay. The permission-mode
-// footers in permmode.go are still anchored at 2.1.217. The recordings are
-// frozen renderings the adapter must keep handling: once the pin moves on they
-// trail it, and replaying them cannot confirm the newer release; only the live
-// tests above can.
+// (meta.json.binary_version is the recorded proof), one release behind the pin,
+// so interruptMarker and the tool-call rendering are verified at 2.1.270 by
+// replay and at 2.1.278 only insofar as the live tests touch them. The
+// permission-mode footers in permmode.go are still anchored at 2.1.217. The
+// recordings are frozen renderings the adapter must keep handling: once the pin
+// moves on they trail it, and replaying them cannot confirm the newer release;
+// only the live tests above can.
 //
 // The signals:
 //
