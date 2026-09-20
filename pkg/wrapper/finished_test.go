@@ -3,6 +3,7 @@ package wrapper_test
 import (
 	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -268,11 +269,24 @@ func TestClassifyOutput_UnchangedByFinishedOutput(t *testing.T) {
 	}
 	for _, w := range want {
 		g := wrapper.ClassifyOutput(w.Harness, w.Text)
-		got := row{w.Harness, w.Text, string(g.Status), g.Class.String(), g.Reason, g.Terminal, g.HTTPCode, g.RetryAfter.Milliseconds()}
+		got := row{w.Harness, w.Text, string(g.Status), g.Class.String(), normalizeResumeTime(g.Reason), g.Terminal, g.HTTPCode, g.RetryAfter.Milliseconds()}
 		if got != w {
 			t.Errorf("live verdict moved for harness %q, text %q:\n got  %+v\n want %+v", w.Harness, w.Text, got, w)
 		}
 	}
+}
+
+// resumeTimeRe matches the RFC3339 instant a session-limit reason carries.
+//
+// "resets 10:20pm" is parsed into an ABSOLUTE time — the next 22:20 in the
+// machine's zone — and formatted into the reason. That makes the reason a
+// function of today's date and $TZ, so a golden holding one is red tomorrow
+// and red on any other machine. The instant is not what this golden is about:
+// it pins which verdict the classifier reaches, and ResumeAt has its own tests.
+var resumeTimeRe = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\d{2}:\d{2}|Z)`)
+
+func normalizeResumeTime(s string) string {
+	return resumeTimeRe.ReplaceAllString(s, "<resume-time>")
 }
 
 // TestFinishedOutput_ResidualReachesKnownHarnesses is why the rows could not

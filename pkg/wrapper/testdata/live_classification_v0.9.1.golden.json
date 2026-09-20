@@ -314,7 +314,7 @@
   "Text": "You've hit your session limit · resets 10:20pm",
   "Status": "blocked_by_cost",
   "Class": "RateLimited",
-  "Reason": "session limit reached, resumes at 2026-09-20T22:20:00+02:00: You've hit your session limit · resets 10:20pm",
+  "Reason": "session limit reached, resumes at <resume-time>: You've hit your session limit · resets 10:20pm",
   "Terminal": true,
   "HTTPCode": 0,
   "RetryAfterMS": 0
@@ -634,7 +634,7 @@
   "Text": "You've hit your session limit · resets 10:20pm",
   "Status": "blocked_by_cost",
   "Class": "RateLimited",
-  "Reason": "session limit reached, resumes at 2026-09-20T22:20:00+02:00: You've hit your session limit · resets 10:20pm",
+  "Reason": "session limit reached, resumes at <resume-time>: You've hit your session limit · resets 10:20pm",
   "Terminal": true,
   "HTTPCode": 0,
   "RetryAfterMS": 0
