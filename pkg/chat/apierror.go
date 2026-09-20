@@ -39,6 +39,12 @@ import (
 //   - NO GUESSING. A tag whose class is genuinely ambiguous yields no verdict,
 //     and so does one outside the known vocabulary. Falling through leaves the
 //     screen relabels in charge — exactly today's behaviour.
+//
+// Cost: two extra full transcript parses per turn — one at send for the
+// watermark, one at the terminal point. Measured on the largest real
+// transcript to hand (17 MB, 2939 events): 203ms each, and ~5ms at the median
+// size. Against a turn measured in minutes that is not worth an incremental
+// reader, and the one-shot driver already pays a full parse for History.
 
 // watermarkUnknown marks "we could not establish how far the transcript
 // already extended", which is a decline, not a zero.
