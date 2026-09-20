@@ -82,9 +82,12 @@ func TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog(t *testing.T) {
 
 	var out bytes.Buffer
 	_, err := harness.RunTurn(ctx, harness.TurnConfig{
-		Harness:       "claude",
-		BinaryPath:    claudePath,
-		Args:          []string{"--dangerously-skip-permissions"},
+		Harness:    "claude",
+		BinaryPath: claudePath,
+		Args:       []string{"--dangerously-skip-permissions"},
+		// After t.Setenv above, so the fresh CLAUDE_CONFIG_DIR is carried
+		// through; only the nesting markers are dropped.
+		Env:           scrubbedRealClaudeEnv(t),
 		WorkingDir:    workDir,
 		Prompt:        "Reply with exactly: HARNESS_WRAPPER_RUNTURN_OK",
 		ExitAfterTurn: true,
