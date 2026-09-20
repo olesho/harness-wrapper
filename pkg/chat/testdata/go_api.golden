@@ -106,10 +106,15 @@ type Store interface
 	method ListTurns(context.Context, string) ([]chat.Turn, error)
 	method UpdateSession(context.Context, *chat.Session) error
 	method UpdateTurn(context.Context, *chat.Turn) error
+type ScreenAnchor struct
+	field ID string
+	field RE *regexp.Regexp
 
 -- functions --
 func Open (context.Context, chat.Options) (*chat.Conversation, error)
 func Reopen (context.Context, chat.ReopenOptions) (*chat.Conversation, error)
+func AuthAnchors (string) []chat.ScreenAnchor
+func DialogAnchors (string) []string
 
 -- consts --
 RoleUser Role = "user"
