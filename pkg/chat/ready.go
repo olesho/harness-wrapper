@@ -332,9 +332,9 @@ var (
 	// it cannot reject is a reply line that itself begins with the exact UI
 	// wording, which needs the full phrase and (for the paste line) its input
 	// prompt to collide.
-	claudeOnboardingRE = []*regexp.Regexp{
-		regexp.MustCompile(`(?im)^[^\S\n]*choose the text style\b`), // theme picker
-		regexp.MustCompile(`(?im)^[^\S\n]*select login method\b`),   // login-method screen
+	claudeOnboardingAnchors = []ScreenAnchor{
+		{"claude.onboarding.theme_picker", regexp.MustCompile(`(?im)^[^\S\n]*choose the text style\b`)},      // theme picker
+		{"claude.onboarding.select_login_method", regexp.MustCompile(`(?im)^[^\S\n]*select login method\b`)}, // login-method screen
 		// The OAuth sign-in page the login-method menu advances into: the browser
 		// handoff / paste-the-code screen. It is a WALL — it never becomes a
 		// composer — and the "Select login method" anchor is gone from the screen
@@ -343,34 +343,95 @@ var (
 		// counterpart to codex's "finish signing in via your browser". Either
 		// line alone suffices: on a short terminal the wrapped authorize URL
 		// between them can push the first one off screen.
-		regexp.MustCompile(`(?im)^[^\S\n]*browser didn't open\? use the url below to sign in\b`),
-		regexp.MustCompile(`(?im)^[^\S\n]*paste code here if prompted[^\S\n]*>`),
+		{"claude.onboarding.oauth_browser_open", regexp.MustCompile(`(?im)^[^\S\n]*browser didn't open\? use the url below to sign in\b`)},
+		{"claude.onboarding.oauth_paste_code", regexp.MustCompile(`(?im)^[^\S\n]*paste code here if prompted[^\S\n]*>`)},
 	}
-	codexOnboardingRE = []*regexp.Regexp{
+	codexOnboardingAnchors = []ScreenAnchor{
 		// The never-signed-in menu: its title line and its highlighted row
 		// ("> 1. Sign in with ChatGPT").
-		regexp.MustCompile(`(?im)^[^\S\n]*(?:[>›][^\S\n]*(?:\d+\.[^\S\n]*)?)?sign in with chatgpt\b`),
+		{"codex.onboarding.sign_in_with_chatgpt", regexp.MustCompile(`(?im)^[^\S\n]*(?:[>›][^\S\n]*(?:\d+\.[^\S\n]*)?)?sign in with chatgpt\b`)},
 		// The login flow the menu advances into (browser + device-code).
-		regexp.MustCompile(`(?im)^[^\S\n]*finish signing in via your browser\b`),
+		{"codex.onboarding.browser_signin", regexp.MustCompile(`(?im)^[^\S\n]*finish signing in via your browser\b`)},
 	}
 	// Logged-out / bad-key banners left on an otherwise-ready screen. Handled on
 	// the completion path (a turn that yielded no reply), not by refusing to send.
-	claudeLoggedOutRE = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\brun /login\b`),
-		regexp.MustCompile(`(?i)\bnot logged in\b`),
-		regexp.MustCompile(`(?i)\binvalid api key\b`),
+	claudeLoggedOutAnchors = []ScreenAnchor{
+		{"claude.loggedout.run_login", regexp.MustCompile(`(?i)\brun /login\b`)},
+		{"claude.loggedout.not_logged_in", regexp.MustCompile(`(?i)\bnot logged in\b`)},
+		{"claude.loggedout.invalid_api_key", regexp.MustCompile(`(?i)\binvalid api key\b`)},
 	}
-	codexLoggedOutRE = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)\b401 unauthorized\b`),
-		regexp.MustCompile(`(?i)missing bearer or basic authentication`),
-		regexp.MustCompile(`(?i)\bnot logged in\b`),
-		regexp.MustCompile(`(?i)\bcodex(?: mcp)? login\b`),
+	codexLoggedOutAnchors = []ScreenAnchor{
+		{"codex.loggedout.401_unauthorized", regexp.MustCompile(`(?i)\b401 unauthorized\b`)},
+		{"codex.loggedout.missing_bearer", regexp.MustCompile(`(?i)missing bearer or basic authentication`)},
+		{"codex.loggedout.not_logged_in", regexp.MustCompile(`(?i)\bnot logged in\b`)},
+		{"codex.loggedout.codex_login", regexp.MustCompile(`(?i)\bcodex(?: mcp)? login\b`)},
 	}
 )
 
-func anyMatch(res []*regexp.Regexp, text string) bool {
-	for _, re := range res {
-		if re.MatchString(text) {
+// ScreenAnchor is one identified screen pattern: the regex this package
+// matches with, and a stable id for it.
+//
+// The ids exist because a consumer that RECORDS which banner it saw needs a
+// name for it, and copying the regexes out to invent one is how a consumer
+// ends up tracking harness drift by hand. loom did exactly that: it mirrored
+// these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
+// of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
+// with its copies unanchored where these are line-anchored.
+//
+// The id strings are a DOWNSTREAM CONTRACT. loom's
+// docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
+// triggers, so a rename silently breaks the trigger it belongs to. Add anchors
+// freely; do not rename an existing id.
+type ScreenAnchor struct {
+	ID string
+	RE *regexp.Regexp
+}
+
+// AuthAnchors returns the screen anchors whose presence means the harness
+// cannot produce output until a human authenticates — onboarding wizard first,
+// then logged-out banner, which is authRequired's own precedence, so a caller
+// recording the FIRST hit names the arm this package would have taken.
+//
+// A harness this package has no banner set for returns nil. The empty string
+// returns every harness's anchors, for a caller that describes a screen
+// without knowing which harness drew it.
+func AuthAnchors(harness string) []ScreenAnchor {
+	switch harness {
+	case chatClaudeCode:
+		return concatAnchors(claudeOnboardingAnchors, claudeLoggedOutAnchors)
+	case "codex":
+		return concatAnchors(codexOnboardingAnchors, codexLoggedOutAnchors)
+	case "":
+		return concatAnchors(claudeOnboardingAnchors, codexOnboardingAnchors,
+			claudeLoggedOutAnchors, codexLoggedOutAnchors)
+	default:
+		return nil
+	}
+}
+
+// DialogAnchors returns the literal lines a BLOCKING dialog paints — a
+// folder-trust prompt, a bypass-permissions confirmation. A screen showing one
+// is about a dialog, not a login, which is the distinction a caller recording
+// evidence needs in order to tell a real auth wall from a verdict taken over a
+// modal. Nil for a harness with no known dialogs.
+func DialogAnchors(harness string) []string {
+	if harness == chatClaudeCode || harness == "" {
+		return claudecode.DialogAnchors()
+	}
+	return nil
+}
+
+func concatAnchors(groups ...[]ScreenAnchor) []ScreenAnchor {
+	var out []ScreenAnchor
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
+func anyAnchor(anchors []ScreenAnchor, text string) bool {
+	for _, a := range anchors {
+		if a.RE.MatchString(text) {
 			return true
 		}
 	}
@@ -385,9 +446,9 @@ func anyMatch(res []*regexp.Regexp, text string) bool {
 func onboardingWall(harness, text string) bool {
 	switch harness {
 	case chatClaudeCode:
-		return anyMatch(claudeOnboardingRE, text)
+		return anyAnchor(claudeOnboardingAnchors, text)
 	case "codex":
-		return anyMatch(codexOnboardingRE, text)
+		return anyAnchor(codexOnboardingAnchors, text)
 	default:
 		return false
 	}
@@ -446,9 +507,9 @@ func usageLimitMessage(harness, text string) (string, bool) {
 func authRequired(harness, text string) bool {
 	switch harness {
 	case chatClaudeCode:
-		return anyMatch(claudeOnboardingRE, text) || anyMatch(claudeLoggedOutRE, text)
+		return anyAnchor(claudeOnboardingAnchors, text) || anyAnchor(claudeLoggedOutAnchors, text)
 	case "codex":
-		return anyMatch(codexOnboardingRE, text) || anyMatch(codexLoggedOutRE, text)
+		return anyAnchor(codexOnboardingAnchors, text) || anyAnchor(codexLoggedOutAnchors, text)
 	default:
 		return false
 	}
