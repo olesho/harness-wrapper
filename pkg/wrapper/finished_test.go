@@ -301,3 +301,62 @@ func TestFinishedOutput_ResidualReachesKnownHarnesses(t *testing.T) {
 		}
 	}
 }
+
+// The 2026-09-11 incident, as a test.
+//
+// A loom agent's turn failed on a swallowed prompt. Its log tail opened with
+// the daemon's own timestamp, `time=2026-09-11T17:08:17.402+02:00`.
+// residual.billing's `\b402\b` matched the MILLISECOND FIELD; the exit was
+// classified ErrBilling; the agent was stopped fatally; an account-wide wall
+// armed for fifteen minutes and parked five more agents. Nothing in the text
+// was about billing.
+//
+// The text is verbatim from loom-daemon-puppet-error__2026-09-12, the excerpt
+// the classifier itself recorded on the verdict.
+func TestFinishedOutput_TimestampIsNotAStatusCode(t *testing.T) {
+	const incident = `time=2026-09-11T17:08:17.402+02:00 level=INFO msg="api issue backend created" url=http://127.0.0.1:3012 workspace=PUPPET
+[daemon] not resuming Claude session: lock carries no claude session id (task )
+Launching Claude agent (non-interactive)...
+
+Error: claude-code: prompt not accepted / no assistant output; harness session id not known yet
+`
+	if got := wrapper.ClassifyFinishedOutput("claude", incident); got.Rule != "" {
+		t.Errorf("a log timestamp produced a verdict: class=%v rule=%q match=%q — this is the incident that parked the fleet",
+			got.Class, got.Rule, got.Match)
+	}
+
+	// The whole class, not just the one value that bit us. Two of these are
+	// FATAL dispositions downstream (401 -> ErrAuth, 402 -> ErrBilling), so a
+	// regression here stops agents until a human intervenes.
+	for _, ms := range []string{"401", "402", "404", "429", "500", "502", "503", "529"} {
+		line := "time=2026-09-11T17:08:17." + ms + "+02:00 level=INFO msg=\"working\"\nError: the turn produced no output\n"
+		if got := wrapper.ClassifyFinishedOutput("claude", line); got.Rule != "" {
+			t.Errorf("millisecond .%s produced %v via %s (match %q)", ms, got.Class, got.Rule, got.Match)
+		}
+	}
+}
+
+// The other half of the guard: narrowing must not cost a real status code.
+// Every one of these is a shape the residual rows exist for — a bare code from
+// a harness whose anchored matchers did not fire.
+func TestFinishedOutput_RealStatusCodesSurviveTheGuard(t *testing.T) {
+	cases := []struct{ text, wantRule string }{
+		{"upstream returned 429", "residual.ratelimit"},
+		{"Error: 401 Unauthorized: invalid api key", "residual.auth"},
+		{"402 payment required", "residual.billing"},
+		{"HTTP 403 forbidden", "residual.auth"},
+		{"upstream said 529", "residual.transient"},
+		{"request failed with 503", "residual.transient"},
+		// The decisive case: a timestamp AND a real code in the same blob. The
+		// timestamp comes first, so a guard that only tested the first match
+		// would report nothing at all — silently trading a false positive for
+		// a false negative.
+		{"time=2026-09-11T17:08:17.402+02:00 starting\nError: 429 too many requests\n", "residual.ratelimit"},
+	}
+	for _, tc := range cases {
+		got := wrapper.ClassifyFinishedOutput("claude", tc.text)
+		if got.Rule != tc.wantRule {
+			t.Errorf("%q -> rule %q, want %q (match %q)", tc.text, got.Rule, tc.wantRule, got.Match)
+		}
+	}
+}

@@ -121,16 +121,16 @@ var residualRows = []residualRow{
 }
 
 // matchResidual runs the residual rows in order and builds a FRESH
-// Classification for the first hit — it never inherits Status, HTTPCode or
-// ResumeAt from the result it replaces. A residual row is a text fingerprint,
-// not a harness lifecycle state, so Status stays empty and Rule is what a
-// caller discriminates on.
+// Classification for the first usable hit — it never inherits Status, HTTPCode
+// or ResumeAt from the result it replaces. A residual row is a text
+// fingerprint, not a harness lifecycle state, so Status stays empty and Rule is
+// what a caller discriminates on.
 func matchResidual(output string) (Classification, bool) {
 	if output == "" {
 		return Classification{}, false
 	}
 	for _, r := range residualRows {
-		loc := r.re.FindStringIndex(output)
+		loc := firstUsableMatch(r.re, output)
 		if loc == nil {
 			continue
 		}
@@ -141,6 +141,59 @@ func matchResidual(output string) (Classification, bool) {
 		return c, true
 	}
 	return Classification{}, false
+}
+
+// firstUsableMatch returns the first match of re in s that survives
+// embeddedNumber, or nil when every match is one.
+//
+// It walks ALL matches rather than testing only the first, because the digits
+// that fooled us are the ones most likely to appear early: a log tail opens
+// with its timestamp and the real error arrives at the end.
+//
+// FindAllStringIndex is used on the WHOLE string on purpose — re-matching
+// against a slice would move the `\b` anchors, and a boundary that only exists
+// because of where the slice started is exactly the kind of false match this
+// function exists to reject.
+func firstUsableMatch(re *regexp.Regexp, s string) []int {
+	for _, loc := range re.FindAllStringIndex(s, -1) {
+		if !embeddedNumber(s, loc[0], loc[1]) {
+			return loc
+		}
+	}
+	return nil
+}
+
+// embeddedNumber reports whether an all-digit match at [lo,hi) is a fragment of
+// a larger number rather than a status code standing on its own.
+//
+// This exists because of a measured incident. On 2026-09-11 a loom agent's log
+// tail began `time=2026-09-11T17:08:17.402+02:00`; residual.billing's `\b402\b`
+// matched the MILLISECOND FIELD, the turn was classified ErrBilling, the agent
+// was stopped fatally and an account-wide wall parked five more agents for
+// fifteen minutes. The turn's actual failure was a swallowed prompt. The same
+// hazard covers 7 of the 10 ordinary millisecond values, two of them fatal
+// (`.401` → ErrAuth, `.402` → ErrBilling).
+//
+// A digit can never directly precede a `\b`-anchored numeric match — digits are
+// word characters, so there would be no boundary — which leaves a separator,
+// and only one separator turns a token into a fragment: the decimal point. A
+// match preceded by '.', or followed by '.' and another digit, is part of a
+// number (a millisecond field, a version, a decimal) and says nothing about
+// HTTP. Everything else — `429`, `Error: 401`, `HTTP 403`, `upstream returned
+// 429` — is untouched.
+func embeddedNumber(s string, lo, hi int) bool {
+	for i := lo; i < hi; i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false // not a bare numeric token; the word rows are unaffected
+		}
+	}
+	if lo > 0 && s[lo-1] == '.' {
+		return true // 17:08:17.402 — a millisecond field or a decimal fraction
+	}
+	if hi+1 < len(s) && s[hi] == '.' && s[hi+1] >= '0' && s[hi+1] <= '9' {
+		return true // 402.5 — the integer part of a decimal
+	}
+	return false
 }
 
 // retryAfterRe extracts a Retry-After header value from log/output text. The
