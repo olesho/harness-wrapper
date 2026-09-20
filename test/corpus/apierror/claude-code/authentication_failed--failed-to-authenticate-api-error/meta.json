@@ -1,0 +1,13 @@
+{
+ "harness": "claude-code",
+ "tag": "authentication_failed",
+ "verdict": "wall",
+ "code": "auth_required",
+ "reason": "ReasonAuthRequired",
+ "screenOnly": "complete",
+ "screenAuthRequired": false,
+ "occurrences": 1,
+ "versions": [
+  "2.1.197"
+ ]
+}

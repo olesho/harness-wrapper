@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"40121028-de21-4830-932b-4997c9b7e83f","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Unable to connect to API (ENOTFOUND)"}]},"timestamp":"2026-08-04T09:56:58.961Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.219"}

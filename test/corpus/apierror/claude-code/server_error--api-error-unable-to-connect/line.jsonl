@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"21cde0b3-6e42-42f8-b386-7eed387f9930","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Unable to connect to API (ConnectionRefused)"}]},"timestamp":"2026-07-03T23:23:09.287Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.197"}

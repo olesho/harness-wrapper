@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"83f36f64-d8a1-4494-b6c9-36342aeb612c","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)"}]},"timestamp":"2026-09-15T09:40:05.890Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.272"}

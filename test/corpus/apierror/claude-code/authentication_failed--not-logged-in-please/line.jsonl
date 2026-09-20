@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"a488037f-c480-4154-a830-1a937bb041b8","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"Not logged in · Please run /login"}]},"timestamp":"2026-09-03T08:27:16.748Z","isApiErrorMessage":true,"error":"authentication_failed","version":"2.1.258"}

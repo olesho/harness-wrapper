@@ -35,6 +35,16 @@ type Event struct {
 	Output    string          `json:"output,omitempty"` // tool_result text
 	UUID      string          `json:"uuid,omitempty"`   // native message UUID when available
 
+	// APIError carries the harness's own machine-readable failure tag when
+	// this event came from a synthetic API-error line (Line.Error; see
+	// line.go for the vocabulary). Empty for every ordinary event, so the
+	// serialized stream is unchanged for a transcript that holds no failure.
+	//
+	// An event with a non-empty APIError is NOT an assistant reply. Consumers
+	// that scan for "the last thing the assistant said" must skip it, or they
+	// will report a failed turn as answered.
+	APIError string `json:"api_error,omitempty"`
+
 	// --- INTERNAL metadata (json:"-"): durable store row only, NOT public DTO ---
 	SchemaVersion int    `json:"-"` // wire-schema version stamped at write
 	Source        string `json:"-"` // SourceLive | SourceFile — for the mode authority filter
@@ -139,7 +149,7 @@ func TurnsFromEvents(events []Event) []Turn {
 		if role == "" {
 			role = RoleSystem
 		}
-		out = append(out, Turn{Role: role, Text: e.Text, Timestamp: e.Timestamp})
+		out = append(out, Turn{Role: role, Text: e.Text, Timestamp: e.Timestamp, APIError: e.APIError})
 	}
 	return out
 }

@@ -84,6 +84,13 @@ func TestContract_GoAPI(t *testing.T) {
 		{"DispositionAsk", DispositionAsk},
 		{"DispositionAnswer", DispositionAnswer},
 		{"DispositionDeny", DispositionDeny},
+		// The wall codes. Listed for the same reason the permission-mode errors
+		// are: a consumer raises a fatal, human-gated signal off these exact
+		// strings, so a rename must be a conscious golden update rather than a
+		// silent behaviour change downstream.
+		{"CodeAuthRequired", CodeAuthRequired},
+		{"CodeUsageLimited", CodeUsageLimited},
+		{"CodeBillingWall", CodeBillingWall},
 	} {
 		fmt.Fprintf(&b, "%s %s = %q\n", c.name, reflect.TypeOf(c.val).Name(), fmt.Sprint(c.val))
 	}

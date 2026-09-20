@@ -1,0 +1,2562 @@
+[
+ {
+  "Harness": "claude",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "service unavailable",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "api_error",
+  "Class": "RateLimited",
+  "Reason": "api error 429: Too Many Requests",
+  "Terminal": false,
+  "HTTPCode": 429,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "api_error",
+  "Class": "Transient",
+  "Reason": "api error 529: Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Terminal": false,
+  "HTTPCode": 529,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "api_error",
+  "Class": "Transient",
+  "Reason": "api error 500: Internal server error.",
+  "Terminal": false,
+  "HTTPCode": 500,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "session limit reached, resumes at 2026-09-20T22:20:00+02:00: You've hit your session limit · resets 10:20pm",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "service unavailable",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "api_error",
+  "Class": "RateLimited",
+  "Reason": "api error 429: Too Many Requests",
+  "Terminal": false,
+  "HTTPCode": 429,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "api_error",
+  "Class": "Transient",
+  "Reason": "api error 529: Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Terminal": false,
+  "HTTPCode": 529,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "api_error",
+  "Class": "Transient",
+  "Reason": "api error 500: Internal server error.",
+  "Terminal": false,
+  "HTTPCode": 500,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "claude-code",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "session limit reached, resumes at 2026-09-20T22:20:00+02:00: You've hit your session limit · resets 10:20pm",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "server error",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "500 server error after connection timed out",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "server error",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "service unavailable",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "server error",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "api_error",
+  "Class": "RateLimited",
+  "Reason": "api error 429: quota exceeded",
+  "Terminal": false,
+  "HTTPCode": 429,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "codex",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "retry_later",
+  "Class": "Timeout",
+  "Reason": "timed out",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "500 server error after connection timed out",
+  "Status": "retry_later",
+  "Class": "Timeout",
+  "Reason": "timed out",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "etimedout",
+  "Status": "retry_later",
+  "Class": "Timeout",
+  "Reason": "etimedout",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "service unavailable",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "service unavailable",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "too many requests",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "overloaded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "internal server error",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "cursor",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "session limit",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "I'll check the billing module next",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "your billing needs attention",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "service unavailable",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "service unavailable",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "overloaded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Timeout",
+  "Reason": "deadline exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "opencode",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "I'll check the billing module next",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "your billing needs attention",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "billing",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "service unavailable",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "service unavailable",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "overloaded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Timeout",
+  "Reason": "deadline exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "pi",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "service unavailable",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "session limit",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "wrote 3 files, all tests pass",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "I'll check the billing module next",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "reading ANTHROPIC_API_KEY from the environment",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "the docs mention a quota of 50 rows",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "renaming credits_total to credit_total",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "the request timed out in the fixture, as expected",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "upstream returned 429; also a 500 server error",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "401 unauthorized — check your billing",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "payment required; unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "500 server error after connection timed out",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "fatal: 401 unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "HTTP 429 from upstream",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "request rejected: unauthorized",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "your billing needs attention",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "this model requires a newer version",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "unsupported model",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "prompt too long",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "etimedout",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "service unavailable",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "API Error: 429 Too Many Requests",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "API Error: 500 Internal server error.",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "ERROR: quota exceeded. try later.",
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "request failed: connect ECONNREFUSED 127.0.0.1:443",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "econnrefused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "Error: socket hang up",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "Error: socket hang up\ncontext deadline exceeded while streaming",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "socket hang up",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "Mock Agent CLI\nError: connection refused",
+  "Status": "retry_later",
+  "Class": "Transient",
+  "Reason": "connection refused",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "Login expired · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "Not logged in · Please run /login",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "429 slow down\nretry-after: 45\n",
+  "Status": "",
+  "Class": "None",
+  "Reason": "",
+  "Terminal": false,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ },
+ {
+  "Harness": "unknown-harness",
+  "Text": "You've hit your session limit · resets 10:20pm",
+  "Status": "blocked_by_cost",
+  "Class": "RateLimited",
+  "Reason": "session limit",
+  "Terminal": true,
+  "HTTPCode": 0,
+  "RetryAfterMS": 0
+ }
+]

@@ -183,6 +183,20 @@ type Conversation struct {
 	// prompt was submitted. A swallow detector compares against it to answer
 	// "nothing changed at all" — see swallowed.go.
 	sentScreenText string
+
+	// sentTranscriptWatermark is how far the harness's own transcript already
+	// extended at the moment the in-flight prompt was submitted, or -1 when
+	// that could not be established. Only entries at or beyond it can speak for
+	// THIS turn.
+	//
+	// It is the same rule loom applies one layer down with
+	// LogFileStartOffset, and for the same reason: these files are append-only
+	// and survive resume, so a previous turn's verdict sitting in one would
+	// otherwise condemn every later turn on the same session. Without a
+	// watermark there is no verdict — never a guessed lower bound. Ported from
+	// meta-harness's sentTranscriptWatermark, which keeps the same field for
+	// the same purpose. Reset on each Send.
+	sentTranscriptWatermark int
 	// markerArmCh wakes the idle-completion watcher to re-arm on the short gap the
 	// moment a marker lands (so a settled end-of-turn confirms promptly, not after
 	// the full fallback gap). Buffered (1), non-blocking sender.
@@ -414,6 +428,9 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		inputStateCh: make(chan struct{}, 1),
 		markerArmCh:  make(chan struct{}, 1),
 		closed:       make(chan struct{}),
+		// No prompt has been sent, so nothing in a transcript can speak for a
+		// turn of ours yet. Send replaces this; watermarkUnknown until it does.
+		sentTranscriptWatermark: watermarkUnknown,
 	}
 
 	// Prepend the resume fragment AHEAD of the caller's args so the resume verb
@@ -716,10 +733,10 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			// not-onboarded screen is not a success — relabel it ReasonAuthRequired.
 			// A turn whose "reply" is in fact the usage-limit wall is not a success
 			// either; that one is a NON-empty extraction, so it must be checked first
-			// (authRelabel's empty-gate would let it through).
-			if !c.usageLimitRelabel(turn, *ev.Snap) {
-				c.authRelabel(turn, *ev.Snap)
-			}
+			// (authRelabel's empty-gate would let it through). And before BOTH, the
+			// harness's own recorded verdict, which is a statement rather than a
+			// reading of the screen — see apierror.go.
+			c.relabelTerminal(turn, *ev.Snap)
 		}
 	case turns.Blocked:
 		turn.State = TurnStateErrored
@@ -743,8 +760,14 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		} else if c.screen != nil {
 			screenText = c.screen.Snapshot().Text
 		}
-		if authRequired(c.opts.Harness, screenText) {
+		// The harness's own tag outranks the screen for the same reason it does
+		// at the completion sites: it is a verdict the harness recorded about
+		// its own API call, not a reading of rendered pixels. It also names the
+		// two failures no banner regex can — a billing wall, and an org policy
+		// refusal — which would otherwise arrive here as "harness exited".
+		if !c.apiErrorRelabel(turn) && authRequired(c.opts.Harness, screenText) {
 			turn.Reason = ReasonAuthRequired
+			turn.Code = CodeAuthRequired
 		}
 		turn.HTTPCode = ev.HTTPCode
 		turn.RetryAfter = ev.RetryAfter
@@ -958,10 +981,9 @@ func (c *Conversation) maybeIdleComplete() {
 	// "✻ … for 0s" marker and would otherwise complete with the raw banner screen
 	// as its reply. Relabel it ReasonAuthRequired when no real reply was extracted —
 	// or ReasonUsageLimited when the "reply" is a usage-limit wall, which (being a
-	// non-empty extraction) would otherwise slip past authRelabel's empty-gate.
-	if !c.usageLimitRelabel(turn, snap) {
-		c.authRelabel(turn, snap)
-	}
+	// non-empty extraction) would otherwise slip past authRelabel's empty-gate —
+	// or, ahead of both, whatever the harness itself recorded about the turn.
+	c.relabelTerminal(turn, snap)
 	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
 		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
 		return
@@ -1107,8 +1129,29 @@ func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
 	}
 	turn.State = TurnStateErrored
 	turn.Reason = ReasonAuthRequired
+	turn.Code = CodeAuthRequired
 	turn.Text = ""
 	return true
+}
+
+// relabelTerminal applies the three relabels in strength order to a turn that
+// reached a terminal point looking like a success, and reports whether any of
+// them took it.
+//
+// The order is the whole point:
+//
+//  1. apiErrorRelabel — what the HARNESS recorded about its own API call. A
+//     categorical statement, correlated to this turn by the pre-send
+//     watermark, and the only one that can name a billing wall.
+//  2. usageLimitRelabel — the quota wall, which claude paints as an assistant
+//     bubble. Deliberately NOT gated on an empty extraction, because the wall
+//     IS the extraction, which is why it must precede the auth check.
+//  3. authRelabel — a logged-out / onboarding screen with no real reply.
+//
+// Each declines cleanly when it has nothing to say, so a turn that really did
+// complete passes through all three untouched.
+func (c *Conversation) relabelTerminal(turn *Turn, snap screen.Snapshot) bool {
+	return c.apiErrorRelabel(turn) || c.usageLimitRelabel(turn, snap) || c.authRelabel(turn, snap)
 }
 
 // usageLimitRelabel converts a turn that "completed" while the harness was out of
@@ -1137,6 +1180,7 @@ func (c *Conversation) usageLimitRelabel(turn *Turn, snap screen.Snapshot) bool 
 	}
 	turn.State = TurnStateErrored
 	turn.Reason = ReasonUsageLimited + " (" + msg + ")"
+	turn.Code = CodeUsageLimited
 	turn.Text = ""
 	return true
 }

@@ -103,6 +103,11 @@ type Outcome struct {
 	Reply string
 	// Reason is failure detail; present on errored / startup_error.
 	Reason string
+	// Code is the stable wall token the harness's own verdict named —
+	// auth_required, usage_limited, billing_wall — and empty for every other
+	// outcome. It is what a caller should switch on to raise a wall signal;
+	// Reason is operator copy and may be reworded.
+	Code chat.TurnCode
 	// HarnessSessionID is the harness's own session id ("" when unrecoverable,
 	// e.g. a startup_error before any session opened).
 	HarnessSessionID string
@@ -146,6 +151,7 @@ func RunOneShotDetailed(ctx context.Context, cfg Config) (Outcome, error) {
 	out := Outcome{
 		Status:           status,
 		Reason:           reason,
+		Code:             res.Turn.Code,
 		HarnessSessionID: res.Session.HarnessID(),
 		Containment:      res.Containment,
 	}

@@ -77,6 +77,25 @@ type Classification struct {
 	// resets should sleep / cron-schedule against this time rather
 	// than against time.Now() + RetryAfter.
 	ResumeAt time.Time
+
+	// Rule names WHICH matcher produced this classification, when the
+	// matcher has a stable id. Empty for the live per-harness pattern
+	// arms, whose Reason already carries the matched phrase; set by
+	// ClassifyFinishedOutput's residual rows (`residual.auth`, …) and by
+	// its timeout refinement.
+	//
+	// The residual ids are a CONTRACT, not a description: loom's
+	// docs/adr/0002-authfailure-stays-terminal.md names `residual.auth` in a
+	// revisit trigger and records this value as its evidence rule, so a
+	// rename silently breaks the trigger it belongs to. Add rows freely; do
+	// not rename existing ones.
+	Rule string
+
+	// Match is the text the Rule's pattern matched, verbatim and
+	// unredacted. Empty when Rule is empty. Consumers that persist it are
+	// responsible for capping and redacting it — the matched window around
+	// an auth pattern is exactly where a credential would be.
+	Match string
 }
 
 // Classifier inspects recent harness output and reports actionable

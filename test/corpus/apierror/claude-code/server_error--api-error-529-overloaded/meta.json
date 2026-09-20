@@ -1,0 +1,16 @@
+{
+ "harness": "claude-code",
+ "tag": "server_error",
+ "verdict": "errored",
+ "code": "",
+ "reason": "",
+ "screenOnly": "complete",
+ "screenAuthRequired": false,
+ "occurrences": 13,
+ "versions": [
+  "2.1.219",
+  "2.1.227",
+  "2.1.241",
+  "2.1.251"
+ ]
+}

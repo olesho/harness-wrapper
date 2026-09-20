@@ -60,6 +60,7 @@ type Turn struct
 	field Reason string
 	field StartedAt time.Time
 	field CompletedAt time.Time
+	field Code chat.TurnCode
 	field HTTPCode int
 	field RetryAfter time.Duration
 type Session struct
@@ -124,6 +125,9 @@ EventInputResolved EventType = "input_resolved"
 DispositionAsk DispositionKind = "ask"
 DispositionAnswer DispositionKind = "answer"
 DispositionDeny DispositionKind = "deny"
+CodeAuthRequired TurnCode = "auth_required"
+CodeUsageLimited TurnCode = "usage_limited"
+CodeBillingWall TurnCode = "billing_wall"
 
 -- errors --
 ErrInvalidOptions = "chat: invalid options"

@@ -130,6 +130,7 @@ func runStructuredRun(args []string) int {
 		TranscriptEntries: []transcript.Event{},
 		WorkingDir:        wd,
 		Reason:            outcome.Reason,
+		Code:              string(outcome.Code),
 	}
 	if status == turnproto.StatusCompleted {
 		result.Reply = outcome.Reply

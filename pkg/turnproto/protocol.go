@@ -97,6 +97,11 @@ type StructuredTurnResult struct {
 	WorkingDir string `json:"working_dir"`
 	// Reason is failure detail; present on errored/startup_error.
 	Reason string `json:"reason,omitempty"`
+	// Code is the stable wall token for a turn the harness itself declared
+	// walled — "auth_required" | "usage_limited" | "billing_wall" — and ABSENT
+	// otherwise. Additive: absent means "not a wall", never "unknown", so a
+	// host that does not read it behaves exactly as before.
+	Code string `json:"code,omitempty"`
 	// TranscriptError is a best-effort transcript read failure; present only when
 	// the read failed.
 	TranscriptError string `json:"transcript_error,omitempty"`

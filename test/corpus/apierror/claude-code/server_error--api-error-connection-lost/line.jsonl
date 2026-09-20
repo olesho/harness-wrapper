@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"459f8b3e-5dd1-486d-b50e-517c48d27f99","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Connection lost mid-response. The response above may be incomplete."}]},"timestamp":"2026-09-19T12:58:09.820Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.278"}
