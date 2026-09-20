@@ -27,6 +27,7 @@ func TestIsNestingKey(t *testing.T) {
 		{"sse port marker", "CLAUDE_CODE_SSE_PORT", true},
 		{"child session marker", "CLAUDE_CODE_CHILD_SESSION", true},
 		{"unknown future marker keeps default-deny", "CLAUDE_CODE_SOMETHING_NEW", true},
+		{"bare family prefix", "CLAUDE_CODE_", true},
 		{"the credential is exempt", "CLAUDE_CODE_OAUTH_TOKEN", false},
 		{"exemption is exact: _FILE suffix", "CLAUDE_CODE_OAUTH_TOKEN_FILE", true},
 		{"exemption is exact: X suffix", "CLAUDE_CODE_OAUTH_TOKENX", true},
@@ -35,6 +36,7 @@ func TestIsNestingKey(t *testing.T) {
 		// is simply forwarded. Asserting false here records WHY it survives.
 		{"lowercase form matches nothing", "claude_code_oauth_token", false},
 		{"lowercase nesting marker matches nothing", "claudecode", false},
+		{"the config dir is not a nesting marker", "CLAUDE_CONFIG_DIR", false},
 		{"unrelated claude key", "CLAUDE_API_KEY", false},
 		{"anthropic key", "ANTHROPIC_API_KEY", false},
 		{"prefix without trailing underscore", "CLAUDE_CODEX", false},

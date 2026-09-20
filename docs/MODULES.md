@@ -274,11 +274,21 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() func()`
-DisableSupervisionForTest does nothing here.
+#### `func DisableSupervisionForTest() (restore func())`
+DisableSupervisionForTest makes every launch see a host that delegates no
+cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (int, int, error)`
-OpenPTYPair reports ErrUnsupported.
+#### `func OpenPTYPair() (master, slave int, err error)`
+OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
+O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
+than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
+Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
+pty.Open — and the caller wraps the master in an *os.File only after the
+spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
+
+It runs on an ordinary thread: Landlock fixes a file's rights when the file
+is opened, so a master opened on the restricted thread would deny the
+wrapper's later resize calls.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -292,7 +302,9 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent reports ErrUnsupported.
+StateParent returns the directory beneath which managed state lives:
+$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
+~/.local/state/harness-wrapper/contain.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -311,9 +323,8 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(in Input) (l *Launch, err error)`
-Prepare turns in into a Launch, or refuses it before anything runs. On
-refusal it releases whatever it acquired, including ephemeral state.
+#### `func Prepare(Input) (*Launch, error)`
+Prepare reports ErrUnsupported: Landlock containment is Linux-only.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -358,11 +369,13 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(bool) (*State, error)`
-NewState reports ErrUnsupported.
+#### `func NewState(persistent bool) (*State, error)`
+NewState allocates new managed state. Persistent state survives its
+launches until Remove; ephemeral state is deleted by the launch that
+created it once that launch's cgroup is empty.
 
-#### `func OpenState(string) (*State, error)`
-OpenState reports ErrUnsupported.
+#### `func OpenState(id string) (*State, error)`
+OpenState opens existing managed state by id.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -1110,20 +1123,22 @@ build without cgo (or off Linux) there is no C to open them from.
 
 ### Exported Types & Functions
 
-#### `func Close(int)`
-Close does nothing.
+#### `func Close(fd int)`
+Close closes fd from C.
 
 #### `func ListenNonCloexec() int`
-ListenNonCloexec returns -1: no C here.
+ListenNonCloexec opens a loopback TCP listener from C, without
+SOCK_CLOEXEC.
 
-#### `func OpenNonCloexec(string) int`
-OpenNonCloexec returns -1: no C here.
+#### `func OpenNonCloexec(path string) int`
+OpenNonCloexec opens path read-only from C, without O_CLOEXEC.
 
-#### `func StartOpeners(string, int) int`
-StartOpeners starts nothing.
+#### `func StartOpeners(path string, n int) int`
+StartOpeners starts n C threads that open and close path without
+O_CLOEXEC until StopOpeners; it returns how many started.
 
 #### `func StopOpeners() int64`
-StopOpeners returns 0.
+StopOpeners stops the C openers and returns how many opens they made.
 
 ## Module: chat (`pkg/chat`)
 
@@ -1169,6 +1184,13 @@ DeleteContainmentState removes the private state of a stored contained
 conversation: it first ends whatever the conversation's last launch left in
 its recorded cgroup, then deletes the directory and marks the record, which
 can no longer be resumed. Deleting state a launch still uses is refused.
+
+#### `func DialogAnchors(harness string) []string`
+DialogAnchors returns the literal lines a BLOCKING dialog paints — a
+folder-trust prompt, a bypass-permissions confirmation. A screen showing one
+is about a dialog, not a login, which is the distinction a caller recording
+evidence needs in order to tell a real auth wall from a verdict taken over a
+modal. Nil for a harness with no known dialogs.
 
 #### `func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)`
 DiscoverModels launches the harness on an ephemeral memstore-backed session,
@@ -1280,6 +1302,32 @@ intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"
 
 #### `type Role`
 Role identifies who produced a turn.
+
+#### `type ScreenAnchor`
+ScreenAnchor is one identified screen pattern: the regex this package
+matches with, and a stable id for it.
+
+The ids exist because a consumer that RECORDS which banner it saw needs a
+name for it, and copying the regexes out to invent one is how a consumer
+ends up tracking harness drift by hand. loom did exactly that: it mirrored
+these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
+of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
+with its copies unanchored where these are line-anchored.
+
+The id strings are a DOWNSTREAM CONTRACT. loom's
+docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
+triggers, so a rename silently breaks the trigger it belongs to. Add anchors
+freely; do not rename an existing id.
+
+#### `func AuthAnchors(harness string) []ScreenAnchor`
+AuthAnchors returns the screen anchors whose presence means the harness
+cannot produce output until a human authenticates — onboarding wizard first,
+then logged-out banner, which is authRequired's own precedence, so a caller
+recording the FIRST hit names the arm this package would have taken.
+
+A harness this package has no banner set for returns nil. The empty string
+returns every harness's anchors, for a caller that describes a screen
+without knowing which harness drew it.
 
 #### `type Session`
 Session is the chat-level session record. Distinct from
@@ -3092,6 +3140,16 @@ DetectInputDetail kept for callers that only need "can I answer this?"
 Callers that must distinguish "no dialog" from "a dialog I cannot read" —
 anything deciding whether the harness is READY — must use DetectInputDetail
 instead: this form maps both to false.
+
+#### `func DialogAnchors() []string`
+DialogAnchors returns the literal lines a BLOCKING dialog paints, for a
+caller that needs to tell "this screen is a modal" from "this screen is a
+login wall" — a verdict taken over a folder-trust or bypass-acceptance
+dialog is about the dialog, not the credential.
+
+Exported because loom was carrying its own copy of these three strings to
+answer exactly that question, which is one more place a claude-code UI
+change has to be chased by hand.
 
 #### `type Adapter`
 Adapter implements turns.Adapter for Claude Code.

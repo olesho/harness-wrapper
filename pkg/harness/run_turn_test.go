@@ -232,6 +232,13 @@ func TestRunTurn_ReturnsErrTurnErrored(t *testing.T) {
 // Call it AFTER any t.Setenv the test needs carried through: it materializes
 // the process environment at call time. CLAUDE_CONFIG_DIR is not a nesting
 // marker and survives.
+//
+// This supersedes PUPPET-670's scrubbedRealClaudeEnv in pkg/harness/env_test.go,
+// a test-local hand-copy of the policy whose doc comment justified itself with
+// "that function is unexported in package main". It no longer is: the policy is
+// pkg/harnessenv and cmd/harness-wrapper delegates to it, so the mirror (and the
+// divergence risk two hand-kept tables carry) is gone. Its table rows live in
+// pkg/harnessenv/harnessenv_test.go.
 func realClaudeEnv(t *testing.T) []string {
 	t.Helper()
 	env := harnessenv.Cleaned()
