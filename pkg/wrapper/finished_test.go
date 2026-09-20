@@ -39,7 +39,7 @@ func TestFinishedOutput_EveryResidualRowByID(t *testing.T) {
 	}{
 		{"residual.ratelimit", "HTTP 429 from upstream", wrapper.ErrRateLimited, "429"},
 		{"residual.auth", "request rejected: unauthorized", wrapper.ErrAuth, "unauthorized"},
-		{"residual.billing", "your billing needs attention", wrapper.ErrBilling, "billing"},
+		{"residual.billing", "insufficient credits for this request", wrapper.ErrBilling, "insufficient credits"},
 		{"residual.model_version", "this model requires a newer version", wrapper.ErrModelNotFound, "model requires a newer version"},
 		{"residual.model_not_found", "unsupported model", wrapper.ErrModelNotFound, "unsupported model"},
 		{"residual.context", "prompt too long", wrapper.ErrContextOverflow, "prompt too long"},
@@ -357,6 +357,81 @@ func TestFinishedOutput_RealStatusCodesSurviveTheGuard(t *testing.T) {
 		got := wrapper.ClassifyFinishedOutput("claude", tc.text)
 		if got.Rule != tc.wantRule {
 			t.Errorf("%q -> rule %q, want %q (match %q)", tc.text, got.Rule, tc.wantRule, got.Match)
+		}
+	}
+}
+
+// The prose hazard, as a test.
+//
+// The residual rows arrived in this package matching ordinary agent output,
+// and two of them produce FATAL verdicts downstream — an agent stopped until a
+// human intervenes. Measured before narrowing, 10 of these 12 lines produced
+// one: a filesystem `permission denied`, an `ANTHROPIC_API_KEY` mentioned in
+// passing, the word `billing` in a filename.
+//
+// None of it is an API failure. A row that fires here is not a weak signal, it
+// is a way to stop a healthy agent, which is why the table's rule is that a row
+// may only match text that NAMES an API failure.
+func TestFinishedOutput_OrdinaryOutputIsNotAnAPIFailure(t *testing.T) {
+	for _, in := range []string{
+		// Filesystem and tooling errors — the agent hit a real problem, but not
+		// one that says anything about its credential.
+		"Error: open /etc/hosts: permission denied",
+		"mkdir /usr/local/x: permission denied",
+		"panic: EACCES: permission denied, open '/var/db'",
+		"invalid key in the yaml map",
+		// A credential's NAME is not a credential failure.
+		"reading ANTHROPIC_API_KEY from the environment",
+		"export OPENAI_API_KEY=... then rerun",
+		// A failure word on a LATER line must not reach back and condemn a
+		// mention: the window is line-scoped.
+		"ANTHROPIC_API_KEY is configured\nthe cache is missing an entry",
+		// An agent working on billing code is not a billing wall. This is the
+		// shape that armed a fleet-wide wall once already, by another route.
+		"the billing module needs a migration",
+		"docs/billing.md updated",
+		"added a quota field to the config",
+		"credits roll over monthly per the spec",
+		// Ordinary English.
+		"this is taking too long, splitting the task",
+		"the response was too long to inline",
+	} {
+		got := wrapper.ClassifyFinishedOutput("claude", in)
+		if got.Rule != "" {
+			t.Errorf("ordinary output classified: %q -> %v via %s (match %q)", in, got.Class, got.Rule, got.Match)
+		}
+	}
+}
+
+// The other half: narrowing must not cost a real API failure. Each line is a
+// shape the rows exist for.
+func TestFinishedOutput_RealAPIFailuresSurviveNarrowing(t *testing.T) {
+	cases := []struct {
+		text     string
+		wantRule string
+		wantErr  wrapper.ErrorClass
+	}{
+		{"Error: 401 Unauthorized: invalid api key", "residual.auth", wrapper.ErrAuth},
+		{"request rejected: unauthorized", "residual.auth", wrapper.ErrAuth},
+		{"HTTP 403 forbidden", "residual.auth", wrapper.ErrAuth},
+		{"authentication failed", "residual.auth", wrapper.ErrAuth},
+		// A variable name WITH a failure word is a real credential failure and
+		// must survive; the bare mention above must not.
+		{"Error: OPENAI_API_KEY is not set", "residual.auth", wrapper.ErrAuth},
+		{"missing ANTHROPIC_API_KEY", "residual.auth", wrapper.ErrAuth},
+		{"CURSOR_API_KEY is required", "residual.auth", wrapper.ErrAuth},
+		{"incorrect api key provided", "residual.auth", wrapper.ErrAuth},
+		{"402 payment required", "residual.billing", wrapper.ErrBilling},
+		{"insufficient credits for this request", "residual.billing", wrapper.ErrBilling},
+		{"insufficient_quota", "residual.billing", wrapper.ErrBilling},
+		{"you have exceeded your monthly quota", "residual.billing", wrapper.ErrBilling},
+		{"prompt too long for the context window", "residual.context", wrapper.ErrContextOverflow},
+		{"maximum context length exceeded", "residual.context", wrapper.ErrContextOverflow},
+	}
+	for _, tc := range cases {
+		got := wrapper.ClassifyFinishedOutput("claude", tc.text)
+		if got.Rule != tc.wantRule || got.Class != tc.wantErr {
+			t.Errorf("%q -> %v via %q, want %v via %q", tc.text, got.Class, got.Rule, tc.wantErr, tc.wantRule)
 		}
 	}
 }
