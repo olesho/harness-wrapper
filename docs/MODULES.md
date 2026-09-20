@@ -2409,10 +2409,28 @@ The Claude Code turn adapter. It detects end-of-turn from the thinking-summary l
 > Package claudecode provides a turn-detection adapter for Anthropic's
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
-Detection signals first observed on 2.1.141; re-verified against 2.1.185
-(corpus multi-turn/tool-call re-baked, live sentinel round-trip). The pin
-in versions.json is 2.1.201, adopted for cross-repo parity with
-meta-harness; detection signals were last verified at 2.1.185:
+Detection signals first observed on 2.1.141. The pin in versions.json is
+2.1.278, verified LIVE against that binary on 2026-09-20 by pkg/harness's
+TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
+TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
+TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
+2.1.278 end-of-turn summary and Busy() gates the in-flight frames, so those
+runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
+path, a large prompt arriving intact, and the folder-trust dialog, both
+reported in a directory claude has not trusted and answered.
+
+The recordings trail the pin, deliberately. The four scripted claude
+scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
+tool-call and interrupted-mid-reply — are recorded at 2.1.270 from a
+directory claude had never trusted (meta.json.binary_version is the recorded
+proof), and the two trust-dialog recordings at 2.1.261; so interruptMarker
+and the tool-call rendering are verified by replay at 2.1.270, not at the
+pin. The permission-mode footers in permmode.go are still anchored at
+2.1.217. The recordings are frozen renderings the adapter must keep
+handling: replaying them cannot confirm a newer release, so what verifies
+the pin is the live tests above and nothing else.
+
+The signals:
 
   - End of an assistant turn: a "✻ <verb> for Ns" thinking-summary
     line appears, where <verb> is a colorful word like Baked, Brewed,
@@ -2422,7 +2440,13 @@ meta-harness; detection signals were last verified at 2.1.185:
 
   - User interrupt: a "⎿  Interrupted · What should Claude do
     instead?" line appears. The turn ended in a recoverable error
-    state.
+    state. Verified by replay against the 2.1.270 interrupted-mid-reply
+    recording; the live runs at 2.1.278 exercise end-of-turn detection
+    rather than this marker. What changed at 2.1.24x
+    is which KEY produces it — Esc interrupts, Ctrl-C clears the
+    composer and paints nothing — which matters to the recorder, not
+    to this adapter; see the interrupt step in
+    internal/screenbench/cmd/screenbench-record/script.go.
 
 This adapter embeds generic.Adapter so wrapper-level status events
 (blocked_by_cost, retry_later, failed) keep flowing through.
@@ -2432,18 +2456,48 @@ tests under test/corpus/claude-code/ are the early-warning signal.
 
 ### Exported Types & Functions
 
+#### `func AnchorPresent(text string) bool`
+AnchorPresent reports whether a blocking-dialog anchor is still painted on
+screen. It is deliberately WEAKER than DetectInput: an anchor whose menu has
+not rendered yet is DetectPending, so DetectInput says "no request" while the
+dialog is very much still up. "Has my answer cleared it?" must therefore ask
+this and not DetectInput, or a mid-paint frame reads as success.
+
+Exported so pkg/chat can confirm an answer landed without copying the anchor
+list; anchorSplit stays the single source of truth for what an anchor is.
+
 #### `func DetectInput(text string) (*turns.InputRequest, bool)`
 DetectInput recognizes a blocking interactive dialog in the rendered
 screen text and returns the structured request, or (nil, false) when no
-dialog is present. It is a pure function so the chat layer's readiness
-check and this adapter share one source of truth about what counts as a
-blocking prompt.
+usable request could be built. It is the two-value wrapper over
+DetectInputDetail kept for callers that only need "can I answer this?"
+(pkg/oneshot, the adapter's InputRequested path).
+
+Callers that must distinguish "no dialog" from "a dialog I cannot read" —
+anything deciding whether the harness is READY — must use DetectInputDetail
+instead: this form maps both to false.
 
 #### `type Adapter`
 Adapter implements turns.Adapter for Claude Code.
 
 #### `func New() *Adapter`
 New constructs a Claude Code adapter.
+
+#### `type Detection`
+Detection is what DetectInputDetail saw. The four states exist because a
+single bool conflated two very different screens: "no dialog" and "a dialog
+whose choices this build cannot read". The second one is PERMANENT — it never
+clears on its own — so reporting it as the first left the harness blocked with
+nothing naming the cause (claude 2.1.251's unnumbered folder-trust dialog; see
+menu_selector.go).
+
+#### `func DetectInputDetail(text string) (*turns.InputRequest, Detection)`
+DetectInputDetail recognizes a blocking interactive dialog in the rendered
+screen text and reports which of the four Detection states it is in. It is a
+pure function so the chat layer's readiness check and this adapter share one
+source of truth about what counts as a blocking prompt — a claim that stays
+true only because pkg/chat's readiness gate calls THIS form (ready.go), and so
+treats an unreadable dialog as blocking instead of typing a prompt into it.
 
 ## Module: codex (`pkg/turns/harness/codex`)
 
@@ -2628,15 +2682,17 @@ each supported harness CLI to a specific upstream package version.
 versions.json is the single source of truth that ties an adapter's
 code (regex fingerprints, classifier patterns, transcript schema
 assumptions) to a specific upstream release. The version-sentry CLI
-reads it to compare against npm registry latest; corpus tests read
-it to verify that recordings under test/corpus/ were made against
-the same version the adapter targets.
+reads it to compare against npm registry latest, and the env-gated
+conformance tests compare it against the binary actually installed.
+Nothing compares it to test/corpus/: a recording's
+meta.json.binary_version is free to trail the pin, and routinely does
+— see docs/md/internal/versions-drift.md.
 
 Schema:
 
 	{
-	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.142.5", "verified_at": "2026-07-05"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.201", "verified_at": "2026-07-05"},
+	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.278", "verified_at": "2026-09-20"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
