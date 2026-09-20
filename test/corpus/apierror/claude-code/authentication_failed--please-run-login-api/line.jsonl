@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"cdd2813c-4292-4957-8413-7ccb474903a0","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"Please run /login · API Error: 403 Unable to verify organization membership."}]},"timestamp":"2026-08-24T16:01:27.730Z","isApiErrorMessage":true,"error":"authentication_failed","version":"2.1.241"}

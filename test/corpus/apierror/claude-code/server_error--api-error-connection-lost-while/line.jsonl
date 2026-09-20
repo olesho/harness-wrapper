@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"433e7ed9-ded9-407e-bbda-545b50fae77a","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Connection lost while your computer was asleep"}]},"timestamp":"2026-09-16T13:53:23.700Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.273"}

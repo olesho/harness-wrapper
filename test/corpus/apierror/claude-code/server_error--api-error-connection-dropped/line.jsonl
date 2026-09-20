@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"7f18f49a-d0fa-4e75-8c09-339a1234ef1c","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Connection dropped (ECONNRESET)"}]},"timestamp":"2026-08-12T15:32:19.077Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.227"}

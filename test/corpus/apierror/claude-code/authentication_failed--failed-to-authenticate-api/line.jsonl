@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"f399e6c9-07cd-4919-9631-d10f100124df","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue."}]},"timestamp":"2026-08-04T15:11:08.377Z","isApiErrorMessage":true,"error":"authentication_failed","version":"2.1.219"}

@@ -95,6 +95,41 @@ const ReasonAuthRequired = "auth_required: harness login expired or re-authentic
 // (see Conversation.usageLimitRelabel).
 const ReasonUsageLimited = "usage_limit: harness usage or session limit reached — retry after the quota window resets"
 
+// ReasonBillingWall is the canonical Turn.Reason recorded when a turn failed
+// because the account cannot be billed — a spent credit balance, an account on
+// hold. Unlike the other two it is neither blameless nor self-healing: a quota
+// window lifts on its own and an expired login is one command away, but nothing
+// an orchestrator does will make the next turn succeed until a human pays. It
+// exists so that fact can be NAMED instead of inferred from a rendered banner.
+//
+// Set only from a verdict the HARNESS itself recorded (see
+// Conversation.apiErrorRelabel); no screen recogniser produces it. That is
+// deliberate: the one screen-scrape wall detector that shipped in this fleet
+// was removed after 11 detections with 0 true positives, all of them agent
+// output quoting a banner, and a tag the harness wrote about its own API call
+// cannot be quoted into existence by an agent.
+const ReasonBillingWall = "billing_wall: harness billing or credit wall reached — the account cannot run turns until billing is resolved"
+
+// TurnCode is the machine-readable half of a terminal Turn.Reason: a short,
+// stable token a consumer switches on, with no prose attached.
+//
+// Reason is operator copy — it is worded for a human, it carries a trailing
+// "(…)" detail on the usage wall, and rewording it is an ordinary editorial
+// change. Consumers that matched on the reason therefore had to SUBSTRING it,
+// which makes every such reword a silent behaviour change downstream. Code is
+// what those consumers should read instead. Empty for every turn that is not
+// one of the terminal walls below, including ordinary task failures.
+type TurnCode string
+
+const (
+	// CodeAuthRequired accompanies ReasonAuthRequired.
+	CodeAuthRequired TurnCode = "auth_required"
+	// CodeUsageLimited accompanies ReasonUsageLimited.
+	CodeUsageLimited TurnCode = "usage_limited"
+	// CodeBillingWall accompanies ReasonBillingWall.
+	CodeBillingWall TurnCode = "billing_wall"
+)
+
 // Turn is one message in the conversation.
 type Turn struct {
 	ID          string
@@ -105,6 +140,13 @@ type Turn struct {
 	Reason      string // non-empty for Errored turns; mirrors adapter event Reason
 	StartedAt   time.Time
 	CompletedAt time.Time
+
+	// Code is the stable machine token for a terminal wall — auth_required,
+	// usage_limited, billing_wall — set at every site that sets the matching
+	// Reason. Empty for every other turn, including ordinary failures: absent
+	// means "not one of the walls", never "unknown". Consumers should switch on
+	// this rather than substring-matching Reason (see TurnCode).
+	Code TurnCode
 
 	// HTTPCode is the upstream API status code carried with a Blocked
 	// transition when the wrapper recognized an api_error event

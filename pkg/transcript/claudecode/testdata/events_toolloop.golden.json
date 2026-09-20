@@ -1,0 +1,68 @@
+[
+ {
+  "seq": 0,
+  "timestamp": "2026-07-21T09:00:00Z",
+  "role": "user",
+  "type": "text",
+  "text": "list the go files then read one",
+  "uuid": "u0"
+ },
+ {
+  "seq": 1,
+  "timestamp": "2026-07-21T09:00:02.1Z",
+  "role": "assistant",
+  "type": "text",
+  "text": "I'll list the files.",
+  "uuid": "a1"
+ },
+ {
+  "seq": 2,
+  "timestamp": "2026-07-21T09:00:02.4Z",
+  "role": "assistant",
+  "type": "tool_use",
+  "tool_name": "Bash",
+  "tool_use_id": "toolu_01LS",
+  "tool_input": {
+   "command": "ls *.go"
+  },
+  "uuid": "a2"
+ },
+ {
+  "seq": 3,
+  "timestamp": "2026-07-21T09:00:03Z",
+  "role": "tool",
+  "type": "tool_result",
+  "tool_use_id": "toolu_01LS",
+  "output": "main.go\nparse.go\n",
+  "uuid": "u3"
+ },
+ {
+  "seq": 4,
+  "timestamp": "2026-07-21T09:00:05.2Z",
+  "role": "assistant",
+  "type": "text",
+  "text": "Now reading main.go.",
+  "uuid": "a4"
+ },
+ {
+  "seq": 5,
+  "timestamp": "2026-07-21T09:00:05.5Z",
+  "role": "assistant",
+  "type": "tool_use",
+  "tool_name": "Read",
+  "tool_use_id": "toolu_01RD",
+  "tool_input": {
+   "file_path": "main.go"
+  },
+  "uuid": "a5"
+ },
+ {
+  "seq": 6,
+  "timestamp": "2026-07-21T09:00:06Z",
+  "role": "tool",
+  "type": "tool_result",
+  "tool_use_id": "toolu_01RD",
+  "output": "package main\n",
+  "uuid": "u6"
+ }
+]

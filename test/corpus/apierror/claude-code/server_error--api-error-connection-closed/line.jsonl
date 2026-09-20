@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"25acc5e4-8e8f-42cc-8a95-0b1f6d734c73","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: Connection closed mid-response. The response above may be incomplete."}]},"timestamp":"2026-06-25T17:12:24.564Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.181"}

@@ -190,6 +190,14 @@ func assistantLineEvents(line transcript.Line, ts time.Time, seq *int) []transcr
 		return nil
 	}
 
+	// A synthetic API-error line is shaped exactly like an assistant reply —
+	// one text block, holding the rendered error — so the tag is the only thing
+	// that tells them apart. Carry it onto every event this line produces
+	// (in practice one); a consumer that skips tagged events then never reads a
+	// failure as a reply. apiErrorTag is "" for the ordinary case, so the
+	// serialized event stream for a clean transcript is unchanged.
+	apiErrorTag := apiErrorTagOf(line)
+
 	// Find the block-level tool_use id (Claude emits it on the block, mirroring
 	// the user's later tool_result.tool_use_id).
 	var toolUseIDs []struct {
@@ -211,7 +219,7 @@ func assistantLineEvents(line transcript.Line, ts time.Time, seq *int) []transcr
 			out = append(out, transcript.Event{
 				Seq: *seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventText,
 				Text: block.Text, UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: textNativeID(line.UUID, *seq),
+				NativeID: textNativeID(line.UUID, *seq), APIError: apiErrorTag,
 			})
 			*seq++
 		case transcript.ContentTypeToolUse:
@@ -223,7 +231,7 @@ func assistantLineEvents(line transcript.Line, ts time.Time, seq *int) []transcr
 				Seq: *seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventToolUse,
 				ToolName: block.Name, ToolUseID: id, ToolInput: block.Input,
 				UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: "tool-use:" + id,
+				NativeID: "tool-use:" + id, APIError: apiErrorTag,
 			})
 			*seq++
 		}
@@ -253,4 +261,19 @@ func extractToolResultText(raw json.RawMessage) string {
 		return str
 	}
 	return ""
+}
+
+// apiErrorTagOf returns the line's machine-readable failure tag, and "" for
+// every line that is not a synthetic API error.
+//
+// isApiErrorMessage is required, not merely preferred: `error` also appears on
+// lines that are not API errors at all (hook results carry "warn" / "debug" /
+// "policy_denied" there), and treating one of those as a failed turn would
+// error a turn the harness completed. An API-error line with an empty tag
+// yields "" and therefore no verdict, which is the conservative direction.
+func apiErrorTagOf(line transcript.Line) string {
+	if !line.IsAPIErrorMessage {
+		return ""
+	}
+	return strings.TrimSpace(line.Error)
 }

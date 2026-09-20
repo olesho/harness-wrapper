@@ -92,8 +92,14 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	// Record the screen the prompt is being submitted on: a swallow detector
 	// answers "nothing changed at all" by comparing the settled screen to this.
 	sentScreen := c.screen.Snapshot().Text
+	// ...and how far the harness's own transcript already extends, so that
+	// nothing written BEFORE this prompt can later be read as a verdict about
+	// it. Taken before the submit for the obvious reason: afterwards the
+	// harness is already writing.
+	watermark := c.captureTranscriptWatermark()
 	c.mu.Lock()
 	c.sentScreenText = sentScreen
+	c.sentTranscriptWatermark = watermark
 	c.mu.Unlock()
 
 	submitKey := submitKeyForHarness(c.opts.Harness, sentScreen)
@@ -131,6 +137,14 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 func (c *Conversation) emitAuthRequiredTurn(ctx context.Context, text string) (string, error) {
 	now := time.Now()
 
+	// The prompt is deliberately NOT written to the harness here, so nothing it
+	// writes afterwards belongs to this turn. Clear the watermark rather than
+	// leaving a previous turn's, which would let a stale tag speak for a turn
+	// that never reached the harness at all.
+	c.mu.Lock()
+	c.sentTranscriptWatermark = watermarkUnknown
+	c.mu.Unlock()
+
 	userTurn := Turn{
 		ID:          newID(),
 		SessionID:   c.session.ID,
@@ -151,6 +165,7 @@ func (c *Conversation) emitAuthRequiredTurn(ctx context.Context, text string) (s
 		Role:        RoleAssistant,
 		State:       TurnStateErrored,
 		Reason:      ReasonAuthRequired,
+		Code:        CodeAuthRequired,
 		StartedAt:   now,
 		CompletedAt: now,
 	}

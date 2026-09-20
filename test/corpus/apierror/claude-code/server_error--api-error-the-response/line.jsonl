@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"d96caae3-6ce3-4e33-ae6e-37e5e3d6d4b5","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: The response stopped arriving. The response above may be incomplete."}]},"timestamp":"2026-09-15T04:22:28.786Z","isApiErrorMessage":true,"error":"server_error","version":"2.1.270"}

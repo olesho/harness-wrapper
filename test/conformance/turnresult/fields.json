@@ -163,6 +163,12 @@
       "json_tag": "uuid",
       "type": "string",
       "optional": true
+    },
+    {
+      "name": "APIError",
+      "json_tag": "api_error",
+      "type": "string",
+      "optional": true
     }
   ],
   "Grant": [
@@ -281,6 +287,12 @@
     {
       "name": "Reason",
       "json_tag": "reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Code",
+      "json_tag": "code",
       "type": "string",
       "optional": true
     },

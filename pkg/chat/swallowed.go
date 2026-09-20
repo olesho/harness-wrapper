@@ -97,6 +97,13 @@ func (c *Conversation) tryTranscriptProof(reader turns.TranscriptReader, session
 		if Role(tturns[i].Role) != RoleAssistant {
 			continue
 		}
+		// A synthetic API-error entry has non-empty text — the RENDERED error —
+		// so without this check it reads as proof that the turn completed, and
+		// the turn is rescued into a success whose reply is "API Error: …".
+		// An API error is not a reply.
+		if tturns[i].APIError != "" {
+			continue
+		}
 		if text := strings.TrimSpace(tturns[i].Text); text != "" {
 			return swallowedPromptVerdict{proofText: text}, false
 		}
@@ -122,12 +129,18 @@ func (c *Conversation) applySwallowedPromptVerdict(turn *Turn, snap screen.Snaps
 		turn.Text = v.proofText
 	} else {
 		turn.State = TurnStateErrored
-		// No assistant output was recoverable. A settled screen showing a
-		// logged-out / re-auth banner means the turn did not fail on its
-		// merits — record the canonical auth reason instead of the generic one.
-		if authRequired(c.opts.Harness, snap.Text) {
+		// No assistant output was recoverable. The harness's own tag names the
+		// failure if it recorded one; a settled screen showing a logged-out /
+		// re-auth banner is the fallback for the paths that have no transcript.
+		// Either way the turn did not fail on its merits, so it must not carry
+		// the generic reason.
+		switch {
+		case c.apiErrorRelabel(turn):
+			// Reason, Code and Text set by the relabel.
+		case authRequired(c.opts.Harness, snap.Text):
 			turn.Reason = ReasonAuthRequired
-		} else {
+			turn.Code = CodeAuthRequired
+		default:
 			turn.Reason = c.opts.Harness + ": prompt not accepted / no assistant output"
 			if v.diag != "" {
 				turn.Reason += "; " + v.diag

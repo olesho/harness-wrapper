@@ -29,6 +29,12 @@ type Turn struct {
 	// Timestamp is when the message was recorded. Zero if the source
 	// log did not include a timestamp.
 	Timestamp time.Time
+
+	// APIError is the harness's own failure tag when this turn came from a
+	// synthetic API-error entry rather than a real reply (see Event.APIError).
+	// Empty on every ordinary turn. A turn with this set has Text — the
+	// RENDERED error — so text alone cannot tell the two apart.
+	APIError string
 }
 
 // Reader reads a harness's persisted transcript for one session.

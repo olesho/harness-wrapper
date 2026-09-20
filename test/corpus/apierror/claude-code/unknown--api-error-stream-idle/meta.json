@@ -1,0 +1,13 @@
+{
+ "harness": "claude-code",
+ "tag": "unknown",
+ "verdict": "none",
+ "code": "",
+ "reason": "",
+ "screenOnly": "complete",
+ "screenAuthRequired": false,
+ "occurrences": 1,
+ "versions": [
+  "2.1.187"
+ ]
+}
