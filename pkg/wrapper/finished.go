@@ -31,6 +31,12 @@ import (
 //  4. An ErrTransient result whose surrounding text names a timeout is
 //     refined to ErrTimeout, which keeps a network timeout in its own class
 //     (and its own backoff bucket downstream) instead of a generic 5xx.
+//  5. A rate-limited result with no wait hint gets one from a Retry-After
+//     token anywhere in the output. The per-harness matchers only parse the
+//     hint when it sits inside the message they anchored on; a CLI that
+//     prints the header on its own line is the common case, and a caller
+//     that has to scrape it itself is maintaining a harness-output pattern
+//     outside the repository that owns them.
 //
 // Returns the classifier's own result when nothing matches, so a caller's
 // exit-code fallback still applies.
@@ -50,6 +56,10 @@ func ClassifyFinishedOutput(harness, output string) Classification {
 			c.Rule = RuleTimeoutUpgrade
 			c.Match = output[loc[0]:loc[1]]
 			return c
+		}
+	case ErrRateLimited:
+		if c.RetryAfter == 0 {
+			c.RetryAfter = parseRetryAfterSeconds(output)
 		}
 	}
 	return c

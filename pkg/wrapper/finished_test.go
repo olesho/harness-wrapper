@@ -158,6 +158,31 @@ func TestFinishedOutput_ActionableResultsPassThrough(t *testing.T) {
 	}
 }
 
+// TestFinishedOutput_RateLimitHintFromAnywhere covers the one completion the
+// fallback does make to an actionable result: a rate limit whose wait hint the
+// per-harness matcher could not see, because the CLI printed the header on its
+// own line rather than inside the message the matcher anchored on. The class
+// and reason are the matcher's; only the missing hint is filled in.
+func TestFinishedOutput_RateLimitHintFromAnywhere(t *testing.T) {
+	const out = "Error: rate limit exceeded\nretry-after: 30"
+	before := wrapper.ClassifyOutput("claude", out)
+	if before.Class != wrapper.ErrRateLimited || before.RetryAfter != 0 {
+		t.Fatalf("precondition: %+v, want ErrRateLimited with no hint", before)
+	}
+	got := wrapper.ClassifyFinishedOutput("claude", out)
+	if got.RetryAfter != 30*time.Second {
+		t.Errorf("RetryAfter = %v, want 30s", got.RetryAfter)
+	}
+	if got.Class != before.Class || got.Reason != before.Reason || got.Status != before.Status {
+		t.Errorf("the completion rewrote the verdict: %+v, want class/reason/status of %+v", got, before)
+	}
+	// A hint the matcher DID parse is never overwritten.
+	anchored := wrapper.ClassifyFinishedOutput("claude", "API Error: 429 Too Many Requests. Retry after 30 seconds.\nretry-after: 999")
+	if anchored.RetryAfter != 30*time.Second {
+		t.Errorf("RetryAfter = %v, want the matcher's own 30s", anchored.RetryAfter)
+	}
+}
+
 // TestFinishedOutput_NothingMatchedReturnsTheOriginal asserts the caller's own
 // fallback (an exit code, typically) still gets its turn.
 func TestFinishedOutput_NothingMatchedReturnsTheOriginal(t *testing.T) {
