@@ -1,0 +1,28 @@
+{
+  "steps": [
+    {
+      "wait_for": "(project you created or one you trust|Yes, I trust this folder)"
+    },
+    {
+      "send": "\u001b[B\u001b[13u"
+    },
+    {
+      "sleep": "5s"
+    },
+    {
+      "send": "say hi in one short word, nothing else."
+    },
+    {
+      "sleep": "1s"
+    },
+    {
+      "send": "\u001b[13u"
+    },
+    {
+      "wait_for": "✻ [A-Z][a-zA-Zé]+ for \\d+[hms]"
+    },
+    {
+      "sleep": "5s"
+    }
+  ]
+}
