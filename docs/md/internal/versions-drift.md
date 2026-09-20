@@ -34,15 +34,16 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 > Both files carry claude-code `2.1.278` as of 2026-09-20, verified live against the installed
 > 2.1.278 binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`:
 > end-of-turn detection, reply extraction, the multi-turn keep-alive path, a large prompt arriving
-> intact, and the folder-trust dialog, both reported and answered. The four scripted claude scenarios
-> are still recorded at **2.1.270**, so replay verifies the `interruptMarker` and tool-call surfaces at
-> 2.1.270 — one series behind the pin — not at 2.1.278, which was verified live only; the
-> permission-mode footers remain anchored at 2.1.217. Recordings are frozen renderings the adapter must
-> keep handling, so once the pin moves on they trail it by design rather than by neglect.
-> meta-harness's own pin file is still at `2.1.218` (verified 2026-07-23) and has to follow —
-> until it does, `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design,
-> the snapshot is a parity *target* rather than a mirror of what meta-harness ships today, and the
-> no-args mode would drag this repo's pin *backwards* from 2.1.278 to 2.1.218.
+> intact, and the folder-trust dialog, both reported and answered. The recordings trail that pin: the
+> four scripted claude scenarios are still at 2.1.270 and the two trust-dialog captures at 2.1.261, so
+> the `interruptMarker` and tool-call surfaces are verified by replay at 2.1.270 rather than at the
+> pin, and the permission-mode footers remain anchored at 2.1.217. Recordings are frozen renderings
+> the adapter must keep handling, so once the pin moves on they trail it by design rather than by
+> neglect — only the live tests can speak for the pin. meta-harness's own pin file is still at
+> `2.1.218` (verified 2026-07-23) and has to follow — until it does,
+> `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, the snapshot
+> is a parity *target* rather than a mirror of what meta-harness ships today, and the no-args mode
+> would drag this repo's pin *backwards* from 2.1.278 to 2.1.218.
 
 The read API:
 

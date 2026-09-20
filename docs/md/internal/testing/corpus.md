@@ -44,7 +44,8 @@ renders, so upstream drift in that shape fails a test instead of hanging a run:
   `pkg/chat.readyForInput` used to require — so a finished turn had no way to complete at all. Driven
   by `test/scripts/claude/settled-after-turn.json`.
 
-  2.1.270 runs its TUI on the **alternate screen**, so the tail of `bytes.raw` is the alt-screen exit
+  claude runs its TUI on the **alternate screen** — true when the clause first appeared at 2.1.247 and
+  still true at the current pin — so the tail of `bytes.raw` is the alt-screen exit
   (`CSI ?1049l`), which blanks the emulator. Replay this recording **incrementally** and read the last
   frame carrying the clause — which is what production does anyway, since the wrapper reads frames as
   they land and never sees the teardown. A single whole-file `Write` snapshots a blank screen.

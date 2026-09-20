@@ -4,9 +4,11 @@
 // versions.json is the single source of truth that ties an adapter's
 // code (regex fingerprints, classifier patterns, transcript schema
 // assumptions) to a specific upstream release. The version-sentry CLI
-// reads it to compare against npm registry latest; corpus tests read
-// it to verify that recordings under test/corpus/ were made against
-// the same version the adapter targets.
+// reads it to compare against npm registry latest, and the env-gated
+// conformance tests compare it against the binary actually installed.
+// Nothing compares it to test/corpus/: a recording's
+// meta.json.binary_version is free to trail the pin, and routinely does
+// — see docs/md/internal/versions-drift.md.
 //
 // Schema:
 //

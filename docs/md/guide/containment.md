@@ -181,8 +181,11 @@ What differs from ABI 9:
 
 ## Harness profiles
 
-Profiles are versioned manifests (`internal/contain/profiles/*.json`) checked against the versions
-harness-wrapper pins:
+Profiles are versioned manifests (`internal/contain/profiles/*.json`) checked against the version
+each manifest names in its own `harness_version`. That version is pinned **independently of
+`pkg/versions/versions.json`**: nothing ties the two, so the profile can legitimately trail the pin,
+and as of 2026-09-20 the claude-code profile does (2.1.270 against a 2.1.278 pin). A contained launch
+of a binary the profile does not name is refused outright, never silently downgraded.
 
 | Harness | Identified by | Grants beyond the baseline | State root |
 |---|---|---|---|

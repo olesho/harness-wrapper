@@ -11,16 +11,16 @@
 // path, a large prompt arriving intact, and the folder-trust dialog, both
 // reported in a directory claude has not trusted and answered.
 //
-// The four scripted claude scenarios under test/corpus/claude-code/ —
-// settled-after-turn, multi-turn, tool-call and interrupted-mid-reply — are
-// recorded at 2.1.270 from a directory claude had never trusted
-// (meta.json.binary_version is the recorded proof), so interruptMarker and the
-// tool-call rendering are verified by replay at 2.1.270, one series BEHIND the
-// pin: the 2.1.278 bump was verified live only, without a re-bake. The
-// permission-mode footers in permmode.go are still anchored at 2.1.217. The
-// recordings are frozen renderings the adapter must keep handling: now that the
-// pin has moved on they trail it, and replaying them cannot confirm the newer
-// release; only the live tests above can.
+// The recordings trail the pin, deliberately. The four scripted claude
+// scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
+// tool-call and interrupted-mid-reply — are recorded at 2.1.270 from a
+// directory claude had never trusted (meta.json.binary_version is the recorded
+// proof), and the two trust-dialog recordings at 2.1.261; so interruptMarker
+// and the tool-call rendering are verified by replay at 2.1.270, not at the
+// pin. The permission-mode footers in permmode.go are still anchored at
+// 2.1.217. The recordings are frozen renderings the adapter must keep
+// handling: replaying them cannot confirm a newer release, so what verifies
+// the pin is the live tests above and nothing else.
 //
 // The signals:
 //
@@ -32,7 +32,9 @@
 //
 //   - User interrupt: a "⎿  Interrupted · What should Claude do
 //     instead?" line appears. The turn ended in a recoverable error
-//     state. Re-confirmed verbatim on 2.1.270. What changed at 2.1.24x
+//     state. Verified by replay against the 2.1.270 interrupted-mid-reply
+//     recording; the live runs at 2.1.278 exercise end-of-turn detection
+//     rather than this marker. What changed at 2.1.24x
 //     is which KEY produces it — Esc interrupts, Ctrl-C clears the
 //     composer and paints nothing — which matters to the recorder, not
 //     to this adapter; see the interrupt step in
