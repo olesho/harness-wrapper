@@ -2,6 +2,12 @@
 
 **Status:** Accepted (2026-09-15)
 
+**Intent:** principle 7, *say what is enforced, not what is intended*
+([INTENT](../../../../INTENT.md#design-principles)) — the [Boundary](#boundary) states what
+containment guarantees and what it does not, each with its cause. It also meets the success
+criterion that an uncontained harness behaves as if containment did not exist: those launches never
+reach this code.
+
 ## Context
 
 Landlock restricts the calling thread and everything that thread later starts. A harness-wrapper
@@ -43,10 +49,22 @@ hands the work to a fresh goroutine, and unlocks the untouched main thread after
 thread is recognized by the tid recorded during package initialization, which the runtime runs
 locked to it in every build mode, or as the thread-group leader.
 
-The Landlock syscalls are made through `golang.org/x/sys/unix`. go-landlock is not imported: its
-low-level syscall package imports libcap's cgo `psx` unless the final build sets `landlocktsync`,
-which only an embedder's own build can do — every Linux build of every program embedding
-`pkg/wrapper` would compile C and take psx's licence, contained or not.
+The Landlock syscalls are made through `golang.org/x/sys/unix`. go-landlock is not imported.
+
+## Alternatives
+
+- **Importing go-landlock**: its low-level syscall package imports libcap's cgo `psx` unless the
+  final build sets `landlocktsync`, which only an embedder's own build can do — every Linux build of
+  every program embedding `pkg/wrapper` would compile C and take psx's licence, contained or not.
+- **Re-exec trampoline** (`harness-wrapper __landlock-exec` restricts itself, then execs the harness):
+  one more exec per launch, and a binary with the subcommand that embedders of `pkg/wrapper` would
+  have to ship or find; re-executing `/proc/self/exe` instead would run the embedder's package
+  initialisers before the policy applies. The private table gives the same guarantee in-process.
+- **Descriptor hygiene in the shared table** (scan and set close-on-exec before the fork): races
+  concurrent opens and changes the wrapper's own flags.
+- **`exec.Cmd` on the private-table thread**: the pidfd problem described under
+  [Boundary](#boundary).
+- **Restrict the whole wrapper**: irreversible for the process, breaks concurrent sessions.
 
 ## Boundary
 
@@ -84,17 +102,6 @@ What it does not:
 - Landlock itself leaves `stat`, `chmod`, `chown`, `flock`, `fcntl` and `access` unmediated, and the
   profile grants `/proc` read-only (see [containment](../../guide/containment.md)).
 
-## Alternatives
-
-- **Re-exec trampoline** (`harness-wrapper __landlock-exec` restricts itself, then execs the harness):
-  one more exec per launch, and a binary with the subcommand that embedders of `pkg/wrapper` would
-  have to ship or find; re-executing `/proc/self/exe` instead would run the embedder's package
-  initialisers before the policy applies. The private table gives the same guarantee in-process.
-- **Descriptor hygiene in the shared table** (scan and set close-on-exec before the fork): races
-  concurrent opens and changes the wrapper's own flags.
-- **`exec.Cmd` on the private-table thread**: the pidfd problem above.
-- **Restrict the whole wrapper**: irreversible for the process, breaks concurrent sessions.
-
 ## Consequences
 
 - Contained and uncontained sessions coexist in one process; uncontained launches keep the
@@ -107,3 +114,5 @@ What it does not:
   sessions, a GC loop and Go and C threads opening non-close-on-exec descriptors throughout) is a
   required CI job on x86_64 and arm64; any failed spawn, child on a foreign terminal, inherited
   descriptor or surviving spawn thread fails it.
+- [ADR-005](adr-005-apparmor-socket-layer.md) builds on this spawn thread to add the AppArmor socket
+  layer on Landlock ABI 6–8.
