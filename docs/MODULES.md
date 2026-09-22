@@ -2410,11 +2410,11 @@ The Claude Code turn adapter. It detects end-of-turn from the thinking-summary l
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.278, verified LIVE against that binary on 2026-09-20 by pkg/harness's
+2.1.280, verified LIVE against that binary on 2026-09-22 by pkg/harness's
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
-2.1.278 end-of-turn summary and Busy() gates the in-flight frames, so those
+2.1.280 end-of-turn summary and Busy() gates the in-flight frames, so those
 runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
 path, a large prompt arriving intact, and the folder-trust dialog, both
 reported in a directory claude has not trusted and answered.
@@ -2426,9 +2426,10 @@ directory claude had never trusted (meta.json.binary_version is the recorded
 proof), and the two trust-dialog recordings at 2.1.261; so interruptMarker
 and the tool-call rendering are verified by replay at 2.1.270, not at the
 pin. The permission-mode footers in permmode.go are still anchored at
-2.1.217. The recordings are frozen renderings the adapter must keep
-handling: replaying them cannot confirm a newer release, so what verifies
-the pin is the live tests above and nothing else.
+2.1.217. The adapter needed no change for 2.1.280, so nothing was re-baked.
+The recordings are frozen renderings the adapter must keep handling:
+replaying them cannot confirm a newer release, so what verifies the pin is
+the live tests above and nothing else.
 
 The signals:
 
@@ -2441,7 +2442,7 @@ The signals:
   - User interrupt: a "⎿  Interrupted · What should Claude do
     instead?" line appears. The turn ended in a recoverable error
     state. Verified by replay against the 2.1.270 interrupted-mid-reply
-    recording; the live runs at 2.1.278 exercise end-of-turn detection
+    recording; the live runs at 2.1.280 exercise end-of-turn detection
     rather than this marker. What changed at 2.1.24x
     is which KEY produces it — Esc interrupts, Ctrl-C clears the
     composer and paints nothing — which matters to the recorder, not
@@ -2692,7 +2693,7 @@ Schema:
 
 	{
 	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.278", "verified_at": "2026-09-20"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.280", "verified_at": "2026-09-22"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
