@@ -69,6 +69,12 @@ blanket bypass flags production hardcodes still exist. These probes deliberately
 `versions.json` pins — they check the *installed* binary, so they stay green through pin skew. Whole
 run: under two seconds, no session, no turn, no quota, no config mutation.
 
+Contained launches have a Layer 4 of their own: the `TestRealClaude*` tests, the authenticated
+conformance runs that activate a [containment profile](../../guide/containment.md#harness-profiles).
+They run the pinned binary inside its Landlock domain as a real login, with tools, a subagent, an MCP
+server, resume and a token refresh, and check that every reader of the session's files reads its own
+state. They need an ABI 9 kernel and credentials, so they run by hand, not nightly.
+
 ## Invariants worth asserting (any layer, version-independent)
 
 These hold regardless of glyphs, so they're the durable contract — prefer them over asserting on
