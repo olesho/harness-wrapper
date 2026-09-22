@@ -149,8 +149,9 @@ func TestRefusals(t *testing.T) {
 			return in
 		}, StageProfile},
 		{"inactive profile", func() Input {
+			t.Cleanup(RegisterTestProfile(TestProfile{Harness: "hwtest-inactive", Inactive: true}))
 			in := helperInput(t, self, wd, base())
-			in.Harness = "claude"
+			in.Harness = "hwtest-inactive"
 			return in
 		}, StageProfile},
 		{"codex below bypass", func() Input {

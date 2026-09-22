@@ -7,13 +7,19 @@ import (
 	"testing"
 )
 
-// TestLoginAllowedBeforeActivation: the built-in profiles are not activated,
-// so sessions of them are refused, but their login flows are available.
+// TestLoginAllowedBeforeActivation: sessions of a built-in profile that is not
+// activated yet (codex) are refused, sessions of an activated one
+// (claude-code) are not, and both login flows are available.
 func TestLoginAllowedBeforeActivation(t *testing.T) {
-	for _, h := range []string{"claude", "claude-code", "codex"} {
-		if _, _, err := ProfileID(h); !isRefusal(err, StageProfile) || !strings.Contains(err.Error(), "not activated") {
-			t.Errorf("%s: sessions of an inactive profile must be refused at the profile stage, got %v", h, err)
+	for _, h := range []string{"claude", "claude-code"} {
+		if _, _, err := ProfileID(h); err != nil {
+			t.Errorf("%s: the activated profile refused a session: %v", h, err)
 		}
+	}
+	if _, _, err := ProfileID("codex"); !isRefusal(err, StageProfile) || !strings.Contains(err.Error(), "not activated") {
+		t.Errorf("codex: sessions of an inactive profile must be refused at the profile stage, got %v", err)
+	}
+	for _, h := range []string{"claude", "claude-code", "codex"} {
 		if _, err := LoginFlowFor(h); err != nil {
 			t.Errorf("%s: login flow: %v", h, err)
 		}

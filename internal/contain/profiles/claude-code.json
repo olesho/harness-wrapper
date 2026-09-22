@@ -4,8 +4,8 @@
   "harnesses": ["claude", "claude-code"],
   "manifest_version": 1,
   "harness_version": "2.1.270",
-  "activated": false,
-  "activation": "pending the authenticated conformance runs of the landlock-security conformance job (plan step 3): a model-driven Write/Edit turn, a Task subagent, one stdio MCP server, --resume under the private layout, remote managed settings and a /login identity in a caller StateDir through a token refresh",
+  "activated": true,
+  "activation": "the authenticated conformance runs (plan step 3; the TestRealClaude* tests) passed for 2.1.270 linux-arm64 in an ABI 9 guest (Fedora CoreOS 44, Linux 7.1.4): a model-driven Edit and Write turn with its file history, a Bash write outside every grant refused by the OS, a Task subagent, one stdio MCP server whose read outside every grant was refused, --resume in a caller StateDir and Reopen in private state, a contain-login login in a caller StateDir through a token refresh, and G5's session, transcript, history and usage routing across private, caller and uncontained sessions in one working directory. Remote managed settings were not exercised: 2.1.270 loads them only for team and enterprise subscriptions, and the runs signed in with a max one",
   "executable": {
     "kind": "native",
     "platforms": {
