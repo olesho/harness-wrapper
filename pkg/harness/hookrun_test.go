@@ -81,6 +81,39 @@ func TestHandleHookEventWritesSpoolAndDrains(t *testing.T) {
 	}
 }
 
+// The durable consumer's path: a fired hook's batch comes back from ReadSpool
+// with a receipt, stays in the spool until acknowledged, and is gone after
+// AckSpool.
+func TestHandleHookEventSpoolsForReadAndAck(t *testing.T) {
+	home := t.TempDir()
+	spool := t.TempDir()
+	stdin := writeClaudeTranscript(t, home, "sess-ack")
+	env := []string{
+		harness.EnvSpool + "=" + spool,
+		harness.EnvHome + "=" + home,
+		harness.EnvHookCwd + "=/wt",
+	}
+	if _, err := harness.HandleHookEvent("claude", "stop", env, stdin); err != nil {
+		t.Fatalf("HandleHookEvent: %v", err)
+	}
+	got, err := harness.ReadSpool(spool)
+	if err != nil {
+		t.Fatalf("ReadSpool: %v", err)
+	}
+	if len(got.Batches) != 1 || len(got.Batches[0].Events) != 2 || got.Batches[0].Events[1].Event.Text != "hello" {
+		t.Fatalf("ReadSpool = %+v, want one batch with hi/hello", got)
+	}
+	if entries, _ := os.ReadDir(spool); len(entries) != 1 {
+		t.Fatalf("ReadSpool consumed the file: spool = %v", names(entries))
+	}
+	if err := harness.AckSpool(spool, got.Batches[0].Receipt); err != nil {
+		t.Fatalf("AckSpool: %v", err)
+	}
+	if entries, _ := os.ReadDir(spool); len(entries) != 0 {
+		t.Fatalf("spool after AckSpool = %v, want empty", names(entries))
+	}
+}
+
 func TestHandleHookEventSessionStartSpoolsMarker(t *testing.T) {
 	spool := t.TempDir()
 	stdin, _ := json.Marshal(map[string]string{"session_id": "s-77", "transcript_path": "/whatever"})

@@ -256,10 +256,57 @@ because a hook runs wherever the harness happened to spawn it.
 
 ### The spool
 
-Each hook invocation writes one JSON file into the spool directory (temp file at `0600`, then rename,
-so a reader never sees a partial event). `DrainSpool` reads and removes them; malformed files are
-skipped and *counted* in the returned error rather than silently dropped, and a missing directory is
-not an error.
+Each hook invocation writes one JSON file into the spool directory. The writer creates a unique temp
+file at `0600`, fsyncs it, renames it into place and fsyncs the directory. A reader therefore never
+sees a partial event, and once the hook reports success the file survives a crash.
+
+There are two ways to consume the spool:
+
+```go
+func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error)
+
+func ReadSpool(spoolDir string) (SpoolContents, error)
+func AckSpool(spoolDir string, receipts ...SpoolReceipt) error
+```
+
+- **`DrainSpool`** reads and removes the files in one step. It is destructive and not transactional:
+  a file is gone before the caller has done anything with its events, so a crash in between loses
+  them. `Run` uses it because its consumer lives and dies with the run. Malformed files are skipped
+  and *counted* in the returned error rather than silently dropped, and a missing directory is not an
+  error.
+- **`ReadSpool` then `AckSpool`** serve a consumer that must not lose events, such as agentd, which
+  never calls `DrainSpool`.
+  - `ReadSpool` returns each file's events with a receipt and leaves the file in place. The receipt
+    holds the file's name in the spool, its size and its SHA-256 digest.
+  - The consumer commits the events durably, then passes the receipts to `AckSpool`.
+  - `AckSpool` deletes each file only while it still holds exactly the bytes that were read, then
+    fsyncs the directory.
+
+  A crash at any point replays the unacknowledged files under the same receipts, so the consumer can
+  recognise what it has already committed. Repeating an ack is a no-op.
+
+The reader treats the spool as untrusted, because under agentd the hook runs as a less trusted user
+than the reader:
+
+- It refuses a spool directory that is itself a symlink, and confines every lookup to the directory
+  (`os.Root`).
+- It reads only regular, singly linked files of at most `MaxSpoolFileBytes` (64 MiB). It never follows
+  a symlink and never blocks on a FIFO.
+- It quarantines any file it cannot use: another kind of file, an oversize or hard-linked one, a name
+  `AckSpool` would refuse, or contents that do not parse.
+  - The file moves into the spool's `quarantine/` directory and is reported, with the reason, in
+    `SpoolContents.Quarantined`.
+  - The quarantine keeps at most `MaxSpoolQuarantine` (32) files. Once it is full, further files are
+    deleted, and the report says so.
+- It leaves in place a file it cannot open, such as one it lacks permission to read, and names it in
+  the returned error.
+- One call reads at most 64 MiB and 1024 files, and sets `SpoolContents.More` when it leaves files
+  for the next call.
+
+`AckSpool` refuses a receipt, deleting nothing, in two cases. The error wraps `ErrSpoolReceipt`.
+
+- The name is not a plain `.json` name directly inside the spool.
+- The file changed or was replaced since it was read, including by a symlink.
 
 Two filters keep a drained spool honest:
 
