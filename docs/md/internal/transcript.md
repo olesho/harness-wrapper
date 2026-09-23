@@ -137,9 +137,133 @@ The union of both harnesses' token fields. Two properties are contractual:
   codex's *includes* its cached count, which is a subset rather than an addition. Do not re-add the
   cached number to the input total.
 
+## Following a transcript as it grows
+
+`Read` parses a whole file. A consumer that stores events while the harness is still writing — agentd
+keeps a harness's events in its own database — uses a **`Follower`** instead: it reads the complete
+records past a checkpoint, a batch at a time, and moves on only when the caller says the batch is
+stored.
+
+```go
+f, err := claudecode.Follow(sessionID, workingDir, launchEnv, storedCheckpoint)
+
+b, err := f.Poll()
+// errors.Is(err, transcript.ErrTranscriptReset): record the fault; the next Poll starts a new generation
+// errors.Is(err, fs.ErrNotExist): claude has not written its first entry yet
+// b.Checkpoint == b.From: nothing new
+// otherwise, in ONE transaction: store b.Events, b.Errors and b.Checkpoint — then
+err = f.Ack(b)
+```
+
+Only claude-code has a follower. Codex gets one when something consumes it.
+
+### Locating the file
+
+`claudecode.Locate(sessionID, workingDir, env)` finds the transcript by the launch adapter's rules:
+`CLAUDE_CONFIG_DIR` from the harness's launch env (the last occurrence, trimmed, resolved against
+`workingDir` when relative, since claude takes it verbatim from its own cwd), else `~/.claude`; then
+the project directory named for the realpath of `workingDir`, falling back to `workingDir` as given.
+A nil `env` means the harness inherited this process's environment, as `exec` treats it. The rules
+live in two packages — `pkg/transcript` cannot import the adapter — and a test holds them together.
+
+`Follow` does not need the file to exist. Claude creates its transcript with the first entry, so a
+follower started at launch waits where claude will write it, and `Poll` reports `fs.ErrNotExist`
+until then.
+
+### Batches and acknowledgement
+
+`Poll` never moves the follower. It returns a `Batch` — the events of every complete record after
+`From`, the records it could not read, and the `Checkpoint` that covers them — and only `Ack(b)`
+moves the follower to `b.Checkpoint`. The caller commits the events, the source errors and the
+checkpoint in one transaction, then acknowledges in memory:
+
+| What happens | What the follower does |
+|---|---|
+| the transaction fails | the next `Poll` returns the same records with the same identities |
+| the process dies before commit | restarted from the stored checkpoint, it reads the batch again |
+| the process dies after commit, before `Ack` | restarted from the stored checkpoint, it reads on from there |
+| a batch polled before an earlier `Ack` is acknowledged | `Ack` refuses it |
+
+`MaxBatchBytes` (default 4 MiB) bounds a batch at a record boundary; a record longer than that still
+comes whole. `Offset()` is a convenience; resuming takes the whole checkpoint.
+
+### Partial and unreadable records
+
+Bytes after the last newline are a record the harness is still writing: they wait for their newline.
+This is where the follower and `Read` differ — `Read` parses a valid final record that has no newline.
+
+A complete record the decoder cannot read becomes a **`SourceError`** — its offset, its length with
+the newline, the SHA-256 of those bytes, and why — carried by the batch that moves past it, so it is
+recorded, never silently skipped. For claude that is a line that is not JSON, or a user or assistant
+entry whose message cannot be read. Other entries hold no events and are skipped however they are
+shaped: the `system` / `api_error` entry claude writes for each retry of a failed API call carries an
+object where `Line` expects the string `error`, and `Read` drops it for that.
+
+### The checkpoint
+
+| Field | Meaning |
+|---|---|
+| `version` | `FollowerVersion` (1) when it was made; a follower refuses a newer one |
+| `session_id` | the harness session |
+| `generation` | a UUID for this incarnation of the file, minted when the follower starts on it and after every reset |
+| `inode` | the file's inode, where the platform has one (only the inode: device numbers change across remounts) |
+| `offset` | bytes covered, always just past a newline |
+| `next_seq` | the `Seq` of the next event: events are numbered from 0 in each generation, as `Read` numbers a file |
+| `prefix_len`, `prefix_sha256` | the file's first bytes, growing with the offset up to 4 KiB and fixed from then on |
+| `boundary_len`, `boundary_sha256` | the bytes just before `offset`, up to 4 KiB |
+
+Every `Poll` checks the file against the checkpoint before reading on. A **reset** is any of: a
+different inode (`replaced`), a file shorter than the offset (`shrunk`), or changed prefix or boundary
+bytes (`prefix_changed`, `boundary_changed`). Between them they catch rotation, truncation and a
+truncate-and-regrow, across a restart as well as live. They are **not** proof against rewriting in
+place: a change that keeps both windows and the size intact goes unseen.
+
+A harness only appends to its transcript, so a reset is a **source-integrity fault**. `Poll` returns
+it as a `*ResetError` (matching `ErrTranscriptReset`) with the reason, the checkpoint the file no
+longer extends, and the file's size and inode now. The caller records the fault and keeps what
+evidence it wants — a copy of the file — rather than trusting that the log only grows. The follower
+has already moved to a new generation at offset 0. The next batch reads the file from its first byte,
+and its checkpoint carries the new generation into the same transaction as its events. A process that
+dies before storing the new generation reports the reset again when it restarts.
+
+### Identity
+
+A follower sets each event's `NativeID`, so `Event.ID()` returns it, to a versioned **follower
+identity**. It is the most native one the record offers, qualified by the event's kind:
+
+| Record | Identity |
+|---|---|
+| a tool event with a tool-use id | `v1:<kind>:tool:<tool-use id>` |
+| any other event from a record with a uuid | `v1:<kind>:line:<record uuid>:<block index>` |
+| an event from a record with neither | `v1:<kind>:gen:<generation>:<record offset>:<block index>` |
+
+The block index is the block's position in the record's content array, so a block that yields no
+event (a `thinking` block) does not shift the blocks after it, and several blocks under one uuid stay
+apart. No two kinds share an identity. The first two forms are the harness's own ids, the same across
+batches, restarts and resets: after a reset the file is read again and its native identities repeat,
+and the caller's dedup drops them. A record without an id is known only by where it sits, so it
+belongs to its generation. agentd scopes the identity further, by agent and harness session.
+
+Identities can repeat within one generation, too: claude writes a session's earlier entries again,
+verbatim — same uuid, message and timestamp — when the session resumes (seen with claude 2.1.181 and
+2.1.197). The store keeps one event per identity, and a repeat must be a no-op there, not an error that
+fails the batch's transaction for good.
+
+`Read` keeps its legacy ids for its existing callers — text as `file:text:<uuid>:<seq>`, numbered by
+position in the whole file — so the follower's identities differ from `Read`'s. The follower is held
+to `Read` by content instead: the same events, in the same order, with the same `Seq`s, however the
+file is appended to and however often the follower restarts.
+
+### Usage
+
+A follower accounts no usage. Claude repeats one API call's usage on every content-block line, so a
+sum over batches would count a call once per block. When usage is added, the set of message ids seen
+and the totals must be persisted with the checkpoint, atomically — or rebuilt from the retained file
+before reading on — with reset behaviour defined and a restart between two blocks of one call tested.
+
 ## Line-parsing helpers
 
-`Line`, `ParseFromBytes`, `ParseFromFileAtLine`, `SliceFromLine`, `ExtractUserContent` and
+`Line`, `ParseLine`, `ParseFromBytes`, `ParseFromFileAtLine`, `SliceFromLine`, `ExtractUserContent` and
 `StripIDEContextTags` are the shared JSONL primitives the claude-code reader is built on —
 tail-following from a byte offset, extracting user content from mixed block shapes, and stripping
 IDE-injected context tags that would otherwise appear as user text.

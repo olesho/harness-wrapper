@@ -25,7 +25,7 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode`, `pi` | [Adapter Matrix](../guide/adapters.md) |
 | `pkg/chat` | The `Conversation` API: control, send, events, history, interactive input, permission switching | [Chat API](../guide/chat.md) |
 | `pkg/chat/memstore` | The in-memory `Store` implementation | [Store interface](../guide/chat.md#store-interface) |
-| `pkg/transcript` | Read-only parsers for harness-owned JSONL logs, and the canonical `Event` | [Transcripts](transcript.md) |
+| `pkg/transcript` | Read-only parsers for harness-owned JSONL logs — whole-file readers and a checkpointed follower — and the canonical `Event` | [Transcripts](transcript.md) |
 | `pkg/transcript/*` | Per-harness readers: `claudecode`, `codex`, `pi` | [Transcripts](transcript.md#per-harness-logs) |
 | `pkg/harness` | Per-harness **capability profiles**, hook installation, transcript acquisition, and `RunTurn` | [Harness profiles & runs](harness.md) |
 | `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`, `pi`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |

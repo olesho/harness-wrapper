@@ -4,7 +4,7 @@ export interface Turn {
   id: string;
   session_id: string;
   role: "user" | "assistant" | "system" | (string & {});
-  state: "pending" | "streaming" | "complete" | "errored" | (string & {});
+  state: "pending" | "streaming" | "complete" | "errored" | "interrupted" | (string & {});
   text?: string;
   reason?: string;
   started_at?: string;
@@ -44,9 +44,18 @@ export interface InputRequest {
  * frame kind.
  */
 export interface TurnEvent {
-  type: "turn" | "input_request" | "input_resolved" | (string & {});
+  type: "turn" | "input_request" | "input_resolved" | "exited" | (string & {});
   turn?: Turn;
   input?: InputRequest;
+  /** How the harness process ended; set on the last frame, `type: "exited"`. */
+  exit?: {
+    status: string;
+    exit_code: number;
+    signal?: string;
+    reason?: string;
+    class?: string;
+    ended_at?: string;
+  };
   error?: string;
 }
 
@@ -424,6 +433,17 @@ export class Conversation {
       body,
     );
     return res.turn_id;
+  }
+
+  /**
+   * Interrupt the turn in flight. Needs no control token. Resolves with what
+   * the harness did — "stopped", "cancelled", "too_late" or "no_turn" — and
+   * `error` when a cancelled turn's prompt would not clear from the composer.
+   * The interrupted turn itself arrives on the event stream with state
+   * "interrupted".
+   */
+  async interrupt(): Promise<{ result: "stopped" | "cancelled" | "too_late" | "no_turn" | (string & {}); error?: string }> {
+    return this.client.request("POST", `/v1/conversations/${this.id}/interrupt`);
   }
 
   async history(): Promise<Turn[]> {

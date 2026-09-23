@@ -70,9 +70,16 @@ var Sections = []NavSection{
 		{"conformance", "Conformance Corpus", "internal/testing/conformance.md"},
 	}},
 	{Block: "Developer", Title: "Decisions", Pages: []PageEntry{
+		{"decisions", "Overview", "internal/decisions/README.md"},
 		{"adr-001-vt100", "ADR-001 · vt100", "internal/decisions/adr-001-vt100.md"},
+		{"adr-001-vt100-ts", "ADR-001 · vt100 (TS)", "internal/decisions/adr-001-vt100-ts.md"},
 		{"adr-002-interactive-input", "ADR-002 · Interactive input", "internal/decisions/adr-002-interactive-input.md"},
 		{"adr-003-env-visibility", "ADR-003 · Env visibility", "internal/decisions/adr-003-env-visibility.md"},
+		{"adr-004-thread-scoped-landlock", "ADR-004 · Thread-scoped Landlock", "internal/decisions/adr-004-thread-scoped-landlock.md"},
+		{"adr-005-apparmor-socket-layer", "ADR-005 · AppArmor socket layer", "internal/decisions/adr-005-apparmor-socket-layer.md"},
+		{"adr-006-classification-and-lifetime", "ADR-006 · Classification and lifetime", "internal/decisions/adr-006-classification-and-lifetime.md"},
+		{"adr-007-interrupt", "ADR-007 · Interrupt", "internal/decisions/adr-007-interrupt.md"},
+		{"adr-008-event-delivery", "ADR-008 · Event delivery", "internal/decisions/adr-008-event-delivery.md"},
 	}},
 	{Block: "Developer", Title: "Roadmap", Pages: []PageEntry{
 		{"roadmap-v1", "Roadmap v1", "internal/roadmap-v1.md"},

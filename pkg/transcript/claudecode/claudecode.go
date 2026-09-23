@@ -117,6 +117,17 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	path, err := transcriptPath(root, sessionID, workingDir)
+	if err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// transcriptPath finds session sessionID's transcript under root. When none
+// exists it returns the path claude would write, with an error wrapping
+// fs.ErrNotExist.
+func transcriptPath(root, sessionID, workingDir string) (string, error) {
 	// Claude Code derives the project dir from the REALPATH of the cwd (it
 	// resolves symlinks before encoding), so a symlinked working dir yields a
 	// slug that never matches unless we resolve too. macOS is the common trap:
@@ -141,7 +152,7 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 			firstPath, firstErr = path, statErr
 		}
 	}
-	return "", fmt.Errorf("claudecode transcript: %s: %w", firstPath, firstErr)
+	return firstPath, fmt.Errorf("claudecode transcript: %s: %w", firstPath, firstErr)
 }
 
 // The Claude line→Event parser (Events/userLineEvents/assistantLineEvents) lives

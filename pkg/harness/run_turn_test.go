@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -32,6 +35,23 @@ func fakeBin(t *testing.T) string {
 	return p
 }
 
+// readArgv reads the launch argv the fake dumps at startup (ArgvOutVar),
+// retrying briefly because the dump races the launch call's return.
+func readArgv(t *testing.T, path string) []string {
+	t.Helper()
+	for range 400 {
+		if raw, err := os.ReadFile(path); err == nil {
+			var got []string
+			if err := json.Unmarshal(raw, &got); err == nil {
+				return got
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("argv dump never appeared at %s", path)
+	return nil
+}
+
 func scriptEnv(t *testing.T, s fakeharness.Script) []string {
 	t.Helper()
 	data, err := json.Marshal(s)
@@ -46,16 +66,19 @@ func scriptEnv(t *testing.T, s fakeharness.Script) []string {
 }
 
 func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
-	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	// The fake paints a resume hint naming its own id; the session the launch
+	// assigned must win over it.
+	const hintID = "123e4567-e89b-12d3-a456-426614174000"
 	bin := fakeBin(t)
-	env := scriptEnv(t, fakeharness.New("claude-code").
-		Session(sessionID).
+	argvOut := filepath.Join(t.TempDir(), "argv.json")
+	env := append(scriptEnv(t, fakeharness.New("claude-code").
+		Session(hintID).
 		Idle().
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
 		StayAliveUntilStopped().
-		Build())
+		Build()), fakeharness.ArgvOutVar+"="+argvOut)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -76,8 +99,8 @@ func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
 	if res.Turn.State != chat.TurnStateComplete {
 		t.Fatalf("Turn.State = %q, want complete", res.Turn.State)
 	}
-	if res.Session.HarnessSessionID != sessionID {
-		t.Fatalf("HarnessSessionID = %q", res.Session.HarnessSessionID)
+	if argv := readArgv(t, argvOut); len(argv) < 2 || argv[0] != "--session-id" || res.Session.HarnessSessionID != argv[1] {
+		t.Fatalf("HarnessSessionID = %q, want the id the launch assigned (argv %q)", res.Session.HarnessSessionID, argv)
 	}
 	if len(res.History) < 2 {
 		t.Fatalf("History length = %d, want at least user + assistant turns", len(res.History))
@@ -218,6 +241,103 @@ func TestRunTurn_ReturnsErrTurnErrored(t *testing.T) {
 	}
 }
 
+// ─── the live (paid) real-Claude tests ───────────────────────────────────────
+
+// realClaudeEnv returns a launch env with Claude Code's nesting markers
+// stripped. The dogfood runs from a cron that is itself a Claude Code session;
+// inheriting the markers disables session persistence in the spawned claude,
+// which removes the swallowed-prompt transcript rescue and turns a lagged
+// repaint into a hard ErrTurnErrored. (PUPPET-671)
+//
+// Call it AFTER any t.Setenv the test needs carried through: it materializes
+// the process environment at call time. CLAUDE_CONFIG_DIR is not a nesting
+// marker and survives.
+//
+// This supersedes PUPPET-670's scrubbedRealClaudeEnv in pkg/harness/env_test.go,
+// a test-local hand-copy of the policy whose doc comment justified itself with
+// "that function is unexported in package main". It no longer is: the policy is
+// pkg/harnessenv and cmd/harness-wrapper delegates to it, so the mirror (and the
+// divergence risk two hand-kept tables carry) is gone. Its table rows live in
+// pkg/harnessenv/harnessenv_test.go.
+func realClaudeEnv(t *testing.T) []string {
+	t.Helper()
+	env := harnessenv.Cleaned()
+	assertNoNestingMarkers(t, env)
+	return env
+}
+
+// assertNoNestingMarkers fails the test if the launch env still carries a
+// nesting marker, naming the leak instead of letting it surface 12s later as a
+// swallowed-prompt error on a screen nobody kept.
+func assertNoNestingMarkers(t *testing.T, env []string) {
+	t.Helper()
+	for _, kv := range env {
+		k := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			k = kv[:i]
+		}
+		if harnessenv.IsNestingKey(k) {
+			t.Fatalf("launch env still carries the Claude Code nesting marker %q: the spawned claude will disable session persistence and the turn can fail as a swallowed prompt", k)
+		}
+	}
+}
+
+// TestRealClaudeEnvIsScrubbed is the hermetic (unpaid, always-run) companion to
+// the live tests below: it proves the env they launch with is scrubbed even on
+// a machine where they skip, from a process that is itself marked as nested.
+func TestRealClaudeEnvIsScrubbed(t *testing.T) {
+	t.Setenv("CLAUDECODE", "1")
+	t.Setenv("CLAUDE_CODE_CHILD_SESSION", "1")
+	t.Setenv("CLAUDE_CODE_ENTRYPOINT", "cli")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-test")
+
+	env := realClaudeEnv(t) // fails here if any marker survives
+
+	if !slices.Contains(env, "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-test") {
+		t.Error("the live launch env lost CLAUDE_CODE_OAUTH_TOKEN; the spawned claude would start unauthenticated (PUPPET-317)")
+	}
+}
+
+// reportRealClaudeFailure prints the fields that name WHICH failure arm fired.
+// The 2026-09-18 release-check artefact could not be diagnosed because the old
+// message dropped Turn.Reason and dumped raw escape bytes: the log was a wall
+// of ESC[ sequences and the cause had to be reconstructed by reading source.
+// (PUPPET-671)
+func reportRealClaudeFailure(t *testing.T, what string, err error, res harness.TurnResult, out *bytes.Buffer) {
+	t.Helper()
+	cause := "(no error)"
+	if err != nil {
+		cause = err.Error()
+	}
+	t.Fatalf("%s: %s\n"+
+		"turn.State:        %s\n"+
+		"turn.Reason:       %s\n"+
+		"turn.Code:         %s\n"+
+		"harness sessionID: %q\n"+
+		"historySource:     %s (%d turn(s))\n"+
+		"rendered screen:\n%s\n"+
+		"raw output:\n%s",
+		what, cause,
+		res.Turn.State, res.Turn.Reason, res.Turn.Code,
+		res.Session.HarnessSessionID,
+		res.HistorySource, len(res.History),
+		renderPTY(out.Bytes()),
+		out.String())
+}
+
+// renderPTY replays the captured PTY bytes through the same terminal emulator
+// the adapter reads, at chat.Open's default geometry, so a failure shows the
+// SCREEN the verdict was made on. Falls back to the raw bytes if the emulator
+// rejects them.
+func renderPTY(raw []byte) string {
+	const cols, rows = 120, 40 // chat.Open defaults
+	scr := screen.New(cols, rows)
+	if _, err := scr.Write(raw); err != nil {
+		return string(raw)
+	}
+	return scr.Snapshot().Text
+}
+
 func TestRunTurn_RealClaudeDogfood(t *testing.T) {
 	if os.Getenv("HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN") != "1" {
 		t.Skip("set HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1 to run against real Claude Code")
@@ -232,18 +352,19 @@ func TestRunTurn_RealClaudeDogfood(t *testing.T) {
 		Harness:       "claude",
 		BinaryPath:    claudePath,
 		Args:          []string{"--dangerously-skip-permissions"},
+		Env:           realClaudeEnv(t),
 		Prompt:        "Reply with exactly: HARNESS_WRAPPER_RUNTURN_OK",
 		ExitAfterTurn: true,
 		Output:        &out,
 	})
 	if err != nil {
-		t.Fatalf("RunTurn real Claude: %v\noutput:\n%s", err, out.String())
+		reportRealClaudeFailure(t, "RunTurn real Claude", err, res, &out)
 	}
 	if res.Turn.State != chat.TurnStateComplete {
-		t.Fatalf("Turn.State = %q, want complete\nreason: %s\noutput:\n%s", res.Turn.State, res.Turn.Reason, out.String())
+		reportRealClaudeFailure(t, "Turn.State = "+string(res.Turn.State)+", want complete", err, res, &out)
 	}
 	if !strings.Contains(res.Turn.Text, "HARNESS_WRAPPER_RUNTURN_OK") && !strings.Contains(out.String(), "HARNESS_WRAPPER_RUNTURN_OK") {
-		t.Fatalf("real Claude output missing sentinel\nturn text:\n%s\noutput:\n%s", res.Turn.Text, out.String())
+		reportRealClaudeFailure(t, "real Claude output missing sentinel; turn text:\n"+res.Turn.Text, nil, res, &out)
 	}
 	if !res.ProcessStoppedAfterTurn {
 		t.Fatal("ProcessStoppedAfterTurn = false, want true")
@@ -276,12 +397,13 @@ func TestRunTurn_RealClaudeDogfoodKeepAlive(t *testing.T) {
 		Harness:       "claude",
 		BinaryPath:    claudePath,
 		Args:          []string{"--dangerously-skip-permissions"},
+		Env:           realClaudeEnv(t),
 		Prompt:        "Reply with exactly: HARNESS_WRAPPER_RUNTURN_KEEP_1",
 		ExitAfterTurn: false,
 		Output:        &out,
 	})
 	if err != nil {
-		t.Fatalf("RunTurn real Claude keep-alive first turn: %v\noutput:\n%s", err, out.String())
+		reportRealClaudeFailure(t, "RunTurn real Claude keep-alive first turn", err, res, &out)
 	}
 	if res.Conversation == nil {
 		t.Fatal("Conversation is nil when ExitAfterTurn is false")
@@ -299,7 +421,7 @@ func TestRunTurn_RealClaudeDogfoodKeepAlive(t *testing.T) {
 
 	turnID, err := res.Conversation.Send(ctx, "Reply with exactly: HARNESS_WRAPPER_RUNTURN_KEEP_2")
 	if err != nil {
-		t.Fatalf("Send second real Claude turn: %v\noutput:\n%s", err, out.String())
+		reportRealClaudeFailure(t, "Send second real Claude turn", err, res, &out)
 	}
 	awaitRealClaudeSentinel(ctx, t, res.Conversation, turnID, "HARNESS_WRAPPER_RUNTURN_KEEP_2", &out)
 }
@@ -311,16 +433,16 @@ func awaitRealClaudeSentinel(ctx context.Context, t *testing.T, conv *chat.Conve
 	for {
 		select {
 		case <-ctx.Done():
-			t.Fatalf("second real Claude turn timed out: %v\noutput:\n%s", ctx.Err(), out.String())
+			t.Fatalf("second real Claude turn timed out: %v\nrendered screen:\n%s\nraw output:\n%s", ctx.Err(), renderPTY(out.Bytes()), out.String())
 		case ev, ok := <-conv.Events():
 			if !ok {
-				t.Fatalf("conversation closed before second real Claude turn completed\noutput:\n%s", out.String())
+				t.Fatalf("conversation closed before second real Claude turn completed\nrendered screen:\n%s\nraw output:\n%s", renderPTY(out.Bytes()), out.String())
 			}
 			if ev.Turn.ID != turnID || ev.Turn.State != chat.TurnStateComplete {
 				continue
 			}
 			if !strings.Contains(ev.Turn.Text, sentinel) && !strings.Contains(out.String(), sentinel) {
-				t.Fatalf("second real Claude output missing sentinel\nturn text:\n%s\noutput:\n%s", ev.Turn.Text, out.String())
+				t.Fatalf("second real Claude output missing sentinel\nturn text:\n%s\nturn.Reason: %s\nrendered screen:\n%s\nraw output:\n%s", ev.Turn.Text, ev.Turn.Reason, renderPTY(out.Bytes()), out.String())
 			}
 			return
 		}
@@ -378,19 +500,20 @@ func TestRunTurn_RealClaudeLargePromptIntact(t *testing.T) {
 		Harness:       "claude",
 		BinaryPath:    claudePath,
 		Args:          []string{"--dangerously-skip-permissions"},
+		Env:           realClaudeEnv(t),
 		Prompt:        prompt,
 		ExitAfterTurn: true,
 		Output:        &out,
 	})
 	if err != nil {
-		t.Fatalf("RunTurn real Claude large prompt: %v\noutput:\n%s", err, out.String())
+		reportRealClaudeFailure(t, "RunTurn real Claude large prompt", err, res, &out)
 	}
 	if res.Turn.State != chat.TurnStateComplete {
-		t.Fatalf("Turn.State = %q, want complete\nreason: %s\noutput:\n%s", res.Turn.State, res.Turn.Reason, out.String())
+		reportRealClaudeFailure(t, "Turn.State = "+string(res.Turn.State)+", want complete", err, res, &out)
 	}
 	got := strings.ToLower(res.Turn.Text + out.String())
 	if !strings.Contains(got, "alpha bravo charlie") {
-		t.Fatalf("the model did not echo the words after the HEAD sentinel — the prompt arrived TRUNCATED at the front\nturn text:\n%s\noutput:\n%s",
-			res.Turn.Text, out.String())
+		t.Fatalf("the model did not echo the words after the HEAD sentinel — the prompt arrived TRUNCATED at the front\nturn text:\n%s\nrendered screen:\n%s",
+			res.Turn.Text, renderPTY(out.Bytes()))
 	}
 }

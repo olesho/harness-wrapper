@@ -43,6 +43,7 @@ func apiTypes() []struct {
 		{"Disposition", reflect.TypeOf(Disposition{})},
 		{"InputPolicy", reflect.TypeOf(InputPolicy{})},
 		{"Store", reflect.TypeOf((*Store)(nil)).Elem()},
+		{"ScreenAnchor", reflect.TypeOf(ScreenAnchor{})},
 	}
 }
 
@@ -62,6 +63,10 @@ func TestContract_GoAPI(t *testing.T) {
 	}{
 		{"Open", Open},
 		{"Reopen", Reopen},
+		// The anchor accessors exist so a consumer stops COPYING these
+		// patterns; a rename would send it straight back to mirroring them.
+		{"AuthAnchors", AuthAnchors},
+		{"DialogAnchors", DialogAnchors},
 	} {
 		fmt.Fprintf(&b, "func %s %s\n", f.name, methodSig(reflect.TypeOf(f.fn), false))
 	}
@@ -106,6 +111,7 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrTurnInFlight", ErrTurnInFlight},
 		{"ErrClosed", ErrClosed},
 		{"ErrInputPending", ErrInputPending},
+		{"ErrHarnessBusy", ErrHarnessBusy},
 		{"ErrAuthRequired", ErrAuthRequired},
 		{"ErrNoInputPending", ErrNoInputPending},
 		{"ErrStaleInputRequest", ErrStaleInputRequest},
@@ -115,6 +121,7 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
 		{"ErrResumeUnsupported", ErrResumeUnsupported},
 		{"ErrNoHarnessSession", ErrNoHarnessSession},
+		{"ErrHarnessSessionInUse", ErrHarnessSessionInUse},
 		// Permission-mode switching. All six are listed on purpose:
 		// ErrPickerUnsupported / ErrPickerTimeout were NOT added when model
 		// discovery landed, and that gap is a precedent not to repeat for

@@ -1,0 +1,42 @@
+7[r8[?25h[?25l[?2004h[?2031h[?1004h]0;✳ Claude Code[38;2;215;119;87m▗[48;2;215;119;87m[38;2;0;0;0m ▗   ▖ [49m[38;2;215;119;87m▖[12G[39m[1mClaude[19GCode[24G[22m[38;2;153;153;153mv2.1.280[39m
+[2G[48;2;215;119;87m       [12G[49m[38;2;153;153;153mOpus[17G5.5[21G(1M[25Gcontext)[34G·[36GAPI[40GUsage[46GBilling[39m
+[3G[38;2;215;119;87m▘▘[6G▝▝[12G[38;2;153;153;153m/private/tmp/hw-rebake/api-error-retry-gives-up[39m
+
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+❯ [7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;255;193;7m⏵⏵[6Gauto[11Gmode[16Gon[38;2;153;153;153m (shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort[39m
+[2C[3A[>0q[?u[c[2D[3B[2C[3AHW_RECORD_PROMPT:[21Greply[27Gwith[32Gexactly[40GRECOVERED_REPLY_OK[7m [38C[2B[27m               
+[57C[3A]0;◐ Claude Code[57D[3B[4A[48;2;55;55;55m[38;2;80;80;80m❯ [38;2;153;153;153mHW_RECORD_PROMPT: reply with exactly RECOVERED_REPLY_OK[39m                                                               [1B[49m[K[1B[38;2;255;107;128m✻[39m [38;2;255;107;128mAPI error[38;2;153;153;153m · Retrying in 1s · attempt 1/10[39m[K[2C[1B[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;255;193;7m⏵⏵[6Gauto[11Gmode[16Gon[38;2;153;153;153m (shift+tab[30Gto[33Gcycle)[40G·[42Gesc[46Gto[49Ginterrupt[59G·[61G←[63Gfor[67Gagents[101G◐[103Gmedium[110G·[112G/effort[39m
+[2C[3A[2D[3B[26C[6A[38;2;153;153;153m2[40G2[39m
+
+
+
+
+
+[2C[3A[2D[3B[6A[38;2;153;153;153m⏺[3GAuto mode[13Glets Claude handle[32Gpermission prompts automatically — Claude checks each tool call for risky actions[2C[1Band prompt injection before executing. Actions Claude identifies as safe are executed, while actions Claude [1B[39m  [38;2;153;153;153midentifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks. [39m[K[1B  [38;2;153;153;153mSessions are slightly more expensive. Claude can make mistakes that allow harmful commands to run, it's [1B[39m  [38;2;153;153;153mrecommended to only use in isolated environments. Shift+Tab to change mode.[39m[K[2C[1B[K
+[38;2;255;107;128m✻[3GAPI[7Gerror[38;2;153;153;153m ·[15GRetrying[24Gin[27G2s[30G·[32Gattempt[40G2/10[39m
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;255;193;7m⏵⏵[6Gauto[11Gmode[16Gon[38;2;153;153;153m (shift+tab[30Gto[33Gcycle)[40G·[42Gesc[46Gto[49Ginterrupt[59G·[61G←[63Gfor[67Gagents[101G◐[103Gmedium[110G·[112G/effort[39m
+[2C[3A[2D[3B[26C[6A[38;2;153;153;153m1[39m
+
+
+
+
+
+[2C[3A]0;◑ Claude Code]0;✳ Claude Code[2D[3B[2C[14A[48;2;55;55;55m[38;2;255;255;255mHW_RECORD_PROMPT: reply with exactly RECOVERED_REPLY_OK[8B[49m[38;2;255;193;7m⏺[3GAPI Error: Repeated 529 Overloaded errors. The API is at capacity — this is usually temporary. Try again in a [2C[1Bmoment. If it persists, check your inference gateway (127.0.0.1:54096).[1B[39m[K[1B[38;2;153;153;153m✻[39m [38;2;153;153;153mCooked for 1s · done 12:17 PM[1B[39m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+❯ [7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;255;193;7m⏵⏵[6Gauto[11Gmode[16Gon[38;2;153;153;153m (shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort[39m
+[2C[3A(B[?1006l[?1003l[?1002l[?1000l[2D[3B[?1004l[>4m[<u[?2031l[?2004l(B[?1016l[?1006l[?1003l[?1002l[?1000l[?25h7[r8]0;[2m[22m
+[2mResume this session with:[22m
+[2mclaude --resume 5884f56f-18b3-4888-a447-bf4e3ab8259d[22m
+[2m[22m

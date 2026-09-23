@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.280",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "Two turns, each interrupted mid-reply: the second marker lands below the second prompt's echo while the first turn's marker is still on screen above it. Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` (pkg/chat/interrupt_record_test.go), interrupting through chat.Conversation.Interrupt: the real claude against a local Messages API, in /tmp/hw-rebake/interrupt-second-turn with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-09-23T11:12:23.579828Z",
+ "rows": 40
+}

@@ -112,7 +112,7 @@ func hasSkipPermissionsFlag(args []string) bool {
 }
 
 // hasEnvKey reports whether env defines key, matching exactly at the '='
-// boundary (the cleanedEnv key-extraction idiom — NOT a raw prefix match,
+// boundary (the harnessenv.Filter key-extraction idiom — NOT a raw prefix match,
 // which would wrongly treat IS_SANDBOXED=… as defining IS_SANDBOX).
 func hasEnvKey(env []string, key string) bool {
 	for _, kv := range env {

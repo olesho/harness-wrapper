@@ -219,10 +219,11 @@ type SessionIDExtractor interface {
 // rather than from the rendered screen. Some harnesses (Claude Code) only print
 // their session UUID — e.g. the "claude --resume <uuid>" hint — to the normal
 // screen as the TUI tears down on exit, where it never lands in the vt100
-// snapshot a SessionIDExtractor would scrape. The chat layer feeds every raw
-// line of the harness's output (via the wrapper's durable line tap) to this
-// extractor; once a non-empty ID is returned it is persisted and no longer
-// queried. Lines carry raw ANSI/control bytes, so implementations must tolerate
+// snapshot a SessionIDExtractor would scrape. While the id is unknown, the chat
+// layer feeds every raw line of the harness's output (via the wrapper's
+// durable line tap) to this extractor; once a non-empty ID is returned it is
+// persisted and no longer queried. An id assigned at launch (SessionAssigner)
+// or resumed is known from the start, and the tap is not wired. Lines carry raw ANSI/control bytes, so implementations must tolerate
 // non-matching/polluted lines by returning ("", false).
 type RawSessionIDExtractor interface {
 	// ExtractSessionIDFromLine returns the harness-assigned session UUID if it
@@ -275,6 +276,58 @@ type EnvConfigurable interface {
 	ConfigureFromEnv(env []string)
 }
 
+// InterruptOutcome is what the screen says a harness did with the turn in
+// flight, as Interrupter.InterruptOutcome reads it.
+type InterruptOutcome int
+
+const (
+	// InterruptPending: the turn is still running, or the screen does not say
+	// yet — a mid-paint frame, a dialog.
+	InterruptPending InterruptOutcome = iota
+	// InterruptStopped: the harness stopped the turn after it had produced
+	// output. Its interrupt marker sits below this turn's prompt, and the
+	// partial reply is the text above the marker.
+	InterruptStopped
+	// InterruptCancelled: the harness cancelled the turn before it produced
+	// anything and put the prompt back in the composer.
+	InterruptCancelled
+	// InterruptFinished: the turn ended on its own — its end-of-turn marker is
+	// below this turn's prompt.
+	InterruptFinished
+)
+
+// Interrupter is an optional capability adapters implement when the harness can
+// stop a turn in flight from the keyboard, and the screen says what it did.
+// The chat layer's Conversation.Interrupt writes InterruptSequence and reads
+// InterruptOutcome; an interrupt made at the terminal is read the same way
+// (ADR-007).
+type Interrupter interface {
+	// InterruptSequence returns the keys that interrupt the turn in flight,
+	// written as one write.
+	InterruptSequence() []byte
+
+	// InterruptOutcome reads, from one screen, what the harness did with the
+	// turn whose prompt is prompt: the reading is per turn, so an interrupt
+	// marker left by an earlier turn never speaks for this one. partial is the
+	// reply the turn had painted when it was stopped, set with
+	// InterruptStopped when the screen shows one. It must only be asked about
+	// a turn the harness has taken — the screen showed it working — since
+	// before that the composer still holds the prompt as typed, which is also
+	// what a cancelled turn leaves there.
+	InterruptOutcome(prompt string, snap screen.Snapshot) (outcome InterruptOutcome, partial string)
+
+	// ComposerText returns what the composer holds, as painted. ok is false
+	// when the screen shows no composer to read — a dialog, a picker, a
+	// mid-paint frame — which never means empty.
+	ComposerText(snap screen.Snapshot) (text string, ok bool)
+
+	// ClearComposerSequence returns the keys that empty a composer holding
+	// composer (as ComposerText read it), from wherever its cursor is, as one
+	// write. Keys that empty a longer text are fine: the caller re-reads the
+	// composer until it is empty.
+	ClearComposerSequence(composer string) []byte
+}
+
 // Quitter is an optional capability adapters may implement to surface the key
 // sequence that makes the interactive harness exit gracefully (so it can flush
 // state / persist its transcript), instead of being SIGTERM'd. RunTurn sends
@@ -317,6 +370,31 @@ type SessionResumer interface {
 	ResumeArgs(harnessSessionID string) []string
 }
 
+// SessionAssigner is an optional capability adapters implement when the harness
+// accepts a caller-chosen id for a FRESH session at launch — claude-code and pi
+// both take --session-id <uuid> and name the session's transcript after it.
+//
+// The chat layer assigns an id on every fresh Open with such an adapter, so the
+// id is known from the moment the harness starts. Without one it is learned
+// only from what the harness prints — claude's "claude --resume <uuid>" exit
+// hint, which recent releases print rarely if at all — and every reading that
+// needs it (the transcript verdicts, History) is off until then, which for a
+// live conversation is its whole life. Mirrors meta-harness's
+// SessionInitializer (src/turns/types.ts), which mints the id the same way.
+type SessionAssigner interface {
+	// NewSessionID mints a fresh id in the form the harness accepts.
+	NewSessionID() string
+
+	// ValidSessionID reports why id cannot name a session of this harness, or
+	// nil when it can. It checks the form only; whether the id is already in
+	// use is the chat layer's check.
+	ValidSessionID(id string) error
+
+	// SessionIDArgs returns the argv fragment that starts a fresh session named
+	// id (e.g. {"--session-id", id}).
+	SessionIDArgs(id string) []string
+}
+
 // SessionControlFlags is an optional capability adapters may implement to list
 // the chat-managed session-control flags a caller must not pass in Options.args
 // (chat owns session identity/resume/fork, so caller-supplied duplicates of
@@ -342,11 +420,12 @@ type MessageExtractor interface {
 
 // BusyDetector is an optional capability adapters may implement to report, from
 // the rendered screen, whether the harness is still working on the current turn
-// (mid-generation or running a tool) versus sitting idle at the prompt. The
-// chat layer's idle-completion fallback consults it so it never declares a turn
-// complete while the harness is still busy — the harness's input prompt is
-// often painted even while it works, so prompt-readiness alone is not enough to
-// distinguish "done" from "thinking". Adapters that can't tell report false.
+// (mid-generation, running a tool, or backing off before a retry) versus sitting
+// idle at the prompt. The chat layer's idle-completion fallback consults it so it
+// never declares a turn complete while the harness is still busy, and Send waits
+// on it so nothing is typed into a working harness — the harness's input prompt
+// is often painted even while it works, so prompt-readiness alone is not enough
+// to distinguish "done" from "thinking". Adapters that can't tell report false.
 type BusyDetector interface {
 	Busy(snap screen.Snapshot) bool
 }

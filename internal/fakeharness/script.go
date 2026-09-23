@@ -51,6 +51,29 @@ const SubmitCR = "\r"
 // sending exactly this, the fake never advances and the test fails loudly.
 const ShiftTabCSI9_2u = "\x1b[9;2u"
 
+// InterruptCSI27u is the byte sequence chat.Interrupt writes to interrupt a
+// claude-code turn: Esc in the kitty keyboard protocol, CSI 27 u. The inward
+// contract lives in the claudecode adapter's InterruptSequence; this constant
+// mirrors it so hermetic scenarios wait for exactly the bytes the production
+// writer emits, and TestInterruptKeyMatchesFakeharness pins them byte-equal.
+// Scenarios wait for it via Builder.AwaitInterrupt.
+const InterruptCSI27u = "\x1b[27u"
+
+// ClearComposerKeys returns the keys chat writes to empty a claude-code
+// composer holding lines lines: Ctrl-E, then Ctrl-K twice per line, then
+// Ctrl-U twice per line and once more. It mirrors the claudecode adapter's
+// ClearComposerSequence, which TestClearKeysMatchFakeharness pins it to.
+func ClearComposerKeys(lines int) string {
+	keys := "\x05"
+	for range 2 * lines {
+		keys += "\x0b"
+	}
+	for range 2*lines + 1 {
+		keys += "\x15"
+	}
+	return keys
+}
+
 // PasteStart / PasteEnd are the bracketed-paste framing markers chat wraps a
 // LARGE composer payload in — CSI 200 ~ and CSI 201 ~, what a real terminal
 // emits around pasted text. A real TUI consumes them as FRAMING and keeps only
@@ -83,13 +106,15 @@ type Script struct {
 	Steps     []Step `json:"steps"`
 }
 
-// Step is exactly one of: paint a Frame, WaitInput for typed bytes, Hold at the
-// prompt until the wrapper stops the process, or Exit.
+// Step is exactly one of: paint a Frame, WaitInput for typed bytes, append to
+// the Transcript, Hold at the prompt until the wrapper stops the process, or
+// Exit.
 type Step struct {
-	Frame     *Frame     `json:"frame,omitempty"`
-	WaitInput *WaitInput `json:"wait_input,omitempty"`
-	Hold      *Hold      `json:"hold,omitempty"`
-	Exit      *Exit      `json:"exit,omitempty"`
+	Frame      *Frame      `json:"frame,omitempty"`
+	WaitInput  *WaitInput  `json:"wait_input,omitempty"`
+	Transcript *Transcript `json:"transcript,omitempty"`
+	Hold       *Hold       `json:"hold,omitempty"`
+	Exit       *Exit       `json:"exit,omitempty"`
 }
 
 // Frame is a full-screen repaint. The binary prefixes every frame with a
@@ -120,6 +145,19 @@ type WaitInput struct {
 	// later Echo frames (i.e. the submitted text, minus the submit key).
 	Capture bool   `json:"capture,omitempty"`
 	Label   string `json:"label,omitempty"`
+}
+
+// Transcript appends records to the session transcript, where a real
+// claude-code writes it: <CLAUDE_CONFIG_DIR, else $HOME/.claude>/projects/
+// <encoded realpath of the cwd>/<id>.jsonl. <id> is the session the launch
+// names — its --session-id, else its --resume — and Script.SessionID for a
+// launch that names none. It is how a scenario gives the chat layer the
+// harness's own record of a turn, e.g. a tagged API-error line.
+type Transcript struct {
+	DelayMs int `json:"delay_ms,omitempty"`
+	// Lines are JSONL records, one per line, without their trailing newline.
+	// The prompt placeholder is replaced with the last captured input.
+	Lines []string `json:"lines"`
 }
 
 // Exit terminates the fake with Code, modelling a harness that crashes or quits

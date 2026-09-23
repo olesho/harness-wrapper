@@ -134,7 +134,7 @@ func (c *Conversation) captureTranscriptWatermark() int {
 		// first-Send case, not a failure.
 		return 0
 	}
-	tturns, err := reader.ReadTranscript(sessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	switch {
 	case err == nil:
 		return len(tturns)
@@ -159,49 +159,67 @@ func (c *Conversation) captureTranscriptWatermark() int {
 // call. It declines — leaving every existing path exactly as it is — whenever
 // it cannot establish that a tag belongs to THIS turn.
 func (c *Conversation) apiErrorRelabel(turn *Turn) bool {
-	v, ok := c.apiErrorVerdictOfCurrentTurn()
-	if !ok {
+	return c.lastWordOfCurrentTurn().apply(turn, c.opts.Harness)
+}
+
+// transcriptWord is what the harness's own transcript says about the turn now
+// finishing: a verdict it recorded, a reply, or — when neither — nothing it
+// could be asked for, or nothing yet.
+type transcriptWord struct {
+	verdict apiErrorVerdict
+	tagged  bool // the last entry is a tag this maps to a verdict
+	replied bool // the last entry is a real reply, whatever failed before it
+}
+
+// apply errors turn with the verdict when there is one, and reports whether it
+// did. The "reply" was the rendered error text; keeping it would hand the
+// caller an error message as the turn's answer.
+func (w transcriptWord) apply(turn *Turn, harness string) bool {
+	if !w.tagged {
 		return false
 	}
 	turn.State = TurnStateErrored
-	turn.Reason = v.turnReason(c.opts.Harness)
-	turn.Code = v.code
-	// The "reply" was the rendered error text; keeping it would hand the
-	// caller an error message as the turn's answer.
+	turn.Reason = w.verdict.turnReason(harness)
+	turn.Code = w.verdict.code
+	if w.verdict.code == CodeUsageLimited {
+		turn.ResumeAt = resumeAtFrom(w.verdict.text)
+	}
 	turn.Text = ""
 	return true
 }
 
-// apiErrorVerdictOfCurrentTurn reads the harness's tag for the turn now
-// finishing. ok=false means no verdict — no reader, no session id, no
-// watermark, no tagged entry beyond it, or a tag this does not map.
-func (c *Conversation) apiErrorVerdictOfCurrentTurn() (apiErrorVerdict, bool) {
+// lastWordOfCurrentTurn reads the harness's last word on the turn now
+// finishing. The zero value means no word — no reader, no session id, no
+// watermark, a transcript that could not be read, no assistant entry beyond
+// the watermark, or a tag this does not map.
+func (c *Conversation) lastWordOfCurrentTurn() transcriptWord {
 	reader, ok := c.adapter.(turns.TranscriptReader)
 	if !ok {
-		return apiErrorVerdict{}, false
+		return transcriptWord{}
 	}
 	c.mu.Lock()
 	sessionID := c.session.HarnessID()
 	watermark := c.sentTranscriptWatermark
 	c.mu.Unlock()
 	if sessionID == "" || watermark == watermarkUnknown {
-		return apiErrorVerdict{}, false
+		return transcriptWord{}
 	}
 
-	tturns, err := reader.ReadTranscript(sessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	if err != nil {
 		// The harness may simply not have flushed yet. One pause, one retry —
 		// the same wait applySwallowedPromptVerdict already pays on this file.
-		// A second failure yields no verdict; it never yields a verdict of
-		// "nothing wrong".
+		// A second failure yields no word; it never yields a word of "nothing
+		// wrong".
 		if !c.waitForTranscriptFlush() {
-			return apiErrorVerdict{}, false
+			return transcriptWord{}
 		}
-		if tturns, err = reader.ReadTranscript(sessionID, c.opts.WorkingDir); err != nil {
-			return apiErrorVerdict{}, false
+		if tturns, err = reader.ReadTranscript(sessionID, c.transcriptDir()); err != nil {
+			return transcriptWord{}
 		}
 	}
-	return apiErrorVerdictFrom(tturns, watermark)
+	v, tagged, replied := apiErrorVerdictFrom(tturns, watermark)
+	return transcriptWord{verdict: v, tagged: tagged, replied: replied}
 }
 
 // waitForTranscriptFlush pauses once for the harness to flush, reporting false
@@ -221,9 +239,12 @@ func (c *Conversation) waitForTranscriptFlush() bool {
 // harness retried and succeeded.
 //
 // Split out from its caller so the rule is testable without a conversation.
-func apiErrorVerdictFrom(tturns []transcript.Turn, watermark int) (apiErrorVerdict, bool) {
+// tagged reports a verdict; replied reports that the last entry is a real
+// reply; neither means the transcript holds no assistant entry for this turn,
+// or ends on a tag this does not map.
+func apiErrorVerdictFrom(tturns []transcript.Turn, watermark int) (v apiErrorVerdict, tagged, replied bool) {
 	if watermark < 0 {
-		return apiErrorVerdict{}, false
+		return apiErrorVerdict{}, false, false
 	}
 	for i := len(tturns) - 1; i >= watermark; i-- {
 		t := tturns[i]
@@ -233,20 +254,20 @@ func apiErrorVerdictFrom(tturns []transcript.Turn, watermark int) (apiErrorVerdi
 		if t.APIError == "" {
 			// The latest assistant entry is a real reply: whatever failed
 			// before it, the turn recovered.
-			return apiErrorVerdict{}, false
+			return apiErrorVerdict{}, false, true
 		}
 		v, known := apiErrorClasses[t.APIError]
 		if !known {
 			// A tag outside the vocabulary — a newer harness, or one of the
 			// deliberately unmapped ones. Decline rather than guess; the
 			// screen relabels still get their turn.
-			return apiErrorVerdict{}, false
+			return apiErrorVerdict{}, false, false
 		}
 		v.tag = t.APIError
 		v.text = t.Text
-		return v, true
+		return v, true, false
 	}
-	return apiErrorVerdict{}, false
+	return apiErrorVerdict{}, false, false
 }
 
 // apiErrorDetailCap bounds how much of the harness's rendered error rides in

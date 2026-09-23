@@ -371,11 +371,6 @@ func TestStructuredRun_UsagePopulatedBestEffort(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			const prompt = "ship the turn API"
-			// The fakeharness reports this session id via its scripted resume hint
-			// (which extraction matches with a UUID-shaped regex), so it must be a
-			// UUID; stage the matching claude-layout JSONL under HOME at
-			// <session>.jsonl so the in-guest ReadUsage locates it.
-			const sessionID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			// Structured-run honours a launch CLAUDE_CONFIG_DIR; a profiled host
@@ -383,19 +378,13 @@ func TestStructuredRun_UsagePopulatedBestEffort(t *testing.T) {
 			t.Setenv("CLAUDE_CONFIG_DIR", "")
 			wd := t.TempDir()
 
-			projDir := filepath.Join(home, ".claude", "projects", claudecode.EncodedCWD(wd))
-			if err := os.MkdirAll(projDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(projDir, sessionID+".jsonl"), []byte(tc.jsonl), 0o644); err != nil {
-				t.Fatal(err)
-			}
-
+			// The fake writes the claude-layout JSONL under HOME for the session
+			// id the launch assigned, so the in-guest ReadUsage locates it.
 			script := fakeharness.New("claude-code").
-				Session(sessionID).
 				Idle().
 				AwaitSubmit().
 				Working(30, "Working").
+				TranscriptRaw(0, strings.Split(strings.TrimSpace(tc.jsonl), "\n")...).
 				Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
 				StayAliveUntilStopped().
 				Build()

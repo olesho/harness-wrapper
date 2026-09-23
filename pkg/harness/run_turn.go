@@ -51,6 +51,13 @@ func gracefulQuit(conv *chat.Conversation) bool {
 // carries the errored turn and any retry metadata surfaced by the adapter.
 var ErrTurnErrored = errors.New("harness: turn errored")
 
+// ErrTurnInterrupted is returned by RunTurn when the turn was interrupted —
+// chat.Conversation.Interrupt from another goroutine, or Esc at the harness's
+// terminal — and ended chat.TurnStateInterrupted. It wraps ErrTurnErrored:
+// a one-shot run that was interrupted did not produce its reply, and callers
+// that handle ErrTurnErrored read the populated TurnResult as before.
+var ErrTurnInterrupted = fmt.Errorf("harness: turn interrupted: %w", ErrTurnErrored)
+
 // TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
 //
 // RunTurn starts an interactive harness, sends Prompt through the PTY, waits
@@ -79,7 +86,17 @@ type TurnConfig struct {
 	// not print/headless args.
 	Args []string
 
-	// WorkingDir and Env are passed through to the harness process.
+	// WorkingDir and Env are passed through to the harness process verbatim;
+	// a nil Env means the harness inherits THIS process's environment (see
+	// pkg/wrapper). RunTurn applies no env policy of its own.
+	//
+	// A caller that may itself be running inside a Claude Code session must
+	// pass harnessenv.Cleaned(): an inherited CLAUDECODE /
+	// CLAUDE_CODE_CHILD_SESSION marker makes the spawned claude disable session
+	// persistence ("⚠ Transcript saving is off"), which silently removes the
+	// transcript-backed History path AND the swallowed-prompt rescue in
+	// pkg/chat/swallowed.go, turning a transient screen misread into a hard
+	// ErrTurnErrored. (PUPPET-671)
 	WorkingDir string
 	Env        []string
 
@@ -176,9 +193,13 @@ type TurnResult struct {
 	// harness session ID was captured; otherwise it is the chat store fallback.
 	History []chat.Turn
 
-	// HistorySource reports which of those two paths produced History. The
-	// presence of turns alone can't distinguish them — the store fallback also
-	// returns non-empty slices — so callers that care about fidelity (e.g. the
+	// HistorySource reports which of those two paths produced History. A
+	// silent degradation to HistorySourceStore is most often a NESTED launch:
+	// a spawned claude that inherited the CLAUDE_CODE_* markers writes no
+	// transcript at all. See TurnConfig.Env and pkg/harnessenv. (PUPPET-671)
+	//
+	// The presence of turns alone can't distinguish them — the store fallback
+	// also returns non-empty slices — so callers that care about fidelity (e.g. the
 	// run command's debug logging) must consult this field, not len(History).
 	HistorySource chat.HistorySource
 
@@ -348,6 +369,8 @@ func runConversationTurn(ctx context.Context, conv *chat.Conversation, store cha
 				return snapshotTurnResult(ctx, conv, store, ev.Turn), nil
 			case chat.TurnStateErrored:
 				return snapshotTurnResult(ctx, conv, store, ev.Turn), ErrTurnErrored
+			case chat.TurnStateInterrupted:
+				return snapshotTurnResult(ctx, conv, store, ev.Turn), ErrTurnInterrupted
 			}
 		}
 	}

@@ -57,6 +57,14 @@ func gatewayFixtures() []gatewayFixture {
 			ID: "turn-done", SessionID: "sess-1", Role: "assistant", State: "complete",
 			Text: "the reply", StartedAt: started, CompletedAt: completed,
 		}},
+		// An interrupted turn (ADR-007): the harness stopped it mid-reply, and
+		// the partial reply rides in text. Neither complete nor errored.
+		{"turnDTO.interrupted", turnDTO{
+			ID: "turn-stopped", SessionID: "sess-1", Role: "assistant", State: "interrupted",
+			Text:      "The first half of the reply",
+			Reason:    "claude-code: interrupted: the harness stopped the turn",
+			StartedAt: started, CompletedAt: completed,
+		}},
 		// A blocked api-error turn pins http_code / retry_after presence.
 		{"turnDTO.blocked_api", turnDTO{
 			ID: "turn-blocked", SessionID: "sess-1", Role: "assistant", State: "blocked",
@@ -151,6 +159,45 @@ func gatewayFixtures() []gatewayFixture {
 		{"errorResponse.invalid_config", errorResponse{
 			Error: `permission mode "nonsense" is not supported`,
 			Code:  "invalid_config",
+		}},
+		// A message sent while the harness was still working: 409, nothing
+		// typed, retry once it settles (chat.ErrHarnessBusy).
+		// A message to a conversation whose harness has exited: 410.
+		{"errorResponse.exited", errorResponse{
+			Error: "chat: harness has exited",
+			Code:  "exited",
+		}},
+		{"errorResponse.harness_busy", errorResponse{
+			Error: "chat: harness is busy: context deadline exceeded",
+			Code:  "harness_busy",
+		}},
+		// The last SSE frame: how the harness process ended (ADR-008).
+		{"eventDTO.exited", eventDTO{Type: "exited", Exit: &exitDTO{
+			Status: "failed", ExitCode: 3, Reason: "exited with code 3", Class: "Unknown", EndedAt: completed,
+		}}},
+		// A turn frame, whose shape predates the typed envelope.
+		{"eventDTO.turn", eventDTO{Type: "turn", Turn: &turnDTO{
+			ID: "turn-done", SessionID: "sess-1", Role: "assistant", State: "complete",
+			Text: "the reply", StartedAt: started, CompletedAt: completed,
+		}}},
+		// POST .../interrupt answers what the interrupt did; error rides only
+		// with a cancelled turn whose prompt would not clear from the composer.
+		{"interruptResponse.stopped", interruptResponse{Result: "stopped"}},
+		{"interruptResponse.no_turn", interruptResponse{Result: "no_turn"}},
+		{"interruptResponse.cancelled_composer_not_cleared", interruptResponse{
+			Result: "cancelled",
+			Error:  `chat: composer could not be cleared: it still holds "draft"`,
+		}},
+		// An interrupt on a harness without one (codex today): 501.
+		{"errorResponse.interrupt_unsupported", errorResponse{
+			Error: "chat: harness has no interrupt",
+			Code:  "interrupt_unsupported",
+		}},
+		// The harness did not acknowledge the interrupt in time: 504, and the
+		// turn stays in flight.
+		{"errorResponse.interrupt_unconfirmed", errorResponse{
+			Error: "chat: interrupt not acknowledged: context deadline exceeded",
+			Code:  "interrupt_unconfirmed",
 		}},
 		// containment: the complete request object on the way in (deny-all TCP
 		// is restrict_tcp with no ports — the distinction the clients must

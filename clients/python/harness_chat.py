@@ -148,6 +148,8 @@ class TurnEvent:
     type: str = ""
     turn: Turn | None = None
     input: dict[str, Any] | None = None
+    # How the harness process ended: set on the last frame, type "exited".
+    exit: dict[str, Any] | None = None
     error: str = ""
 
     @classmethod
@@ -157,6 +159,7 @@ class TurnEvent:
             type=d.get("type", ""),
             turn=Turn.from_json(raw) if raw is not None else None,
             input=d.get("input"),
+            exit=d.get("exit"),
             error=d.get("error", ""),
         )
 
@@ -386,6 +389,14 @@ class Conversation:
             body["containment"] = containment.to_json()
         resp = self.client._request("POST", f"/v1/conversations/{self.id}/messages", body)
         return resp["turn_id"]
+
+    def interrupt(self) -> dict[str, Any]:
+        """Interrupt the turn in flight; needs no control token. Returns
+        ``{"result": ...}`` -- "stopped", "cancelled", "too_late" or "no_turn" --
+        with ``"error"`` when a cancelled turn's prompt would not clear from the
+        composer. The interrupted turn arrives on the event stream with state
+        "interrupted"."""
+        return self.client._request("POST", f"/v1/conversations/{self.id}/interrupt")
 
     def history(self) -> list[Turn]:
         resp = self.client._request("GET", f"/v1/conversations/{self.id}/history")

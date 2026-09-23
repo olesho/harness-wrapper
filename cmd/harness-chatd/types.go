@@ -5,6 +5,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/containment"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 type runTurnRequest struct {
@@ -237,14 +238,27 @@ type inputRequestDTO struct {
 }
 
 // eventDTO is the typed SSE envelope. Type discriminates the payload:
-// "turn" → Turn set; "input_request"/"input_resolved" → Input set. Turn
-// frames keep the same "turn" object shape as before, so existing consumers
-// that read .turn remain compatible.
+// "turn" → Turn set; "input_request"/"input_resolved" → Input set;
+// "exited" → Exit set, the last frame. Turn frames keep the same "turn" object
+// shape as before, so existing consumers that read .turn remain compatible.
 type eventDTO struct {
 	Type  string           `json:"type"`
 	Turn  *turnDTO         `json:"turn,omitempty"`
 	Input *inputRequestDTO `json:"input,omitempty"`
+	Exit  *exitDTO         `json:"exit,omitempty"`
 	Error string           `json:"error,omitempty"`
+}
+
+// exitDTO is how the harness process ended (chat.ExitInfo), in the "exited"
+// frame. Class is the wrapper's error class by name ("RateLimited", …),
+// omitted when there is none.
+type exitDTO struct {
+	Status   string    `json:"status"`
+	ExitCode int       `json:"exit_code"`
+	Signal   string    `json:"signal,omitempty"`
+	Reason   string    `json:"reason,omitempty"`
+	Class    string    `json:"class,omitempty"`
+	EndedAt  time.Time `json:"ended_at,omitzero"`
 }
 
 type turnDTO struct {
@@ -265,6 +279,15 @@ type turnDTO struct {
 	// RetryAfter is a Go duration string ("30s", "2m") the harness
 	// suggested as a backoff. Omitted when no hint was parseable.
 	RetryAfter string `json:"retry_after,omitempty"`
+}
+
+// interruptResponse answers POST /v1/conversations/{id}/interrupt: what the
+// interrupt did — stopped, cancelled, no_turn or too_late. Error is set only
+// with cancelled, when the prompt the harness put back would not clear from its
+// composer.
+type interruptResponse struct {
+	Result string `json:"result"`
+	Error  string `json:"error,omitempty"`
 }
 
 type turnEventDTO struct {
@@ -310,19 +333,33 @@ func toInputRequestDTO(r *chat.InputRequest) *inputRequestDTO {
 	return out
 }
 
-func toEventDTO(ev chat.ConversationEvent) eventDTO {
+// toEventDTO maps an event to its SSE frame; ok is false for a type this build
+// does not know, which must not reach the wire dressed as a turn.
+func toEventDTO(ev chat.ConversationEvent) (eventDTO, bool) {
 	out := eventDTO{Type: string(ev.Type)}
 	if ev.Err != nil {
 		out.Error = ev.Err.Error()
 	}
 	switch ev.Type {
-	case chat.EventInputRequest, chat.EventInputResolved:
-		out.Input = toInputRequestDTO(ev.Input)
-	default: // EventTurn (and any future turn-shaped event)
+	case chat.EventTurn:
 		t := toTurnDTO(ev.Turn)
 		out.Turn = &t
+	case chat.EventInputRequest, chat.EventInputResolved:
+		out.Input = toInputRequestDTO(ev.Input)
+	case chat.EventExited:
+		if e := ev.Exit; e != nil {
+			out.Exit = &exitDTO{
+				Status: string(e.Status), ExitCode: e.ExitCode, Signal: e.Signal,
+				Reason: e.Reason, EndedAt: e.EndedAt,
+			}
+			if e.Class != wrapper.ErrNone {
+				out.Exit.Class = e.Class.String()
+			}
+		}
+	default:
+		return eventDTO{}, false
 	}
-	return out
+	return out, true
 }
 
 func toSessionDTO(s chat.Session) sessionDTO {

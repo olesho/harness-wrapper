@@ -32,6 +32,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,7 +93,9 @@ func (r *Reader) sessionsDir() (string, error) {
 // per-cwd slug directory (a cheap guess) and, failing that, walks every
 // sessions/*/ directory. In both cases a filename-contains-id match is
 // confirmed against the file's header "id" so shared-substring IDs across
-// directories cannot produce a false positive.
+// directories cannot produce a false positive. A session with no file anywhere
+// is reported as fs.ErrNotExist, so a caller can tell a session pi has not
+// written yet from one it cannot read.
 func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 	sessionsDir, err := r.sessionsDir()
 	if err != nil {
@@ -122,7 +125,7 @@ func (r *Reader) locate(sessionID, workingDir string) (string, error) {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("pi transcript: no session file for %s under %s", sessionID, sessionsDir)
+	return "", fmt.Errorf("pi transcript: no session file for %s under %s: %w", sessionID, sessionsDir, fs.ErrNotExist)
 }
 
 // findInDir looks for a session file in a single directory whose name

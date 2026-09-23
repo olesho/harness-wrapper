@@ -10,7 +10,7 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 | **codex** | ✅ | ✅ `Token usage:` footer | ✅ | ✅ `~/.codex/sessions/` | ✅ startup interstitials | ✅ ¹ | ✅ ² |
 | **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass | ✅ | ✅ |
 | **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — | — | — |
-| **pi** | ✅ | ⏳ idle + `Busy` | ⏳ headless | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` | — | — |
+| **pi** | ✅ | ⏳ idle + `Busy` | ✅ assigned | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` | — | — |
 | **generic** | ✅ | — maps wrapper status | — | — | — | — | — |
 
 **Legend** — ✅ implemented · ⏳ partial / pending a real on-screen marker (turn completion falls back
@@ -65,10 +65,13 @@ The most fully-featured adapter.
   `complete` mid-turn (Claude streams in multiple parts: thinking → edit → tool run).
 - **Message extraction** isolates the `⏺ …` reply blocks from TUI chrome — important for clean
   one-shot output.
-- **Session-ID**: `claude --resume <uuid>` hint → resume with `claude --resume <uuid>`.
+- **Session-ID**: assigned at launch with `--session-id <uuid>` → resume with `claude --resume <uuid>`.
 - **Transcript**: JSONL under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`.
 - **Interactive input**: folder-trust prompt and `--dangerously-skip-permissions` bypass-acceptance,
   with a numbered-menu parser (`proceed` / `deny` aliases). **Graceful quit** via the `/quit` command.
+- **Interrupt**: Esc (as `CSI 27 u`) stops a turn mid-reply or mid-tool, or cancels it before its
+  first token; the adapter reads which, per turn, and chat ends the turn `interrupted`
+  ([Interrupting a turn](chat.md#interrupting-a-turn)). No other adapter can interrupt yet.
 
 ## opencode, pi
 
@@ -86,13 +89,14 @@ signal (lower fidelity: no intermediate work detection).
   **not** use the kitty keyboard protocol), a `BusyDetector` keys on the `Working...` / `Thinking...`
   spinner so the busy-aware idle fallback completes the turn without cutting it short, and a
   `turns.Quitter` sends `/quit\r` for a clean exit. Transcript reader implemented (JSONL v3 under
-  `~/.pi/agent/sessions/`). A headless [`harness.Profile`](../internal/turns.md) (`pkg/harness/pi`)
+  `~/.pi/agent/sessions/`), and the interactive session id is assigned at launch
+  (`--session-id <uuid>`), so the reader works from the first turn. A headless [`harness.Profile`](../internal/turns.md) (`pkg/harness/pi`)
   supplies **session-ID + resume + stream**: `pi --mode json`'s `{"type":"session",…,"id":…}` header
   yields the id, resume uses `--session <id>`, and a `StreamParser` maps the per-`message_end` events
   (text / `toolCall` / `toolResult`) to canonical transcript events. Still pending (seed captures in
   [`test/corpus/pi/`](https://github.com/olesho/harness-wrapper/tree/main/test/corpus/pi)): a formal
   screenbench golden recording (prerequisite for pinning the version), a screen-derived end-of-turn
-  marker + `MessageExtractor` for clean one-shot `Turn.Text`, and interactive-path session-ID capture.
+  marker + `MessageExtractor` for clean one-shot `Turn.Text`.
 
 ## generic
 

@@ -403,9 +403,53 @@
       "optional": true
     },
     {
+      "name": "Exit",
+      "json_tag": "exit",
+      "type": "ref",
+      "optional": true
+    },
+    {
       "name": "Error",
       "json_tag": "error",
       "type": "string",
+      "optional": true
+    }
+  ],
+  "exitDTO": [
+    {
+      "name": "Status",
+      "json_tag": "status",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "ExitCode",
+      "json_tag": "exit_code",
+      "type": "int",
+      "optional": false
+    },
+    {
+      "name": "Signal",
+      "json_tag": "signal",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Reason",
+      "json_tag": "reason",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "Class",
+      "json_tag": "class",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "name": "EndedAt",
+      "json_tag": "ended_at",
+      "type": "timestamp",
       "optional": true
     }
   ],
@@ -478,6 +522,20 @@
       "name": "Options",
       "json_tag": "options",
       "type": "array",
+      "optional": true
+    }
+  ],
+  "interruptResponse": [
+    {
+      "name": "Result",
+      "json_tag": "result",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
       "optional": true
     }
   ],

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/delivery"
+	"github.com/olesho/harness-wrapper/internal/resettime"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
@@ -39,6 +43,24 @@ type Options struct {
 	// Args must not carry any flag the adapter reserves via
 	// turns.SessionControlFlags (else Open returns ErrInvalidOptions).
 	Resume string
+
+	// HarnessSessionID is the harness's own id for the FRESH session Open
+	// starts. When the adapter can take one (turns.SessionAssigner: claude-code
+	// and pi, launched with --session-id <uuid>), every fresh Open assigns an id
+	// at launch — this one, or a minted UUID when it is empty — and seeds
+	// Session.HarnessSessionID with it before the harness starts, so the
+	// transcript verdicts and History work from the first turn. Set it when the
+	// id must be known before launch, e.g. to record it first: it names the
+	// session's transcript.
+	//
+	// Open refuses it, with ErrInvalidOptions, when the adapter cannot take an
+	// id (codex, opencode, generic), when it is not in the harness's form (a
+	// UUID), when Resume is also set, and when the harness already has a
+	// transcript for it (also ErrHarnessSessionInUse): resume that session
+	// instead. An assigned id makes session control chat's, so Args may not
+	// carry any flag the adapter reserves via turns.SessionControlFlags
+	// (--session-id, --resume, --continue, …), exactly as on a resume.
+	HarnessSessionID string
 
 	// WorkingDir is the harness's working directory. Defaults to the
 	// current process's CWD.
@@ -80,6 +102,16 @@ type Options struct {
 	// harness session id with Session.HarnessID.
 	Containment *wrapper.Containment
 
+	// KeepAliveOnClassification keeps the harness running through every
+	// classification of its output (wrapper.Config.KeepAliveOnClassification,
+	// ADR-006). Set it for a conversation whose lifetime the caller owns: one
+	// kept open between messages, where silence is the resting state. Without
+	// it the wrapper ends the harness when a quiet stretch follows output that
+	// merely mentions a rate limit or a retry, and on a real usage-limit wall.
+	// The zero value keeps that run-to-completion supervision, which
+	// harness.RunTurn, oneshot, structured-run and the run CLI rely on.
+	KeepAliveOnClassification bool
+
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
 
@@ -90,6 +122,20 @@ type Options struct {
 
 	// EventBuffer sizes the Conversation.Events() channel. Defaults to 32.
 	EventBuffer int
+
+	// OnEvent, if non-nil, receives every ConversationEvent, in order, once,
+	// from one goroutine (ADR-008) — the last being EventExited. Events() is
+	// the best-effort view of the same stream: it drops what its reader does
+	// not take. OnEvent is fed through a queue bounded by EventQueue; a
+	// producer finding it full waits for room, so a slow OnEvent slows the
+	// conversation — never an Interrupt, a Stop or Close. It runs outside the
+	// conversation's locks, and must not call back into the Conversation or
+	// wait for anything waiting on it.
+	OnEvent func(ConversationEvent)
+
+	// EventQueue bounds OnEvent's queue. Zero fields take the defaults: 1024
+	// events and 16 MiB of payload.
+	EventQueue wrapper.QueueLimits
 
 	// InputPolicy pre-configures how blocking interactive prompts (e.g. the
 	// folder-trust dialog) are resolved without a live client. It is
@@ -137,6 +183,12 @@ type Options struct {
 	// idleCompletionWatcher goroutine reads them race-free.
 	idleGap, markerGap time.Duration
 
+	// wrapperQuiet, wrapperClassify optionally override the wrapper's idle
+	// thresholds (wrapper.Config.IdleQuiet / IdleClassify), so a same-package
+	// test can reach the wrapper's idle classification in a fraction of a
+	// second. Unexported for the reason idleGap is; zero keeps the defaults.
+	wrapperQuiet, wrapperClassify time.Duration
+
 	// permModeRenderTimeout optionally overrides the per-press repaint budget
 	// SetPermissionMode waits on (defaultPermissionModeRenderTimeout). Same
 	// rationale as idleGap/markerGap and unexported for the same reason: only
@@ -164,6 +216,26 @@ type Conversation struct {
 	session Session // chat-level Session record (also stored in Store)
 
 	eventCh chan ConversationEvent
+
+	// delivery hands every event to OnEvent and Events(), in order (ADR-008);
+	// nil for a Conversation assembled without Open. abandoned closes when
+	// Close's drain runs out of time, releasing producers waiting for room.
+	delivery    *delivery.Queue[ConversationEvent]
+	abandoned   chan struct{}
+	abandonOnce sync.Once
+	oversized   atomic.Uint64
+
+	// statusCh carries the wrapper's events, which it delivers through
+	// wrapper.Config.OnEvent without drops, to the event loop.
+	statusCh chan statusItem
+
+	// done closes when the harness process has ended; exit (under mu) says
+	// how. ending counts turn endings claimed and not yet emitted, and
+	// sending the Sends recording a turn: EventExited waits for both.
+	done    chan struct{}
+	exit    *ExitInfo
+	ending  sync.WaitGroup
+	sending sync.WaitGroup
 
 	mu          sync.Mutex
 	currentTurn *Turn // pending/streaming assistant turn, if any
@@ -220,6 +292,48 @@ type Conversation struct {
 	// when a new request arrives and when one resolves.
 	inputUnresolved *InputUnresolvedError
 
+	// lastBusyAt is when the screen last showed the harness working
+	// (turns.BusyDetector), in Unix nanoseconds; zero when it never has. Send
+	// types only after the harness has been idle for the confirmation window.
+	lastBusyAt atomic.Int64
+
+	// heldReason is set while the in-flight turn is HELD: a keep-alive
+	// conversation reported a Blocked for it — an API error, a usage wall —
+	// that the harness may yet retry past. It is the Blocked reason, which the
+	// turn ends with if the harness's own record cannot settle it. See
+	// holdsTurns.
+	heldReason string
+
+	// currentPrompt is the in-flight turn's prompt, which the adapter's
+	// interrupt reading keys on (turns.Interrupter). Set by Send.
+	currentPrompt string
+
+	// acceptAfter is when the in-flight prompt's submit began, in Unix
+	// nanoseconds. The harness has taken the prompt once the screen shows it
+	// working after that; until then its composer holds the prompt as typed,
+	// which is also what a cancelled turn leaves there. See turnAccepted.
+	acceptAfter atomic.Int64
+
+	// interrupt is the Interrupt under way for the in-flight turn, nil when
+	// none. A concurrent Interrupt joins it: one interrupt per turn.
+	interrupt *interruptOp
+
+	// interruptedBy is the id of the turn whose interrupt keys chat wrote, so
+	// the turn's reason can say who interrupted it.
+	interruptedBy string
+
+	// submit serializes the keystrokes that must not interleave: a Send's
+	// composer check, prompt and submit key, and an Interrupt's keys with the
+	// composer clear that follows a cancel.
+	submit submitLock
+
+	// harnessDir is the directory the harness runs in: Options.WorkingDir, or
+	// this process's working directory when that is empty, which the harness
+	// inherits. Every read of the harness's transcript keys on it — the harness
+	// files its transcript under its working directory — so an empty WorkingDir
+	// does not turn those reads off. Set once at Open.
+	harnessDir string
+
 	// writeStdin, when non-nil, replaces sess.WriteStdin for interactive
 	// answer keystrokes. Production leaves it nil (writes go to the PTY); it
 	// exists so the input-resolution path is testable without a live session.
@@ -255,18 +369,21 @@ type ReopenOptions struct {
 
 	// The remaining fields mirror the identically-named Options knobs; see
 	// Options for their semantics.
-	BinaryPath              string
-	Args                    []string
-	Env                     []string
-	Effort                  string
-	Model                   string
-	PermissionMode          string
-	Cols, Rows              int
-	Store                   Store
-	EventBuffer             int
-	InputPolicy             *InputPolicy
-	DisableCodexAutoDismiss bool
-	OnInputRequest          func(InputRequest) (InputAnswer, bool)
+	BinaryPath                string
+	Args                      []string
+	Env                       []string
+	Effort                    string
+	Model                     string
+	PermissionMode            string
+	KeepAliveOnClassification bool
+	Cols, Rows                int
+	Store                     Store
+	EventBuffer               int
+	OnEvent                   func(ConversationEvent)
+	EventQueue                wrapper.QueueLimits
+	InputPolicy               *InputPolicy
+	DisableCodexAutoDismiss   bool
+	OnInputRequest            func(InputRequest) (InputAnswer, bool)
 
 	// Containment, for a contained session, may restate its policy: nil
 	// inherits the stored record, and an explicit request must normalize to
@@ -274,9 +391,10 @@ type ReopenOptions struct {
 	// containment is chosen when a conversation is created, never added later.
 	Containment *wrapper.Containment
 
-	// idleGap, markerGap mirror the unexported Options test knobs; only
-	// same-package tests set them. See Options.idleGap / Options.markerGap.
-	idleGap, markerGap time.Duration
+	// idleGap, markerGap, wrapperQuiet and wrapperClassify mirror the
+	// unexported Options test knobs; only same-package tests set them.
+	idleGap, markerGap            time.Duration
+	wrapperQuiet, wrapperClassify time.Duration
 }
 
 // Reopen resumes a previously-stored chat session against its harness's own
@@ -308,25 +426,30 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 	}
 
 	launch := Options{
-		Harness:                 rec.Harness,
-		BinaryPath:              opts.BinaryPath,
-		Args:                    opts.Args,
-		WorkingDir:              rec.WorkingDir,
-		Env:                     opts.Env,
-		Resume:                  rec.HarnessID(),
-		Effort:                  opts.Effort,
-		Model:                   opts.Model,
-		PermissionMode:          opts.PermissionMode,
-		Containment:             opts.Containment,
-		Cols:                    opts.Cols,
-		Rows:                    opts.Rows,
-		Store:                   opts.Store,
-		EventBuffer:             opts.EventBuffer,
-		InputPolicy:             opts.InputPolicy,
-		DisableCodexAutoDismiss: opts.DisableCodexAutoDismiss,
-		OnInputRequest:          opts.OnInputRequest,
-		idleGap:                 opts.idleGap,
-		markerGap:               opts.markerGap,
+		Harness:                   rec.Harness,
+		BinaryPath:                opts.BinaryPath,
+		Args:                      opts.Args,
+		WorkingDir:                rec.WorkingDir,
+		Env:                       opts.Env,
+		Resume:                    rec.HarnessID(),
+		Effort:                    opts.Effort,
+		Model:                     opts.Model,
+		PermissionMode:            opts.PermissionMode,
+		KeepAliveOnClassification: opts.KeepAliveOnClassification,
+		Containment:               opts.Containment,
+		Cols:                      opts.Cols,
+		Rows:                      opts.Rows,
+		Store:                     opts.Store,
+		EventBuffer:               opts.EventBuffer,
+		OnEvent:                   opts.OnEvent,
+		EventQueue:                opts.EventQueue,
+		InputPolicy:               opts.InputPolicy,
+		DisableCodexAutoDismiss:   opts.DisableCodexAutoDismiss,
+		OnInputRequest:            opts.OnInputRequest,
+		idleGap:                   opts.idleGap,
+		markerGap:                 opts.markerGap,
+		wrapperQuiet:              opts.wrapperQuiet,
+		wrapperClassify:           opts.wrapperClassify,
 	}
 	return openWithSession(ctx, launch, *rec, false)
 }
@@ -359,6 +482,12 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	if err != nil {
 		return nil, err
 	}
+	harnessDir := opts.WorkingDir
+	if harnessDir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			harnessDir = wd
+		}
+	}
 
 	// A contained conversation — requested now, or recorded — is prepared
 	// before anything else: its record validated or created, and private
@@ -384,31 +513,30 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		configureAdapterEnv(adapter, opts.Env)
 	}
 
-	// Resolve resume args up front so an unsupported harness fails before launch.
-	var resumeArgs []string
-	if opts.Resume != "" {
-		resumer, ok := adapter.(turns.SessionResumer)
-		if !ok {
-			return nil, fmt.Errorf("chat: harness %s cannot resume: %w", opts.Harness, ErrResumeUnsupported)
-		}
-		resumeArgs = resumer.ResumeArgs(opts.Resume)
-
-		// Whenever chat injects a resume prefix the caller must NOT also pass raw
+	// Resolve the session args up front — a resume, or the id assigned to a
+	// fresh session — so an unsupported request fails before launch.
+	sessionArgs, harnessID, err := sessionLaunch(adapter, opts, harnessDir, contained)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessionArgs) > 0 {
+		// Whenever chat injects a session prefix the caller must NOT also pass raw
 		// session-control flags in Options.Args — they would diverge the real
 		// transcript from the persisted harness session id. Reject before launch.
 		// Adapters that declare no reserved flags (e.g. codex) accept anything.
 		if scf, ok := adapter.(turns.SessionControlFlags); ok {
 			if bad := firstSessionControlConflict(opts.Args, scf.SessionControlFlags()); bad != "" {
-				return nil, fmt.Errorf("%w: argument %s conflicts with chat-managed session control; use Options.Resume / Reopen", ErrInvalidOptions, bad)
+				return nil, fmt.Errorf("%w: argument %s conflicts with chat-managed session control; use Options.HarnessSessionID, Options.Resume or Reopen", ErrInvalidOptions, bad)
 			}
 		}
 
-		// Seed the session's harness id with the resume id so History and
-		// session-id capture reflect the resumed session immediately. This composes
-		// with the existing first-write-wins guards (maybeExtractSessionID /
-		// captureRawSessionID both short-circuit on a non-empty id). A contained
-		// session keeps it in its record, never in the legacy field.
-		session = session.withHarnessID(opts.Resume)
+		// Seed the session's harness id before launch, so History and the
+		// transcript verdicts read the right session from the start. This composes
+		// with the first-write-wins guards (maybeExtractSessionID /
+		// captureRawSessionID both short-circuit on a non-empty id), so nothing the
+		// harness prints later replaces it. A contained session keeps it in its
+		// record, never in the legacy field.
+		session = session.withHarnessID(harnessID)
 	}
 
 	scr := screen.New(opts.Cols, opts.Rows)
@@ -424,7 +552,11 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		screen:       scr,
 		queue:        newControlQueue(),
 		session:      session,
+		harnessDir:   harnessDir,
 		eventCh:      make(chan ConversationEvent, opts.EventBuffer),
+		abandoned:    make(chan struct{}),
+		statusCh:     make(chan statusItem),
+		done:         make(chan struct{}),
 		inputStateCh: make(chan struct{}, 1),
 		markerArmCh:  make(chan struct{}, 1),
 		closed:       make(chan struct{}),
@@ -433,11 +565,19 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		sentTranscriptWatermark: watermarkUnknown,
 	}
 
-	// Prepend the resume fragment AHEAD of the caller's args so the resume verb
-	// leads the argv; empty for a fresh launch.
+	c.delivery = delivery.New(delivery.Limits(opts.EventQueue), eventSize, c.deliver)
+	// Events() closes once the last event is delivered: its only writer is the
+	// delivery worker, so it is never closed under a send.
+	go func() {
+		<-c.delivery.Drained()
+		close(c.eventCh)
+	}()
+
+	// Prepend the session fragment AHEAD of the caller's args so the resume verb
+	// or the assigned id leads the argv; empty when the adapter takes neither.
 	launchArgs := opts.Args
-	if len(resumeArgs) > 0 {
-		launchArgs = append(append([]string{}, resumeArgs...), opts.Args...)
+	if len(sessionArgs) > 0 {
+		launchArgs = append(append([]string{}, sessionArgs...), opts.Args...)
 	}
 
 	cfg := wrapper.Config{
@@ -452,15 +592,24 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		Model:          opts.Model,
 		PermissionMode: opts.PermissionMode,
 		Containment:    opts.Containment,
+		IdleQuiet:      opts.wrapperQuiet,
+		IdleClassify:   opts.wrapperClassify,
+
+		KeepAliveOnClassification: opts.KeepAliveOnClassification,
+
+		// The wrapper's events reach the event loop through OnEvent, which
+		// drops none: the harness's exit is among them.
+		OnEvent: c.onWrapperEvent,
 	}
 	// When the adapter can recover the harness's own session id from a raw
-	// output line, tap the wrapper's durable, no-drop line stream to capture
-	// it. Claude Code prints "claude --resume <uuid>" only to the normal screen
-	// as the TUI tears down on exit, where it never reaches the rendered
-	// snapshot a turns.SessionIDExtractor scrapes — so the raw line is the only
-	// surface that carries it. Wired only when the capability is present, so
-	// other harnesses pay no per-line tap cost.
-	if _, ok := adapter.(turns.RawSessionIDExtractor); ok {
+	// output line and the id is not already known, tap the wrapper's durable,
+	// no-drop line stream to capture it. Claude Code prints "claude --resume
+	// <uuid>" only to the normal screen as the TUI tears down on exit, where it
+	// never reaches the rendered snapshot a turns.SessionIDExtractor scrapes — so
+	// the raw line is the only surface that carries it. A resumed or assigned id
+	// is known from launch and nothing may replace it, so the tap is not wired
+	// then; nor for adapters without the capability, which pay no per-line cost.
+	if _, ok := adapter.(turns.RawSessionIDExtractor); ok && session.HarnessID() == "" {
 		cfg.OnLine = c.captureRawSessionID
 	}
 
@@ -480,6 +629,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 
 	sess, err := wrapper.Start(startCtx, cfg)
 	if err != nil {
+		c.discard()
 		// An invalid wrapper.Config reaching Start from here means a caller-supplied
 		// option (in practice Effort — see the reachability note in Options) failed
 		// validation, so surface it as ErrInvalidOptions and let transports map it to
@@ -493,6 +643,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	c.sess = sess
 	if contained {
 		if err := c.recordLaunch(ctx, cl); err != nil {
+			c.discard()
 			_ = sess.Stop(context.Background())
 			return nil, err
 		}
@@ -501,6 +652,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	releaseWriter, ok := sess.AcquireWriter()
 	if !ok {
 		// Should be impossible immediately after Start; treat as fatal.
+		c.discard()
 		_ = sess.Stop(context.Background())
 		return nil, fmt.Errorf("chat: failed to acquire wrapper writer lock")
 	}
@@ -512,6 +664,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		return sess.Resize(uint16(opts.Cols), uint16(opts.Rows))
 	}); err != nil {
 		releaseWriter()
+		c.discard()
 		_ = sess.Stop(context.Background())
 		return nil, fmt.Errorf("chat: initial resize: %w", err)
 	}
@@ -526,12 +679,13 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		c.mu.Unlock()
 		if err := opts.Store.CreateSession(ctx, &sessionRec); err != nil {
 			releaseWriter()
+			c.discard()
 			_ = sess.Stop(context.Background())
 			return nil, fmt.Errorf("chat: store CreateSession: %w", err)
 		}
 	}
 
-	c.watcher = turns.Watch(sess, scr, adapter)
+	c.watcher = turns.WatchScreen(scr, adapter)
 
 	go c.consumeWatcher()
 	go c.idleCompletionWatcher()
@@ -573,6 +727,71 @@ func firstSessionControlConflict(args, banned []string) string {
 	return ""
 }
 
+// sessionLaunch returns the argv fragment chat prepends to identify the
+// harness session, and the harness session id it names: the resume fragment
+// for Options.Resume; for a fresh Open with a turns.SessionAssigner, the
+// assigned id's fragment — Options.HarnessSessionID, or a minted id — and
+// nil otherwise. Every refusal is decided here, before anything launches.
+func sessionLaunch(adapter turns.Adapter, opts Options, harnessDir string, contained bool) ([]string, string, error) {
+	if opts.Resume != "" {
+		if opts.HarnessSessionID != "" {
+			return nil, "", fmt.Errorf("%w: HarnessSessionID names a fresh session and Resume resumes one; set one of them", ErrInvalidOptions)
+		}
+		resumer, ok := adapter.(turns.SessionResumer)
+		if !ok {
+			return nil, "", fmt.Errorf("chat: harness %s cannot resume: %w", opts.Harness, ErrResumeUnsupported)
+		}
+		return resumer.ResumeArgs(opts.Resume), opts.Resume, nil
+	}
+	assigner, ok := adapter.(turns.SessionAssigner)
+	if !ok {
+		if opts.HarnessSessionID != "" {
+			return nil, "", fmt.Errorf("%w: harness %s cannot start a session under an assigned id", ErrInvalidOptions, opts.Harness)
+		}
+		return nil, "", nil
+	}
+	id := opts.HarnessSessionID
+	if id == "" {
+		// A minted id cannot collide, so it needs no in-use check.
+		id = assigner.NewSessionID()
+		return assigner.SessionIDArgs(id), id, nil
+	}
+	if err := assigner.ValidSessionID(id); err != nil {
+		return nil, "", fmt.Errorf("%w: HarnessSessionID: %w", ErrInvalidOptions, err)
+	}
+	// A contained Open starts in private state allocated for it, whose root the
+	// adapter learns only once the launch exists; a caller-managed StateDir that
+	// already holds the session is refused by claude itself.
+	if !contained {
+		if err := harnessSessionInUse(adapter, id, harnessDir); err != nil {
+			return nil, "", err
+		}
+	}
+	return assigner.SessionIDArgs(id), id, nil
+}
+
+// harnessSessionInUse refuses id when the adapter can already read a transcript
+// for it: the session exists, so launching a fresh one under the same id would
+// be refused by the harness (claude: "Session ID … is already in use") or would
+// silently continue it (pi reuses an existing session). A read that fails for
+// any reason but a missing file cannot establish that the id is free, so it
+// refuses too. Adapters without a transcript reader cannot tell, and pass.
+func harnessSessionInUse(adapter turns.Adapter, id, workingDir string) error {
+	reader, ok := adapter.(turns.TranscriptReader)
+	if !ok {
+		return nil
+	}
+	_, err := reader.ReadTranscript(id, workingDir)
+	switch {
+	case err == nil:
+		return fmt.Errorf("%w: %w: harness session %s already has a transcript; resume it instead", ErrInvalidOptions, ErrHarnessSessionInUse, id)
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	default:
+		return fmt.Errorf("%w: %w: cannot establish that harness session %s is unused: %w", ErrInvalidOptions, ErrHarnessSessionInUse, id, err)
+	}
+}
+
 // SessionID returns the chat-level session ID. Distinct from the
 // underlying harness's session ID (Session.HarnessSessionID), which the
 // adapter surfaces from the harness's own output when available.
@@ -604,8 +823,10 @@ func (c *Conversation) AcquireControl(ctx context.Context) (release func(), err 
 	return c.queue.Acquire(ctx)
 }
 
-// Close terminates the harness process, releases the wrapper writer
-// lock, stops the watcher, and closes the events channel. Safe to call
+// Close terminates the harness process, releases the wrapper writer lock and
+// stops the watcher, then waits — until ctx ends — for every event to be
+// delivered, EventExited last; Events() closes after it. When ctx ends first
+// it drops the rest and returns ErrUndelivered (ADR-008). Safe to call
 // multiple times.
 func (c *Conversation) Close(ctx context.Context) error {
 	c.closeOnce.Do(func() {
@@ -613,7 +834,9 @@ func (c *Conversation) Close(ctx context.Context) error {
 		defer c.resizeMu.Unlock()
 
 		close(c.closed)
-		c.queue.Close()
+		if c.queue != nil {
+			c.queue.Close()
+		}
 		if c.releaseWriter != nil {
 			c.releaseWriter()
 		}
@@ -624,7 +847,7 @@ func (c *Conversation) Close(ctx context.Context) error {
 			_ = c.watcher.Close()
 		}
 	})
-	return nil
+	return c.drain(ctx)
 }
 
 // Resize updates both the harness PTY and the private terminal emulator.
@@ -652,13 +875,42 @@ func (c *Conversation) Resize(cols, rows uint16) error {
 	})
 }
 
-// consumeWatcher pumps turns.Event from the watcher into Conversation
-// state and emits ConversationEvent on c.eventCh.
+// consumeWatcher is the event loop: it pumps the screen's turn events and the
+// wrapper's, one at a time, into Conversation state. It ends once the
+// wrapper's last event is handled — EventExited queued — and the screen's
+// stream closes; screen events after the exit are ignored.
 func (c *Conversation) consumeWatcher() {
-	defer close(c.eventCh)
-	for ev := range c.watcher.Events() {
-		c.handleTurnsEvent(ev)
+	screenEvents := c.watcher.Events()
+	exited := false
+	for !exited || screenEvents != nil {
+		select {
+		case ev, ok := <-screenEvents:
+			if !ok {
+				screenEvents = nil
+				continue
+			}
+			if !exited {
+				c.handleTurnsEvent(ev)
+			}
+		case it := <-c.statusCh:
+			for _, ev := range it.events {
+				c.handleTurnsEvent(ev)
+			}
+			if it.final != nil {
+				c.handleExit(*it.final)
+				exited = true
+			}
+		case <-c.abandoned:
+			return
+		}
 	}
+}
+
+// discard releases what Open set up for a harness it is abandoning: the
+// wrapper's OnEvent sends into nothing, and the delivery queue is dropped.
+func (c *Conversation) discard() {
+	c.abandonOnce.Do(func() { close(c.abandoned) })
+	c.delivery.Abandon()
 }
 
 // handleTurnsEvent translates a low-level turns.Event into a
@@ -713,11 +965,32 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		}
 	}
 
-	c.mu.Lock()
-	turn := c.currentTurn
-	c.currentTurn = nil
-	c.mu.Unlock()
+	switch ev.Kind {
+	case turns.TurnComplete, turns.Errored:
+	case turns.Blocked:
+		if c.holdsTurns() {
+			// Held (ADR-006): a keep-alive harness may yet retry past what the
+			// output showed, so the turn stays pending with the Blocked recorded
+			// on it, and ends when the harness ends it — the harness's own record
+			// deciding the outcome then.
+			c.mu.Lock()
+			if c.currentTurn != nil {
+				c.currentTurn.HTTPCode = ev.HTTPCode
+				c.currentTurn.RetryAfter = ev.RetryAfter
+				c.heldReason = ev.Reason
+			}
+			c.mu.Unlock()
+			return
+		}
+	default:
+		// ToolCall is informational mid-turn, and an unknown kind ends
+		// nothing: the turn stays in flight for the next event.
+		return
+	}
 
+	c.mu.Lock()
+	turn := c.claimTurnLocked()
+	c.mu.Unlock()
 	if turn == nil {
 		return
 	}
@@ -739,11 +1012,11 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			c.relabelTerminal(turn, *ev.Snap)
 		}
 	case turns.Blocked:
+		turn.HTTPCode = ev.HTTPCode
+		turn.RetryAfter = ev.RetryAfter
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
-		turn.HTTPCode = ev.HTTPCode
-		turn.RetryAfter = ev.RetryAfter
 	case turns.Errored:
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
@@ -769,26 +1042,14 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			turn.Reason = ReasonAuthRequired
 			turn.Code = CodeAuthRequired
 		}
-		turn.HTTPCode = ev.HTTPCode
-		turn.RetryAfter = ev.RetryAfter
-	case turns.ToolCall:
-		// ToolCall is informational mid-turn; fall through to the shared
-		// restore-pointer path so the next event can complete the turn.
-		fallthrough
-	default:
-		// ToolCall (mid-turn) or an unknown kind: leave turn as-is and restore
-		// the current-turn pointer so the next event can complete it.
-		c.mu.Lock()
-		c.currentTurn = turn
-		c.mu.Unlock()
-		return
+		// A held turn keeps the code and hint its Blocked recorded when the
+		// ending event carries none.
+		if ev.HTTPCode != 0 || ev.RetryAfter != 0 {
+			turn.HTTPCode = ev.HTTPCode
+			turn.RetryAfter = ev.RetryAfter
+		}
 	}
-
-	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
-		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
-		return
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
+	c.finishTurn(turn, nil)
 }
 
 // idleCompletionGap is how long the rendered screen must sit completely
@@ -873,6 +1134,9 @@ func (c *Conversation) idleCompletionWatcher() {
 			if !ok {
 				return
 			}
+			snap := c.screen.Snapshot()
+			c.observeBusy(snap)
+			c.observeInterrupt(snap)
 			reset()
 		case <-c.markerArmCh:
 			// A marker just landed — re-arm on the short gap even if the screen
@@ -883,6 +1147,29 @@ func (c *Conversation) idleCompletionWatcher() {
 			reset()
 		}
 	}
+}
+
+// observeBusy records when the screen shows the harness working, for Send's
+// busy gate. A no-op for an adapter that cannot tell (no turns.BusyDetector).
+func (c *Conversation) observeBusy(snap screen.Snapshot) bool {
+	bd, ok := c.adapter.(turns.BusyDetector)
+	if !ok || !bd.Busy(snap) {
+		return false
+	}
+	c.lastBusyAt.Store(time.Now().UnixNano())
+	return true
+}
+
+// busyQuietRemaining is how much longer the harness must stay idle before Send
+// may type: the confirmation window (markerGapDur) less the time since the
+// screen last showed it working. Zero when it has been idle long enough, or
+// has never been seen working.
+func (c *Conversation) busyQuietRemaining() time.Duration {
+	last := c.lastBusyAt.Load()
+	if last == 0 {
+		return 0
+	}
+	return max(0, c.markerGapDur()-time.Since(time.Unix(0, last)))
 }
 
 // maybeIdleComplete completes the in-flight turn if (and only if) the screen
@@ -918,6 +1205,12 @@ func (c *Conversation) maybeIdleComplete() {
 	if !marker && !readyForInput(c.opts.Harness, snap.Text) {
 		return
 	}
+	// An interrupt awaiting the harness's answer leaves a reply cut short on a
+	// settled screen: completing from it would pass the fragment off as the
+	// reply. The harness's own end-of-turn marker still ends the turn.
+	if !marker && c.interruptInFlight(turn.ID) {
+		return
+	}
 	// The harness's input prompt is often painted even while it works, so
 	// prompt-readiness alone can't tell "done" from "thinking/running a tool".
 	// If the adapter can report that the harness is still busy, honor it — never
@@ -938,7 +1231,7 @@ func (c *Conversation) maybeIdleComplete() {
 		c.mu.Unlock()
 		return
 	}
-	c.currentTurn = nil
+	c.claimTurnLocked()
 	c.endMarkerSeen = false
 	c.mu.Unlock()
 
@@ -956,9 +1249,15 @@ func (c *Conversation) maybeIdleComplete() {
 
 	// A settled screen the adapter says was never accepted is not a completed
 	// turn — it is a prompt the harness swallowed. Only the non-marker path can
-	// be swallowed: an end-of-turn marker is itself evidence the harness ran.
-	if !marker && c.promptWasSwallowed(snap) {
+	// be swallowed: an end-of-turn marker is itself evidence the harness ran,
+	// and so is a Blocked the turn is held on — the harness made the API call
+	// that failed.
+	c.mu.Lock()
+	held := c.heldReason != ""
+	c.mu.Unlock()
+	if !marker && !held && c.promptWasSwallowed(snap) {
 		c.applySwallowedPromptVerdict(turn, snap)
+		c.ending.Done()
 		return
 	}
 
@@ -984,11 +1283,7 @@ func (c *Conversation) maybeIdleComplete() {
 	// non-empty extraction) would otherwise slip past authRelabel's empty-gate —
 	// or, ahead of both, whatever the harness itself recorded about the turn.
 	c.relabelTerminal(turn, snap)
-	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
-		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
-		return
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
+	c.finishTurn(turn, nil)
 }
 
 // maybeExtractSessionID opportunistically recovers the harness's own session
@@ -1079,9 +1374,9 @@ func (c *Conversation) captureRawSessionID(line string) {
 // because the harness records exactly what the model said, not what
 // the TUI rendered.
 //
-// When transcript reading isn't possible (adapter has no reader, or
-// the harness session ID has not yet been extracted), History falls
-// back to the Store's recorded turns. The fallback only contains the
+// When transcript reading isn't possible (adapter has no reader, the
+// harness session ID is not known, or the harness has not written its
+// transcript yet), History falls back to the Store's recorded turns. The fallback only contains the
 // user-side text and any screen-derived assistant text the watcher
 // captured at TurnComplete.
 // assistantText returns the clean assistant reply for a completed turn: when
@@ -1134,24 +1429,61 @@ func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
 	return true
 }
 
-// relabelTerminal applies the three relabels in strength order to a turn that
+// relabelTerminal applies the relabels in strength order to a turn that
 // reached a terminal point looking like a success, and reports whether any of
 // them took it.
 //
 // The order is the whole point:
 //
-//  1. apiErrorRelabel — what the HARNESS recorded about its own API call. A
-//     categorical statement, correlated to this turn by the pre-send
+//  1. The harness's last word — what the HARNESS recorded about its own API
+//     call. A categorical statement, correlated to this turn by the pre-send
 //     watermark, and the only one that can name a billing wall.
 //  2. usageLimitRelabel — the quota wall, which claude paints as an assistant
 //     bubble. Deliberately NOT gated on an empty extraction, because the wall
 //     IS the extraction, which is why it must precede the auth check.
 //  3. authRelabel — a logged-out / onboarding screen with no real reply.
+//  4. heldRelabel — a held turn the harness's record did not settle.
 //
 // Each declines cleanly when it has nothing to say, so a turn that really did
-// complete passes through all three untouched.
+// complete passes through all of them untouched.
 func (c *Conversation) relabelTerminal(turn *Turn, snap screen.Snapshot) bool {
-	return c.apiErrorRelabel(turn) || c.usageLimitRelabel(turn, snap) || c.authRelabel(turn, snap)
+	word := c.lastWordOfCurrentTurn()
+	return word.apply(turn, c.opts.Harness) ||
+		c.usageLimitRelabel(turn, snap) ||
+		c.authRelabel(turn, snap) ||
+		c.heldRelabel(turn, word)
+}
+
+// holdsTurns reports whether a Blocked leaves the in-flight turn pending rather
+// than ending it: in a keep-alive conversation (ADR-006) the harness ends its
+// turns, and one whose adapter reads transcripts can have the outcome decided
+// by the harness's own record when it does. An adapter without a transcript
+// reader, and every default-mode conversation — whose run-to-completion callers
+// rely on a Blocked ending the turn — keep that behaviour.
+func (c *Conversation) holdsTurns() bool {
+	if !c.opts.KeepAliveOnClassification {
+		return false
+	}
+	_, reads := c.adapter.(turns.TranscriptReader)
+	return reads
+}
+
+// heldRelabel ends a held turn errored with the Blocked it was held on, when
+// the harness's own record did not settle it: its transcript could not be
+// read, or holds no word on this turn. A success nobody can confirm is a wrong
+// verdict (principle 2). A turn whose transcript shows a reply after the error
+// recovered, and is left complete.
+func (c *Conversation) heldRelabel(turn *Turn, word transcriptWord) bool {
+	c.mu.Lock()
+	reason := c.heldReason
+	c.mu.Unlock()
+	if reason == "" || word.replied {
+		return false
+	}
+	turn.State = TurnStateErrored
+	turn.Reason = reason
+	turn.Text = ""
+	return true
 }
 
 // usageLimitRelabel converts a turn that "completed" while the harness was out of
@@ -1181,8 +1513,17 @@ func (c *Conversation) usageLimitRelabel(turn *Turn, snap screen.Snapshot) bool 
 	turn.State = TurnStateErrored
 	turn.Reason = ReasonUsageLimited + " (" + msg + ")"
 	turn.Code = CodeUsageLimited
+	turn.ResumeAt = resumeAtFrom(msg)
 	turn.Text = ""
 	return true
+}
+
+// resumeAtFrom is the reset time a usage wall names, zero when it names none —
+// read with the parser the wrapper's session-limit matcher uses, so a wall
+// reports one reset time whichever layer saw it.
+func resumeAtFrom(wall string) time.Time {
+	at, _ := resettime.Parse(wall, time.Now())
+	return at
 }
 
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
@@ -1200,8 +1541,8 @@ const (
 	HistorySourceTranscript HistorySource = "transcript"
 	// HistorySourceStore means the turns came from the chat store fallback:
 	// user-side text plus whatever screen-derived assistant text the watcher
-	// captured. Used when the adapter can't read transcripts or the harness
-	// session id was never captured.
+	// captured. Used when the adapter can't read transcripts, the harness
+	// session id is not known, or its transcript does not exist yet.
 	HistorySourceStore HistorySource = "store"
 )
 
@@ -1221,7 +1562,14 @@ func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySo
 		return out, HistorySourceStore, err
 	}
 
-	tturns, err := reader.ReadTranscript(sessionCopy.HarnessID(), c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionCopy.HarnessID(), c.transcriptDir())
+	if errors.Is(err, fs.ErrNotExist) {
+		// The id is known but the harness has not written its transcript yet —
+		// an id assigned at launch is known before the first flush. That is the
+		// store's history, not a failure.
+		out, err := c.store.ListTurns(ctx, sessionCopy.ID)
+		return out, HistorySourceStore, err
+	}
 	if err != nil {
 		return nil, HistorySourceTranscript, fmt.Errorf("chat: read transcript: %w", err)
 	}
@@ -1239,16 +1587,14 @@ func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySo
 	return out, HistorySourceTranscript, nil
 }
 
-// emit pushes an event onto the chan. Drops if the buffer is full
-// rather than blocking the watcher pump.
-func (c *Conversation) emit(ev ConversationEvent) {
-	select {
-	case c.eventCh <- ev:
-	case <-c.closed:
-	default:
-		// Buffer full — drop. Slow consumers lose events; this matches
-		// the wrapper's own slow-consumer policy.
+// transcriptDir is the working directory the harness's transcript is filed
+// under: harnessDir, or Options.WorkingDir for a Conversation built without
+// Open.
+func (c *Conversation) transcriptDir() string {
+	if c.harnessDir != "" {
+		return c.harnessDir
 	}
+	return c.opts.WorkingDir
 }
 
 // configureAdapterEnv hands the harness's LAUNCH environment to an adapter whose

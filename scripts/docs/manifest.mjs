@@ -70,11 +70,47 @@ export const SECTIONS = [
     block: "Developer",
     title: "Decisions",
     pages: [
+      { slug: "decisions", title: "Overview", source: "md/internal/decisions/README.md" },
       { slug: "adr-001-vt100", title: "ADR-001 · vt100", source: "md/internal/decisions/adr-001-vt100.md" },
+      {
+        slug: "adr-001-vt100-ts",
+        title: "ADR-001 · vt100 (TS)",
+        source: "md/internal/decisions/adr-001-vt100-ts.md",
+      },
       {
         slug: "adr-002-interactive-input",
         title: "ADR-002 · Interactive input",
         source: "md/internal/decisions/adr-002-interactive-input.md",
+      },
+      {
+        slug: "adr-003-env-visibility",
+        title: "ADR-003 · Env visibility",
+        source: "md/internal/decisions/adr-003-env-visibility.md",
+      },
+      {
+        slug: "adr-004-thread-scoped-landlock",
+        title: "ADR-004 · Thread-scoped Landlock",
+        source: "md/internal/decisions/adr-004-thread-scoped-landlock.md",
+      },
+      {
+        slug: "adr-005-apparmor-socket-layer",
+        title: "ADR-005 · AppArmor socket layer",
+        source: "md/internal/decisions/adr-005-apparmor-socket-layer.md",
+      },
+      {
+        slug: "adr-006-classification-and-lifetime",
+        title: "ADR-006 · Classification and lifetime",
+        source: "md/internal/decisions/adr-006-classification-and-lifetime.md",
+      },
+      {
+        slug: "adr-007-interrupt",
+        title: "ADR-007 · Interrupt",
+        source: "md/internal/decisions/adr-007-interrupt.md",
+      },
+      {
+        slug: "adr-008-event-delivery",
+        title: "ADR-008 · Event delivery",
+        source: "md/internal/decisions/adr-008-event-delivery.md",
       },
     ],
   },

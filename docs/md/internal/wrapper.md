@@ -38,8 +38,8 @@ type Config struct {
 	Stdin  io.Reader         // nil = no input forwarding; a *os.File TTY enables raw-mode passthrough
 	Stdout io.Writer         // required
 
-	IdleQuiet      time.Duration // quiet threshold (default 15s)
-	IdleClassify   time.Duration // idle-classification threshold, ≥ IdleQuiet (default 60s)
+	IdleQuiet      time.Duration // quiet threshold (default 15s; negative refused)
+	IdleClassify   time.Duration // idle-classification threshold, ≥ IdleQuiet (default 60s; negative refused)
 	StaleThreshold time.Duration // mid-run stale advisory (default 5m; negative disables)
 	WaitDelay      time.Duration // SIGTERM→SIGKILL grace on cancellation (default 5s)
 
@@ -49,7 +49,10 @@ type Config struct {
 	Model      string             // model for this run ("" = harness default); never validated
 	PermissionMode string         // launch-time permission rung ("" = harness default)
 	Classifier Classifier         // explicit classifier; wins over Harness
+	KeepAliveOnClassification bool // report verdicts, never end the run on one (see Keep-alive)
 	OnLine     func(line string)  // durable line tap (session-id / transcript hooks)
+	OnEvent    func(SessionEvent) // every event, in order, bounded by EventQueue (ADR-008)
+	EventQueue QueueLimits        // OnEvent's bound: events and payload bytes (default 1024, 16 MiB)
 }
 ```
 
@@ -79,7 +82,8 @@ than duplicating a signature list here that would drift against it.
 ## Status
 
 `Result.Status` and `SessionEvent.Status` share one vocabulary. **Terminal** statuses end the run (the
-wrapper SIGTERMs the harness); **non-terminal** ones are mid-run advisories emitted while it keeps
+wrapper SIGTERMs the harness) unless the caller owns the harness's lifetime (see
+[Keep-alive](#keep-alive)); **non-terminal** ones are mid-run advisories emitted while it keeps
 running.
 
 ```go
@@ -130,6 +134,24 @@ Classification runs as a four-stage gated pipeline (first match wins):
 
 Defaults: a **15s** quiet threshold, a **60s** idle-classification threshold, a **5m** stale advisory.
 Thresholds are per-harness via `Config`.
+
+### Keep-alive
+
+The pipeline above ends a run on its first terminal verdict, which is right for run-to-completion
+supervision and wrong for a caller that keeps the harness alive between messages: there, silence is the
+resting state, so stage 3 fires on whatever the last reply happened to mention. Such a caller sets
+`Config.KeepAliveOnClassification`, and the wrapper reports and never enforces
+([ADR-006](decisions/adr-006-classification-and-lifetime.md)):
+
+- **No verdict signals the harness.** Terminal verdicts arrive like the rest, as events with
+  `Terminated: false`; only Stop, cancellation or the harness's own exit end it.
+- **Silence is not evidence.** `Idle` is never set, so stage 3 never runs; stages 1, 2 and 4 remain.
+- **A verdict consumes its evidence.** A pass runs on new output or the start of a quiet stretch, and
+  reads only what was written after the last verdict (from the start of that line).
+- **The status tracks the evidence.** New output that yields no verdict clears `Snapshot().Status`,
+  without an event.
+- **The Result is the exit's.** `Result.Status` is `idle`, `failed` or `interrupted`; a failed exit's
+  `Class` comes from the evidence that still stands.
 
 ## Session handle
 
@@ -237,13 +259,18 @@ harness:
 | Recent-output buffer | ~64 KiB tail | oldest bytes fall off; this is what `RecentOutput()` and the classifier see |
 | PTY read chunk | 32 KiB | — |
 | `Session.Events()` channel | 16 | **event dropped** |
+| `Config.OnEvent` queue | `EventQueue` (1024 events, 16 MiB) | the producer **waits for room**; a Stop still gets through, and the final Terminated event never waits |
 | Attach-sink queue (per `AttachOutput` writer) | 64 chunks | **bytes dropped for that sink only** |
 | Classifier dispatch channel | 1 | tick skipped |
 | Classifier poll cadence | `IdleQuiet / 3`, floored at 100 ms | — (5 s at the default `IdleQuiet`) |
 
-The one path that is deliberately **lossless** is `Config.OnLine`: it is called synchronously on the
-PTY read goroutine, so a slow callback back-pressures the harness rather than losing a line. That is
-what makes it safe to hang session-id capture and transcript streaming off it.
+Two paths are deliberately **lossless**. `Config.OnLine` is called synchronously on the PTY read
+goroutine, so a slow callback back-pressures the harness rather than losing a line; that is what
+makes it safe to hang session-id capture and transcript streaming off it. `Config.OnEvent` receives
+every `SessionEvent` in order from one goroutine, through a bounded queue whose producers wait for
+room ([ADR-008](decisions/adr-008-event-delivery.md)): a slow callback delays the classifier's
+reports, never the PTY read loop, a Stop or the final event. `pkg/chat` takes the wrapper's events
+this way. `Snapshot().ClassifiedAt` is when the status was last set or cleared.
 
 Classification does not begin until the harness has emitted its first byte, and every threshold latch
 resets whenever new output arrives.

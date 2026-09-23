@@ -35,9 +35,10 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 > 2.1.280 binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`:
 > end-of-turn detection, reply extraction, the multi-turn keep-alive path, a large prompt arriving
 > intact, and the folder-trust dialog, both reported and answered. The recordings trail that pin: the
-> four scripted claude scenarios are still at 2.1.270 and the two trust-dialog captures at 2.1.261, so
-> the `interruptMarker` and tool-call surfaces are verified by replay at 2.1.270 rather than at the
-> pin, and the permission-mode footers remain anchored at 2.1.217. All five live tests passed at
+> four scripted claude scenarios are still at 2.1.270, the `interrupt-*` recordings at 2.1.280 and the
+> two trust-dialog captures at 2.1.261, so the tool-call surface is verified by replay at 2.1.270 and
+> `interruptMarker` by the 2.1.280 `interrupt-*` recordings (ADR-007), and the permission-mode
+> footers remain anchored at 2.1.217. All five live tests passed at
 > 2.1.280 and the adapter needed no change, so nothing was re-baked. Recordings are frozen renderings
 > the adapter must keep handling, so once the pin moves on they trail it by design rather than by
 > neglect — only the live tests can speak for the pin. meta-harness's own pin file is still at
@@ -223,6 +224,34 @@ shift a startup screen without a single corpus test going red.
    [adversarial corpus](testing/corpus.md) tests keep passing.
 5. **Re-run** `go test ./pkg/turns/harness/<harness>/...` — canonical and adversarial must both pass.
 6. Bump the pin and commit.
+
+## When a real-Claude test fails from inside a Claude Code session
+
+A live test (`HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1`, `scripts/claude-release-check.sh`) that fails
+**well inside its deadline** with
+
+```
+harness: turn errored
+claude-code: prompt not accepted / no assistant output; …
+```
+
+on a screen carrying
+
+```
+⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker
+```
+
+is an **env leak, not an upstream regression**. Check `CLAUDECODE` in the launching shell first —
+the cron and the agent shells are themselves Claude Code sessions. A spawned `claude` that inherits
+those markers disables session persistence and writes no rollout, which removes both the
+transcript-backed History path and the swallowed-prompt rescue in `pkg/chat/swallowed.go`; a lagged
+TUI repaint then becomes a hard `ErrTurnErrored` with nothing left to overturn it.
+
+The fix is at the launch site: pass `harnessenv.Cleaned()` as `TurnConfig.Env` (`pkg/harnessenv` owns
+the policy, `CLAUDE_CODE_OAUTH_TOKEN` exempted). When the rescue was impossible for this reason the
+turn's `Reason` now says so — `chat.DiagTranscriptUnavailable` — instead of the generic
+`transcript has no assistant output`. Do **not** re-bake the corpus or bump the pin for this shape.
+(PUPPET-671)
 
 ## When a transcript schema drifts
 

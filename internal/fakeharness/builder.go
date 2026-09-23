@@ -25,7 +25,12 @@ const defaultSessionID = "11111111-2222-3333-4444-555555555555"
 // lock) in most depth, but codex and pi each have a full turn vocabulary too:
 // CodexWorking/CodexReply and PiWorking/PiReply drive a turn to completion, not
 // just to readiness.
-type Builder struct{ s Script }
+type Builder struct {
+	s Script
+	// box paints claude-code frames with the composer box claude 2.1.270+
+	// draws; see ComposerBox.
+	box bool
+}
 
 // New starts a Builder for the named harness with the default session ID.
 func New(harness string) *Builder {
@@ -58,6 +63,18 @@ func (b *Builder) Exit(code int) *Builder {
 // typed text as the prompt for later Echo frames.
 func (b *Builder) AwaitSubmit() *Builder {
 	return b.waitInput(regexp.QuoteMeta(SubmitCSI13u), true, "submit")
+}
+
+// AwaitInterrupt blocks until the wrapper writes the interrupt key
+// (InterruptCSI27u). It does not capture: the keypress carries no prompt text.
+func (b *Builder) AwaitInterrupt() *Builder {
+	return b.waitInput(regexp.QuoteMeta(InterruptCSI27u), false, "interrupt")
+}
+
+// AwaitComposerClear blocks until the wrapper writes the keys that empty a
+// composer of lines lines (ClearComposerKeys).
+func (b *Builder) AwaitComposerClear(lines int) *Builder {
+	return b.waitInput(regexp.QuoteMeta(ClearComposerKeys(lines)), false, "composer-clear")
 }
 
 // AwaitMenuChoice blocks until the wrapper selects a menu row (a digit followed
@@ -99,7 +116,34 @@ const (
 )
 
 func (b *Builder) ccScreen(lines ...string) string {
+	if b.box {
+		lines = boxComposer(lines)
+	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// ComposerBox paints every later claude-code frame the way claude 2.1.270+
+// lays it out: the composer between two horizontal rules, the status line
+// (spinner, retry countdown, end-of-turn summary) just above the box and the
+// footer just below it. The adapter's Busy reads only that region, so a
+// scenario that must tell a working Claude from a reply quoting the working
+// markers opts in; without it Busy judges the whole screen.
+func (b *Builder) ComposerBox() *Builder { b.box = true; return b }
+
+// ccRule is one rule of the composer box.
+var ccRule = strings.Repeat("─", 100)
+
+// boxComposer wraps the composer line of a frame in the box's two rules.
+func boxComposer(lines []string) []string {
+	out := make([]string, 0, len(lines)+2)
+	for _, ln := range lines {
+		if ln == ccPrompt {
+			out = append(out, ccRule, ln, ccRule)
+			continue
+		}
+		out = append(out, ln)
+	}
+	return out
 }
 
 func (b *Builder) resumeHint() string {
@@ -135,6 +179,16 @@ func (b *Builder) Marker(delayMs int, verb, dur string) *Builder {
 	return b.frame(delayMs, b.ccScreen(ccHeader, "", "✻ "+verb+" for "+dur, ccSpinner, "", ccPrompt, ccBusy), false)
 }
 
+// RetryBackoff paints Claude backing off before retrying a failed API call, as
+// recorded on 2.1.280: "✻ API error · Retrying in <seconds>s · attempt
+// <attempt>/10" in the status line, and a footer WITHOUT "esc to interrupt",
+// which a live run showed absent for the whole backoff. Busy must read it off
+// the status line.
+func (b *Builder) RetryBackoff(delayMs, seconds, attempt int) *Builder {
+	status := fmt.Sprintf("✻ API error · Retrying in %ds · attempt %d/10", seconds, attempt)
+	return b.frame(delayMs, b.ccScreen(ccHeader, "", status, "", ccPrompt, "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent"), false)
+}
+
 // Flicker paints the danger frame: the footer AND spinner are absent for one
 // redraw (so Busy() is momentarily false) while a sub-agent line shows work is
 // not actually done. note is the sub-agent label; it must avoid the spinner
@@ -165,6 +219,89 @@ func (b *Builder) Reply(delayMs int, body, verb, dur string) *Builder {
 	// (which scans the screen at TurnComplete) sees it — real claude-code keeps
 	// the affordance painted.
 	return b.frame(delayMs, b.ccScreen(ccHeader, "", "⏺ "+body, "", "✻ "+verb+" for "+dur, "", ccPrompt, b.resumeHint()), true)
+}
+
+// Interrupt frames, recorded on claude 2.1.280 (ADR-007). They paint the
+// composer box whether or not ComposerBox was called: the interrupt reading
+// locates the conversation above it. The submitted prompt's echo — "❯ " at
+// column 0 — carries the captured prompt.
+const ccInterruptMarker = "  ⎿ \u00a0Interrupted · What should Claude do instead?" // U+00A0 after the space, as claude paints it
+
+// EchoWorking paints a turn in flight: the prompt's echo, the spinner, and the
+// busy footer.
+func (b *Builder) EchoWorking(delayMs int, status string) *Builder {
+	spinner := strings.Replace(ccSpinner, "Cerebrating", status, 1)
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccPrompt+promptPlaceholder, spinner, "", ccPrompt, ccBusy), true)
+}
+
+// Stopped paints a turn the harness stopped: the prompt's echo, the partial
+// reply (none when partial is empty), the interrupt marker below it, and an
+// empty composer. Prior lines are painted above the echo — an earlier turn,
+// for instance, with its own marker.
+func (b *Builder) Stopped(delayMs int, partial string, prior ...string) *Builder {
+	lines := append([]string{ccHeader, ""}, prior...)
+	lines = append(lines, ccPrompt+promptPlaceholder)
+	if partial != "" {
+		lines = append(lines, "⏺ "+partial)
+	}
+	lines = append(lines, ccInterruptMarker, "", ccPrompt, b.resumeHint())
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// Cancelled paints a turn the harness cancelled before its first token: the
+// echo gone and the prompt back in the composer, not busy. Prior lines are
+// painted above the composer.
+func (b *Builder) Cancelled(delayMs int, prior ...string) *Builder {
+	lines := append([]string{ccHeader, ""}, prior...)
+	lines = append(lines, "", ccComposer+promptPlaceholder, b.resumeHint())
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// ComposerHolding paints a settled, ready frame whose composer holds text — a
+// draft typed at the terminal, say.
+func (b *Builder) ComposerHolding(delayMs int, text string) *Builder {
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccComposer+text, b.resumeHint()), false)
+}
+
+// EmptyComposer paints the settled, ready frame with an empty composer box.
+func (b *Builder) EmptyComposer(delayMs int) *Builder {
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccPrompt, b.resumeHint()), false)
+}
+
+// Paint paints a claude-code frame line by line, the composer box drawn
+// around the empty composer line ("❯ ") or a ComposerLine, with PromptRef()
+// replaced by the captured prompt — for a scenario the semantic frames do not
+// cover.
+func (b *Builder) Paint(delayMs int, lines ...string) *Builder {
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// ComposerLine returns a Paint line for a composer holding text.
+func ComposerLine(text string) string { return ccComposer + text }
+
+// InterruptMarkerLine returns the interrupt marker line as claude paints it,
+// for a Paint frame.
+func InterruptMarkerLine() string { return ccInterruptMarker }
+
+// ccComposer marks a composer line holding text, for ccBoxed: the ❯ glyph
+// followed by a zero-width tag, stripped when painted.
+const ccComposer = "❯ \x00"
+
+// ccBoxed is ccScreen with the composer box always drawn: the empty composer
+// line, or one tagged ccComposer, gets the box's two rules around it.
+func (b *Builder) ccBoxed(lines ...string) string {
+	out := make([]string, 0, len(lines)+2)
+	for _, ln := range lines {
+		switch {
+		case ln == ccPrompt:
+			out = append(out, ccRule, ln, ccRule)
+		case strings.HasPrefix(ln, ccComposer):
+			out = append(out, ccRule, ccPrompt+strings.TrimPrefix(ln, ccComposer), ccRule)
+		default:
+			out = append(out, ln)
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
 }
 
 // SettleIdle paints a settled, ready, non-busy frame with a reply bullet but NO
@@ -328,4 +465,87 @@ func (b *Builder) StayAliveUntilStopped() *Builder {
 // both (Hold drains stdin and would swallow the quit).
 func (b *Builder) QuitsOnQuit() *Builder {
 	return b.waitInput(`/quit`, false, "quit").Exit(0)
+}
+
+// --- claude-code transcript records -------------------------------------
+//
+// The records a real claude-code session appends to its transcript, reduced to
+// the fields pkg/transcript/claudecode reads; test/corpus/apierror holds real
+// ones. They land where the launch's session keeps its transcript (see
+// Transcript), so a scenario can give the chat layer the harness's own record
+// of a turn — the source the transcript verdicts and History read.
+
+// transcriptTimestamp stamps every record. The readers order by file position,
+// not by time, so one fixed instant keeps fixtures deterministic.
+const transcriptTimestamp = "2026-09-23T00:00:00.000Z"
+
+// TranscriptUser appends the user record for the captured prompt.
+func (b *Builder) TranscriptUser(delayMs int) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": promptPlaceholder},
+	})
+}
+
+// TranscriptReply appends an assistant record whose reply is text.
+func (b *Builder) TranscriptReply(delayMs int, text string) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"role": "assistant", "model": "claude-fake",
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+}
+
+// TranscriptInterrupted appends the record claude-code writes when a turn is
+// interrupted (recorded on 2.1.280): a user entry "[Request interrupted by
+// user]", or "… for tool use]" after a tool call it stopped.
+func (b *Builder) TranscriptInterrupted(delayMs int, forToolUse bool) *Builder {
+	text := "[Request interrupted by user]"
+	if forToolUse {
+		text = "[Request interrupted by user for tool use]"
+	}
+	return b.transcript(delayMs, map[string]any{
+		"type": "user",
+		"message": map[string]any{
+			"role": "user", "content": []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+}
+
+// TranscriptAPIError appends the synthetic assistant record claude-code writes
+// when an API call fails: model "<synthetic>", the rendered error as its text,
+// isApiErrorMessage set and the machine-readable error tag (server_error,
+// rate_limit, billing_error, …).
+func (b *Builder) TranscriptAPIError(delayMs int, tag, text string) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"role": "assistant", "model": "<synthetic>",
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+		"isApiErrorMessage": true,
+		"error":             tag,
+	})
+}
+
+// TranscriptRaw appends records verbatim, for a scenario that needs fields the
+// helpers above do not write (usage, message ids, tool blocks).
+func (b *Builder) TranscriptRaw(delayMs int, lines ...string) *Builder {
+	b.s.Steps = append(b.s.Steps, Step{Transcript: &Transcript{DelayMs: delayMs, Lines: lines}})
+	return b
+}
+
+// transcript appends a Transcript step holding one record, numbering its uuid
+// by its position in the script so every record's id is distinct.
+func (b *Builder) transcript(delayMs int, record map[string]any) *Builder {
+	record["uuid"] = fmt.Sprintf("00000000-0000-4000-8000-%012d", len(b.s.Steps))
+	record["timestamp"] = transcriptTimestamp
+	line, err := json.Marshal(record)
+	if err != nil {
+		panic(fmt.Sprintf("fakeharness: marshal transcript record: %v", err))
+	}
+	b.s.Steps = append(b.s.Steps, Step{Transcript: &Transcript{DelayMs: delayMs, Lines: []string{string(line)}}})
+	return b
 }

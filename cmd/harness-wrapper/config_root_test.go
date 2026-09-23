@@ -56,41 +56,31 @@ func TestStructuredRun_TranscriptAndUsageFromConfigRoot(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		// root returns the CLAUDE_CONFIG_DIR value to launch with and the
-		// directory claude would write under for it.
-		root func(t *testing.T, wd string) (value, onDisk string)
+		// root returns the CLAUDE_CONFIG_DIR value to launch with.
+		root func(t *testing.T) string
 	}{
 		{
 			name: "absolute root",
-			root: func(t *testing.T, _ string) (string, string) {
-				r := filepath.Join(t.TempDir(), "agent-claude")
-				return r, r
-			},
+			root: func(t *testing.T) string { return filepath.Join(t.TempDir(), "agent-claude") },
 		},
 		{
 			name: "relative root",
-			root: func(_ *testing.T, wd string) (string, string) {
-				return ".agent-claude", filepath.Join(wd, ".agent-claude")
-			},
+			root: func(*testing.T) string { return ".agent-claude" },
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			wd := t.TempDir()
-			value, onDisk := tc.root(t, wd)
-			projDir := filepath.Join(onDisk, "projects", cc.EncodedCWD(wd))
-			if err := os.MkdirAll(projDir, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(projDir, sessionID+".jsonl"), []byte(configRootJSONL), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			value := tc.root(t)
 
+			// The fake writes the transcript where claude would for this launch:
+			// under the root, for the session id the launch assigned.
 			script := fakeharness.New("claude-code").
 				Session(sessionID).
 				Idle().
 				AwaitSubmit().
 				Working(30, "Working").
+				TranscriptRaw(0, strings.TrimSpace(configRootJSONL)).
 				Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
 				StayAliveUntilStopped().
 				Build()

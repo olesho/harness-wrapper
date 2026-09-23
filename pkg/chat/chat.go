@@ -67,10 +67,17 @@ const (
 	// thinking summary, or wrapper waiting_for_input).
 	TurnStateComplete TurnState = "complete"
 
-	// TurnStateErrored means the turn ended in failure: harness exited,
-	// the user interrupted, or the adapter reported an unrecoverable
-	// error. Reason carries the detail.
+	// TurnStateErrored means the turn ended in failure: the harness exited,
+	// or the adapter reported an unrecoverable error. Reason carries the
+	// detail.
 	TurnStateErrored TurnState = "errored"
+
+	// TurnStateInterrupted means the turn was interrupted — by Interrupt, or
+	// at the harness's own terminal — and the harness acknowledged it. It is
+	// neither a success nor a failure (ADR-007). Text carries the partial
+	// reply when the harness had produced one; Reason says whether it stopped
+	// the turn or cancelled it before the first token, and who interrupted.
+	TurnStateInterrupted TurnState = "interrupted"
 )
 
 // ReasonAuthRequired is the canonical Turn.Reason recorded when a turn ended in
@@ -159,6 +166,13 @@ type Turn struct {
 	// message (e.g. "Retry after 30 seconds"). Zero when no hint was
 	// parseable. Consumers can read this to schedule their retry.
 	RetryAfter time.Duration
+
+	// ResumeAt is when the usage window reopens, read from the wall's own
+	// "resets 6:40pm (Europe/Warsaw)" text. Set wherever Code is
+	// CodeUsageLimited — from the screen relabel or the harness's rate_limit
+	// tag — and zero when the wall named no reset time. A consumer schedules
+	// its retry from it rather than parsing Reason.
+	ResumeAt time.Time
 }
 
 // EventType discriminates the variants of a ConversationEvent.
@@ -178,6 +192,11 @@ const (
 	// pending (answered or dismissed). Input is populated with at least the
 	// resolved request's ID.
 	EventInputResolved EventType = "input_resolved"
+
+	// EventExited signals the harness process ended. Exit is populated. It
+	// follows the terminal event of the turn that was in flight, if any, and
+	// is the last event: Events() closes after it (ADR-008).
+	EventExited EventType = "exited"
 )
 
 // ConversationEvent is a discriminated event observed on
@@ -196,6 +215,10 @@ type ConversationEvent struct {
 	// EventInputResolved. nil for EventTurn.
 	Input *InputRequest
 
+	// Exit is how the harness process ended, for EventExited. nil for every
+	// other event.
+	Exit *ExitInfo
+
 	// Err is non-nil if the event represents an out-of-band error, e.g.
 	// Store failures. It is independent of Turn.State == TurnStateErrored
 	// (which represents harness-side failures).
@@ -209,12 +232,14 @@ type Session struct {
 	Harness    string
 	WorkingDir string
 	CreatedAt  time.Time
-	// HarnessSessionID is the ID the underlying harness assigned to its
-	// own session (Codex's resume UUID, Claude Code's session UUID). It is
+	// HarnessSessionID is the harness's own id for its session (Codex's resume
+	// UUID, Claude Code's session UUID). For an adapter that takes an id at
+	// launch (turns.SessionAssigner: claude-code, pi) it is assigned before the
+	// harness starts, and a resume seeds it with the resumed id. Otherwise it is
 	// populated once the adapter surfaces it — from the rendered screen
-	// (turns.SessionIDExtractor) or the raw output line stream
-	// (turns.RawSessionIDExtractor, e.g. Claude Code's "claude --resume <uuid>"
-	// exit hint). Empty until then, and for harnesses with no extractor.
+	// (turns.SessionIDExtractor), the raw output line stream
+	// (turns.RawSessionIDExtractor) or on-disk state (turns.SessionIDLocator).
+	// Empty until then, and for harnesses with none of these.
 	//
 	// A contained session keeps this field empty for good and records the id
 	// in Containment instead (the downgrade guard); read it with HarnessID.
@@ -275,6 +300,43 @@ var (
 	// look unparseable for one repaint.
 	ErrUnrecognizedDialog = errors.New("chat: harness is blocked on a dialog this build cannot parse")
 
+	// ErrHarnessBusy is returned by Send when the harness was still working
+	// when ctx ended: Send types nothing into a harness that is mid-turn — its
+	// status line or footer says so (turns.BusyDetector) — and waits instead
+	// for it to settle, continuously, for the end-of-turn confirmation window.
+	// The error also wraps ctx.Err(). Nothing was typed and no turn recorded.
+	ErrHarnessBusy = errors.New("chat: harness is busy")
+
+	// ErrInterruptUnsupported is returned by Interrupt when the harness adapter
+	// cannot interrupt a turn (it does not implement turns.Interrupter).
+	ErrInterruptUnsupported = errors.New("chat: harness has no interrupt")
+
+	// ErrInterruptUnconfirmed is returned by Interrupt when ctx ended before
+	// the harness acknowledged the interrupt. The interrupt keys may have gone
+	// out; the turn stays in flight and ends as the harness ends it. The error
+	// also wraps ctx.Err().
+	ErrInterruptUnconfirmed = errors.New("chat: interrupt not acknowledged")
+
+	// ErrComposerNotCleared is returned when the harness's composer still held
+	// text after chat pressed the keys that empty it: by Send, which then types
+	// nothing and records no turn, and by Interrupt alongside
+	// InterruptCancelled, when the prompt the harness put back would not clear.
+	ErrComposerNotCleared = errors.New("chat: composer could not be cleared")
+
+	// ErrExited is returned by Send once the harness process has ended
+	// (EventExited): nothing can take the prompt.
+	ErrExited = errors.New("chat: harness has exited")
+
+	// ErrEventTooLarge rides, as ConversationEvent.Err, on an event whose
+	// payload exceeded the delivery queue's byte bound: it is delivered
+	// without its turn's text, which History still holds.
+	ErrEventTooLarge = errors.New("chat: event larger than the delivery queue's byte bound")
+
+	// ErrUndelivered is returned by Close when its context ended before every
+	// event was delivered to OnEvent and Events(). The remaining events are
+	// dropped, and State().Delivery counts them.
+	ErrUndelivered = errors.New("chat: events left undelivered")
+
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.
 	ErrNoInputPending = errors.New("chat: no input request pending")
@@ -310,6 +372,13 @@ var (
 	// no harness session id (never captured, so there is nothing to resume).
 	// Call sites wrap it with the session id; errors.Is still matches.
 	ErrNoHarnessSession = errors.New("chat: session has no harness session id")
+
+	// ErrHarnessSessionInUse is returned by Open, wrapped with ErrInvalidOptions,
+	// when Options.HarnessSessionID names a session the harness already has a
+	// transcript for — or one whose transcript could not be read to prove it
+	// unused. A fresh launch under it would be refused by the harness (claude) or
+	// would silently continue it (pi). Resume that session instead.
+	ErrHarnessSessionInUse = errors.New("chat: harness session id already in use")
 )
 
 // newID returns a fresh 16-byte hex ID. Used for chat-level Session

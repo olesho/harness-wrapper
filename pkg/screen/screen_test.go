@@ -256,3 +256,29 @@ func TestResizeWithPeerDoesNotBlockWritesOrSnapshots(t *testing.T) {
 		t.Fatalf("final generation = %d, want %d", after.Generation, before.Generation+2)
 	}
 }
+
+// A character cut across two writes — a PTY read ends wherever the kernel's
+// buffer does — still reaches the screen whole, at every cut.
+func TestWriteKeepsACharacterSplitAcrossWrites(t *testing.T) {
+	text := "❯ a\u00a0b ⎿ 🙂 z"
+	for cut := 1; cut < len(text); cut++ {
+		s := New(20, 2)
+		_, _ = s.Write([]byte(text[:cut]))
+		_, _ = s.Write([]byte(text[cut:]))
+		if got := strings.TrimRight(strings.Split(s.Snapshot().Text, "\n")[0], " "); got != text {
+			t.Fatalf("cut at byte %d: row = %q, want %q", cut, got, text)
+		}
+	}
+}
+
+// A character cut three ways, one byte per write, arrives whole too; an
+// invalid byte is not held back, and vt10x drops it as it always has.
+func TestWriteKeepsACharacterSplitByteByByte(t *testing.T) {
+	s := New(20, 2)
+	for _, b := range []byte("❯\xffx") {
+		_, _ = s.Write([]byte{b})
+	}
+	if got := strings.TrimRight(strings.Split(s.Snapshot().Text, "\n")[0], " "); got != "❯x" {
+		t.Fatalf("row = %q, want the character, then x", got)
+	}
+}
