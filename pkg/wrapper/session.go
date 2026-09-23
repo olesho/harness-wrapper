@@ -22,8 +22,9 @@ type Snapshot struct {
 	// Status is the wrapper's current classification. Mid-run, it may
 	// be empty (the session is producing output and has not been
 	// classified) or one of the actionable mid-run statuses
-	// (waiting_for_input). After Wait returns, Status is the terminal
-	// status from Result.
+	// (waiting_for_input; under Config.KeepAliveOnClassification any
+	// verdict, until the harness writes past its evidence). After Wait
+	// returns, Status is the terminal status from Result.
 	Status Status
 
 	// Reason mirrors the Reason field on the most recent classification.
@@ -37,8 +38,9 @@ type Snapshot struct {
 // SessionEvent is a state transition observed by a Session. Events are
 // delivered on Session.Events() in order. Mid-run classifications
 // (waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
-// Status events. The final event is always Terminated, after which the
-// channel is closed.
+// Status events — under Config.KeepAliveOnClassification the terminal ones
+// too, with Terminated false. The final event is always Terminated, after
+// which the channel is closed.
 type SessionEvent struct {
 	At         time.Time
 	Status     Status
@@ -124,6 +126,13 @@ type classification struct {
 	httpCode   int
 	retryAfter time.Duration
 	resumeAt   time.Time
+
+	// Keep-alive mode only (Config.KeepAliveOnClassification). mark is the
+	// output offset the verdict's pass read through: the harness wrote nothing
+	// after the verdict while the output total still equals it. clear reports
+	// a pass over new output that found no verdict, which empties the status.
+	mark  int64
+	clear bool
 }
 
 // Wait blocks until the Session terminates and returns the final
@@ -458,6 +467,9 @@ type superviseOutcome struct {
 	// error class — e.g. a non-terminal API error — when the harness then
 	// exits Failed without a terminal classification.
 	lastErrClass ErrorClass
+	// lastVerdict is the most recent verdict of a keep-alive run, nil before
+	// the first; its mark says whether the harness wrote anything after it.
+	lastVerdict *classification
 }
 
 // startStdinCopy pipes cfg.Stdin into the PTY. It returns nil when no
@@ -498,8 +510,20 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 			out.endedAt = wr.endedAt
 			return out
 		case c := <-s.classifierCh:
+			if c.clear {
+				s.clearStatus()
+				continue
+			}
 			if c.class != ErrNone {
 				out.lastErrClass = c.class
+			}
+			if s.cfg.KeepAliveOnClassification {
+				// A caller that owns the harness's lifetime is told, never
+				// overruled: a terminal verdict is recorded like any other.
+				cc := c
+				out.lastVerdict = &cc
+				s.recordStatusChange(c, false)
+				continue
 			}
 			if !c.terminal {
 				s.recordStatusChange(c, false)
@@ -528,9 +552,12 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 // errors — which exit before the idle classifier ever polls — still
 // upgrade StatusFailed into an actionable, retryable status.
 func (s *Session) resolveActionable(res *Result, out superviseOutcome) *classification {
+	if s.cfg.KeepAliveOnClassification {
+		return s.resolveKeepAlive(res, out)
+	}
 	actionable := out.terminalClassDone
 	if actionable == nil && !out.stopRequested && res.Status == StatusFailed {
-		actionable = s.classifyOnExit()
+		actionable = s.classifyOnExit(0)
 	}
 	if actionable != nil {
 		res.Status = actionable.status
@@ -552,6 +579,48 @@ func (s *Session) resolveActionable(res *Result, out superviseOutcome) *classifi
 		}
 	}
 	return actionable
+}
+
+// resolveKeepAlive is resolveActionable for a keep-alive run. No verdict ended
+// the process, so Result.Status and Reason are the exit's: idle, failed or
+// interrupted, never a classification. A failed exit's Class says why when
+// the evidence does — the exit pass over what the harness wrote after its last
+// verdict, or else that verdict itself if the harness wrote nothing after it.
+// A verdict the harness has moved past does not explain how it ended. The
+// returned classification feeds the final event's structured fields.
+func (s *Session) resolveKeepAlive(res *Result, out superviseOutcome) *classification {
+	if out.stopRequested {
+		res.Status = StatusInterrupted
+		if res.Reason == "" {
+			res.Reason = "stop requested"
+		}
+		return nil
+	}
+	if res.Status != StatusFailed {
+		return nil
+	}
+	var mark int64
+	if out.lastVerdict != nil {
+		mark = out.lastVerdict.mark
+	}
+	explained := s.classifyOnExit(mark)
+	if explained == nil && out.lastVerdict != nil && s.recentOutput.Total() == mark {
+		explained = out.lastVerdict
+	}
+	if explained != nil {
+		res.Class = explained.class
+	}
+	return explained
+}
+
+// clearStatus empties the Snapshot's classification: the harness has written
+// past the evidence of its last verdict. Keep-alive mode only; no event marks
+// it, because the empty status already means "producing output, unclassified".
+func (s *Session) clearStatus() {
+	s.mu.Lock()
+	s.snap.Status = ""
+	s.snap.Reason = ""
+	s.mu.Unlock()
 }
 
 // recordStatusChange updates Snapshot and emits a non-terminal event.
@@ -623,7 +692,11 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 		case <-s.classifierOn:
 			return
 		case <-ticker.C:
-			st.onTick(s, cfg)
+			if cfg.KeepAliveOnClassification {
+				st.onTickKeepAlive(ctx, s, cfg)
+			} else {
+				st.onTick(s, cfg)
+			}
 		}
 	}
 }
@@ -639,6 +712,13 @@ type classifierState struct {
 	staleEmitted    bool
 	dispatched      bool
 	staleEnabled    bool
+
+	// Keep-alive mode only. mark is the output offset the last verdict's pass
+	// read through; passedThrough is the one the last pass read through;
+	// quietPassed is set once a pass has run in the current quiet stretch.
+	mark          int64
+	passedThrough int64
+	quietPassed   bool
 }
 
 // onTick evaluates the activity counters once and, when the output has
@@ -671,6 +751,69 @@ func (st *classifierState) onTick(s *Session, cfg Config) {
 		return
 	}
 	st.dispatchClassification(s, cfg, sinceLast, quiet, idle)
+}
+
+// onTickKeepAlive is onTick for Config.KeepAliveOnClassification. A pass runs
+// only when new output arrived or the output went quiet since the previous
+// pass; it reads only what was written after the last verdict, and it never
+// sets Idle, so the idle-gated phrase arms never run. Every result goes to the
+// supervisor in order — a verdict to record, or, for new output that yields
+// none, a clear — so the status always describes the latest evidence.
+func (st *classifierState) onTickKeepAlive(ctx context.Context, s *Session, cfg Config) {
+	last := s.lastOutput.Load()
+	if last == 0 {
+		return
+	}
+	outputChanged := last != st.lastSeen
+	if outputChanged {
+		st.lastSeen = last
+		st.quietEmitted = false
+		st.classifyEmitted = false
+		st.staleEmitted = false
+		st.quietPassed = false
+	}
+	sinceLast := time.Since(time.Unix(0, last))
+	quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
+	stale := !outputChanged && st.staleEnabled && sinceLast >= cfg.StaleThreshold
+	st.emitThresholdTraces(s, cfg, sinceLast, quiet, false, stale)
+
+	newOutput := s.recentOutput.Total() != st.passedThrough
+	if !newOutput && (!quiet || st.quietPassed) {
+		return
+	}
+	text, through := s.recentOutput.TextFrom(st.mark)
+	st.passedThrough = through
+	if quiet {
+		st.quietPassed = true
+	}
+	c := s.classifier.Classify(ClassifierInput{
+		RecentOutput:    text,
+		SinceLastOutput: sinceLast,
+		Quiet:           quiet,
+	})
+	if c.Status == "" {
+		if newOutput {
+			st.hand(ctx, s, classification{clear: true})
+		}
+		return
+	}
+	emitClassifierTrace(cfg, c)
+	st.mark = through
+	ic := toInternalClassification(c)
+	ic.mark = through
+	st.hand(ctx, s, ic)
+}
+
+// hand delivers a keep-alive pass's result to the supervisor. Unlike the
+// default mode's drop-when-busy send — whose classifier re-sends the same
+// verdict on the next tick — a keep-alive pass runs once per piece of evidence,
+// so its result waits for the supervisor instead of being lost.
+func (st *classifierState) hand(ctx context.Context, s *Session, c classification) {
+	select {
+	case s.classifierCh <- c:
+	case <-s.classifierOn:
+	case <-ctx.Done():
+	}
 }
 
 // emitThresholdTraces emits the output_quiet / output_classify_threshold /
@@ -749,12 +892,16 @@ func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceL
 // when the output yields no actionable (or only a waiting-for-input)
 // classification. Uses the session's resolved classifier so a custom
 // cfg.Classifier is honored.
-func (s *Session) classifyOnExit() *classification {
-	c := s.classifier.Classify(ClassifierInput{
-		RecentOutput: s.recentOutput.String(),
-		Idle:         true,
-		Quiet:        false,
-	})
+//
+// In keep-alive mode the pass keeps the mid-run rules: it reads only what was
+// written from mark on — after the last verdict — and never sets Idle.
+func (s *Session) classifyOnExit(mark int64) *classification {
+	in := ClassifierInput{RecentOutput: s.recentOutput.String(), Idle: true}
+	if s.cfg.KeepAliveOnClassification {
+		in.RecentOutput, _ = s.recentOutput.TextFrom(mark)
+		in.Idle = false
+	}
+	c := s.classifier.Classify(in)
 	if c.Status == "" || c.Status == StatusWaitingForInput {
 		return nil
 	}
@@ -790,6 +937,9 @@ func emitClassifierTrace(cfg Config, c Classification) {
 		"status":   string(c.Status),
 		"reason":   c.Reason,
 		"terminal": c.Terminal,
+	}
+	if c.Terminal && cfg.KeepAliveOnClassification {
+		fields["enforced"] = false // reported to a caller that owns the lifetime
 	}
 	if c.HTTPCode != 0 {
 		fields["http_code"] = c.HTTPCode

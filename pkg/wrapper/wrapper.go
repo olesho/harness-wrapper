@@ -83,11 +83,12 @@ type Config struct {
 	// IdleQuiet is the duration of no output after which the wrapper
 	// considers the harness "quiet." Quiet gates prompt detection
 	// (waiting_for_input) and sets the classifier poll cadence.
-	// Defaults to 15s.
+	// Defaults to 15s; negative is refused.
 	IdleQuiet time.Duration
 
 	// IdleClassify is the duration of no output after which the wrapper
-	// classifies the run as idle. Must be >= IdleQuiet. Defaults to 60s.
+	// classifies the run as idle. Must be >= IdleQuiet. Defaults to 60s;
+	// negative is refused. It has no effect under KeepAliveOnClassification.
 	IdleClassify time.Duration
 
 	// StaleThreshold is the duration of no PTY output after which the
@@ -149,6 +150,36 @@ type Config struct {
 	// mixing vocabularies across harnesses is an error, never a silent
 	// no-op. "plan" is rejected for codex (no launch-time flag exists).
 	PermissionMode string
+
+	// KeepAliveOnClassification leaves the harness's lifetime to the caller
+	// (ADR-006). By default a terminal classification — blocked_by_cost,
+	// retry_later — ends the run: the wrapper SIGTERMs the harness. That suits
+	// run-to-completion supervision, where a stuck run must still end in a
+	// verdict. It does not suit a caller that keeps the harness alive between
+	// messages, for whom silence is the resting state and even a real
+	// session-limit banner should leave the process up until the limit resets.
+	// Such a caller sets this, and then:
+	//
+	//   - No classification signals the harness. Every verdict is reported — in
+	//     the Snapshot, as a SessionEvent with Terminated false, and in the
+	//     trace — and only Stop, context cancellation or the harness's own exit
+	//     end the process.
+	//   - Silence is not evidence. ClassifierInput.Idle is never set, mid-run
+	//     or in the exit pass, so the idle-gated cost, retry and transport
+	//     phrase arms never run and IdleClassify has no effect. The anchored
+	//     API-error and session-limit matchers and the quiet-gated prompt
+	//     matcher remain.
+	//   - A verdict consumes its evidence. A pass runs only when new output
+	//     arrived or the output went quiet since the previous one, and reads
+	//     only what was written after the last verdict, from the start of the
+	//     line it began in.
+	//   - The status tracks the evidence. A pass over new output that finds
+	//     nothing clears Snapshot().Status to empty, without an event.
+	//   - The Result describes how the process ended. Result.Class takes a
+	//     mid-run verdict's class only when the harness wrote nothing after it.
+	//
+	// The zero value keeps run-to-completion behaviour.
+	KeepAliveOnClassification bool
 
 	// Classifier inspects recent harness output and produces actionable
 	// status classifications (blocked_by_cost, retry_later,
@@ -368,6 +399,13 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.Stdout == nil {
 		return fmt.Errorf("%w: Stdout is required", ErrInvalidConfig)
+	}
+	// Zero selects a default, so only a negative threshold is refused. It is
+	// the value a caller reaches for, by analogy with StaleThreshold: -1, to
+	// switch the idle kill off — and a negative IdleClassify does the opposite:
+	// every tick reads as idle, so any cost or retry phrase ends the run at once.
+	if cfg.IdleQuiet < 0 || cfg.IdleClassify < 0 {
+		return fmt.Errorf("%w: IdleQuiet (%v) and IdleClassify (%v) must not be negative; KeepAliveOnClassification is what keeps a quiet harness alive", ErrInvalidConfig, cfg.IdleQuiet, cfg.IdleClassify)
 	}
 	if cfg.IdleClassify > 0 && cfg.IdleQuiet > 0 && cfg.IdleClassify < cfg.IdleQuiet {
 		return fmt.Errorf("%w: IdleClassify (%v) must be >= IdleQuiet (%v)", ErrInvalidConfig, cfg.IdleClassify, cfg.IdleQuiet)

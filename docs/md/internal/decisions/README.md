@@ -15,23 +15,24 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-003](adr-003-env-visibility.md) | The Go environment core stays in `internal/env` until a consumer needs it | Accepted 2026-07-21 | 6 |
 | [ADR-004](adr-004-thread-scoped-landlock.md) | A contained launch restricts one locked thread, never the wrapper | Accepted 2026-09-15 | 7 |
 | [ADR-005](adr-005-apparmor-socket-layer.md) | On Landlock ABI 6–8 a stacked AppArmor profile denies pathname sockets outside its roots | Accepted 2026-09-19 | 7 · also 6 |
+| [ADR-006](adr-006-classification-and-lifetime.md) | A classification ends the harness only when the caller leaves its lifetime to the wrapper | Accepted 2026-09-23 | 2 |
 
 ## Intent coverage
 
 | Principle | Records | How the decision applies it |
 |---|---|---|
 | 1 · The screen is a contract we don't own | 001, 001-TS, 002 | Emulators are chosen by replaying recorded real sessions, and the dialog detector was re-verified live when claude 2.1.251 changed the dialog's shape |
-| 2 · A wrong verdict is worse than no verdict | 002 | A dialog the adapter cannot parse is reported as unparseable and blocks; it is never guessed at, and never answered with empty keys |
+| 2 · A wrong verdict is worse than no verdict | 002, 006 | A dialog the adapter cannot parse is reported as unparseable and blocks; it is never guessed at, and never answered with empty keys. A caller that owns the harness's lifetime is told what a classification found and decides; silence is not evidence, and a verdict never outlives its evidence |
 | 3 · Normalize, don't leak | 002 | One `InputRequest` vocabulary for every harness; clients answer an option id or alias, and keystrokes stay in the per-harness adapter |
 | 4 · Prefer the harness's own record | 001 | Where emulator fidelity falls short, turn text comes from the harness's transcript and the screen serves liveness only |
 | 5 · Keep the stack one-way and the core transport-free | 002 | Detection sits in `pkg/turns`, the channel in `pkg/chat`, HTTP + SSE only in `cmd/harness-chatd` |
 | 6 · Evolve public contracts deliberately | 002, 003, 005 | SSE frames gained a `type` field additively; no Go surface is published before a consumer can shape it; a policy without the AppArmor layer serializes, and fingerprints, exactly as before |
 | 7 · Say what is enforced, not what is intended | 002, 004, 005 | Accepting a skip-all-permissions launch is its own policy kind; both containment records list what is guaranteed and what is not; a launch refuses rather than degrades and reports the rule it enforced |
 
-No record yet covers the `Status` vocabulary, the `ErrorClass` taxonomy and the ownership of
-harness-output classification (principle 2); the transcript parsers (4); the layering and import
-rules (5); the frozen `turnproto` contract and the conformance corpus shared with meta-harness (6);
-or version pins and the drift pipeline (1). Those are decided in code and in
+No record yet covers the `Status` vocabulary, the `ErrorClass` taxonomy and which matcher may classify
+what (principle 2 — ADR-006 decides only who acts on a classification); the transcript parsers (4);
+the layering and import rules (5); the frozen `turnproto` contract and the conformance corpus shared
+with meta-harness (6); or version pins and the drift pipeline (1). Those are decided in code and in
 [Architecture](../architecture.md), [turnproto](../turnproto.md) and
 [Versions & drift](../versions-drift.md).
 

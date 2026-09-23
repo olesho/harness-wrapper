@@ -97,6 +97,11 @@ export const SECTIONS = [
         title: "ADR-005 · AppArmor socket layer",
         source: "md/internal/decisions/adr-005-apparmor-socket-layer.md",
       },
+      {
+        slug: "adr-006-classification-and-lifetime",
+        title: "ADR-006 · Classification and lifetime",
+        source: "md/internal/decisions/adr-006-classification-and-lifetime.md",
+      },
     ],
   },
   {

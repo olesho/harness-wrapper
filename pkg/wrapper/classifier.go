@@ -30,7 +30,8 @@ type ClassifierInput struct {
 	// Idle is true once SinceLastOutput >= IdleClassify. The wrapper's
 	// default behavior at this threshold is to classify the run as
 	// idle; a Classifier can override by returning a non-zero
-	// Classification.
+	// Classification. Never set under Config.KeepAliveOnClassification,
+	// where silence is not evidence of anything.
 	Idle bool
 }
 
@@ -53,7 +54,8 @@ type Classification struct {
 	// Terminal indicates the wrapper should terminate the harness
 	// process to make progress. Set true for blocked_by_cost and
 	// retry_later; leave false for waiting_for_input where the harness
-	// is alive and just paused at a prompt.
+	// is alive and just paused at a prompt. Under
+	// Config.KeepAliveOnClassification it is reported, never enforced.
 	Terminal bool
 
 	// HTTPCode is the upstream API's HTTP status code when Status is
