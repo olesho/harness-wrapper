@@ -387,6 +387,14 @@ class Conversation:
         resp = self.client._request("POST", f"/v1/conversations/{self.id}/messages", body)
         return resp["turn_id"]
 
+    def interrupt(self) -> dict[str, Any]:
+        """Interrupt the turn in flight; needs no control token. Returns
+        ``{"result": ...}`` -- "stopped", "cancelled", "too_late" or "no_turn" --
+        with ``"error"`` when a cancelled turn's prompt would not clear from the
+        composer. The interrupted turn arrives on the event stream with state
+        "interrupted"."""
+        return self.client._request("POST", f"/v1/conversations/{self.id}/interrupt")
+
     def history(self) -> list[Turn]:
         resp = self.client._request("GET", f"/v1/conversations/{self.id}/history")
         return [Turn.from_json(t) for t in resp.get("turns", [])]

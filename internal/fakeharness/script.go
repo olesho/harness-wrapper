@@ -51,6 +51,29 @@ const SubmitCR = "\r"
 // sending exactly this, the fake never advances and the test fails loudly.
 const ShiftTabCSI9_2u = "\x1b[9;2u"
 
+// InterruptCSI27u is the byte sequence chat.Interrupt writes to interrupt a
+// claude-code turn: Esc in the kitty keyboard protocol, CSI 27 u. The inward
+// contract lives in the claudecode adapter's InterruptSequence; this constant
+// mirrors it so hermetic scenarios wait for exactly the bytes the production
+// writer emits, and TestInterruptKeyMatchesFakeharness pins them byte-equal.
+// Scenarios wait for it via Builder.AwaitInterrupt.
+const InterruptCSI27u = "\x1b[27u"
+
+// ClearComposerKeys returns the keys chat writes to empty a claude-code
+// composer holding lines lines: Ctrl-E, then Ctrl-K twice per line, then
+// Ctrl-U twice per line and once more. It mirrors the claudecode adapter's
+// ClearComposerSequence, which TestClearKeysMatchFakeharness pins it to.
+func ClearComposerKeys(lines int) string {
+	keys := "\x05"
+	for range 2 * lines {
+		keys += "\x0b"
+	}
+	for range 2*lines + 1 {
+		keys += "\x15"
+	}
+	return keys
+}
+
 // PasteStart / PasteEnd are the bracketed-paste framing markers chat wraps a
 // LARGE composer payload in — CSI 200 ~ and CSI 201 ~, what a real terminal
 // emits around pasted text. A real TUI consumes them as FRAMING and keeps only

@@ -276,6 +276,58 @@ type EnvConfigurable interface {
 	ConfigureFromEnv(env []string)
 }
 
+// InterruptOutcome is what the screen says a harness did with the turn in
+// flight, as Interrupter.InterruptOutcome reads it.
+type InterruptOutcome int
+
+const (
+	// InterruptPending: the turn is still running, or the screen does not say
+	// yet — a mid-paint frame, a dialog.
+	InterruptPending InterruptOutcome = iota
+	// InterruptStopped: the harness stopped the turn after it had produced
+	// output. Its interrupt marker sits below this turn's prompt, and the
+	// partial reply is the text above the marker.
+	InterruptStopped
+	// InterruptCancelled: the harness cancelled the turn before it produced
+	// anything and put the prompt back in the composer.
+	InterruptCancelled
+	// InterruptFinished: the turn ended on its own — its end-of-turn marker is
+	// below this turn's prompt.
+	InterruptFinished
+)
+
+// Interrupter is an optional capability adapters implement when the harness can
+// stop a turn in flight from the keyboard, and the screen says what it did.
+// The chat layer's Conversation.Interrupt writes InterruptSequence and reads
+// InterruptOutcome; an interrupt made at the terminal is read the same way
+// (ADR-007).
+type Interrupter interface {
+	// InterruptSequence returns the keys that interrupt the turn in flight,
+	// written as one write.
+	InterruptSequence() []byte
+
+	// InterruptOutcome reads, from one screen, what the harness did with the
+	// turn whose prompt is prompt: the reading is per turn, so an interrupt
+	// marker left by an earlier turn never speaks for this one. partial is the
+	// reply the turn had painted when it was stopped, set with
+	// InterruptStopped when the screen shows one. It must only be asked about
+	// a turn the harness has taken — the screen showed it working — since
+	// before that the composer still holds the prompt as typed, which is also
+	// what a cancelled turn leaves there.
+	InterruptOutcome(prompt string, snap screen.Snapshot) (outcome InterruptOutcome, partial string)
+
+	// ComposerText returns what the composer holds, as painted. ok is false
+	// when the screen shows no composer to read — a dialog, a picker, a
+	// mid-paint frame — which never means empty.
+	ComposerText(snap screen.Snapshot) (text string, ok bool)
+
+	// ClearComposerSequence returns the keys that empty a composer holding
+	// composer (as ComposerText read it), from wherever its cursor is, as one
+	// write. Keys that empty a longer text are fine: the caller re-reads the
+	// composer until it is empty.
+	ClearComposerSequence(composer string) []byte
+}
+
 // Quitter is an optional capability adapters may implement to surface the key
 // sequence that makes the interactive harness exit gracefully (so it can flush
 // state / persist its transcript), instead of being SIGTERM'd. RunTurn sends

@@ -32,6 +32,7 @@ func wireTypes() []any {
 		sendRequest{},
 		sendResponse{},
 		answerRequest{},
+		interruptResponse{},
 		inputOptionDTO{},
 		inputRequestDTO{},
 		eventDTO{},

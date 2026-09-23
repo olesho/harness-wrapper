@@ -114,6 +114,7 @@ func (s *Server) routes() []routeDef {
 		{"DELETE", "/v1/conversations/{id}/control/{token}", s.releaseControl},
 		{"POST", "/v1/conversations/{id}/messages", s.sendMessage},
 		{"POST", "/v1/conversations/{id}/input", s.answerInput},
+		{"POST", "/v1/conversations/{id}/interrupt", s.interruptTurn},
 		{"GET", "/v1/conversations/{id}/events", s.streamEvents},
 		{"GET", "/v1/conversations/{id}/history", s.history},
 		{"GET", "/v1/conversations/{id}/screen", s.screen},
@@ -399,6 +400,35 @@ func (s *Server) answerInput(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// interruptWait bounds how long POST .../interrupt waits for the harness to
+// acknowledge an interrupt before answering interrupt_unconfirmed.
+const interruptWait = 30 * time.Second
+
+// interruptTurn interrupts the turn in flight (ADR-007). Like DELETE it needs no
+// control token: the holder is typically mid-turn, and the interrupt must reach
+// the harness past it. The interrupted turn itself arrives on the event stream
+// with state "interrupted".
+func (s *Server) interruptTurn(w http.ResponseWriter, r *http.Request) {
+	entry, ok := s.lookup(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), interruptWait)
+	defer cancel()
+	result, err := entry.conv.Interrupt(ctx)
+	if result == "" {
+		writeChatError(w, err)
+		return
+	}
+	// A result with an error is a cancelled turn whose prompt would not clear
+	// from the composer: the interrupt itself took.
+	resp := interruptResponse{Result: string(result)}
+	if err != nil {
+		resp.Error = err.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 	entry, ok := s.lookup(w, r)
 	if !ok {
@@ -554,6 +584,14 @@ func writeChatError(w http.ResponseWriter, err error) {
 		// The harness was still working when the request's context ended;
 		// nothing was typed. Retry once it settles.
 		writeError(w, http.StatusConflict, "harness_busy", err.Error())
+	case errors.Is(err, chat.ErrComposerNotCleared):
+		// The composer held text that would not clear; nothing was typed.
+		writeError(w, http.StatusConflict, "composer_not_cleared", err.Error())
+	case errors.Is(err, chat.ErrInterruptUnsupported):
+		writeError(w, http.StatusNotImplemented, "interrupt_unsupported", err.Error())
+	case errors.Is(err, chat.ErrInterruptUnconfirmed):
+		// The harness did not acknowledge in time; the turn stays in flight.
+		writeError(w, http.StatusGatewayTimeout, "interrupt_unconfirmed", err.Error())
 	case errors.Is(err, chat.ErrInputPending):
 		writeError(w, http.StatusConflict, "input_pending", err.Error())
 	case errors.Is(err, chat.ErrNoInputPending):

@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.280",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "Interrupt while a Bash tool runs: the marker replaces the tool's \"⎿  Running…\" line, and the transcript holds the tool call, a rejected tool_result and \"[Request interrupted by user for tool use]\". Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` (pkg/chat/interrupt_record_test.go), interrupting through chat.Conversation.Interrupt: the real claude against a local Messages API, in /tmp/hw-rebake/interrupt-mid-tool with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-09-23T11:12:09.110202Z",
+ "rows": 40
+}

@@ -47,7 +47,9 @@ type Event struct {
 
 The chat layer maps these onto its [turn model](../guide/chat.md#turn-model): `TurnComplete` →
 `TurnStateComplete`; `Errored`/`Blocked` → `TurnStateErrored`; `InputRequested`/`InputResolved` drive
-the [interactive-input channel](../guide/chat.md#interactive-input-blocking-prompts).
+the [interactive-input channel](../guide/chat.md#interactive-input-blocking-prompts). An interrupt is
+not an event: chat reads it per turn through the `Interrupter` capability and ends the turn
+`TurnStateInterrupted` ([ADR-007](decisions/adr-007-interrupt.md)).
 
 ![Turn lifecycle](../diagrams/turn-lifecycle.svg)
 
@@ -65,6 +67,7 @@ feature-detect with a type assertion):
 | `Quitter` | `QuitSequence() []byte` | Bytes for a graceful exit (claude-code: the `/quit` command + enhanced Enter). |
 | `MessageExtractor` | `ExtractMessage(snap) (string, bool)` | Isolate the assistant reply from TUI chrome. |
 | `BusyDetector` | `Busy(snap) bool` | Distinguish "still working" from "idle at the prompt". |
+| `Interrupter` | `InterruptSequence() []byte`, `InterruptOutcome(prompt, snap) (turns.InterruptOutcome, string)`, `ComposerText(snap) (string, bool)`, `ClearComposerSequence(composer) []byte` | Interrupt a turn and read what the harness did with it — `InterruptPending`, `InterruptStopped` (with the partial reply), `InterruptCancelled` (the prompt put back in the composer) or `InterruptFinished` — per turn: only below this turn's prompt echo, so an earlier turn's marker never speaks for it. `ComposerText` and `ClearComposerSequence` let `Send` type into an empty composer only. `chat.Conversation.Interrupt` drives it ([ADR-007](decisions/adr-007-interrupt.md)); claude-code only — codex returns `ErrInterruptUnsupported` until its interrupt is captured. |
 | `PermissionModeDetector` | `PermissionMode(snap) (string, bool)` | Report the harness's posture on its **primary** permission axis, read off the rendered screen. The two implementations do **not** report the same kind of value: claude-code returns a canonical rung from `wrapper.PermissionRungs()`; codex returns a **COLLABORATION-axis** value (`"plan"` or `"default"`) which is *not* a rung — codex's permissions rung lives on a second axis this interface deliberately does not model. `false` means the screen carries **no readable signal** (onboarding wall, modal over the footer), never "readable, and not plan". Deliberately absent on opencode, pi and generic. |
 | `PermissionPostureDetector` | `PermissionPosture(snap) (turns.PermissionPosture, bool)` | Report the FULL posture — canonical `Rung`, the harness's own `Native` spelling of it, and `OnRing` (can the harness's cycle key produce that spelling?). Exists because several natives share one rung: claude paints both `⏸ manual mode on` and `⏵⏵ don't ask on` for `manual`, and only the first is reachable by Shift+Tab, so a driver comparing rungs alone reads a `dontAsk` session as already-manual and writes no keystroke. `Rung` carries `PermissionModeDetector`'s contract exactly; `Native` is DIAGNOSTIC and must never be compared against `wrapper.PermissionRungs()`. `false` means no readable signal, same as `PermissionModeDetector`. Implemented by **claude-code only** — codex has no alias collision on its collaboration axis, so `pkg/chat` reads it through a rung-only fallback that is byte-identical to the old behaviour. |
 | `SessionResumer` | `ResumeArgs(harnessSessionID) []string` | The argv fragment that resumes an existing harness session (e.g. `{"--resume", id}`). `chat.Open` returns `ErrResumeUnsupported` when `Options.Resume` is set and the adapter omits this. |
@@ -137,13 +140,13 @@ The signals themselves are the part most likely to break on an upstream release,
 place per adapter and are pinned by [corpus replay](testing/corpus.md). The shapes, as of the
 [current pins](versions-drift.md):
 
-| Adapter | Turn complete | Busy | Session id | Blocking prompts |
-|---|---|---|---|---|
-| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | its live status region only: the footer's "esc to interrupt", and the status line's spinner or retry countdown ("✻ API error · Retrying in 1s") above the composer box | **assigned at launch** (`--session-id <uuid>`); the `--resume <uuid>` exit hint on the raw line stream only when an id was not assigned | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
-| `codex` | a fresh end-of-turn footer, deduped by exact text | — (no busy model) | scraped from the resume hint, plus an on-disk lookup of the latest session for the working directory | startup interstitials (update, model migration, generic notice) and **approval dialogs** |
-| `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | **assigned at launch** (`--session-id <uuid>`) | — |
-| `opencode` | — (idle fallback) | — | — | — |
-| `generic` | wrapper status only | — | — | — |
+| Adapter | Turn complete | Busy | Interrupt | Session id | Blocking prompts |
+|---|---|---|---|---|---|
+| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | its live status region only: the footer's "esc to interrupt", and the status line's spinner or retry countdown ("✻ API error · Retrying in 1s") above the composer box | Esc as `CSI 27 u`; "⎿  Interrupted · What should Claude do instead?" below this turn's prompt echo (stopped), or the prompt back in the composer (cancelled) | **assigned at launch** (`--session-id <uuid>`); the `--resume <uuid>` exit hint on the raw line stream only when an id was not assigned | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
+| `codex` | a fresh end-of-turn footer, deduped by exact text | — (no busy model) | — | scraped from the resume hint, plus an on-disk lookup of the latest session for the working directory | startup interstitials (update, model migration, generic notice) and **approval dialogs** |
+| `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | — | **assigned at launch** (`--session-id <uuid>`) | — |
+| `opencode` | — (idle fallback) | — | — | — | — |
+| `generic` | wrapper status only | — | — | — | — |
 
 Two deliberate asymmetries:
 

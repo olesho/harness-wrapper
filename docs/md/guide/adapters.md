@@ -69,6 +69,9 @@ The most fully-featured adapter.
 - **Transcript**: JSONL under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`.
 - **Interactive input**: folder-trust prompt and `--dangerously-skip-permissions` bypass-acceptance,
   with a numbered-menu parser (`proceed` / `deny` aliases). **Graceful quit** via the `/quit` command.
+- **Interrupt**: Esc (as `CSI 27 u`) stops a turn mid-reply or mid-tool, or cancels it before its
+  first token; the adapter reads which, per turn, and chat ends the turn `interrupted`
+  ([Interrupting a turn](chat.md#interrupting-a-turn)). No other adapter can interrupt yet.
 
 ## opencode, pi
 
