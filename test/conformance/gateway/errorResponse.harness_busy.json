@@ -1,0 +1,4 @@
+{
+  "error": "chat: harness is busy: context deadline exceeded",
+  "code": "harness_busy"
+}

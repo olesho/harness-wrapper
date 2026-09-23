@@ -139,7 +139,7 @@ place per adapter and are pinned by [corpus replay](testing/corpus.md). The shap
 
 | Adapter | Turn complete | Busy | Session id | Blocking prompts |
 |---|---|---|---|---|
-| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | the "esc to interrupt" footer + the spinner's elapsed-time form | **assigned at launch** (`--session-id <uuid>`); the `--resume <uuid>` exit hint on the raw line stream only when an id was not assigned | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
+| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | its live status region only: the footer's "esc to interrupt", and the status line's spinner or retry countdown ("✻ API error · Retrying in 1s") above the composer box | **assigned at launch** (`--session-id <uuid>`); the `--resume <uuid>` exit hint on the raw line stream only when an id was not assigned | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
 | `codex` | a fresh end-of-turn footer, deduped by exact text | — (no busy model) | scraped from the resume hint, plus an on-disk lookup of the latest session for the working directory | startup interstitials (update, model migration, generic notice) and **approval dialogs** |
 | `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | **assigned at launch** (`--session-id <uuid>`) | — |
 | `opencode` | — (idle fallback) | — | — | — |

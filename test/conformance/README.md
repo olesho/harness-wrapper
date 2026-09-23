@@ -125,6 +125,7 @@ Some contracts are HTTP/CLI *behavior*, represented by a fixture plus a row here
 | `option_ids` on a non-`multi_select` prompt | HTTP **400** | `gateway/errorResponse.not_multi_select.json` |
 | turn status `deadline` | exit **124** + `DeadlineLine` on stderr | `cli/emit_pairing.json` |
 | invalid `permission_mode` (or `effort`) | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
+| a message sent while the harness is still working, until the request's context ends | HTTP **409**, nothing typed | `gateway/errorResponse.harness_busy.json` |
 | containment that cannot be enforced (platform, kernel, profile, paths), or changed on a message | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
 | containment requested | the open response and listing echo the applied policy; absent means none applied | `gateway/openResponse.containment.json`, `gateway/openResponse.containment_omitted.json`, `gateway/conversationSummary.containment.json` |
 | clients check support before sending containment | `GET /v1/capabilities` lists the kinds (`[]` off Linux) | `gateway/capabilitiesResponse.landlock.json`, `gateway/capabilitiesResponse.none.json` |

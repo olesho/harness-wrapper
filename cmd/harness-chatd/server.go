@@ -550,6 +550,10 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "no_control", err.Error())
 	case errors.Is(err, chat.ErrTurnInFlight):
 		writeError(w, http.StatusConflict, "turn_in_flight", err.Error())
+	case errors.Is(err, chat.ErrHarnessBusy):
+		// The harness was still working when the request's context ended;
+		// nothing was typed. Retry once it settles.
+		writeError(w, http.StatusConflict, "harness_busy", err.Error())
 	case errors.Is(err, chat.ErrInputPending):
 		writeError(w, http.StatusConflict, "input_pending", err.Error())
 	case errors.Is(err, chat.ErrNoInputPending):

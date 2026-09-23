@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.280",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "529 on every attempt: claude retries, gives up with \"API Error: Repeated 529 Overloaded errors …\" painted as the reply and a settled end-of-turn summary, and writes one tagged entry (isApiErrorMessage, error: server_error) to its transcript when it gives up. Recorded with `HW_RECORD_API_RETRY=1 go test ./pkg/chat -run RecordAPIErrorRetry` (pkg/chat/apierror_retry_record_test.go): the real claude against a local Messages API, in /tmp/hw-rebake/api-error-retry-gives-up with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode auto) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-09-23T10:17:09.563338Z",
+ "rows": 40
+}

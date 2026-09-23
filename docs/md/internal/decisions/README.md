@@ -15,7 +15,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-003](adr-003-env-visibility.md) | The Go environment core stays in `internal/env` until a consumer needs it | Accepted 2026-07-21 | 6 |
 | [ADR-004](adr-004-thread-scoped-landlock.md) | A contained launch restricts one locked thread, never the wrapper | Accepted 2026-09-15 | 7 |
 | [ADR-005](adr-005-apparmor-socket-layer.md) | On Landlock ABI 6–8 a stacked AppArmor profile denies pathname sockets outside its roots | Accepted 2026-09-19 | 7 · also 6 |
-| [ADR-006](adr-006-classification-and-lifetime.md) | A classification ends the harness only when the caller leaves its lifetime to the wrapper | Accepted 2026-09-23 | 2 |
+| [ADR-006](adr-006-classification-and-lifetime.md) | A classification ends the harness only when the caller leaves its lifetime to the wrapper; the harness ends its turns, and Send never types into a working harness | Accepted 2026-09-23; amended 2026-09-23 | 2 |
 
 ## Intent coverage
 

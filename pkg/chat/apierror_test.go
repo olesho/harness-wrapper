@@ -106,7 +106,7 @@ func TestAPIErrorVerdict_WallsAndFailures(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.tag, func(t *testing.T) {
 			turns := []transcript.Turn{{Role: string(RoleAssistant), Text: "rendered error", APIError: tc.tag}}
-			v, ok := apiErrorVerdictFrom(turns, 0)
+			v, ok, _ := apiErrorVerdictFrom(turns, 0)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -137,7 +137,7 @@ func TestAPIErrorVerdict_LastWordOnly(t *testing.T) {
 			{Role: string(RoleAssistant), Text: "API Error: 529 Overloaded", APIError: "server_error"},
 			{Role: string(RoleAssistant), Text: "Done — the migration is applied."},
 		}
-		if v, ok := apiErrorVerdictFrom(turns, 0); ok {
+		if v, ok, _ := apiErrorVerdictFrom(turns, 0); ok {
 			t.Fatalf("got verdict %+v, want none: the turn recovered", v)
 		}
 	})
@@ -146,7 +146,7 @@ func TestAPIErrorVerdict_LastWordOnly(t *testing.T) {
 			{Role: string(RoleAssistant), Text: "Working on it…"},
 			{Role: string(RoleAssistant), Text: "API Error: Connection lost mid-response.", APIError: "server_error"},
 		}
-		if _, ok := apiErrorVerdictFrom(turns, 0); !ok {
+		if _, ok, _ := apiErrorVerdictFrom(turns, 0); !ok {
 			t.Fatal("no verdict: a turn that ended on an error did not complete")
 		}
 	})
@@ -155,7 +155,7 @@ func TestAPIErrorVerdict_LastWordOnly(t *testing.T) {
 			{Role: string(RoleAssistant), Text: "Login expired · Please run /login", APIError: "authentication_failed"},
 			{Role: string(RoleSystem), Text: "some system note"},
 		}
-		v, ok := apiErrorVerdictFrom(turns, 0)
+		v, ok, _ := apiErrorVerdictFrom(turns, 0)
 		if !ok || v.code != CodeAuthRequired {
 			t.Fatalf("verdict = %+v/%v, want auth_required", v, ok)
 		}
@@ -175,7 +175,7 @@ func TestAPIErrorVerdict_Correlation(t *testing.T) {
 		{Role: string(RoleUser), Text: "this turn's prompt"},
 		{Role: string(RoleAssistant), Text: "Done."},
 	}
-	if v, ok := apiErrorVerdictFrom(resumed, 2); ok {
+	if v, ok, _ := apiErrorVerdictFrom(resumed, 2); ok {
 		t.Errorf("got verdict %+v at watermark 2, want none — the tag belongs to an earlier turn", v)
 	}
 	// Same transcript, watermark 0: without correlation the stale tag decides,
@@ -184,13 +184,13 @@ func TestAPIErrorVerdict_Correlation(t *testing.T) {
 	stale := []transcript.Turn{
 		{Role: string(RoleAssistant), Text: "Login expired · Please run /login", APIError: "authentication_failed"},
 	}
-	if _, ok := apiErrorVerdictFrom(stale, 1); ok {
+	if _, ok, _ := apiErrorVerdictFrom(stale, 1); ok {
 		t.Error("an entry BEFORE the watermark decided the turn")
 	}
-	if _, ok := apiErrorVerdictFrom(stale, 0); !ok {
+	if _, ok, _ := apiErrorVerdictFrom(stale, 0); !ok {
 		t.Error("an entry AT the watermark should decide the turn")
 	}
-	if _, ok := apiErrorVerdictFrom(stale, watermarkUnknown); ok {
+	if _, ok, _ := apiErrorVerdictFrom(stale, watermarkUnknown); ok {
 		t.Error("an unknown watermark must yield no verdict, not a verdict over everything")
 	}
 }
@@ -548,7 +548,7 @@ func TestParserCompatibility_EmptyTagYieldsNoVerdict(t *testing.T) {
 	if evs[0].APIError != "" {
 		t.Fatalf("APIError = %q, want empty", evs[0].APIError)
 	}
-	if _, ok := apiErrorVerdictFrom(transcript.TurnsFromEvents(evs), 0); ok {
+	if _, ok, _ := apiErrorVerdictFrom(transcript.TurnsFromEvents(evs), 0); ok {
 		t.Error("an untagged API-error line produced a verdict")
 	}
 }

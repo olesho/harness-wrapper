@@ -157,7 +157,12 @@ bare carriage return only inserts a newline:
 
 For harnesses whose composer is detectable (claude-code, codex, pi), `Send` blocks until the screen
 shows a ready prompt. This is what keeps a prompt from being typed into a boot screen or a modal and
-silently lost. While waiting it can end in three other ways:
+silently lost. A harness keeps its composer painted while it works, so where the adapter can tell it
+is busy (claude-code, pi) `Send` also waits until it has been idle for the end-of-turn confirmation
+window — nothing is ever typed into a turn that is still running, whoever started it. claude-code's
+busy reading is its live status region only: the status line above the composer box (the spinner, or
+the retry countdown while it backs off) and the footer below it, so a reply that quotes those markers
+does not hold `Send`. While waiting it can end in four other ways:
 
 - `ErrInputPending` — a blocking prompt is waiting for **your** answer (a policy or callback that is
   answering one itself does not count; `Send` waits for it to clear).
@@ -166,6 +171,8 @@ silently lost. While waiting it can end in three other ways:
   so a transient render cannot trip it. The prompt is deliberately **not** written — it would land in
   a sign-in menu. `Send` records an errored assistant turn carrying `ReasonAuthRequired` and returns
   its id with a nil error.
+- `ErrHarnessBusy` — `ctx` ended while the harness was still working. Nothing was typed and no turn
+  was recorded; it also wraps `ctx.Err()`.
 - `ctx.Err()` / `ErrClosed`.
 
 There is **no internal send timeout**: your `ctx` is the only clock. Harnesses with no readiness
@@ -218,6 +225,13 @@ Three routes end a pending turn:
 3. **The wrapper speaks.** A status transition — exit, signal, cost/quota, API error, or
    `waiting_for_input` — is mapped to a turn event by the [generic adapter](adapters.md#generic) that
    every adapter embeds.
+
+In a [keep-alive](#open) conversation whose adapter reads the harness's transcript (claude-code, pi),
+a cost/quota or API-error transition does **not** end the turn: the harness may still be retrying. It
+records `HTTPCode` and `RetryAfter` on the turn and holds it until the harness ends it by route 1, 2 or
+its exit — and then the harness's own record decides: a tagged entry errors the turn with its tag, a
+reply after the error completes it, and a turn the transcript cannot settle ends errored with the
+transition it was held on ([ADR-006](../internal/decisions/adr-006-classification-and-lifetime.md)).
 
 Both windows are tuned per harness and are **not** part of the wire contract: treat them as
 "eventually, quickly" rather than a guaranteed latency. They are overridable only from within the
@@ -428,6 +442,7 @@ control-token guard — use it with care.
 | `ErrNoControl` | `Send` / `Answer`: control token not held |
 | `ErrTurnInFlight` | `Send`: previous assistant turn still pending |
 | `ErrInputPending` | `Send`: a prompt is awaiting an external answer |
+| `ErrHarnessBusy` | `Send` (and the other composer writes): `ctx` ended while the harness was still working; nothing typed |
 | `ErrNoInputPending` | `Answer`: no prompt currently pending |
 | `ErrStaleInputRequest` | `Answer`: request ID no longer current |
 | `ErrUnknownOption` | `Answer`: option ID/alias matches no option |

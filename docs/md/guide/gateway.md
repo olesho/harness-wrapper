@@ -41,8 +41,8 @@ is reported on the turn instead of killing the process.
 
 Errors come back as `{error, code}` with the HTTP status mapped from the `pkg/chat`
 [sentinel errors](chat.md#sentinel-errors) (e.g. `ErrNoControl` → 409, `ErrInputPending` → 409,
-`ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig` → 400 `invalid_config` — the first
-non-`pkg/chat` sentinel in that map. The routes and wire DTOs are frozen as golden snapshots (Layer 0
+`ErrHarnessBusy` → 409 `harness_busy`, `ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig`
+→ 400 `invalid_config` — the first non-`pkg/chat` sentinel in that map. The routes and wire DTOs are frozen as golden snapshots (Layer 0
 of the [testing tiers](../internal/testing/README.md)).
 
 ### `effort` and `model` semantics

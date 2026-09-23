@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -71,6 +72,29 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	dialog.gap = unrecognizedDialogStabilizeGap
 	defer dialog.disarm()
 
+	// The busy gate. A harness that is working keeps its composer painted, so a
+	// ready prompt does not mean it will take a message: text typed now lands
+	// in a turn that is still running. Where the adapter can tell
+	// (turns.BusyDetector), Send types only once the harness has been idle for
+	// the confirmation window — the one that already rides out the footer
+	// flickering during sub-agent work — and busy records why it is waiting,
+	// so a ctx that ends first says so (ErrHarnessBusy).
+	var busy bool
+	var quiet *time.Timer
+	var quietC <-chan time.Time
+	defer func() {
+		if quiet != nil {
+			quiet.Stop()
+		}
+	}()
+	armQuiet := func(d time.Duration) {
+		if quiet != nil {
+			quiet.Stop()
+		}
+		quiet = time.NewTimer(d)
+		quietC = quiet.C
+	}
+
 	// check classifies the current screen. An onboarding WALL (sign-in wizard /
 	// device-code / login-method screen) fires NOW: it never becomes ready, and
 	// it can appear for a single frame before the CLI advances its own login flow
@@ -79,8 +103,15 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	// readyForInput wins first, so a real composer (even with a stale banner
 	// scrolled above) is never auth-gated.
 	check := func() (ready, wall bool) {
-		txt := c.screen.Snapshot().Text
-		if readyForInput(c.opts.Harness, txt) {
+		snap := c.screen.Snapshot()
+		txt := snap.Text
+		busy = c.observeBusy(snap)
+		if readyForInput(c.opts.Harness, txt) && !busy {
+			if rem := c.busyQuietRemaining(); rem > 0 {
+				busy = true
+				armQuiet(rem)
+				return false, false
+			}
 			return true, false
 		}
 		if onboardingWall(c.opts.Harness, txt) {
@@ -108,9 +139,19 @@ func (c *Conversation) waitReadyForSend(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if busy {
+				return fmt.Errorf("%w: %w", ErrHarnessBusy, ctx.Err())
+			}
 			return ctx.Err()
 		case <-c.closed:
 			return ErrClosed
+		case <-quietC:
+			quietC = nil
+			if ready, wall := check(); ready {
+				return nil
+			} else if wall {
+				return ErrAuthRequired
+			}
 		case <-auth.ch():
 			// Re-confirm against the live screen before committing: a frame may
 			// have changed the screen without a wake we processed, so never
