@@ -148,6 +148,8 @@ class TurnEvent:
     type: str = ""
     turn: Turn | None = None
     input: dict[str, Any] | None = None
+    # How the harness process ended: set on the last frame, type "exited".
+    exit: dict[str, Any] | None = None
     error: str = ""
 
     @classmethod
@@ -157,6 +159,7 @@ class TurnEvent:
             type=d.get("type", ""),
             turn=Turn.from_json(raw) if raw is not None else None,
             input=d.get("input"),
+            exit=d.get("exit"),
             error=d.get("error", ""),
         )
 

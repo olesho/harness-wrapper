@@ -190,7 +190,13 @@ the JSON is a typed envelope with a `type` discriminator, mirroring `chat.Conver
 {"type": "turn",           "turn":  { "id": "…", "role": "assistant", "state": "complete", "text": "…" }}
 {"type": "input_request",  "input": { "id": "…", "kind": "trust_prompt", "prompt": "…", "options": [ … ] }}
 {"type": "input_resolved", "input": { "id": "…" }}
+{"type": "exited",         "exit":  { "status": "failed", "exit_code": 3, "reason": "…", "class": "RateLimited", "ended_at": "…" }}
 ```
+
+The server takes every event from the conversation in order ([ADR-008](../internal/decisions/adr-008-event-delivery.md))
+and hands it to each open stream; a stream too slow to take one loses it. `exited` is the last frame —
+the harness process ended, after the terminal frame of the turn it was running — and the stream ends
+after it. A message sent after it gets 410 `exited`.
 
 A comment ping (`: ping`) is sent every 15s to keep the connection alive. Subscribe **before** sending
 so you don't miss the completion frame.

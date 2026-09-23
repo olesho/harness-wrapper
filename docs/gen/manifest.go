@@ -79,6 +79,7 @@ var Sections = []NavSection{
 		{"adr-005-apparmor-socket-layer", "ADR-005 · AppArmor socket layer", "internal/decisions/adr-005-apparmor-socket-layer.md"},
 		{"adr-006-classification-and-lifetime", "ADR-006 · Classification and lifetime", "internal/decisions/adr-006-classification-and-lifetime.md"},
 		{"adr-007-interrupt", "ADR-007 · Interrupt", "internal/decisions/adr-007-interrupt.md"},
+		{"adr-008-event-delivery", "ADR-008 · Event delivery", "internal/decisions/adr-008-event-delivery.md"},
 	}},
 	{Block: "Developer", Title: "Roadmap", Pages: []PageEntry{
 		{"roadmap-v1", "Roadmap v1", "internal/roadmap-v1.md"},

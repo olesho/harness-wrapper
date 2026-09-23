@@ -36,6 +36,7 @@ func wireTypes() []any {
 		inputOptionDTO{},
 		inputRequestDTO{},
 		eventDTO{},
+		exitDTO{},
 		turnDTO{},
 		turnEventDTO{},
 		historyResponse{},

@@ -207,16 +207,13 @@ func (c *Conversation) runInterrupt(ctx context.Context, ir turns.Interrupter, o
 		snap := c.screen.Snapshot()
 		c.observeBusy(snap)
 		if c.turnAccepted() {
-			switch outcome, partial := ir.InterruptOutcome(prompt, snap); outcome {
-			case turns.InterruptStopped, turns.InterruptCancelled:
-				c.finishInterrupted(op.turnID, outcome, partial)
-				continue
-			case turns.InterruptPending:
+			// The harness's answer is read, and the turn ended, by the idle
+			// watcher (observeInterrupt): its event is emitted there, never
+			// under the submit lock this holds.
+			if outcome, _ := ir.InterruptOutcome(prompt, snap); outcome == turns.InterruptPending {
 				if err := c.writeInterrupt(ir, op); err != nil {
 					return "", err
 				}
-			case turns.InterruptFinished:
-				// Ending on its own: no keys, the completion path ends it.
 			}
 		}
 		select {
@@ -308,12 +305,11 @@ func (c *Conversation) finishInterrupted(turnID string, outcome turns.InterruptO
 		result = InterruptCancelled
 	}
 	c.mu.Lock()
-	turn := c.currentTurn
-	if turn == nil || turn.ID != turnID {
+	if c.currentTurn == nil || c.currentTurn.ID != turnID {
 		c.mu.Unlock()
 		return
 	}
-	c.currentTurn = nil
+	turn := c.claimTurnLocked()
 	c.endMarkerSeen = false
 	c.heldReason = ""
 	byCall := c.interruptedBy == turnID
@@ -329,11 +325,7 @@ func (c *Conversation) finishInterrupted(turnID string, outcome turns.InterruptO
 	if result == InterruptStopped {
 		turn.Text = c.interruptedText(partial)
 	}
-	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
-		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
-		return
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
+	c.finishTurn(turn, nil)
 }
 
 // interruptReason is the Reason of an interrupted turn: what the harness did,

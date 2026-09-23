@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/olesho/harness-wrapper/internal/delivery"
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
 )
 
@@ -29,6 +30,11 @@ type Snapshot struct {
 
 	// Reason mirrors the Reason field on the most recent classification.
 	Reason string
+
+	// ClassifiedAt is when Status was last set — or, under
+	// KeepAliveOnClassification, cleared. Zero before the first
+	// classification.
+	ClassifiedAt time.Time
 
 	// LastOutputAt is the time of the most recent byte received from
 	// the harness PTY. Zero if no output has been observed yet.
@@ -93,6 +99,7 @@ type Session struct {
 	termState    *terminalState
 
 	events       chan SessionEvent
+	onEvent      *delivery.Queue[SessionEvent] // nil without Config.OnEvent
 	stopOnce     sync.Once
 	stopRequest  chan struct{}
 	classifierCh chan classification
@@ -290,7 +297,12 @@ func startSession(ctx context.Context, cfg Config) (*Session, error) {
 // running under ptmx.
 func newSession(cfg Config, ptmx *os.File, pid int, startedAt time.Time, term *groupTerminator) *Session {
 	termState := setupTerminalIfTTY(cfg.Stdin, cfg.Stdout, ptmx, cfg.Trace)
+	var onEvent *delivery.Queue[SessionEvent]
+	if cfg.OnEvent != nil {
+		onEvent = delivery.New(delivery.Limits(cfg.EventQueue), sessionEventSize, cfg.OnEvent)
+	}
 	return &Session{
+		onEvent:      onEvent,
 		cfg:          cfg,
 		ptmx:         ptmx,
 		pid:          pid,
@@ -437,6 +449,7 @@ func (s *Session) supervise(ctx context.Context) {
 	s.result = res
 	s.snap.Status = res.Status
 	s.snap.Reason = res.Reason
+	s.snap.ClassifiedAt = time.Now()
 	s.mu.Unlock()
 
 	final := SessionEvent{
@@ -452,6 +465,11 @@ func (s *Session) supervise(ctx context.Context) {
 		final.ResumeAt = actionable.resumeAt
 	}
 	s.emitEvent(final)
+	if s.onEvent != nil {
+		// The last event never waits for room: a stalled OnEvent must not
+		// keep Wait and Stop from returning.
+		s.onEvent.PushLast(final)
+	}
 }
 
 // superviseOutcome captures how a supervised run terminated: the exit
@@ -620,6 +638,7 @@ func (s *Session) clearStatus() {
 	s.mu.Lock()
 	s.snap.Status = ""
 	s.snap.Reason = ""
+	s.snap.ClassifiedAt = time.Now()
 	s.mu.Unlock()
 }
 
@@ -634,8 +653,9 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 	}
 	s.snap.Status = c.status
 	s.snap.Reason = c.reason
+	s.snap.ClassifiedAt = time.Now()
 	s.mu.Unlock()
-	s.emitEvent(SessionEvent{
+	e := SessionEvent{
 		At:         time.Now(),
 		Status:     c.status,
 		Class:      c.class,
@@ -644,16 +664,28 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 		HTTPCode:   c.httpCode,
 		RetryAfter: c.retryAfter,
 		ResumeAt:   c.resumeAt,
-	})
+	}
+	s.emitEvent(e)
+	if s.onEvent != nil {
+		// Waits for room, unless a Stop comes first: the supervisor records
+		// these, and a stalled OnEvent must not keep it from stopping.
+		_ = s.onEvent.Push(e, s.stopRequest)
+	}
 }
 
-// emitEvent delivers e to subscribers, dropping it if the channel
-// buffer is full so a slow consumer cannot stall the supervisor.
+// emitEvent delivers e on Events(), dropping it if the channel buffer is
+// full so a slow reader cannot stall the supervisor. OnEvent is fed
+// separately, without drops.
 func (s *Session) emitEvent(e SessionEvent) {
 	select {
 	case s.events <- e:
 	default:
 	}
+}
+
+// sessionEventSize is an event's payload bytes, for OnEvent's byte bound.
+func sessionEventSize(e SessionEvent) int64 {
+	return int64(len(e.Reason)) + 128
 }
 
 // terminateAndWait sends SIGTERM to the harness process group and waits for

@@ -15,6 +15,8 @@ type Options struct
 	field Rows int
 	field Store chat.Store
 	field EventBuffer int
+	field OnEvent func(chat.ConversationEvent)
+	field EventQueue wrapper.QueueLimits
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
 	field AutoSkipCodexUpdateNotice bool
@@ -32,6 +34,8 @@ type ReopenOptions struct
 	field Rows int
 	field Store chat.Store
 	field EventBuffer int
+	field OnEvent func(chat.ConversationEvent)
+	field EventQueue wrapper.QueueLimits
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
@@ -42,6 +46,7 @@ type Conversation struct
 	method Answer(context.Context, string, chat.InputAnswer) error
 	method Close(context.Context) error
 	method Containment() *containment.Applied
+	method Done() <-chan struct {}
 	method Events() <-chan chat.ConversationEvent
 	method History(context.Context) ([]chat.Turn, error)
 	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
@@ -54,6 +59,7 @@ type Conversation struct
 	method Send(context.Context, string) (string, error)
 	method SessionID() string
 	method SetPermissionMode(context.Context, string) (string, error)
+	method State() chat.State
 	method Wrapper() *wrapper.Session
 type Turn struct
 	field ID string
@@ -80,6 +86,7 @@ type ConversationEvent struct
 	field Type chat.EventType
 	field Turn chat.Turn
 	field Input *chat.InputRequest
+	field Exit *chat.ExitInfo
 	field Err error
 type InputRequest struct
 	field ID string `json:"id"`

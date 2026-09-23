@@ -68,13 +68,44 @@ func Watch(sess *wrapper.Session, scr *screen.Screen, adapter Adapter) *Watcher 
 	return w
 }
 
+// WatchScreen is Watch without the wrapper's status stream: it pumps
+// screen-derived events only, and its Events channel closes after Close. A
+// caller that takes the wrapper's events through wrapper.Config.OnEvent —
+// which, unlike Session.Events, drops none — maps them with StatusEvents
+// itself, as the chat layer does.
+func WatchScreen(scr *screen.Screen, adapter Adapter) *Watcher {
+	w := &Watcher{
+		events: make(chan Event, 32),
+		done:   make(chan struct{}),
+	}
+	notifyCh, unsubscribe := scr.Subscribe()
+	w.wg.Add(1)
+	go w.pumpScreen(scr, adapter, notifyCh, unsubscribe)
+	go func() {
+		w.wg.Wait()
+		close(w.events)
+	}()
+	return w
+}
+
+// StatusEvents maps one wrapper session event to the adapter's turn events,
+// with the structured fields the adapter contract does not see — time, HTTP
+// code, retry hint — filled from the session event.
+func StatusEvents(adapter Adapter, ev wrapper.SessionEvent) []Event {
+	evs := adapter.OnWrapperStatus(ev.Status, ev.Reason)
+	for i := range evs {
+		evs[i] = enrichFromStatus(evs[i], ev)
+	}
+	return evs
+}
+
 // pumpStatus forwards wrapper session events through adapter.OnWrapperStatus
 // until the session terminates.
 func (w *Watcher) pumpStatus(sess *wrapper.Session, adapter Adapter) {
 	defer w.wg.Done()
 	for ev := range sess.Events() {
-		for _, te := range adapter.OnWrapperStatus(ev.Status, ev.Reason) {
-			w.send(enrichFromStatus(te, ev))
+		for _, te := range StatusEvents(adapter, ev) {
+			w.send(te)
 		}
 		if ev.Terminated {
 			return

@@ -107,6 +107,11 @@ export const SECTIONS = [
         title: "ADR-007 · Interrupt",
         source: "md/internal/decisions/adr-007-interrupt.md",
       },
+      {
+        slug: "adr-008-event-delivery",
+        title: "ADR-008 · Event delivery",
+        source: "md/internal/decisions/adr-008-event-delivery.md",
+      },
     ],
   },
   {

@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -195,10 +194,6 @@ func (c *Conversation) applySwallowedPromptVerdict(turn *Turn, snap screen.Snaps
 		}
 	}
 
-	if err := c.store.UpdateTurn(context.Background(), turn); err != nil {
-		c.emit(ConversationEvent{Type: EventTurn, Turn: *turn, Err: err})
-		return true
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: *turn})
+	c.publishTurn(turn, nil)
 	return true
 }
