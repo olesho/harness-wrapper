@@ -3077,11 +3077,11 @@ _(summary pending — run the veracity-docs skill)_
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.280, verified LIVE against that binary on 2026-09-22 by pkg/harness's
+2.1.281, verified LIVE against that binary on 2026-09-23 by pkg/harness's
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
-2.1.280 end-of-turn summary and Busy() gates the in-flight frames, so those
+2.1.281 end-of-turn summary and Busy() gates the in-flight frames, so those
 runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
 path, a large prompt arriving intact, and the folder-trust dialog, both
 reported in a directory claude has not trusted and answered.
@@ -3093,11 +3093,12 @@ directory claude had never trusted (meta.json.binary_version is the recorded
 proof), the interrupt-* recordings at 2.1.280, and the two trust-dialog
 recordings at 2.1.261; so the tool-call rendering is verified by replay at
 2.1.270 and interruptMarker by the 2.1.280 interrupt-* recordings (ADR-007).
-The permission-mode footers in permmode.go are still anchored at 2.1.217.
-The adapter needed no change for 2.1.280, so nothing was re-baked. The
-recordings are frozen renderings the adapter must keep handling: replaying
-them cannot confirm a newer release, so what verifies the pin is the live
-tests above and nothing else.
+The permission-mode footers in permmode.go are anchored at 2.1.217 and were
+re-confirmed by hand on 2.1.281. Nothing was re-baked for 2.1.281: the one
+fix its live runs needed, the composer placeholder in ComposerText, is a
+shape 2.1.270 already painted. The recordings are frozen renderings the
+adapter must keep handling: replaying them cannot confirm a newer release,
+so what verifies the pin is the live tests above and nothing else.
 
 The signals:
 
@@ -3369,7 +3370,7 @@ Schema:
 
 	{
 	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.280", "verified_at": "2026-09-22"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.281", "verified_at": "2026-09-23"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
