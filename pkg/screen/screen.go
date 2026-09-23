@@ -13,6 +13,7 @@ package screen
 
 import (
 	"sync"
+	"unicode/utf8"
 
 	"github.com/hinshun/vt10x"
 )
@@ -56,6 +57,9 @@ type Screen struct {
 	// csi drops the CSI sequences vt10x misinterprets (see csiFilter). Guarded
 	// by mu, like term: it carries a partial sequence from one Write to the next.
 	csi csiFilter
+	// partial is a UTF-8 character whose first bytes ended the last Write,
+	// held for the next one. Guarded by mu. See Write.
+	partial []byte
 
 	subMu sync.Mutex
 	subs  []chan struct{}
@@ -90,7 +94,7 @@ func New(cols, rows int) *Screen {
 // io.Writer contract requires, whatever was filtered.
 func (s *Screen) Write(p []byte) (int, error) {
 	s.mu.Lock()
-	_, err := s.term.Write(s.csi.filter(p))
+	_, err := s.term.Write(s.whole(s.csi.filter(p)))
 	if err == nil {
 		s.gen++
 	}
@@ -100,6 +104,30 @@ func (s *Screen) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	return 0, err
+}
+
+// whole returns p with any character a previous Write split prepended, and
+// holds back a character p splits in turn. vt10x decodes each Write on its own
+// and drops the pieces of a character cut across two — a PTY read ends
+// wherever the kernel's buffer does, so a harness's "❯" can arrive as two
+// bytes and then one, and never reach the screen. Caller holds mu.
+func (s *Screen) whole(p []byte) []byte {
+	if len(s.partial) > 0 {
+		p = append(s.partial, p...)
+		s.partial = nil
+	}
+	// A character is at most utf8.UTFMax bytes: its first byte is among the
+	// last few.
+	for i := len(p) - 1; i >= 0 && i >= len(p)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(p[i]) {
+			if !utf8.FullRune(p[i:]) {
+				s.partial = append([]byte(nil), p[i:]...)
+				p = p[:i]
+			}
+			break
+		}
+	}
+	return p
 }
 
 // Snapshot returns a coherent point-in-time view of the emulated screen.
