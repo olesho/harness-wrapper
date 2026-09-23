@@ -51,6 +51,13 @@ then reports and never enforces:
 
 The zero value keeps run-to-completion behaviour for every existing caller.
 
+`pkg/chat` carries the option as `Options.KeepAliveOnClassification` and
+`ReopenOptions.KeepAliveOnClassification` — nothing else of the wrapper's supervision passes through —
+and `harness-chatd` opens every conversation with it: a gateway conversation lives until its client
+deletes it, and one ended by a classification would stay listed while no later Send could succeed. A
+wall is then reported on the turn rather than by an exit, so a usage-limited turn carries
+`Turn.ResumeAt`, read from the wall's own text by the parser the wrapper's session-limit matcher uses.
+
 In every mode, a negative `IdleQuiet` or `IdleClassify` is refused with `ErrInvalidConfig`. Both used to
 pass validation and be kept (defaults replace only zero). A negative `IdleClassify` makes every tick
 idle, so any phrase kills at once — and it is the value a caller reaches for, by analogy with
@@ -84,6 +91,11 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
 - claude 2.1.280 paints a usage notice a few seconds after a turn when the account is near its limit
   ("You've used 92% of your weekly limit · resets 6pm"). It names a limit and a reset time but is no
   wall; `TestUsageWarningIsNotAWall` pins that none of the matchers reads it as one.
+- Live against claude 2.1.280 (`TestKeepAliveLive`, `pkg/chat`): a reply naming a rate limit followed
+  by silence ends the default-mode harness as `blocked_by_cost`, and under keep-alive the same process
+  answers the next message. Its idle output makes the kill intermittent at the composer rather than
+  certain — the notice above, and a bell rung after about 59 s idle, which resets a 60 s gate just
+  before it opens — while a claude waiting on a background command, as on 2026-09-03, writes neither.
 
 ## Consequences
 

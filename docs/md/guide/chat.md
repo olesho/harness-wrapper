@@ -57,6 +57,7 @@ type Options struct {
 	Effort      string   // reasoning effort ("" = harness default)
 	Model       string   // model for this run ("" = harness default)
 	PermissionMode string // launch-time permission rung ("" = harness default)
+	KeepAliveOnClassification bool // never end the harness on a classification (see below)
 	Cols, Rows  int      // default 120×40
 	Store       Store    // required; use memstore.New() for the in-process default
 	EventBuffer int      // default 32; Events() channel size
@@ -84,6 +85,14 @@ implement `turns.SessionResumer` at all, so `Resume` cannot be honoured. Also re
 `Open` does **not** wait for the harness to finish booting — it returns as soon as the process is
 supervised. Readiness is enforced later, inside [`Send`](#readiness-what-send-waits-for).
 
+**Keep-alive.** By default the wrapper supervises the harness to completion: once its output has sat
+quiet for a minute, a phrase in it such as "rate limit" or "please try again" ends the process, and so
+does a real usage-limit wall. That suits a caller that runs one job and stops. A conversation you keep
+open between messages sets `KeepAliveOnClassification`: nothing the harness prints ends it, silence is
+never read as evidence, and walls are still reported — on the turn, where `Code` and `ResumeAt` say
+what happened and when to retry ([ADR-006](../internal/decisions/adr-006-classification-and-lifetime.md)).
+The gateway opens every conversation this way.
+
 ### Reopen
 
 ```go
@@ -93,7 +102,7 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)
 `Reopen` restarts a **stored** session: it loads the record from the `Store`, resumes the harness with
 the recorded harness session id, and returns a fresh `Conversation`. `Harness`, `WorkingDir` and the
 resume id come from the record; everything else (`BinaryPath`, `Args`, `Env`, the execution-mode knobs,
-`Cols`/`Rows`, `InputPolicy`, …) you supply again.
+`KeepAliveOnClassification`, `Cols`/`Rows`, `InputPolicy`, …) you supply again.
 
 A record with no harness session id cannot be resumed: that is `ErrNoHarnessSession`.
 
@@ -173,8 +182,10 @@ type Turn struct {
 	Text          string
 	Reason        string
 	StartedAt, CompletedAt time.Time
+	Code          TurnCode       // auth_required | usage_limited | billing_wall; "" for every other turn
 	HTTPCode      int            // upstream code when a turn errors on an API error
 	RetryAfter    time.Duration  // wait hint parsed from the harness's error
+	ResumeAt      time.Time      // when a usage_limited turn's window reopens, from the wall's own text
 }
 ```
 

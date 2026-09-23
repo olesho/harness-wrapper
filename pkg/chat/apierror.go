@@ -166,6 +166,9 @@ func (c *Conversation) apiErrorRelabel(turn *Turn) bool {
 	turn.State = TurnStateErrored
 	turn.Reason = v.turnReason(c.opts.Harness)
 	turn.Code = v.code
+	if v.code == CodeUsageLimited {
+		turn.ResumeAt = resumeAtFrom(v.text)
+	}
 	// The "reply" was the rendered error text; keeping it would hand the
 	// caller an error message as the turn's answer.
 	turn.Text = ""
