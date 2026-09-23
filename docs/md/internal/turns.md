@@ -104,6 +104,8 @@ The adapter parses the on-screen dialog into options (with `Keys` and a portable
 
 ```go
 func Watch(sess *wrapper.Session, scr *screen.Screen, adapter Adapter) *Watcher
+func WatchScreen(scr *screen.Screen, adapter Adapter) *Watcher      // the screen pump alone
+func StatusEvents(adapter Adapter, ev wrapper.SessionEvent) []Event // what the status pump maps one event to
 func (w *Watcher) Events() <-chan Event
 func (w *Watcher) Close() error
 ```
@@ -128,6 +130,11 @@ concurrency safety rather than merely suggesting it.
 
 `scr.Subscribe()` is called **synchronously inside `Watch`**, before the pump goroutine starts, so no
 snapshot can be missed in the gap.
+
+`sess.Events()` drops what its reader misses, the final event included. A caller that must see every
+wrapper event — the chat layer does, since the harness's exit is among them — takes them through
+`wrapper.Config.OnEvent` instead ([ADR-008](decisions/adr-008-event-delivery.md)), maps each with
+`StatusEvents`, and watches the screen with `WatchScreen`.
 
 The Watcher backfills `Event.At` when the adapter leaves it zero and enriches events with `HTTPCode` /
 `RetryAfter` from the originating `SessionEvent`. `Events()` closes after both sources stop **and**

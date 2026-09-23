@@ -1,0 +1,10 @@
+{
+  "type": "exited",
+  "exit": {
+    "status": "failed",
+    "exit_code": 3,
+    "reason": "exited with code 3",
+    "class": "Unknown",
+    "ended_at": "2026-07-21T10:00:42Z"
+  }
+}

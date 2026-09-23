@@ -284,25 +284,61 @@ const (
 	EventTurn          EventType = "turn"
 	EventInputRequest  EventType = "input_request"
 	EventInputResolved EventType = "input_resolved"
+	EventExited        EventType = "exited"
 )
 
 type ConversationEvent struct {
 	Type  EventType     // which payload is set
 	Turn  Turn          // affected turn (EventTurn; zero otherwise)
 	Input *InputRequest // interactive prompt (EventInputRequest / EventInputResolved)
+	Exit  *ExitInfo     // how the process ended (EventExited)
 	Err   error         // non-nil only for chat-level errors (e.g. Store failures)
 }
 
 func (c *Conversation) Events() <-chan ConversationEvent
 ```
 
-`EventTurn` fires on every turn-state change: the initial user turn, the initial assistant turn, and
-the adapter-driven completion or error. Switch on `Type`; turn-only consumers can read `Turn`
-directly (it is the zero `Turn` for input events).
+`EventTurn` fires on every turn-state change: the initial user turn, the initial assistant turn
+(`pending`, queued before the prompt is typed, so nothing about the turn can precede it) and its one
+terminal event. Switch on `Type`; turn-only consumers can read `Turn` directly (it is the zero `Turn`
+for other events). `EventExited` is the last event: the harness process ended, the turn that was in
+flight has had its terminal event, and `Exit` says how — status, exit code, signal, reason, error
+class.
 
-The channel is closed after `Close()` drains. If the buffer (`EventBuffer`, default 32) fills, events
-are **dropped** rather than blocking the watcher — slow consumers lose events, so drain promptly or
-size the buffer for your workload.
+### Delivery: `OnEvent` and `Events()`
+
+Every event goes through one bounded queue and one worker
+([ADR-008](../internal/decisions/adr-008-event-delivery.md)), which hands it to `Options.OnEvent` —
+in order, once each — and then offers it to `Events()`:
+
+- **`OnEvent`** is the reliable consumer. It is called from one goroutine, outside every lock of the
+  conversation. When its queue is full (`Options.EventQueue`, default 1024 events or 16 MiB), a
+  producer waits for room rather than dropping — so a slow `OnEvent` slows the conversation, but never
+  an `Interrupt`, the harness's exit or `Close`. It must not call back into the `Conversation` or wait
+  for anything that is waiting on it. An event larger than the byte bound arrives without its text,
+  carrying `ErrEventTooLarge`; `History` keeps the text.
+- **`Events()`** is the best-effort view of the same stream: if its buffer (`EventBuffer`, default 32)
+  is full, the event is dropped for it. It closes after `EventExited` has been delivered.
+
+`Done()` closes when the harness process ends; that is not the same as delivery finishing, which is
+when `Events()` closes. `Close(ctx)` stops the harness and waits, until `ctx` ends, for every event to
+be delivered; when `ctx` ends first it drops the rest and returns `ErrUndelivered`.
+
+A turn's terminal event can be delivered before `Send` returns, so do not move a turn's state back
+when `Send`'s return arrives after it. After `EventExited`, `Send` returns `ErrExited`.
+
+### State
+
+```go
+func (c *Conversation) State() State
+```
+
+One call reads the live conversation: whether the process is alive, its pid, the turn in flight, the
+pending interactive prompt, whether the screen shows the harness working, when it last wrote, the
+wrapper's latest classification and when it was made, the harness session id, how the process ended,
+and the event queue's pressure (`Delivery`: queued events and bytes, the longest a producer has
+waited for room, how long the `OnEvent` call now running has taken, and the counts delivered, dropped
+and oversized).
 
 ## Interactive input (blocking prompts)
 
@@ -485,6 +521,9 @@ control-token guard — use it with care.
 | `ErrComposerNotCleared` | `Send`: the composer held text that would not clear; nothing typed, no turn recorded. `Interrupt`, beside `InterruptCancelled`: the prompt the harness put back would not clear |
 | `ErrInterruptUnsupported` | `Interrupt`: the adapter cannot interrupt a turn (does not implement `turns.Interrupter`) |
 | `ErrInterruptUnconfirmed` | `Interrupt`: `ctx` ended before the harness acknowledged; the turn stays in flight |
+| `ErrExited` | `Send`: the harness process has ended (`EventExited`) |
+| `ErrUndelivered` | `Close`: `ctx` ended before every event was delivered; the rest were dropped |
+| `ErrEventTooLarge` | on an event, as `Err`: it exceeded the delivery queue's byte bound and arrives without its text |
 | `ErrNoInputPending` | `Answer`: no prompt currently pending |
 | `ErrStaleInputRequest` | `Answer`: request ID no longer current |
 | `ErrUnknownOption` | `Answer`: option ID/alias matches no option |

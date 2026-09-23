@@ -240,6 +240,7 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		// memstore: every conversation is single-launch.
 		openCtx = contain.WithLaunchOptions(openCtx, contain.LaunchOptions{SingleLaunch: true})
 	}
+	fan := newFanout()
 	conv, err := chatOpen(openCtx, chat.Options{
 		Harness:        req.Harness,
 		BinaryPath:     req.BinaryPath,
@@ -262,6 +263,9 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		// between messages; one ended by a classification would stay listed
 		// while no later Send could succeed (ADR-006).
 		KeepAliveOnClassification: true,
+
+		// Every event, in order, to the SSE subscribers (ADR-008).
+		OnEvent: fan.publish,
 	})
 	if err != nil {
 		writeChatError(w, err)
@@ -270,7 +274,7 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 	entry := &convEntry{
 		id:             conv.SessionID(),
 		conv:           conv,
-		fan:            newFanout(conv.Events()),
+		fan:            fan,
 		harness:        req.Harness,
 		permissionMode: req.PermissionMode,
 		containment:    conv.Containment(),
@@ -465,10 +469,14 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 			if !open {
 				return
 			}
+			dto, ok := toEventDTO(ev)
+			if !ok {
+				continue // a type this build does not know; never sent as a turn
+			}
 			if _, err := w.Write([]byte("data: ")); err != nil {
 				return
 			}
-			if err := enc.Encode(toEventDTO(ev)); err != nil {
+			if err := enc.Encode(dto); err != nil {
 				return
 			}
 			// json.Encoder.Encode writes a trailing \n; SSE needs \n\n.
@@ -604,6 +612,9 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "not_multi_select", err.Error())
 	case errors.Is(err, chat.ErrConflictingAnswer):
 		writeError(w, http.StatusBadRequest, "conflicting_answer", err.Error())
+	case errors.Is(err, chat.ErrExited):
+		// The harness process has ended; the conversation cannot take a turn.
+		writeError(w, http.StatusGone, "exited", err.Error())
 	case errors.Is(err, chat.ErrClosed):
 		writeError(w, http.StatusGone, "closed", err.Error())
 	default:

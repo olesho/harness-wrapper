@@ -44,9 +44,18 @@ export interface InputRequest {
  * frame kind.
  */
 export interface TurnEvent {
-  type: "turn" | "input_request" | "input_resolved" | (string & {});
+  type: "turn" | "input_request" | "input_resolved" | "exited" | (string & {});
   turn?: Turn;
   input?: InputRequest;
+  /** How the harness process ended; set on the last frame, `type: "exited"`. */
+  exit?: {
+    status: string;
+    exit_code: number;
+    signal?: string;
+    reason?: string;
+    class?: string;
+    ended_at?: string;
+  };
   error?: string;
 }
 

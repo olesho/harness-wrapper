@@ -181,6 +181,19 @@ type Config struct {
 	// The zero value keeps run-to-completion behaviour.
 	KeepAliveOnClassification bool
 
+	// OnEvent, if non-nil, receives every SessionEvent, in order, from one
+	// goroutine (ADR-008). Unlike Events(), which drops what a slow reader
+	// misses, it is fed through a queue bounded by EventQueue: a mid-run
+	// event that finds the queue full waits for room — a Stop still gets
+	// through — and the final Terminated event never waits. The callback runs
+	// outside the Session's locks; it must not call back into the Session, or
+	// wait for anything that is waiting on it.
+	OnEvent func(SessionEvent)
+
+	// EventQueue bounds OnEvent's queue. Zero fields take the defaults: 1024
+	// events and 16 MiB of payload.
+	EventQueue QueueLimits
+
 	// Classifier inspects recent harness output and produces actionable
 	// status classifications (blocked_by_cost, retry_later,
 	// waiting_for_input). If nil, a built-in classifier matching the
@@ -393,6 +406,13 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	return startSession(ctx, cfg)
 }
 
+// QueueLimits bounds an OnEvent queue: the events it holds at once, and their
+// payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+type QueueLimits struct {
+	Events int
+	Bytes  int64
+}
+
 func validateConfig(cfg *Config) error {
 	if cfg.BinaryPath == "" {
 		return fmt.Errorf("%w: BinaryPath is required", ErrInvalidConfig)
@@ -406,6 +426,9 @@ func validateConfig(cfg *Config) error {
 	// every tick reads as idle, so any cost or retry phrase ends the run at once.
 	if cfg.IdleQuiet < 0 || cfg.IdleClassify < 0 {
 		return fmt.Errorf("%w: IdleQuiet (%v) and IdleClassify (%v) must not be negative; KeepAliveOnClassification is what keeps a quiet harness alive", ErrInvalidConfig, cfg.IdleQuiet, cfg.IdleClassify)
+	}
+	if cfg.EventQueue.Events < 0 || cfg.EventQueue.Bytes < 0 {
+		return fmt.Errorf("%w: EventQueue bounds must not be negative", ErrInvalidConfig)
 	}
 	if cfg.IdleClassify > 0 && cfg.IdleQuiet > 0 && cfg.IdleClassify < cfg.IdleQuiet {
 		return fmt.Errorf("%w: IdleClassify (%v) must be >= IdleQuiet (%v)", ErrInvalidConfig, cfg.IdleClassify, cfg.IdleQuiet)

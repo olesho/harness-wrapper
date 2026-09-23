@@ -162,10 +162,24 @@ func gatewayFixtures() []gatewayFixture {
 		}},
 		// A message sent while the harness was still working: 409, nothing
 		// typed, retry once it settles (chat.ErrHarnessBusy).
+		// A message to a conversation whose harness has exited: 410.
+		{"errorResponse.exited", errorResponse{
+			Error: "chat: harness has exited",
+			Code:  "exited",
+		}},
 		{"errorResponse.harness_busy", errorResponse{
 			Error: "chat: harness is busy: context deadline exceeded",
 			Code:  "harness_busy",
 		}},
+		// The last SSE frame: how the harness process ended (ADR-008).
+		{"eventDTO.exited", eventDTO{Type: "exited", Exit: &exitDTO{
+			Status: "failed", ExitCode: 3, Reason: "exited with code 3", Class: "Unknown", EndedAt: completed,
+		}}},
+		// A turn frame, whose shape predates the typed envelope.
+		{"eventDTO.turn", eventDTO{Type: "turn", Turn: &turnDTO{
+			ID: "turn-done", SessionID: "sess-1", Role: "assistant", State: "complete",
+			Text: "the reply", StartedAt: started, CompletedAt: completed,
+		}}},
 		// POST .../interrupt answers what the interrupt did; error rides only
 		// with a cancelled turn whose prompt would not clear from the composer.
 		{"interruptResponse.stopped", interruptResponse{Result: "stopped"}},

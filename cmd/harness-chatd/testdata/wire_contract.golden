@@ -74,7 +74,15 @@ eventDTO
 	Type string `json:"type"`
 	Turn *main.turnDTO `json:"turn,omitempty"`
 	Input *main.inputRequestDTO `json:"input,omitempty"`
+	Exit *main.exitDTO `json:"exit,omitempty"`
 	Error string `json:"error,omitempty"`
+exitDTO
+	Status string `json:"status"`
+	ExitCode int `json:"exit_code"`
+	Signal string `json:"signal,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Class string `json:"class,omitempty"`
+	EndedAt time.Time `json:"ended_at,omitzero"`
 historyResponse
 	Turns []main.turnDTO `json:"turns"`
 inputOptionDTO

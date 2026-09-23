@@ -192,6 +192,11 @@ const (
 	// pending (answered or dismissed). Input is populated with at least the
 	// resolved request's ID.
 	EventInputResolved EventType = "input_resolved"
+
+	// EventExited signals the harness process ended. Exit is populated. It
+	// follows the terminal event of the turn that was in flight, if any, and
+	// is the last event: Events() closes after it (ADR-008).
+	EventExited EventType = "exited"
 )
 
 // ConversationEvent is a discriminated event observed on
@@ -209,6 +214,10 @@ type ConversationEvent struct {
 	// Input is the interactive prompt for EventInputRequest /
 	// EventInputResolved. nil for EventTurn.
 	Input *InputRequest
+
+	// Exit is how the harness process ended, for EventExited. nil for every
+	// other event.
+	Exit *ExitInfo
 
 	// Err is non-nil if the event represents an out-of-band error, e.g.
 	// Store failures. It is independent of Turn.State == TurnStateErrored
@@ -313,6 +322,20 @@ var (
 	// nothing and records no turn, and by Interrupt alongside
 	// InterruptCancelled, when the prompt the harness put back would not clear.
 	ErrComposerNotCleared = errors.New("chat: composer could not be cleared")
+
+	// ErrExited is returned by Send once the harness process has ended
+	// (EventExited): nothing can take the prompt.
+	ErrExited = errors.New("chat: harness has exited")
+
+	// ErrEventTooLarge rides, as ConversationEvent.Err, on an event whose
+	// payload exceeded the delivery queue's byte bound: it is delivered
+	// without its turn's text, which History still holds.
+	ErrEventTooLarge = errors.New("chat: event larger than the delivery queue's byte bound")
+
+	// ErrUndelivered is returned by Close when its context ended before every
+	// event was delivered to OnEvent and Events(). The remaining events are
+	// dropped, and State().Delivery counts them.
+	ErrUndelivered = errors.New("chat: events left undelivered")
 
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.

@@ -37,9 +37,13 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	}
 
 	c.mu.Lock()
-	if c.currentTurn != nil {
+	switch {
+	case c.currentTurn != nil:
 		c.mu.Unlock()
 		return "", ErrTurnInFlight
+	case c.exit != nil:
+		c.mu.Unlock()
+		return "", ErrExited
 	}
 	c.mu.Unlock()
 
@@ -56,23 +60,45 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		return "", err
 	}
 
-	// The keystrokes below — the composer check, the prompt, the submit key —
-	// must not interleave with an Interrupt's (ADR-007).
-	if err := c.submit.lock(ctx, c.closed); err != nil {
-		return "", err
-	}
-	defer c.submit.unlock()
-
 	// Type into an empty composer only: whatever it holds — a prompt a cancel
 	// put back, a draft typed at the terminal — would become part of this one.
+	// Checked before anything is recorded, under the lock an Interrupt's keys
+	// take too (ADR-007).
 	if ir, ok := c.adapter.(turns.Interrupter); ok {
-		if err := c.clearComposer(ctx, ir, ""); err != nil {
+		if err := c.submit.lock(ctx, c.closed); err != nil {
+			return "", err
+		}
+		err := c.clearComposer(ctx, ir, "")
+		c.submit.unlock()
+		if err != nil {
 			return "", err
 		}
 	}
 
-	now := time.Now()
+	// Record the turn and announce it — the user's turn, then the assistant's,
+	// pending — before the prompt is typed: nothing can end a turn that has not
+	// been submitted, so no terminal event can precede its pending one
+	// (ADR-008). The announcements wait for room in the event queue, so they go
+	// out holding no lock; EventExited waits for them.
+	c.mu.Lock()
+	switch {
+	case c.currentTurn != nil:
+		c.mu.Unlock()
+		return "", ErrTurnInFlight
+	case c.exit != nil:
+		c.mu.Unlock()
+		return "", ErrExited
+	}
+	c.sending.Add(1)
+	c.mu.Unlock()
+	recording := true
+	defer func() {
+		if recording {
+			c.sending.Done()
+		}
+	}()
 
+	now := time.Now()
 	userTurn := Turn{
 		ID:          newID(),
 		SessionID:   c.session.ID,
@@ -97,6 +123,7 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	if err := c.store.AppendTurn(ctx, &assistantTurn); err != nil {
 		return "", fmt.Errorf("chat: append assistant turn: %w", err)
 	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
 
 	c.mu.Lock()
 	turnCopy := assistantTurn
@@ -105,10 +132,17 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
 	c.heldReason = ""       // nor a Blocked to hold it on
 	c.mu.Unlock()
+	c.sending.Done()
+	recording = false
 	// From here, the screen showing the harness at work means it took this
 	// prompt: it sat idle through the busy gate before anything was typed.
 	c.acceptAfter.Store(time.Now().UnixNano())
 
+	// The prompt and its submit key must not interleave with an Interrupt's
+	// keys (ADR-007).
+	if err := c.submit.lock(ctx, c.closed); err != nil {
+		return c.failSubmit(assistantTurn.ID, err)
+	}
 	// Record the screen the prompt is being submitted on: a swallow detector
 	// answers "nothing changed at all" by comparing the settled screen to this.
 	sentScreen := c.screen.Snapshot().Text
@@ -126,23 +160,32 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	// The prompt and the submit key go out as SEPARATE writes, with the composer
 	// echo awaited in between — see submit.go for the paste-collapse failure a
 	// single combined write loses to.
-	if err := c.writeMessageAndSubmit(ctx, text, sentScreen, submitKey); err != nil {
-		// Roll back the in-flight pointer and mark the turn errored.
-		c.mu.Lock()
-		c.currentTurn = nil
-		c.mu.Unlock()
-		assistantTurn.State = TurnStateErrored
-		assistantTurn.Reason = "submit: " + err.Error()
-		assistantTurn.CompletedAt = time.Now()
-		if uerr := c.store.UpdateTurn(ctx, &assistantTurn); uerr != nil {
-			return "", fmt.Errorf("chat: submit prompt + update turn: submit=%v update=%w", err, uerr)
-		}
-		c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn, Err: err})
-		return assistantTurn.ID, fmt.Errorf("chat: submit prompt: %w", err)
+	err = c.writeMessageAndSubmit(ctx, text, sentScreen, submitKey)
+	c.submit.unlock()
+	if err != nil {
+		return c.failSubmit(assistantTurn.ID, err)
 	}
-
-	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
+	// The turn may already have ended — a fast reply, the harness exiting —
+	// and its terminal event been delivered before Send returns.
 	return assistantTurn.ID, nil
+}
+
+// failSubmit ends a turn whose prompt could not be submitted, once: if
+// something else — the harness's exit — ended it first, that stands.
+func (c *Conversation) failSubmit(turnID string, err error) (string, error) {
+	c.mu.Lock()
+	var turn *Turn
+	if c.currentTurn != nil && c.currentTurn.ID == turnID {
+		turn = c.claimTurnLocked()
+	}
+	c.mu.Unlock()
+	if turn != nil {
+		turn.State = TurnStateErrored
+		turn.Reason = "submit: " + err.Error()
+		turn.CompletedAt = time.Now()
+		c.finishTurn(turn, err)
+	}
+	return turnID, fmt.Errorf("chat: submit prompt: %w", err)
 }
 
 // emitAuthRequiredTurn records and emits a terminal assistant turn carrying

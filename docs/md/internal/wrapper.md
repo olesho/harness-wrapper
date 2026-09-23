@@ -51,6 +51,8 @@ type Config struct {
 	Classifier Classifier         // explicit classifier; wins over Harness
 	KeepAliveOnClassification bool // report verdicts, never end the run on one (see Keep-alive)
 	OnLine     func(line string)  // durable line tap (session-id / transcript hooks)
+	OnEvent    func(SessionEvent) // every event, in order, bounded by EventQueue (ADR-008)
+	EventQueue QueueLimits        // OnEvent's bound: events and payload bytes (default 1024, 16 MiB)
 }
 ```
 
@@ -257,13 +259,18 @@ harness:
 | Recent-output buffer | ~64 KiB tail | oldest bytes fall off; this is what `RecentOutput()` and the classifier see |
 | PTY read chunk | 32 KiB | — |
 | `Session.Events()` channel | 16 | **event dropped** |
+| `Config.OnEvent` queue | `EventQueue` (1024 events, 16 MiB) | the producer **waits for room**; a Stop still gets through, and the final Terminated event never waits |
 | Attach-sink queue (per `AttachOutput` writer) | 64 chunks | **bytes dropped for that sink only** |
 | Classifier dispatch channel | 1 | tick skipped |
 | Classifier poll cadence | `IdleQuiet / 3`, floored at 100 ms | — (5 s at the default `IdleQuiet`) |
 
-The one path that is deliberately **lossless** is `Config.OnLine`: it is called synchronously on the
-PTY read goroutine, so a slow callback back-pressures the harness rather than losing a line. That is
-what makes it safe to hang session-id capture and transcript streaming off it.
+Two paths are deliberately **lossless**. `Config.OnLine` is called synchronously on the PTY read
+goroutine, so a slow callback back-pressures the harness rather than losing a line; that is what
+makes it safe to hang session-id capture and transcript streaming off it. `Config.OnEvent` receives
+every `SessionEvent` in order from one goroutine, through a bounded queue whose producers wait for
+room ([ADR-008](decisions/adr-008-event-delivery.md)): a slow callback delays the classifier's
+reports, never the PTY read loop, a Stop or the final event. `pkg/chat` takes the wrapper's events
+this way. `Snapshot().ClassifiedAt` is when the status was last set or cleared.
 
 Classification does not begin until the harness has emitted its first byte, and every threshold latch
 resets whenever new output arrives.

@@ -130,6 +130,8 @@ Some contracts are HTTP/CLI *behavior*, represented by a fixture plus a row here
 | a cancelled turn whose prompt would not clear from the composer | HTTP **200** `{result: cancelled, error}` | `gateway/interruptResponse.cancelled_composer_not_cleared.json` |
 | an interrupt on a harness without one | HTTP **501** | `gateway/errorResponse.interrupt_unsupported.json` |
 | an interrupt the harness did not acknowledge in time | HTTP **504**, the turn stays in flight | `gateway/errorResponse.interrupt_unconfirmed.json` |
+| the harness process ends | an `exited` frame, the last on the stream, after the turn's terminal frame | `gateway/eventDTO.exited.json`, `gateway/eventDTO.turn.json` |
+| a message after the harness exited | HTTP **410** | `gateway/errorResponse.exited.json` |
 | containment that cannot be enforced (platform, kernel, profile, paths), or changed on a message | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
 | containment requested | the open response and listing echo the applied policy; absent means none applied | `gateway/openResponse.containment.json`, `gateway/openResponse.containment_omitted.json`, `gateway/conversationSummary.containment.json` |
 | clients check support before sending containment | `GET /v1/capabilities` lists the kinds (`[]` off Linux) | `gateway/capabilitiesResponse.landlock.json`, `gateway/capabilitiesResponse.none.json` |

@@ -8,40 +8,42 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 )
 
-// fanout reads conv.Events() (single-reader) and broadcasts each event
-// to all subscribed listeners. New subscribers only see events from
-// their subscription point onward.
+// fanout broadcasts a conversation's events to every subscribed listener. It
+// is the conversation's OnEvent, so it sees every event, in order (ADR-008);
+// a subscriber too slow to take one loses it. New subscribers see events from
+// their subscription on. EventExited is the last: publishing it closes every
+// subscription.
 type fanout struct {
 	mu          sync.Mutex
 	subscribers map[string]chan chat.ConversationEvent
 	closed      bool
 }
 
-func newFanout(src <-chan chat.ConversationEvent) *fanout {
-	f := &fanout{subscribers: make(map[string]chan chat.ConversationEvent)}
-	go f.pump(src)
-	return f
+func newFanout() *fanout {
+	return &fanout{subscribers: make(map[string]chan chat.ConversationEvent)}
 }
 
-func (f *fanout) pump(src <-chan chat.ConversationEvent) {
-	for ev := range src {
-		f.mu.Lock()
-		for _, ch := range f.subscribers {
-			select {
-			case ch <- ev:
-			default:
-				// drop if subscriber is slow; matches pkg/chat policy
-			}
-		}
-		f.mu.Unlock()
-	}
+// publish is the conversation's OnEvent.
+func (f *fanout) publish(ev chat.ConversationEvent) {
 	f.mu.Lock()
-	f.closed = true
-	for id, ch := range f.subscribers {
-		close(ch)
-		delete(f.subscribers, id)
+	defer f.mu.Unlock()
+	if f.closed {
+		return
 	}
-	f.mu.Unlock()
+	for _, ch := range f.subscribers {
+		select {
+		case ch <- ev:
+		default:
+			// drop if subscriber is slow; matches pkg/chat policy
+		}
+	}
+	if ev.Type == chat.EventExited {
+		f.closed = true
+		for id, ch := range f.subscribers {
+			close(ch)
+			delete(f.subscribers, id)
+		}
+	}
 }
 
 // subscribe returns a buffered channel + an unsubscribe func. Channel
