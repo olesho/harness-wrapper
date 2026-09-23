@@ -1,0 +1,10 @@
+{
+  "id": "turn-stopped",
+  "session_id": "sess-1",
+  "role": "assistant",
+  "state": "interrupted",
+  "text": "The first half of the reply",
+  "reason": "claude-code: interrupted: the harness stopped the turn",
+  "started_at": "2026-07-21T10:00:00Z",
+  "completed_at": "2026-07-21T10:00:42Z"
+}

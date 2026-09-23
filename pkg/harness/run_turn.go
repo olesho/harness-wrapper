@@ -51,6 +51,13 @@ func gracefulQuit(conv *chat.Conversation) bool {
 // carries the errored turn and any retry metadata surfaced by the adapter.
 var ErrTurnErrored = errors.New("harness: turn errored")
 
+// ErrTurnInterrupted is returned by RunTurn when the turn was interrupted —
+// chat.Conversation.Interrupt from another goroutine, or Esc at the harness's
+// terminal — and ended chat.TurnStateInterrupted. It wraps ErrTurnErrored:
+// a one-shot run that was interrupted did not produce its reply, and callers
+// that handle ErrTurnErrored read the populated TurnResult as before.
+var ErrTurnInterrupted = fmt.Errorf("harness: turn interrupted: %w", ErrTurnErrored)
+
 // TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
 //
 // RunTurn starts an interactive harness, sends Prompt through the PTY, waits
@@ -362,6 +369,8 @@ func runConversationTurn(ctx context.Context, conv *chat.Conversation, store cha
 				return snapshotTurnResult(ctx, conv, store, ev.Turn), nil
 			case chat.TurnStateErrored:
 				return snapshotTurnResult(ctx, conv, store, ev.Turn), ErrTurnErrored
+			case chat.TurnStateInterrupted:
+				return snapshotTurnResult(ctx, conv, store, ev.Turn), ErrTurnInterrupted
 			}
 		}
 	}

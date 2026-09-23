@@ -269,6 +269,29 @@ type Conversation struct {
 	// holdsTurns.
 	heldReason string
 
+	// currentPrompt is the in-flight turn's prompt, which the adapter's
+	// interrupt reading keys on (turns.Interrupter). Set by Send.
+	currentPrompt string
+
+	// acceptAfter is when the in-flight prompt's submit began, in Unix
+	// nanoseconds. The harness has taken the prompt once the screen shows it
+	// working after that; until then its composer holds the prompt as typed,
+	// which is also what a cancelled turn leaves there. See turnAccepted.
+	acceptAfter atomic.Int64
+
+	// interrupt is the Interrupt under way for the in-flight turn, nil when
+	// none. A concurrent Interrupt joins it: one interrupt per turn.
+	interrupt *interruptOp
+
+	// interruptedBy is the id of the turn whose interrupt keys chat wrote, so
+	// the turn's reason can say who interrupted it.
+	interruptedBy string
+
+	// submit serializes the keystrokes that must not interleave: a Send's
+	// composer check, prompt and submit key, and an Interrupt's keys with the
+	// composer clear that follows a cancel.
+	submit submitLock
+
 	// harnessDir is the directory the harness runs in: Options.WorkingDir, or
 	// this process's working directory when that is empty, which the harness
 	// inherits. Every read of the harness's transcript keys on it — the harness
@@ -1025,7 +1048,9 @@ func (c *Conversation) idleCompletionWatcher() {
 			if !ok {
 				return
 			}
-			c.observeBusy(c.screen.Snapshot())
+			snap := c.screen.Snapshot()
+			c.observeBusy(snap)
+			c.observeInterrupt(snap)
 			reset()
 		case <-c.markerArmCh:
 			// A marker just landed — re-arm on the short gap even if the screen
@@ -1092,6 +1117,12 @@ func (c *Conversation) maybeIdleComplete() {
 	//   - fallback (no marker, or non-claude harness): the marker was missed, so
 	//     prompt-readiness is the only end signal — require it.
 	if !marker && !readyForInput(c.opts.Harness, snap.Text) {
+		return
+	}
+	// An interrupt awaiting the harness's answer leaves a reply cut short on a
+	// settled screen: completing from it would pass the fragment off as the
+	// reply. The harness's own end-of-turn marker still ends the turn.
+	if !marker && c.interruptInFlight(turn.ID) {
 		return
 	}
 	// The harness's input prompt is often painted even while it works, so

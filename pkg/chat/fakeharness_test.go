@@ -111,7 +111,7 @@ func sendOneTurn(t *testing.T, conv *Conversation, text string) {
 }
 
 // waitForTerminalTurn drains conversation events until an assistant turn reaches
-// a terminal state (complete or errored), or the timeout fires.
+// a terminal state (complete, errored or interrupted), or the timeout fires.
 func waitForTerminalTurn(t *testing.T, conv *Conversation, timeout time.Duration) Turn {
 	t.Helper()
 	deadline := time.After(timeout)
@@ -119,7 +119,8 @@ func waitForTerminalTurn(t *testing.T, conv *Conversation, timeout time.Duration
 		select {
 		case ev := <-conv.Events():
 			if ev.Type == EventTurn && ev.Turn.Role == RoleAssistant &&
-				(ev.Turn.State == TurnStateComplete || ev.Turn.State == TurnStateErrored) {
+				(ev.Turn.State == TurnStateComplete || ev.Turn.State == TurnStateErrored ||
+					ev.Turn.State == TurnStateInterrupted) {
 				return ev.Turn
 			}
 		case <-deadline:

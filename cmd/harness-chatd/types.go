@@ -267,6 +267,15 @@ type turnDTO struct {
 	RetryAfter string `json:"retry_after,omitempty"`
 }
 
+// interruptResponse answers POST /v1/conversations/{id}/interrupt: what the
+// interrupt did — stopped, cancelled, no_turn or too_late. Error is set only
+// with cancelled, when the prompt the harness put back would not clear from its
+// composer.
+type interruptResponse struct {
+	Result string `json:"result"`
+	Error  string `json:"error,omitempty"`
+}
+
 type turnEventDTO struct {
 	Turn  turnDTO `json:"turn"`
 	Error string  `json:"error,omitempty"`

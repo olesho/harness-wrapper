@@ -27,6 +27,7 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 | `DELETE` | `/v1/conversations/{id}/control/{token}` | — | `204` |
 | `POST` | `/v1/conversations/{id}/messages` | `{token, text, containment?}` | `{turn_id}` |
 | `POST` | `/v1/conversations/{id}/input` | `{token, request_id?, option_id?, text?}` | `204` |
+| `POST` | `/v1/conversations/{id}/interrupt` | — (no token) | `{result, error?}` |
 | `GET` | `/v1/conversations/{id}/events` | — | **SSE** stream |
 | `GET` | `/v1/conversations/{id}/history` | — | `{turns: [...]}` |
 | `GET` | `/v1/conversations/{id}/screen` | — | `{text, cols, rows, cursor_col, cursor_row, generation}` |
@@ -41,7 +42,9 @@ is reported on the turn instead of killing the process.
 
 Errors come back as `{error, code}` with the HTTP status mapped from the `pkg/chat`
 [sentinel errors](chat.md#sentinel-errors) (e.g. `ErrNoControl` → 409, `ErrInputPending` → 409,
-`ErrHarnessBusy` → 409 `harness_busy`, `ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig`
+`ErrHarnessBusy` → 409 `harness_busy`, `ErrComposerNotCleared` → 409 `composer_not_cleared`,
+`ErrInterruptUnsupported` → 501 `interrupt_unsupported`, `ErrInterruptUnconfirmed` → 504
+`interrupt_unconfirmed`, `ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig`
 → 400 `invalid_config` — the first non-`pkg/chat` sentinel in that map. The routes and wire DTOs are frozen as golden snapshots (Layer 0
 of the [testing tiers](../internal/testing/README.md)).
 
@@ -160,6 +163,24 @@ conversation — is 400 `invalid_config`, refused before the text reaches the ha
 opened here are single-launch (chatd has no reopen), so cgroup supervision is reported rather than
 required; the applied policy's `supervision` says which.
 
+### Interrupting a turn
+
+`POST /v1/conversations/{id}/interrupt` stops the turn in flight
+([ADR-007](../internal/decisions/adr-007-interrupt.md)). Like `DELETE` it takes **no control token**:
+the token's holder is usually the client waiting on that very turn. It waits — up to 30 s — for the
+harness to say what it did, and answers `{"result": …}`:
+
+| `result` | Meaning |
+|---|---|
+| `stopped` | the harness stopped the turn mid-reply or mid-tool; the turn arrives on the event stream with `state: "interrupted"` and its partial reply in `text` |
+| `cancelled` | the harness cancelled it before its first token; the turn arrives `interrupted` with no text, and the prompt the harness put back in its composer was cleared (`error` is set beside it if it would not clear) |
+| `too_late` | the turn finished first and keeps its own outcome; nothing was written |
+| `no_turn` | no turn was in flight; nothing was written |
+
+501 `interrupt_unsupported` is a harness without an interrupt (codex today); 504
+`interrupt_unconfirmed` means the harness did not answer in time — the turn stays in flight and ends
+as the harness ends it.
+
 ### The event stream
 
 `GET /v1/conversations/{id}/events` is a `text/event-stream`. Each frame is `data: <JSON>\n\n` where
@@ -228,8 +249,8 @@ npx tsx examples/basic.ts /usr/local/bin/codex codex
 2. `GET /v1/conversations/{id}/events` → open the SSE stream and keep reading.
 3. `POST /v1/conversations/{id}/control` → `{token}`.
 4. `POST /v1/conversations/{id}/messages` with `{token, text}` → `{turn_id}`.
-5. Watch the stream for `{"type":"turn", "turn":{"state":"complete"}}` matching `turn_id`. Answer any
-   `input_request` via `POST …/input`.
+5. Watch the stream for the turn matching `turn_id` to reach `complete`, `errored` or `interrupted`.
+   Answer any `input_request` via `POST …/input`; stop the turn with `POST …/interrupt`.
 6. `GET …/history` for the full transcript; `DELETE …/control/{token}` to release; `DELETE …/{id}` to
    close.
 

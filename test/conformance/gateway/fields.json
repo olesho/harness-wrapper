@@ -481,6 +481,20 @@
       "optional": true
     }
   ],
+  "interruptResponse": [
+    {
+      "name": "Result",
+      "json_tag": "result",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "name": "Error",
+      "json_tag": "error",
+      "type": "string",
+      "optional": true
+    }
+  ],
   "openRequest": [
     {
       "name": "Harness",

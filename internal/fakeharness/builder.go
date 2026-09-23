@@ -65,6 +65,18 @@ func (b *Builder) AwaitSubmit() *Builder {
 	return b.waitInput(regexp.QuoteMeta(SubmitCSI13u), true, "submit")
 }
 
+// AwaitInterrupt blocks until the wrapper writes the interrupt key
+// (InterruptCSI27u). It does not capture: the keypress carries no prompt text.
+func (b *Builder) AwaitInterrupt() *Builder {
+	return b.waitInput(regexp.QuoteMeta(InterruptCSI27u), false, "interrupt")
+}
+
+// AwaitComposerClear blocks until the wrapper writes the keys that empty a
+// composer of lines lines (ClearComposerKeys).
+func (b *Builder) AwaitComposerClear(lines int) *Builder {
+	return b.waitInput(regexp.QuoteMeta(ClearComposerKeys(lines)), false, "composer-clear")
+}
+
 // AwaitMenuChoice blocks until the wrapper selects a menu row (a digit followed
 // by CR, the keys claudecode encodes for trust-dialog options).
 func (b *Builder) AwaitMenuChoice() *Builder {
@@ -207,6 +219,89 @@ func (b *Builder) Reply(delayMs int, body, verb, dur string) *Builder {
 	// (which scans the screen at TurnComplete) sees it — real claude-code keeps
 	// the affordance painted.
 	return b.frame(delayMs, b.ccScreen(ccHeader, "", "⏺ "+body, "", "✻ "+verb+" for "+dur, "", ccPrompt, b.resumeHint()), true)
+}
+
+// Interrupt frames, recorded on claude 2.1.280 (ADR-007). They paint the
+// composer box whether or not ComposerBox was called: the interrupt reading
+// locates the conversation above it. The submitted prompt's echo — "❯ " at
+// column 0 — carries the captured prompt.
+const ccInterruptMarker = "  ⎿ \u00a0Interrupted · What should Claude do instead?" // U+00A0 after the space, as claude paints it
+
+// EchoWorking paints a turn in flight: the prompt's echo, the spinner, and the
+// busy footer.
+func (b *Builder) EchoWorking(delayMs int, status string) *Builder {
+	spinner := strings.Replace(ccSpinner, "Cerebrating", status, 1)
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccPrompt+promptPlaceholder, spinner, "", ccPrompt, ccBusy), true)
+}
+
+// Stopped paints a turn the harness stopped: the prompt's echo, the partial
+// reply (none when partial is empty), the interrupt marker below it, and an
+// empty composer. Prior lines are painted above the echo — an earlier turn,
+// for instance, with its own marker.
+func (b *Builder) Stopped(delayMs int, partial string, prior ...string) *Builder {
+	lines := append([]string{ccHeader, ""}, prior...)
+	lines = append(lines, ccPrompt+promptPlaceholder)
+	if partial != "" {
+		lines = append(lines, "⏺ "+partial)
+	}
+	lines = append(lines, ccInterruptMarker, "", ccPrompt, b.resumeHint())
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// Cancelled paints a turn the harness cancelled before its first token: the
+// echo gone and the prompt back in the composer, not busy. Prior lines are
+// painted above the composer.
+func (b *Builder) Cancelled(delayMs int, prior ...string) *Builder {
+	lines := append([]string{ccHeader, ""}, prior...)
+	lines = append(lines, "", ccComposer+promptPlaceholder, b.resumeHint())
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// ComposerHolding paints a settled, ready frame whose composer holds text — a
+// draft typed at the terminal, say.
+func (b *Builder) ComposerHolding(delayMs int, text string) *Builder {
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccComposer+text, b.resumeHint()), false)
+}
+
+// EmptyComposer paints the settled, ready frame with an empty composer box.
+func (b *Builder) EmptyComposer(delayMs int) *Builder {
+	return b.frame(delayMs, b.ccBoxed(ccHeader, "", ccPrompt, b.resumeHint()), false)
+}
+
+// Paint paints a claude-code frame line by line, the composer box drawn
+// around the empty composer line ("❯ ") or a ComposerLine, with PromptRef()
+// replaced by the captured prompt — for a scenario the semantic frames do not
+// cover.
+func (b *Builder) Paint(delayMs int, lines ...string) *Builder {
+	return b.frame(delayMs, b.ccBoxed(lines...), true)
+}
+
+// ComposerLine returns a Paint line for a composer holding text.
+func ComposerLine(text string) string { return ccComposer + text }
+
+// InterruptMarkerLine returns the interrupt marker line as claude paints it,
+// for a Paint frame.
+func InterruptMarkerLine() string { return ccInterruptMarker }
+
+// ccComposer marks a composer line holding text, for ccBoxed: the ❯ glyph
+// followed by a zero-width tag, stripped when painted.
+const ccComposer = "❯ \x00"
+
+// ccBoxed is ccScreen with the composer box always drawn: the empty composer
+// line, or one tagged ccComposer, gets the box's two rules around it.
+func (b *Builder) ccBoxed(lines ...string) string {
+	out := make([]string, 0, len(lines)+2)
+	for _, ln := range lines {
+		switch {
+		case ln == ccPrompt:
+			out = append(out, ccRule, ln, ccRule)
+		case strings.HasPrefix(ln, ccComposer):
+			out = append(out, ccRule, ccPrompt+strings.TrimPrefix(ln, ccComposer), ccRule)
+		default:
+			out = append(out, ln)
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
 }
 
 // SettleIdle paints a settled, ready, non-busy frame with a reply bullet but NO
@@ -399,6 +494,22 @@ func (b *Builder) TranscriptReply(delayMs int, text string) *Builder {
 		"message": map[string]any{
 			"role": "assistant", "model": "claude-fake",
 			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+}
+
+// TranscriptInterrupted appends the record claude-code writes when a turn is
+// interrupted (recorded on 2.1.280): a user entry "[Request interrupted by
+// user]", or "… for tool use]" after a tool call it stopped.
+func (b *Builder) TranscriptInterrupted(delayMs int, forToolUse bool) *Builder {
+	text := "[Request interrupted by user]"
+	if forToolUse {
+		text = "[Request interrupted by user for tool use]"
+	}
+	return b.transcript(delayMs, map[string]any{
+		"type": "user",
+		"message": map[string]any{
+			"role": "user", "content": []map[string]any{{"type": "text", "text": text}},
 		},
 	})
 }

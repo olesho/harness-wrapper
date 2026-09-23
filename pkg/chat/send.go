@@ -56,6 +56,21 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		return "", err
 	}
 
+	// The keystrokes below — the composer check, the prompt, the submit key —
+	// must not interleave with an Interrupt's (ADR-007).
+	if err := c.submit.lock(ctx, c.closed); err != nil {
+		return "", err
+	}
+	defer c.submit.unlock()
+
+	// Type into an empty composer only: whatever it holds — a prompt a cancel
+	// put back, a draft typed at the terminal — would become part of this one.
+	if ir, ok := c.adapter.(turns.Interrupter); ok {
+		if err := c.clearComposer(ctx, ir, ""); err != nil {
+			return "", err
+		}
+	}
+
 	now := time.Now()
 
 	userTurn := Turn{
@@ -86,9 +101,13 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	c.mu.Lock()
 	turnCopy := assistantTurn
 	c.currentTurn = &turnCopy
+	c.currentPrompt = text
 	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
 	c.heldReason = ""       // nor a Blocked to hold it on
 	c.mu.Unlock()
+	// From here, the screen showing the harness at work means it took this
+	// prompt: it sat idle through the busy gate before anything was typed.
+	c.acceptAfter.Store(time.Now().UnixNano())
 
 	// Record the screen the prompt is being submitted on: a swallow detector
 	// answers "nothing changed at all" by comparing the settled screen to this.

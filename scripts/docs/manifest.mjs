@@ -102,6 +102,11 @@ export const SECTIONS = [
         title: "ADR-006 · Classification and lifetime",
         source: "md/internal/decisions/adr-006-classification-and-lifetime.md",
       },
+      {
+        slug: "adr-007-interrupt",
+        title: "ADR-007 · Interrupt",
+        source: "md/internal/decisions/adr-007-interrupt.md",
+      },
     ],
   },
   {

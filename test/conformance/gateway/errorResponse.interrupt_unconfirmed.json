@@ -1,0 +1,4 @@
+{
+  "error": "chat: interrupt not acknowledged: context deadline exceeded",
+  "code": "interrupt_unconfirmed"
+}

@@ -45,6 +45,7 @@ type Conversation struct
 	method Events() <-chan chat.ConversationEvent
 	method History(context.Context) ([]chat.Turn, error)
 	method HistoryWithSource(context.Context) ([]chat.Turn, chat.HistorySource, error)
+	method Interrupt(context.Context) (chat.InterruptResult, error)
 	method PendingInput() *chat.InputRequest
 	method PermissionMode() (string, bool)
 	method Quit(context.Context) error

@@ -1,0 +1,4 @@
+{
+  "result": "cancelled",
+  "error": "chat: composer could not be cleared: it still holds \"draft\""
+}

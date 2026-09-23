@@ -30,12 +30,12 @@
 //     on screen, the turn just completed.
 //
 //   - User interrupt: a "⎿  Interrupted · What should Claude do
-//     instead?" line appears. The turn ended in a recoverable error
-//     state. Re-confirmed verbatim on 2.1.270. What changed at 2.1.24x
-//     is which KEY produces it — Esc interrupts, Ctrl-C clears the
-//     composer and paints nothing — which matters to the recorder, not
-//     to this adapter; see the interrupt step in
-//     internal/screenbench/cmd/screenbench-record/script.go.
+//     instead?" line appears below the stopped reply. Re-confirmed
+//     verbatim on 2.1.280. It is read per turn, by InterruptOutcome
+//     (interrupt.go, ADR-007), never by its presence on screen: an earlier
+//     turn's marker stays painted above the next turn. OnScreen emits no
+//     event for it. Esc interrupts; Ctrl-C clears the composer and paints
+//     nothing.
 //
 // This adapter embeds generic.Adapter so wrapper-level status events
 // (blocked_by_cost, retry_later, failed) keep flowing through.
@@ -124,10 +124,10 @@ var thinkingRE = regexp.MustCompile(
 // when it ends a session. The UUID names the on-disk transcript file.
 var resumeRE = regexp.MustCompile(`claude --resume ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})`)
 
-// interruptMarker is the literal text Claude Code writes after the user
-// interrupts a streaming reply (Esc / Ctrl-C). Claude Code uses U+23BF
-// (⎿), then a regular ASCII space, then U+00A0 (non-breaking space),
-// then "Interrupted · ...". The NBSP is easy to miss — match it exactly.
+// interruptMarker is the literal text Claude Code writes below a turn the user
+// interrupted (Esc). Claude Code uses U+23BF (⎿), then a regular ASCII space,
+// then U+00A0 (non-breaking space), then "Interrupted · ...". The NBSP is easy
+// to miss — match it exactly.
 const interruptMarker = "⎿  Interrupted · What should Claude do instead?"
 
 // reasonPrefix labels the source harness on emitted turn-event reasons.
@@ -197,9 +197,8 @@ type Adapter struct {
 	// every read.
 	ProjectsRoot string
 
-	mu                sync.Mutex
-	lastFingerprint   string
-	lastInterruptSeen bool
+	mu              sync.Mutex
+	lastFingerprint string
 
 	// lastInputID is the ID of the blocking dialog currently on screen, or
 	// "" when none. lastInput retains the full request so InputResolved can
@@ -219,20 +218,15 @@ func New() *Adapter { return &Adapter{} }
 // Name returns "claude-code".
 func (*Adapter) Name() string { return "claude-code" }
 
-// OnScreen scans the snapshot for the thinking-summary and interrupt
-// markers and emits TurnComplete / Errored when transitions occur.
+// OnScreen scans the snapshot for the thinking-summary marker and blocking
+// dialogs, and emits TurnComplete / InputRequested / InputResolved when
+// transitions occur. An interrupt is not among them: it is read per turn by
+// InterruptOutcome (ADR-007).
 func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	var out []turns.Event
-
-	// Interrupt detection — transition not-seen → seen.
-	interruptNow := strings.Contains(snap.Text, interruptMarker)
-	if interruptNow && !a.lastInterruptSeen {
-		out = append(out, turns.Event{Kind: turns.Errored, Reason: reasonPrefix + interruptMarker})
-	}
-	a.lastInterruptSeen = interruptNow
 
 	// Turn-complete detection — newest thinking marker differs from last fired.
 	// Capture group 1 holds the marker text without surrounding column

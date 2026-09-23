@@ -126,6 +126,10 @@ Some contracts are HTTP/CLI *behavior*, represented by a fixture plus a row here
 | turn status `deadline` | exit **124** + `DeadlineLine` on stderr | `cli/emit_pairing.json` |
 | invalid `permission_mode` (or `effort`) | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
 | a message sent while the harness is still working, until the request's context ends | HTTP **409**, nothing typed | `gateway/errorResponse.harness_busy.json` |
+| an interrupt: stopped, cancelled, too late, or no turn in flight | HTTP **200** `{result}`; the turn arrives with state `interrupted` | `gateway/interruptResponse.stopped.json`, `gateway/interruptResponse.no_turn.json`, `gateway/turnDTO.interrupted.json` |
+| a cancelled turn whose prompt would not clear from the composer | HTTP **200** `{result: cancelled, error}` | `gateway/interruptResponse.cancelled_composer_not_cleared.json` |
+| an interrupt on a harness without one | HTTP **501** | `gateway/errorResponse.interrupt_unsupported.json` |
+| an interrupt the harness did not acknowledge in time | HTTP **504**, the turn stays in flight | `gateway/errorResponse.interrupt_unconfirmed.json` |
 | containment that cannot be enforced (platform, kernel, profile, paths), or changed on a message | HTTP **400** | `gateway/errorResponse.invalid_config.json` |
 | containment requested | the open response and listing echo the applied policy; absent means none applied | `gateway/openResponse.containment.json`, `gateway/openResponse.containment_omitted.json`, `gateway/conversationSummary.containment.json` |
 | clients check support before sending containment | `GET /v1/capabilities` lists the kinds (`[]` off Linux) | `gateway/capabilitiesResponse.landlock.json`, `gateway/capabilitiesResponse.none.json` |

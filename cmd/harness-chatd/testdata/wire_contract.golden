@@ -89,6 +89,9 @@ inputRequestDTO
 	Header string `json:"header,omitempty"`
 	MultiSelect bool `json:"multi_select,omitempty"`
 	Options []main.inputOptionDTO `json:"options,omitempty"`
+interruptResponse
+	Result string `json:"result"`
+	Error string `json:"error,omitempty"`
 openRequest
 	Harness string `json:"harness"`
 	BinaryPath string `json:"binary_path"`

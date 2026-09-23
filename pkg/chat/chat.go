@@ -67,10 +67,17 @@ const (
 	// thinking summary, or wrapper waiting_for_input).
 	TurnStateComplete TurnState = "complete"
 
-	// TurnStateErrored means the turn ended in failure: harness exited,
-	// the user interrupted, or the adapter reported an unrecoverable
-	// error. Reason carries the detail.
+	// TurnStateErrored means the turn ended in failure: the harness exited,
+	// or the adapter reported an unrecoverable error. Reason carries the
+	// detail.
 	TurnStateErrored TurnState = "errored"
+
+	// TurnStateInterrupted means the turn was interrupted — by Interrupt, or
+	// at the harness's own terminal — and the harness acknowledged it. It is
+	// neither a success nor a failure (ADR-007). Text carries the partial
+	// reply when the harness had produced one; Reason says whether it stopped
+	// the turn or cancelled it before the first token, and who interrupted.
+	TurnStateInterrupted TurnState = "interrupted"
 )
 
 // ReasonAuthRequired is the canonical Turn.Reason recorded when a turn ended in
@@ -290,6 +297,22 @@ var (
 	// for it to settle, continuously, for the end-of-turn confirmation window.
 	// The error also wraps ctx.Err(). Nothing was typed and no turn recorded.
 	ErrHarnessBusy = errors.New("chat: harness is busy")
+
+	// ErrInterruptUnsupported is returned by Interrupt when the harness adapter
+	// cannot interrupt a turn (it does not implement turns.Interrupter).
+	ErrInterruptUnsupported = errors.New("chat: harness has no interrupt")
+
+	// ErrInterruptUnconfirmed is returned by Interrupt when ctx ended before
+	// the harness acknowledged the interrupt. The interrupt keys may have gone
+	// out; the turn stays in flight and ends as the harness ends it. The error
+	// also wraps ctx.Err().
+	ErrInterruptUnconfirmed = errors.New("chat: interrupt not acknowledged")
+
+	// ErrComposerNotCleared is returned when the harness's composer still held
+	// text after chat pressed the keys that empty it: by Send, which then types
+	// nothing and records no turn, and by Interrupt alongside
+	// InterruptCancelled, when the prompt the harness put back would not clear.
+	ErrComposerNotCleared = errors.New("chat: composer could not be cleared")
 
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.

@@ -143,9 +143,16 @@ pending/streaming), or `ErrInputPending` (an interactive prompt is awaiting an a
 input — control characters, a paste sequence, a slash command you want to type by hand — reach past
 the API via `conv.Wrapper().WriteStdin(...)`.
 
-The prompt and its submit key go out in **one write**: no per-character typing, no inter-key delay, no
-retry. The submit key is per-harness, because modern TUIs enable the enhanced keyboard protocol where a
-bare carriage return only inserts a newline:
+`Send` types into an empty composer only. Where the adapter can read the composer (claude-code,
+through `turns.Interrupter`), it first empties whatever the composer holds — a prompt a cancelled turn
+put back, a draft typed at the terminal — and returns `ErrComposerNotCleared`, with nothing typed and
+no turn recorded, if it will not clear. A composer it cannot read is typed into as before.
+
+The prompt goes out as one write — no per-character typing, no inter-key delay, no retry — and its
+submit key as a second, once the composer shows the prompt, so a harness assembling a paste cannot
+take the key for pasted text. Nothing else is written between the two: an [interrupt](#interrupting-a-turn)
+waits for the submit key. The submit key is per-harness, because modern TUIs enable the enhanced
+keyboard protocol where a bare carriage return only inserts a newline:
 
 | Harness | Submit key |
 |---|---|
@@ -182,7 +189,7 @@ marker (opencode, generic) skip the gate entirely.
 
 ```go
 type Role string      // RoleUser | RoleAssistant | RoleSystem
-type TurnState string  // TurnStatePending | TurnStateStreaming | TurnStateComplete | TurnStateErrored
+type TurnState string  // TurnStatePending | TurnStateStreaming | TurnStateComplete | TurnStateErrored | TurnStateInterrupted
 
 type Turn struct {
 	ID, SessionID string
@@ -199,7 +206,9 @@ type Turn struct {
 ```
 
 There is exactly **one assistant turn per `Send`**; it ends in `TurnStateComplete` (the adapter saw
-turn completion) or `TurnStateErrored` (the harness errored, was blocked, or exited).
+turn completion), `TurnStateErrored` (the harness errored, was blocked, or exited) or
+`TurnStateInterrupted` (it was [interrupted](#interrupting-a-turn) and the harness said so — neither a
+success nor a failure; `Text` holds the partial reply, if any).
 `TurnStateStreaming` is reserved: v1 emits no per-delta events, so turns go pending → complete.
 
 Two `Reason` values are **stable prefixes** you may match on, rather than free text:
@@ -236,6 +245,36 @@ transition it was held on ([ADR-006](../internal/decisions/adr-006-classificatio
 Both windows are tuned per harness and are **not** part of the wire contract: treat them as
 "eventually, quickly" rather than a guaranteed latency. They are overridable only from within the
 package (tests), because a caller that needs a hard bound should use its own `ctx`.
+
+## Interrupting a turn
+
+```go
+func (c *Conversation) Interrupt(ctx context.Context) (InterruptResult, error)
+```
+
+`Interrupt` stops the turn in flight ([ADR-007](../internal/decisions/adr-007-interrupt.md)). It needs
+**no control token** — the holder is typically waiting on the very turn, as `RunTurn` does — and it
+never lands inside a submit: it waits for a `Send`'s submit key, then for the harness to show it has
+taken the prompt, and writes the adapter's interrupt key once (claude-code: Esc, as `CSI 27 u`).
+Concurrent calls for one turn share that key. The turn ends only when the harness says what it did:
+
+| Result | What happened | The turn |
+|---|---|---|
+| `InterruptStopped` | the harness stopped the turn mid-reply or mid-tool | `TurnStateInterrupted`, `Text` = the partial reply (the transcript's once it records the interrupt, else the screen's; a tool call is not reply text) |
+| `InterruptCancelled` | the harness cancelled it before its first token and put the prompt back in the composer; chat empties the composer | `TurnStateInterrupted`, no text |
+| `InterruptTooLate` | the turn finished first; no key was written | keeps its own outcome |
+| `InterruptNoTurn` | no turn was in flight; nothing was written | — |
+
+`ErrInterruptUnconfirmed` (wrapping `ctx.Err()`) means `ctx` ended before the harness answered: the
+key may have gone out, and the turn stays in flight and ends as the harness ends it. A cancelled turn
+whose prompt will not clear from the composer returns `InterruptCancelled` with
+`ErrComposerNotCleared`. An adapter without `turns.Interrupter` returns `ErrInterruptUnsupported`
+(codex today).
+
+An interrupt made at the harness's own terminal — someone pressing Esc — ends the turn the same way,
+and its `Reason` says "(at the terminal)". The reading is per turn: an interrupt marker an earlier turn
+left on screen never ends a later one. While an interrupt waits for the harness's answer, the idle
+fallback does not complete the turn from the reply it cut short.
 
 ## Events
 
@@ -443,6 +482,9 @@ control-token guard — use it with care.
 | `ErrTurnInFlight` | `Send`: previous assistant turn still pending |
 | `ErrInputPending` | `Send`: a prompt is awaiting an external answer |
 | `ErrHarnessBusy` | `Send` (and the other composer writes): `ctx` ended while the harness was still working; nothing typed |
+| `ErrComposerNotCleared` | `Send`: the composer held text that would not clear; nothing typed, no turn recorded. `Interrupt`, beside `InterruptCancelled`: the prompt the harness put back would not clear |
+| `ErrInterruptUnsupported` | `Interrupt`: the adapter cannot interrupt a turn (does not implement `turns.Interrupter`) |
+| `ErrInterruptUnconfirmed` | `Interrupt`: `ctx` ended before the harness acknowledged; the turn stays in flight |
 | `ErrNoInputPending` | `Answer`: no prompt currently pending |
 | `ErrStaleInputRequest` | `Answer`: request ID no longer current |
 | `ErrUnknownOption` | `Answer`: option ID/alias matches no option |
