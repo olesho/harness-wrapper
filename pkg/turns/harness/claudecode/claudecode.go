@@ -689,10 +689,10 @@ func dedent(lines []string) string {
 // It is NOT sufficient on its own: while Claude waits on SUB-AGENTS (the Task /
 // Explore tool — "✶ Cerebrating… (57s · ↓ 4.8k tokens)" with "◯ Explore …" rows),
 // the "esc to interrupt" footer can flicker out for a redraw frame while the work
-// continues. A "✻ <verb> for Ns" intermediate summary landing on such a frame
-// would then pass the turn-complete gate and cut the turn off mid-sub-agent. So
-// Busy ALSO keys off the in-progress spinner line (workingRE), which is present
-// throughout active work and absent on every settled frame.
+// continues, and while it backs off before retrying a failed API call it is not
+// shown at all. So Busy ALSO reads the status line above the composer, which
+// shows the spinner throughout active work and the retry countdown through a
+// backoff, and neither on a settled frame.
 const busyMarker = "esc to interrupt"
 
 // workingRE matches Claude Code's in-progress spinner line: a "<gerund>… (<dur> ·
@@ -704,11 +704,83 @@ const busyMarker = "esc to interrupt"
 // vary run-to-run and across versions). This shape appears ONLY while Claude is
 // actively working (generating, running a tool, or waiting on sub-agents); a
 // settled/idle frame shows the past-tense "✻ <verb> for Ns" summary, which has
-// no ellipsis or parenthetical and so never matches. Keeping it conservative
-// matters: a false match here would hang a genuinely-finished turn.
+// no ellipsis or parenthetical and so never matches. It is the whole-screen
+// fallback's spinner test (see Busy); the status line gets a wider one.
 var workingRE = regexp.MustCompile(`(?:…|\.\.\.)[^\S\r\n]*\(\d+[hms][^)\r\n]*·`)
 
-// PromptNotAccepted implements turns.SwallowedPromptDetector. True when a
+// spinnerLineRE matches the status line above the composer while Claude works:
+// one of Claude's spinner glyphs (· ✢ ✳ ✶ ✻ ✽), then a gerund with an ellipsis — "✻ Doing…", "✳ Misting…",
+// "✶ Cerebrating… (57s · ↓ 4.8k tokens)". The first frames of a turn show the
+// bare gerund, before the elapsed-time parenthetical appears. Matched on the
+// status line only, so the reply above it can say anything.
+var spinnerLineRE = regexp.MustCompile(`^[^\S\r\n]*[·✢✳✶✻✽][^\S\r\n]+\S[^\r\n]*(?:…|\.\.\.)`)
+
+// retryLineRE matches the status line while Claude backs off before retrying a
+// failed API call: "✻ API error · Retrying in 1s · attempt 1/10", recorded on
+// 2.1.280 (test/corpus/claude-code/api-error-retry-*). The footer drops "esc to
+// interrupt" for the backoff, so without this a retrying turn read as idle.
+var retryLineRE = regexp.MustCompile(`(?m)^[^\S\r\n]*[·✢✳✶✻✽][^\S\r\n]+[^\r\n]*·[^\S\r\n]*Retrying in \d+`)
+
+// composerRuleRE matches one horizontal rule of the composer box — a run of
+// box-drawing dashes alone on its line. The composer sits between the last two.
+var composerRuleRE = regexp.MustCompile(`^[^\S\r\n]*─{8,}[^\S\r\n]*$`)
+
+// effortLineRE matches the right-aligned effort indicator Claude paints between
+// the status line and the composer ("◐ medium · /effort").
+var effortLineRE = regexp.MustCompile(`/effort[^\S\r\n]*$`)
+
+// statusRegion returns Claude's live status region — the line it repaints with
+// its working state just above the composer box, and the footer lines below the
+// box — located from the box's two rules, the last on screen. ok is false when
+// the screen shows no composer box to locate them by.
+//
+// Layout, recorded on 2.1.270 and 2.1.280 (test/corpus/claude-code):
+//
+//	⏺ <reply>                                   conversation
+//	✻ Doing…  |  ✻ API error · Retrying in 1s   status line
+//	                         ◐ medium · /effort  effort indicator
+//	────────────────────────────────            composer box
+//	❯ <composer>
+//	────────────────────────────────
+//	  ⏵⏵ auto mode on · esc to interrupt         footer
+func statusRegion(text string) (status string, footer []string, ok bool) {
+	lines := strings.Split(text, "\n")
+	bottom := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if composerRuleRE.MatchString(lines[i]) {
+			bottom = i
+			break
+		}
+	}
+	if bottom < 0 {
+		return "", nil, false
+	}
+	top := -1
+	for i := bottom - 1; i >= 0 && i >= bottom-maxComposerLines-1; i-- {
+		if composerRuleRE.MatchString(lines[i]) {
+			top = i
+			break
+		}
+	}
+	if top < 0 {
+		return "", nil, false
+	}
+	for i := top - 1; i >= 0; i-- {
+		ln := strings.TrimSpace(lines[i])
+		if ln == "" || effortLineRE.MatchString(ln) {
+			continue
+		}
+		status = lines[i]
+		break
+	}
+	return status, lines[bottom+1:], true
+}
+
+// maxComposerLines bounds how many composer lines may sit between the box's
+// rules; a multi-line draft stays well inside it.
+const maxComposerLines = 12
+
+// PromptNotAccepted implements turns.SwallowedPromptDetector.// PromptNotAccepted implements turns.SwallowedPromptDetector. True when a
 // settled screen shows no trace of assistant activity for the in-flight turn:
 // no "⏺" message bullet (ExtractMessage fails) and either the screen is
 // byte-identical to the one the prompt was submitted on, or it carries no
@@ -730,11 +802,27 @@ func (a *Adapter) PromptNotAccepted(snap screen.Snapshot, sentScreenText string)
 
 // Busy reports whether Claude is still working on the current turn, so the chat
 // layer's idle-completion fallback (and the turn-complete gate in OnScreen) won't
-// complete a turn mid-flight (the "❯" prompt box is painted even while Claude
-// works, and the footer can flicker during sub-agent execution). Implements
+// complete a turn mid-flight, and Send won't type into a working Claude (the
+// "❯" prompt box is painted even while Claude works). Implements
 // turns.BusyDetector.
+//
+// It reads only Claude's live status region (statusRegion): the footer's
+// "esc to interrupt", and the status line's spinner or retry countdown. A reply
+// that quotes those markers is in the conversation above the region and does
+// not make Claude busy. A screen with no composer box to locate the region by —
+// a dialog, a mid-paint frame — is judged on the whole screen, as before, which
+// can only err towards busy.
 func (*Adapter) Busy(snap screen.Snapshot) bool {
-	return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text)
+	status, footer, ok := statusRegion(snap.Text)
+	if !ok {
+		return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text) || retryLineRE.MatchString(snap.Text)
+	}
+	for _, ln := range footer {
+		if strings.Contains(ln, busyMarker) {
+			return true
+		}
+	}
+	return spinnerLineRE.MatchString(status) || retryLineRE.MatchString(status)
 }
 
 // PermissionMode reports Claude Code's current permission posture as a

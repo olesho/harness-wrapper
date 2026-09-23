@@ -122,7 +122,7 @@ func TestAPIErrorCorpusMapping(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			v, ok := apiErrorVerdictFrom(transcript.TurnsFromEvents(evs), 0)
+			v, ok, _ := apiErrorVerdictFrom(transcript.TurnsFromEvents(evs), 0)
 			switch c.meta.Verdict {
 			case "none":
 				if ok {

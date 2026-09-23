@@ -152,6 +152,12 @@ func gatewayFixtures() []gatewayFixture {
 			Error: `permission mode "nonsense" is not supported`,
 			Code:  "invalid_config",
 		}},
+		// A message sent while the harness was still working: 409, nothing
+		// typed, retry once it settles (chat.ErrHarnessBusy).
+		{"errorResponse.harness_busy", errorResponse{
+			Error: "chat: harness is busy: context deadline exceeded",
+			Code:  "harness_busy",
+		}},
 		// containment: the complete request object on the way in (deny-all TCP
 		// is restrict_tcp with no ports — the distinction the clients must
 		// preserve), the applied policy echoed on the way out, absent when the

@@ -87,6 +87,7 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	turnCopy := assistantTurn
 	c.currentTurn = &turnCopy
 	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
+	c.heldReason = ""       // nor a Blocked to hold it on
 	c.mu.Unlock()
 
 	// Record the screen the prompt is being submitted on: a swallow detector

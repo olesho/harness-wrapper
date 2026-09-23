@@ -25,7 +25,12 @@ const defaultSessionID = "11111111-2222-3333-4444-555555555555"
 // lock) in most depth, but codex and pi each have a full turn vocabulary too:
 // CodexWorking/CodexReply and PiWorking/PiReply drive a turn to completion, not
 // just to readiness.
-type Builder struct{ s Script }
+type Builder struct {
+	s Script
+	// box paints claude-code frames with the composer box claude 2.1.270+
+	// draws; see ComposerBox.
+	box bool
+}
 
 // New starts a Builder for the named harness with the default session ID.
 func New(harness string) *Builder {
@@ -99,7 +104,34 @@ const (
 )
 
 func (b *Builder) ccScreen(lines ...string) string {
+	if b.box {
+		lines = boxComposer(lines)
+	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// ComposerBox paints every later claude-code frame the way claude 2.1.270+
+// lays it out: the composer between two horizontal rules, the status line
+// (spinner, retry countdown, end-of-turn summary) just above the box and the
+// footer just below it. The adapter's Busy reads only that region, so a
+// scenario that must tell a working Claude from a reply quoting the working
+// markers opts in; without it Busy judges the whole screen.
+func (b *Builder) ComposerBox() *Builder { b.box = true; return b }
+
+// ccRule is one rule of the composer box.
+var ccRule = strings.Repeat("─", 100)
+
+// boxComposer wraps the composer line of a frame in the box's two rules.
+func boxComposer(lines []string) []string {
+	out := make([]string, 0, len(lines)+2)
+	for _, ln := range lines {
+		if ln == ccPrompt {
+			out = append(out, ccRule, ln, ccRule)
+			continue
+		}
+		out = append(out, ln)
+	}
+	return out
 }
 
 func (b *Builder) resumeHint() string {
@@ -133,6 +165,16 @@ func (b *Builder) Working(delayMs int, status string) *Builder {
 // mid-turn — it must defer, not complete.
 func (b *Builder) Marker(delayMs int, verb, dur string) *Builder {
 	return b.frame(delayMs, b.ccScreen(ccHeader, "", "✻ "+verb+" for "+dur, ccSpinner, "", ccPrompt, ccBusy), false)
+}
+
+// RetryBackoff paints Claude backing off before retrying a failed API call, as
+// recorded on 2.1.280: "✻ API error · Retrying in <seconds>s · attempt
+// <attempt>/10" in the status line, and a footer WITHOUT "esc to interrupt",
+// which a live run showed absent for the whole backoff. Busy must read it off
+// the status line.
+func (b *Builder) RetryBackoff(delayMs, seconds, attempt int) *Builder {
+	status := fmt.Sprintf("✻ API error · Retrying in %ds · attempt %d/10", seconds, attempt)
+	return b.frame(delayMs, b.ccScreen(ccHeader, "", status, "", ccPrompt, "  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent"), false)
 }
 
 // Flicker paints the danger frame: the footer AND spinner are absent for one

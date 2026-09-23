@@ -284,6 +284,13 @@ var (
 	// look unparseable for one repaint.
 	ErrUnrecognizedDialog = errors.New("chat: harness is blocked on a dialog this build cannot parse")
 
+	// ErrHarnessBusy is returned by Send when the harness was still working
+	// when ctx ended: Send types nothing into a harness that is mid-turn — its
+	// status line or footer says so (turns.BusyDetector) — and waits instead
+	// for it to settle, continuously, for the end-of-turn confirmation window.
+	// The error also wraps ctx.Err(). Nothing was typed and no turn recorded.
+	ErrHarnessBusy = errors.New("chat: harness is busy")
+
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.
 	ErrNoInputPending = errors.New("chat: no input request pending")

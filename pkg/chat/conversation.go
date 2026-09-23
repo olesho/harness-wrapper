@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/resettime"
@@ -255,6 +256,18 @@ type Conversation struct {
 	// returns this instead of blocking to the caller's run deadline. Cleared
 	// when a new request arrives and when one resolves.
 	inputUnresolved *InputUnresolvedError
+
+	// lastBusyAt is when the screen last showed the harness working
+	// (turns.BusyDetector), in Unix nanoseconds; zero when it never has. Send
+	// types only after the harness has been idle for the confirmation window.
+	lastBusyAt atomic.Int64
+
+	// heldReason is set while the in-flight turn is HELD: a keep-alive
+	// conversation reported a Blocked for it — an API error, a usage wall —
+	// that the harness may yet retry past. It is the Blocked reason, which the
+	// turn ends with if the harness's own record cannot settle it. See
+	// holdsTurns.
+	heldReason string
 
 	// harnessDir is the directory the harness runs in: Options.WorkingDir, or
 	// this process's working directory when that is empty, which the harness
@@ -863,11 +876,22 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			c.relabelTerminal(turn, *ev.Snap)
 		}
 	case turns.Blocked:
+		turn.HTTPCode = ev.HTTPCode
+		turn.RetryAfter = ev.RetryAfter
+		if c.holdsTurns() {
+			// Held (ADR-006): a keep-alive harness may yet retry past what the
+			// output showed, so the turn stays pending with the Blocked recorded
+			// on it, and ends when the harness ends it — the harness's own record
+			// deciding the outcome then.
+			c.mu.Lock()
+			c.heldReason = ev.Reason
+			c.currentTurn = turn
+			c.mu.Unlock()
+			return
+		}
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
 		turn.Reason = ev.Reason
-		turn.HTTPCode = ev.HTTPCode
-		turn.RetryAfter = ev.RetryAfter
 	case turns.Errored:
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At
@@ -893,8 +917,12 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			turn.Reason = ReasonAuthRequired
 			turn.Code = CodeAuthRequired
 		}
-		turn.HTTPCode = ev.HTTPCode
-		turn.RetryAfter = ev.RetryAfter
+		// A held turn keeps the code and hint its Blocked recorded when the
+		// ending event carries none.
+		if ev.HTTPCode != 0 || ev.RetryAfter != 0 {
+			turn.HTTPCode = ev.HTTPCode
+			turn.RetryAfter = ev.RetryAfter
+		}
 	case turns.ToolCall:
 		// ToolCall is informational mid-turn; fall through to the shared
 		// restore-pointer path so the next event can complete the turn.
@@ -997,6 +1025,7 @@ func (c *Conversation) idleCompletionWatcher() {
 			if !ok {
 				return
 			}
+			c.observeBusy(c.screen.Snapshot())
 			reset()
 		case <-c.markerArmCh:
 			// A marker just landed — re-arm on the short gap even if the screen
@@ -1007,6 +1036,29 @@ func (c *Conversation) idleCompletionWatcher() {
 			reset()
 		}
 	}
+}
+
+// observeBusy records when the screen shows the harness working, for Send's
+// busy gate. A no-op for an adapter that cannot tell (no turns.BusyDetector).
+func (c *Conversation) observeBusy(snap screen.Snapshot) bool {
+	bd, ok := c.adapter.(turns.BusyDetector)
+	if !ok || !bd.Busy(snap) {
+		return false
+	}
+	c.lastBusyAt.Store(time.Now().UnixNano())
+	return true
+}
+
+// busyQuietRemaining is how much longer the harness must stay idle before Send
+// may type: the confirmation window (markerGapDur) less the time since the
+// screen last showed it working. Zero when it has been idle long enough, or
+// has never been seen working.
+func (c *Conversation) busyQuietRemaining() time.Duration {
+	last := c.lastBusyAt.Load()
+	if last == 0 {
+		return 0
+	}
+	return max(0, c.markerGapDur()-time.Since(time.Unix(0, last)))
 }
 
 // maybeIdleComplete completes the in-flight turn if (and only if) the screen
@@ -1080,8 +1132,13 @@ func (c *Conversation) maybeIdleComplete() {
 
 	// A settled screen the adapter says was never accepted is not a completed
 	// turn — it is a prompt the harness swallowed. Only the non-marker path can
-	// be swallowed: an end-of-turn marker is itself evidence the harness ran.
-	if !marker && c.promptWasSwallowed(snap) {
+	// be swallowed: an end-of-turn marker is itself evidence the harness ran,
+	// and so is a Blocked the turn is held on — the harness made the API call
+	// that failed.
+	c.mu.Lock()
+	held := c.heldReason != ""
+	c.mu.Unlock()
+	if !marker && !held && c.promptWasSwallowed(snap) {
 		c.applySwallowedPromptVerdict(turn, snap)
 		return
 	}
@@ -1258,24 +1315,61 @@ func (c *Conversation) authRelabel(turn *Turn, snap screen.Snapshot) bool {
 	return true
 }
 
-// relabelTerminal applies the three relabels in strength order to a turn that
+// relabelTerminal applies the relabels in strength order to a turn that
 // reached a terminal point looking like a success, and reports whether any of
 // them took it.
 //
 // The order is the whole point:
 //
-//  1. apiErrorRelabel — what the HARNESS recorded about its own API call. A
-//     categorical statement, correlated to this turn by the pre-send
+//  1. The harness's last word — what the HARNESS recorded about its own API
+//     call. A categorical statement, correlated to this turn by the pre-send
 //     watermark, and the only one that can name a billing wall.
 //  2. usageLimitRelabel — the quota wall, which claude paints as an assistant
 //     bubble. Deliberately NOT gated on an empty extraction, because the wall
 //     IS the extraction, which is why it must precede the auth check.
 //  3. authRelabel — a logged-out / onboarding screen with no real reply.
+//  4. heldRelabel — a held turn the harness's record did not settle.
 //
 // Each declines cleanly when it has nothing to say, so a turn that really did
-// complete passes through all three untouched.
+// complete passes through all of them untouched.
 func (c *Conversation) relabelTerminal(turn *Turn, snap screen.Snapshot) bool {
-	return c.apiErrorRelabel(turn) || c.usageLimitRelabel(turn, snap) || c.authRelabel(turn, snap)
+	word := c.lastWordOfCurrentTurn()
+	return word.apply(turn, c.opts.Harness) ||
+		c.usageLimitRelabel(turn, snap) ||
+		c.authRelabel(turn, snap) ||
+		c.heldRelabel(turn, word)
+}
+
+// holdsTurns reports whether a Blocked leaves the in-flight turn pending rather
+// than ending it: in a keep-alive conversation (ADR-006) the harness ends its
+// turns, and one whose adapter reads transcripts can have the outcome decided
+// by the harness's own record when it does. An adapter without a transcript
+// reader, and every default-mode conversation — whose run-to-completion callers
+// rely on a Blocked ending the turn — keep that behaviour.
+func (c *Conversation) holdsTurns() bool {
+	if !c.opts.KeepAliveOnClassification {
+		return false
+	}
+	_, reads := c.adapter.(turns.TranscriptReader)
+	return reads
+}
+
+// heldRelabel ends a held turn errored with the Blocked it was held on, when
+// the harness's own record did not settle it: its transcript could not be
+// read, or holds no word on this turn. A success nobody can confirm is a wrong
+// verdict (principle 2). A turn whose transcript shows a reply after the error
+// recovered, and is left complete.
+func (c *Conversation) heldRelabel(turn *Turn, word transcriptWord) bool {
+	c.mu.Lock()
+	reason := c.heldReason
+	c.mu.Unlock()
+	if reason == "" || word.replied {
+		return false
+	}
+	turn.State = TurnStateErrored
+	turn.Reason = reason
+	turn.Text = ""
+	return true
 }
 
 // usageLimitRelabel converts a turn that "completed" while the harness was out of

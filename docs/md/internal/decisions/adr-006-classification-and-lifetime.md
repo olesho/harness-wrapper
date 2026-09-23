@@ -1,6 +1,6 @@
 # ADR-006: A classification ends the harness only when the caller leaves its lifetime to the wrapper
 
-**Status:** Accepted (2026-09-23)
+**Status:** Accepted (2026-09-23); amended 2026-09-23
 
 **Intent:** principle 2, *a wrong verdict is worse than no verdict*
 ([INTENT](../../../../INTENT.md#design-principles)) — a caller that owns the harness's lifetime is
@@ -58,6 +58,24 @@ deletes it, and one ended by a classification would stay listed while no later S
 wall is then reported on the turn rather than by an exit, so a usage-limited turn carries
 `Turn.ResumeAt`, read from the wall's own text by the parser the wrapper's session-limit matcher uses.
 
+**In a keep-alive conversation the harness ends its turns, and a turn's outcome is decided when it
+does.** A `Blocked` — the wrapper reporting an API error or a usage wall — records its code and retry
+hint on the in-flight turn and leaves it pending, because the harness may still be retrying. The turn
+ends when the harness ends it: its end-of-turn marker, the idle fallback, or its exit. The existing
+precedence then decides it: the harness's last word in its transcript (a tagged entry errors the turn
+with its tag; a reply after a retried error completes it), then the usage-limit and auth screen
+relabels. A turn the transcript cannot settle — unreadable, or holding no entry for the turn — ends
+errored with the `Blocked` it was held on: a success nobody can confirm is a wrong verdict. Session ids
+assigned at launch make the transcript readable from the first turn. An adapter without a transcript
+reader, and every default-mode conversation, keep a `Blocked` ending the turn.
+
+**Send never types into a harness that is working, in any mode.** Where the adapter reports busy
+(`turns.BusyDetector`), Send — and every other composer write — waits until the harness has been idle
+for the end-of-turn confirmation window, and returns `ErrHarnessBusy` with nothing typed if its context
+ends first (chatd: 409 `harness_busy`). claude-code's detector reads only its live status region: the
+status line above the composer box and the footer below it, so a reply quoting the working markers is
+not busy, and the retry countdown claude shows while it backs off is.
+
 In every mode, a negative `IdleQuiet` or `IdleClassify` is refused with `ErrInvalidConfig`. Both used to
 pass validation and be kept (defaults replace only zero). A negative `IdleClassify` makes every tick
 idle, so any phrase kills at once — and it is the value a caller reaches for, by analogy with
@@ -74,6 +92,10 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
   run-to-completion callers, and they depend on a stuck run ending in a verdict.
 - **A caller-side workaround** — treat the kill as a park and relaunch with `--resume`. It gives up the
   warm process a long-lived conversation exists for, and leaves every other caller exposed.
+- **Ending a keep-alive turn on its `Blocked`.** The turn ends while claude is still retrying; its next
+  Send then types into the retry, and a turn that recovered is reported failed.
+- **Busy on the whole screen.** A reply that quotes "esc to interrupt" reads busy, and every later Send
+  waits out its context — which is why meta-harness declines to busy-gate at all.
 
 ## Evidence
 
@@ -96,6 +118,14 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
   answers the next message. Its idle output makes the kill intermittent at the composer rather than
   certain — the notice above, and a bell rung after about 59 s idle, which resets a 60 s gate just
   before it opens — while a claude waiting on a background command, as on 2026-09-03, writes neither.
+- Held turns rest on recordings of claude 2.1.280 against a local API answering 529
+  (`test/corpus/claude-code/api-error-retry-*`): it retries with a countdown in its status line
+  ("✻ API error · Retrying in 1s · attempt 1/10"), a recovered turn's transcript holds no error entry,
+  and one that gives up gets a single tagged entry (`server_error`) when it does. Its footer's
+  "esc to interrupt" is no witness to the backoff — in a live run under a config whose footer read
+  "← 1 agent" it was absent throughout — which is why the status line decides. The wrapper did not see
+  these API errors at all: claude places the words of a freshly painted line with cursor moves, so the
+  anchored `API Error:` matcher never matches its rendering, and the transcript is what settles them.
 
 ## Consequences
 
@@ -104,6 +134,12 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
   from the harness's own record (the transcript) or from the harness exiting.
 - Classification in keep-alive mode reads only new output, so its cost scales with what the harness
   writes, not with the size of the window.
+- A held turn ends when the harness ends it — at its end-of-turn marker, or the idle fallback when it
+  paints none — not when the error first shows. A caller watching for the `Blocked` sees it on the
+  finished turn's `HTTPCode` and `RetryAfter`.
+- Send waits out the confirmation window after the harness settles, and waits for as long as its
+  context allows on a harness that keeps working. The whole-screen reading remains for a screen with no
+  composer box to locate the status region by, where it can only err towards busy.
 
 ## Follow-ups
 
@@ -114,3 +150,8 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
   turn deadline instead), or the arms are retired in favour of the harness's own transcript tags, as
   loom retired its screen-scrape wall detector.
 - `Result.ExitCode` is -1 for a signalled harness, although its documentation promises 128+signum.
+
+## History
+
+- 2026-09-23 — amended: in a keep-alive conversation a `Blocked` holds the turn until the harness ends
+  it, and Send waits while the harness is busy, in every mode.
