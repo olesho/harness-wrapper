@@ -24,6 +24,9 @@ project, by way of loomcli's `internal/sessions/transcript`.
 The canonical `Event` (event.go) is field-compatible with loomcli's promoted
 Event, so this parser yields output equivalent to loomcli's `claude.Events`.
 
+Not ported: `ParseLine` and the Follower (`follower*.go`,
+`claudecode/follow.go`) are this repository's own.
+
 ## MIT License text
 
 Reproduced in `LICENSE.upstream` per the MIT license's requirement that the
