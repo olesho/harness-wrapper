@@ -220,6 +220,10 @@ func (s *Server) runTurn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// chatOpen is chat.Open, the one seam through which a test observes
+// the options a gateway conversation is opened with.
+var chatOpen = chat.Open
+
 func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 	var req openRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -235,7 +239,7 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 		// memstore: every conversation is single-launch.
 		openCtx = contain.WithLaunchOptions(openCtx, contain.LaunchOptions{SingleLaunch: true})
 	}
-	conv, err := chat.Open(openCtx, chat.Options{
+	conv, err := chatOpen(openCtx, chat.Options{
 		Harness:        req.Harness,
 		BinaryPath:     req.BinaryPath,
 		Args:           req.Args,
@@ -252,6 +256,11 @@ func (s *Server) openConv(w http.ResponseWriter, r *http.Request) {
 
 		DisableCodexAutoDismiss:   req.DisableCodexAutoDismiss,
 		AutoSkipCodexUpdateNotice: req.AutoSkipCodexUpdateNotice,
+
+		// A gateway conversation lives until its client deletes it, idle
+		// between messages; one ended by a classification would stay listed
+		// while no later Send could succeed (ADR-006).
+		KeepAliveOnClassification: true,
 	})
 	if err != nil {
 		writeChatError(w, err)

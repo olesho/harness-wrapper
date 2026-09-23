@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/resettime"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
@@ -99,6 +100,16 @@ type Options struct {
 	// harness session id with Session.HarnessID.
 	Containment *wrapper.Containment
 
+	// KeepAliveOnClassification keeps the harness running through every
+	// classification of its output (wrapper.Config.KeepAliveOnClassification,
+	// ADR-006). Set it for a conversation whose lifetime the caller owns: one
+	// kept open between messages, where silence is the resting state. Without
+	// it the wrapper ends the harness when a quiet stretch follows output that
+	// merely mentions a rate limit or a retry, and on a real usage-limit wall.
+	// The zero value keeps that run-to-completion supervision, which
+	// harness.RunTurn, oneshot, structured-run and the run CLI rely on.
+	KeepAliveOnClassification bool
+
 	// Cols, Rows configure the virtual PTY size. Defaults: 120x40.
 	Cols, Rows int
 
@@ -155,6 +166,12 @@ type Options struct {
 	// "use the package default". Set once at Open and never mutated, so the
 	// idleCompletionWatcher goroutine reads them race-free.
 	idleGap, markerGap time.Duration
+
+	// wrapperQuiet, wrapperClassify optionally override the wrapper's idle
+	// thresholds (wrapper.Config.IdleQuiet / IdleClassify), so a same-package
+	// test can reach the wrapper's idle classification in a fraction of a
+	// second. Unexported for the reason idleGap is; zero keeps the defaults.
+	wrapperQuiet, wrapperClassify time.Duration
 
 	// permModeRenderTimeout optionally overrides the per-press repaint budget
 	// SetPermissionMode waits on (defaultPermissionModeRenderTimeout). Same
@@ -281,18 +298,19 @@ type ReopenOptions struct {
 
 	// The remaining fields mirror the identically-named Options knobs; see
 	// Options for their semantics.
-	BinaryPath              string
-	Args                    []string
-	Env                     []string
-	Effort                  string
-	Model                   string
-	PermissionMode          string
-	Cols, Rows              int
-	Store                   Store
-	EventBuffer             int
-	InputPolicy             *InputPolicy
-	DisableCodexAutoDismiss bool
-	OnInputRequest          func(InputRequest) (InputAnswer, bool)
+	BinaryPath                string
+	Args                      []string
+	Env                       []string
+	Effort                    string
+	Model                     string
+	PermissionMode            string
+	KeepAliveOnClassification bool
+	Cols, Rows                int
+	Store                     Store
+	EventBuffer               int
+	InputPolicy               *InputPolicy
+	DisableCodexAutoDismiss   bool
+	OnInputRequest            func(InputRequest) (InputAnswer, bool)
 
 	// Containment, for a contained session, may restate its policy: nil
 	// inherits the stored record, and an explicit request must normalize to
@@ -300,9 +318,10 @@ type ReopenOptions struct {
 	// containment is chosen when a conversation is created, never added later.
 	Containment *wrapper.Containment
 
-	// idleGap, markerGap mirror the unexported Options test knobs; only
-	// same-package tests set them. See Options.idleGap / Options.markerGap.
-	idleGap, markerGap time.Duration
+	// idleGap, markerGap, wrapperQuiet and wrapperClassify mirror the
+	// unexported Options test knobs; only same-package tests set them.
+	idleGap, markerGap            time.Duration
+	wrapperQuiet, wrapperClassify time.Duration
 }
 
 // Reopen resumes a previously-stored chat session against its harness's own
@@ -334,25 +353,28 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 	}
 
 	launch := Options{
-		Harness:                 rec.Harness,
-		BinaryPath:              opts.BinaryPath,
-		Args:                    opts.Args,
-		WorkingDir:              rec.WorkingDir,
-		Env:                     opts.Env,
-		Resume:                  rec.HarnessID(),
-		Effort:                  opts.Effort,
-		Model:                   opts.Model,
-		PermissionMode:          opts.PermissionMode,
-		Containment:             opts.Containment,
-		Cols:                    opts.Cols,
-		Rows:                    opts.Rows,
-		Store:                   opts.Store,
-		EventBuffer:             opts.EventBuffer,
-		InputPolicy:             opts.InputPolicy,
-		DisableCodexAutoDismiss: opts.DisableCodexAutoDismiss,
-		OnInputRequest:          opts.OnInputRequest,
-		idleGap:                 opts.idleGap,
-		markerGap:               opts.markerGap,
+		Harness:                   rec.Harness,
+		BinaryPath:                opts.BinaryPath,
+		Args:                      opts.Args,
+		WorkingDir:                rec.WorkingDir,
+		Env:                       opts.Env,
+		Resume:                    rec.HarnessID(),
+		Effort:                    opts.Effort,
+		Model:                     opts.Model,
+		PermissionMode:            opts.PermissionMode,
+		KeepAliveOnClassification: opts.KeepAliveOnClassification,
+		Containment:               opts.Containment,
+		Cols:                      opts.Cols,
+		Rows:                      opts.Rows,
+		Store:                     opts.Store,
+		EventBuffer:               opts.EventBuffer,
+		InputPolicy:               opts.InputPolicy,
+		DisableCodexAutoDismiss:   opts.DisableCodexAutoDismiss,
+		OnInputRequest:            opts.OnInputRequest,
+		idleGap:                   opts.idleGap,
+		markerGap:                 opts.markerGap,
+		wrapperQuiet:              opts.wrapperQuiet,
+		wrapperClassify:           opts.wrapperClassify,
 	}
 	return openWithSession(ctx, launch, *rec, false)
 }
@@ -484,6 +506,10 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		Model:          opts.Model,
 		PermissionMode: opts.PermissionMode,
 		Containment:    opts.Containment,
+		IdleQuiet:      opts.wrapperQuiet,
+		IdleClassify:   opts.wrapperClassify,
+
+		KeepAliveOnClassification: opts.KeepAliveOnClassification,
 	}
 	// When the adapter can recover the harness's own session id from a raw
 	// output line and the id is not already known, tap the wrapper's durable,
@@ -1279,8 +1305,17 @@ func (c *Conversation) usageLimitRelabel(turn *Turn, snap screen.Snapshot) bool 
 	turn.State = TurnStateErrored
 	turn.Reason = ReasonUsageLimited + " (" + msg + ")"
 	turn.Code = CodeUsageLimited
+	turn.ResumeAt = resumeAtFrom(msg)
 	turn.Text = ""
 	return true
+}
+
+// resumeAtFrom is the reset time a usage wall names, zero when it names none —
+// read with the parser the wrapper's session-limit matcher uses, so a wall
+// reports one reset time whichever layer saw it.
+func resumeAtFrom(wall string) time.Time {
+	at, _ := resettime.Parse(wall, time.Now())
+	return at
 }
 
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {

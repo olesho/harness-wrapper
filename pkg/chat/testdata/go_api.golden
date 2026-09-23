@@ -10,6 +10,7 @@ type Options struct
 	field Model string
 	field PermissionMode string
 	field Containment *containment.Request
+	field KeepAliveOnClassification bool
 	field Cols int
 	field Rows int
 	field Store chat.Store
@@ -26,6 +27,7 @@ type ReopenOptions struct
 	field Effort string
 	field Model string
 	field PermissionMode string
+	field KeepAliveOnClassification bool
 	field Cols int
 	field Rows int
 	field Store chat.Store
@@ -64,6 +66,7 @@ type Turn struct
 	field Code chat.TurnCode
 	field HTTPCode int
 	field RetryAfter time.Duration
+	field ResumeAt time.Time
 type Session struct
 	field ID string
 	field Harness string

@@ -34,6 +34,11 @@ All conversation routes are under `/v1`. Path parameters are `{id}` (conversatio
 `exit_after_turn` on `/v1/turns` is **required in effect**: it defaults to `true` when omitted, and an
 explicit `false` is rejected with 400 `unsupported` — the route is one-shot by construction.
 
+A conversation lives until its client deletes it, so every one is opened **keep-alive**
+([ADR-006](../internal/decisions/adr-006-classification-and-lifetime.md)): output that merely mentions a
+rate limit, followed by the idle between messages, never ends its harness, and a real usage-limit wall
+is reported on the turn instead of killing the process.
+
 Errors come back as `{error, code}` with the HTTP status mapped from the `pkg/chat`
 [sentinel errors](chat.md#sentinel-errors) (e.g. `ErrNoControl` → 409, `ErrInputPending` → 409,
 `ErrUnknownHarness` → 400), plus `wrapper.ErrInvalidConfig` → 400 `invalid_config` — the first

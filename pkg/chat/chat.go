@@ -159,6 +159,13 @@ type Turn struct {
 	// message (e.g. "Retry after 30 seconds"). Zero when no hint was
 	// parseable. Consumers can read this to schedule their retry.
 	RetryAfter time.Duration
+
+	// ResumeAt is when the usage window reopens, read from the wall's own
+	// "resets 6:40pm (Europe/Warsaw)" text. Set wherever Code is
+	// CodeUsageLimited — from the screen relabel or the harness's rate_limit
+	// tag — and zero when the wall named no reset time. A consumer schedules
+	// its retry from it rather than parsing Reason.
+	ResumeAt time.Time
 }
 
 // EventType discriminates the variants of a ConversationEvent.

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/resettime"
 	"github.com/olesho/harness-wrapper/pkg/wrapper/internal/detector"
 )
 
@@ -64,7 +65,7 @@ func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
 // The banner is typically wrapped in a tool-result decoration glyph
 // (⎿) so the matcher tolerates a leading whitespace + decoration
 // prefix on the same anchored line. The trailing "resets …" group is
-// not captured here — ParseResetTime is run against the matched line
+// not captured here — resettime.Parse is run against the matched line
 // to extract the absolute reset time.
 var sessionLimitRE = regexp.MustCompile(`(?im)^` + horizontalSpace + `*(?:[⎿│├└╰─◯⏺]` + horizontalSpace + `*)?(You(?:'ve|\s+have)\s+hit\s+your\s+(?:session|usage)\s+limit.*)$`)
 
@@ -79,7 +80,7 @@ func MatchSessionLimit(stripped string, now time.Time) (detector.SessionLimitHit
 		return detector.SessionLimitHit{}, false
 	}
 	hit := detector.SessionLimitHit{Message: strings.TrimSpace(m[1])}
-	if resumeAt, ok := detector.ParseResetTime(hit.Message, now); ok {
+	if resumeAt, ok := resettime.Parse(hit.Message, now); ok {
 		hit.ResumeAt = resumeAt
 	}
 	return hit, true
