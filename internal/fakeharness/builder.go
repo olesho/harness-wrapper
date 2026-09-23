@@ -329,3 +329,70 @@ func (b *Builder) StayAliveUntilStopped() *Builder {
 func (b *Builder) QuitsOnQuit() *Builder {
 	return b.waitInput(`/quit`, false, "quit").Exit(0)
 }
+
+// --- claude-code transcript records -------------------------------------
+//
+// The records a real claude-code session appends to its transcript, reduced to
+// the fields pkg/transcript/claudecode reads; test/corpus/apierror holds real
+// ones. They land where the launch's session keeps its transcript (see
+// Transcript), so a scenario can give the chat layer the harness's own record
+// of a turn — the source the transcript verdicts and History read.
+
+// transcriptTimestamp stamps every record. The readers order by file position,
+// not by time, so one fixed instant keeps fixtures deterministic.
+const transcriptTimestamp = "2026-09-23T00:00:00.000Z"
+
+// TranscriptUser appends the user record for the captured prompt.
+func (b *Builder) TranscriptUser(delayMs int) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": promptPlaceholder},
+	})
+}
+
+// TranscriptReply appends an assistant record whose reply is text.
+func (b *Builder) TranscriptReply(delayMs int, text string) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"role": "assistant", "model": "claude-fake",
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+	})
+}
+
+// TranscriptAPIError appends the synthetic assistant record claude-code writes
+// when an API call fails: model "<synthetic>", the rendered error as its text,
+// isApiErrorMessage set and the machine-readable error tag (server_error,
+// rate_limit, billing_error, …).
+func (b *Builder) TranscriptAPIError(delayMs int, tag, text string) *Builder {
+	return b.transcript(delayMs, map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"role": "assistant", "model": "<synthetic>",
+			"content": []map[string]any{{"type": "text", "text": text}},
+		},
+		"isApiErrorMessage": true,
+		"error":             tag,
+	})
+}
+
+// TranscriptRaw appends records verbatim, for a scenario that needs fields the
+// helpers above do not write (usage, message ids, tool blocks).
+func (b *Builder) TranscriptRaw(delayMs int, lines ...string) *Builder {
+	b.s.Steps = append(b.s.Steps, Step{Transcript: &Transcript{DelayMs: delayMs, Lines: lines}})
+	return b
+}
+
+// transcript appends a Transcript step holding one record, numbering its uuid
+// by its position in the script so every record's id is distinct.
+func (b *Builder) transcript(delayMs int, record map[string]any) *Builder {
+	record["uuid"] = fmt.Sprintf("00000000-0000-4000-8000-%012d", len(b.s.Steps))
+	record["timestamp"] = transcriptTimestamp
+	line, err := json.Marshal(record)
+	if err != nil {
+		panic(fmt.Sprintf("fakeharness: marshal transcript record: %v", err))
+	}
+	b.s.Steps = append(b.s.Steps, Step{Transcript: &Transcript{DelayMs: delayMs, Lines: []string{string(line)}}})
+	return b
+}

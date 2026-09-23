@@ -35,6 +35,23 @@ func fakeBin(t *testing.T) string {
 	return p
 }
 
+// readArgv reads the launch argv the fake dumps at startup (ArgvOutVar),
+// retrying briefly because the dump races the launch call's return.
+func readArgv(t *testing.T, path string) []string {
+	t.Helper()
+	for range 400 {
+		if raw, err := os.ReadFile(path); err == nil {
+			var got []string
+			if err := json.Unmarshal(raw, &got); err == nil {
+				return got
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("argv dump never appeared at %s", path)
+	return nil
+}
+
 func scriptEnv(t *testing.T, s fakeharness.Script) []string {
 	t.Helper()
 	data, err := json.Marshal(s)
@@ -49,16 +66,19 @@ func scriptEnv(t *testing.T, s fakeharness.Script) []string {
 }
 
 func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
-	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	// The fake paints a resume hint naming its own id; the session the launch
+	// assigned must win over it.
+	const hintID = "123e4567-e89b-12d3-a456-426614174000"
 	bin := fakeBin(t)
-	env := scriptEnv(t, fakeharness.New("claude-code").
-		Session(sessionID).
+	argvOut := filepath.Join(t.TempDir(), "argv.json")
+	env := append(scriptEnv(t, fakeharness.New("claude-code").
+		Session(hintID).
 		Idle().
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
 		StayAliveUntilStopped().
-		Build())
+		Build()), fakeharness.ArgvOutVar+"="+argvOut)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -79,8 +99,8 @@ func TestRunTurn_ClaudeStyleTurnStopsAfterCompletion(t *testing.T) {
 	if res.Turn.State != chat.TurnStateComplete {
 		t.Fatalf("Turn.State = %q, want complete", res.Turn.State)
 	}
-	if res.Session.HarnessSessionID != sessionID {
-		t.Fatalf("HarnessSessionID = %q", res.Session.HarnessSessionID)
+	if argv := readArgv(t, argvOut); len(argv) < 2 || argv[0] != "--session-id" || res.Session.HarnessSessionID != argv[1] {
+		t.Fatalf("HarnessSessionID = %q, want the id the launch assigned (argv %q)", res.Session.HarnessSessionID, argv)
 	}
 	if len(res.History) < 2 {
 		t.Fatalf("History length = %d, want at least user + assistant turns", len(res.History))

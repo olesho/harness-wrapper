@@ -136,7 +136,7 @@ func (c *Conversation) searchTranscriptProof() swallowedPromptVerdict {
 // tryTranscriptProof is one read. retryable marks the flush-lag-shaped miss
 // (no rollout yet) rather than a real failure.
 func (c *Conversation) tryTranscriptProof(reader turns.TranscriptReader, sessionID string) (v swallowedPromptVerdict, retryable bool) {
-	tturns, err := reader.ReadTranscript(sessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	if err != nil {
 		return swallowedPromptVerdict{diag: "transcript check failed: " + err.Error()}, true
 	}

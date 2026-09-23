@@ -209,12 +209,14 @@ type Session struct {
 	Harness    string
 	WorkingDir string
 	CreatedAt  time.Time
-	// HarnessSessionID is the ID the underlying harness assigned to its
-	// own session (Codex's resume UUID, Claude Code's session UUID). It is
+	// HarnessSessionID is the harness's own id for its session (Codex's resume
+	// UUID, Claude Code's session UUID). For an adapter that takes an id at
+	// launch (turns.SessionAssigner: claude-code, pi) it is assigned before the
+	// harness starts, and a resume seeds it with the resumed id. Otherwise it is
 	// populated once the adapter surfaces it — from the rendered screen
-	// (turns.SessionIDExtractor) or the raw output line stream
-	// (turns.RawSessionIDExtractor, e.g. Claude Code's "claude --resume <uuid>"
-	// exit hint). Empty until then, and for harnesses with no extractor.
+	// (turns.SessionIDExtractor), the raw output line stream
+	// (turns.RawSessionIDExtractor) or on-disk state (turns.SessionIDLocator).
+	// Empty until then, and for harnesses with none of these.
 	//
 	// A contained session keeps this field empty for good and records the id
 	// in Containment instead (the downgrade guard); read it with HarnessID.
@@ -310,6 +312,13 @@ var (
 	// no harness session id (never captured, so there is nothing to resume).
 	// Call sites wrap it with the session id; errors.Is still matches.
 	ErrNoHarnessSession = errors.New("chat: session has no harness session id")
+
+	// ErrHarnessSessionInUse is returned by Open, wrapped with ErrInvalidOptions,
+	// when Options.HarnessSessionID names a session the harness already has a
+	// transcript for — or one whose transcript could not be read to prove it
+	// unused. A fresh launch under it would be refused by the harness (claude) or
+	// would silently continue it (pi). Resume that session instead.
+	ErrHarnessSessionInUse = errors.New("chat: harness session id already in use")
 )
 
 // newID returns a fresh 16-byte hex ID. Used for chat-level Session

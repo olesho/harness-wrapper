@@ -1,6 +1,8 @@
 package pi
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,5 +121,20 @@ func TestSlugForCwd(t *testing.T) {
 		if got := slugForCwd(in); got != want {
 			t.Errorf("slugForCwd(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestRead_MissingSessionIsNotExist: a session pi has not written yet — the
+// state an id assigned at launch is in until the first flush — reads as
+// fs.ErrNotExist, so a caller can tell it from an unreadable transcript.
+func TestRead_MissingSessionIsNotExist(t *testing.T) {
+	root := writeSession(t, slugForCwd("/work/proj"), "20241203T140000_"+sessionUUID+".jsonl", canonicalBody)
+	_, err := (&Reader{Root: root}).Read("99999999-0a10-4dfe-adca-9b61b3777255", "/work/proj")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Read of an unwritten session = %v, want fs.ErrNotExist", err)
+	}
+	_, err = (&Reader{Root: t.TempDir()}).Read(sessionUUID, "/work/proj")
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Read with no sessions dir = %v, want fs.ErrNotExist", err)
 	}
 }
