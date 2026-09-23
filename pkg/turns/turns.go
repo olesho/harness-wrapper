@@ -219,10 +219,11 @@ type SessionIDExtractor interface {
 // rather than from the rendered screen. Some harnesses (Claude Code) only print
 // their session UUID — e.g. the "claude --resume <uuid>" hint — to the normal
 // screen as the TUI tears down on exit, where it never lands in the vt100
-// snapshot a SessionIDExtractor would scrape. The chat layer feeds every raw
-// line of the harness's output (via the wrapper's durable line tap) to this
-// extractor; once a non-empty ID is returned it is persisted and no longer
-// queried. Lines carry raw ANSI/control bytes, so implementations must tolerate
+// snapshot a SessionIDExtractor would scrape. While the id is unknown, the chat
+// layer feeds every raw line of the harness's output (via the wrapper's
+// durable line tap) to this extractor; once a non-empty ID is returned it is
+// persisted and no longer queried. An id assigned at launch (SessionAssigner)
+// or resumed is known from the start, and the tap is not wired. Lines carry raw ANSI/control bytes, so implementations must tolerate
 // non-matching/polluted lines by returning ("", false).
 type RawSessionIDExtractor interface {
 	// ExtractSessionIDFromLine returns the harness-assigned session UUID if it
@@ -315,6 +316,31 @@ type SessionResumer interface {
 	// ResumeArgs returns the argv fragment that resumes harnessSessionID (e.g.
 	// {"--resume", id}).
 	ResumeArgs(harnessSessionID string) []string
+}
+
+// SessionAssigner is an optional capability adapters implement when the harness
+// accepts a caller-chosen id for a FRESH session at launch — claude-code and pi
+// both take --session-id <uuid> and name the session's transcript after it.
+//
+// The chat layer assigns an id on every fresh Open with such an adapter, so the
+// id is known from the moment the harness starts. Without one it is learned
+// only from what the harness prints — claude's "claude --resume <uuid>" exit
+// hint, which recent releases print rarely if at all — and every reading that
+// needs it (the transcript verdicts, History) is off until then, which for a
+// live conversation is its whole life. Mirrors meta-harness's
+// SessionInitializer (src/turns/types.ts), which mints the id the same way.
+type SessionAssigner interface {
+	// NewSessionID mints a fresh id in the form the harness accepts.
+	NewSessionID() string
+
+	// ValidSessionID reports why id cannot name a session of this harness, or
+	// nil when it can. It checks the form only; whether the id is already in
+	// use is the chat layer's check.
+	ValidSessionID(id string) error
+
+	// SessionIDArgs returns the argv fragment that starts a fresh session named
+	// id (e.g. {"--session-id", id}).
+	SessionIDArgs(id string) []string
 }
 
 // SessionControlFlags is an optional capability adapters may implement to list

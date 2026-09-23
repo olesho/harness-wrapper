@@ -83,13 +83,15 @@ type Script struct {
 	Steps     []Step `json:"steps"`
 }
 
-// Step is exactly one of: paint a Frame, WaitInput for typed bytes, Hold at the
-// prompt until the wrapper stops the process, or Exit.
+// Step is exactly one of: paint a Frame, WaitInput for typed bytes, append to
+// the Transcript, Hold at the prompt until the wrapper stops the process, or
+// Exit.
 type Step struct {
-	Frame     *Frame     `json:"frame,omitempty"`
-	WaitInput *WaitInput `json:"wait_input,omitempty"`
-	Hold      *Hold      `json:"hold,omitempty"`
-	Exit      *Exit      `json:"exit,omitempty"`
+	Frame      *Frame      `json:"frame,omitempty"`
+	WaitInput  *WaitInput  `json:"wait_input,omitempty"`
+	Transcript *Transcript `json:"transcript,omitempty"`
+	Hold       *Hold       `json:"hold,omitempty"`
+	Exit       *Exit       `json:"exit,omitempty"`
 }
 
 // Frame is a full-screen repaint. The binary prefixes every frame with a
@@ -120,6 +122,19 @@ type WaitInput struct {
 	// later Echo frames (i.e. the submitted text, minus the submit key).
 	Capture bool   `json:"capture,omitempty"`
 	Label   string `json:"label,omitempty"`
+}
+
+// Transcript appends records to the session transcript, where a real
+// claude-code writes it: <CLAUDE_CONFIG_DIR, else $HOME/.claude>/projects/
+// <encoded realpath of the cwd>/<id>.jsonl. <id> is the session the launch
+// names — its --session-id, else its --resume — and Script.SessionID for a
+// launch that names none. It is how a scenario gives the chat layer the
+// harness's own record of a turn, e.g. a tagged API-error line.
+type Transcript struct {
+	DelayMs int `json:"delay_ms,omitempty"`
+	// Lines are JSONL records, one per line, without their trailing newline.
+	// The prompt placeholder is replaced with the last captured input.
+	Lines []string `json:"lines"`
 }
 
 // Exit terminates the fake with Code, modelling a harness that crashes or quits

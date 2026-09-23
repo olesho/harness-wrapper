@@ -23,21 +23,22 @@
 //     codex's Token-usage footer match or claude-code's "✻ <verb> for Ns" line
 //     (and, with it, a BusyDetector + MessageExtractor).
 //
-//   - Session ID extraction (interactive path): NOT implemented. pi surfaces
-//     its session id via the "/session" command and the JSON header line of
-//     `pi --mode json` (parsed by the headless pkg/harness/pi profile), but no
-//     UUID is scraped from the interactive TUI, so History() falls back to the
-//     in-memory Store mid-session until an id is known. A future option is to
-//     inject a generated id with pi's "--session-id <uuid>" flag at launch.
+//   - Session ID: assigned, not extracted. pi surfaces its session id only via
+//     the "/session" command and the JSON header line of `pi --mode json`
+//     (parsed by the headless pkg/harness/pi profile), never on the interactive
+//     TUI, so the adapter implements turns.SessionAssigner instead: the chat
+//     layer mints a UUID and launches pi with "--session-id <uuid>".
 //
 // Markers may shift across upstream versions; the golden-recording tests under
 // test/corpus/pi/ will be the early-warning signal when they're added.
 package pi
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	transcriptpi "github.com/olesho/harness-wrapper/pkg/transcript/pi"
@@ -71,6 +72,28 @@ func (*Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcrip
 // `pi --session <uuid>`. Implements turns.SessionResumer.
 func (*Adapter) ResumeArgs(harnessSessionID string) []string {
 	return []string{"--session", harnessSessionID}
+}
+
+// NewSessionID mints a random UUID for a fresh session. Implements
+// turns.SessionAssigner.
+func (*Adapter) NewSessionID() string { return sessionid.NewUUID() }
+
+// ValidSessionID requires a UUID, the form pi mints for its own sessions and the
+// one its transcript reader matches file names on. Implements
+// turns.SessionAssigner.
+func (*Adapter) ValidSessionID(id string) error {
+	if !sessionid.IsUUID(id) {
+		return fmt.Errorf("pi session id %q is not a UUID", id)
+	}
+	return nil
+}
+
+// SessionIDArgs returns `--session-id <uuid>`. pi's flag reuses a session that
+// already exists ("creating it if missing"), unlike claude's, which refuses —
+// so the chat layer's in-use check is what keeps an assigned id fresh.
+// Implements turns.SessionAssigner.
+func (*Adapter) SessionIDArgs(id string) []string {
+	return []string{"--session-id", id}
 }
 
 // SessionControlFlags lists the chat-managed session-control flags a caller must

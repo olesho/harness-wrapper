@@ -3,6 +3,7 @@ type Options struct
 	field BinaryPath string
 	field Args []string
 	field Resume string
+	field HarnessSessionID string
 	field WorkingDir string
 	field Env []string
 	field Effort string
@@ -150,6 +151,7 @@ ErrConflictingAnswer = "chat: option_id and option_ids both set"
 ErrQuitUnsupported = "chat: harness has no graceful-quit sequence"
 ErrResumeUnsupported = "chat: harness has no resume sequence"
 ErrNoHarnessSession = "chat: session has no harness session id"
+ErrHarnessSessionInUse = "chat: harness session id already in use"
 ErrPermissionModeUnsupported = "chat: harness does not support permission-mode switching"
 ErrPermissionModeUnreachable = "chat: permission mode not reachable on this harness"
 ErrPermissionModeSwitchFailed = "chat: permission mode switch did not take effect"

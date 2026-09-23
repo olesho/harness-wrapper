@@ -47,11 +47,13 @@ package claudecode
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
+	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
@@ -780,6 +782,12 @@ func (*Adapter) QuitSequence() []byte { return quitCommand }
 // tears down on exit, so it shows up in the raw PTY line stream but NOT in the
 // rendered vt100 snapshot — hence this is a turns.RawSessionIDExtractor (raw
 // line) rather than a turns.SessionIDExtractor (screen scrape).
+//
+// It is the fallback for a launch whose id was not assigned: the chat layer
+// starts every fresh claude session with --session-id (see SessionIDArgs),
+// because claude 2.1.280 prints the hint only on a TTY with transcript saving
+// on and the transcript present, and meta-harness reports it absent from
+// 2.1.201.
 func (*Adapter) ExtractSessionIDFromLine(line string) (string, bool) {
 	m := resumeRE.FindStringSubmatch(line)
 	if len(m) < 2 {
@@ -792,6 +800,27 @@ func (*Adapter) ExtractSessionIDFromLine(line string) (string, bool) {
 // `claude --resume <uuid>`. Implements turns.SessionResumer.
 func (*Adapter) ResumeArgs(harnessSessionID string) []string {
 	return []string{"--resume", harnessSessionID}
+}
+
+// NewSessionID mints a random UUID for a fresh session. Implements
+// turns.SessionAssigner.
+func (*Adapter) NewSessionID() string { return sessionid.NewUUID() }
+
+// ValidSessionID requires a UUID: claude refuses any other --session-id at
+// startup. Implements turns.SessionAssigner.
+func (*Adapter) ValidSessionID(id string) error {
+	if !sessionid.IsUUID(id) {
+		return fmt.Errorf("claude-code session id %q is not a UUID", id)
+	}
+	return nil
+}
+
+// SessionIDArgs returns `--session-id <uuid>`, which starts a fresh session
+// whose transcript is <projects>/<encoded-cwd>/<uuid>.jsonl. Claude refuses to
+// start when that file already exists ("Session ID … is already in use").
+// Implements turns.SessionAssigner.
+func (*Adapter) SessionIDArgs(id string) []string {
+	return []string{"--session-id", id}
 }
 
 // SessionControlFlags lists the chat-managed session-control flags a caller must
