@@ -15,16 +15,19 @@ import (
 )
 
 func TestRunTurnEndpoint_ClaudeStyleOneShot(t *testing.T) {
-	const sessionID = "123e4567-e89b-12d3-a456-426614174000"
+	// The fake paints a resume hint naming its own id; the session the launch
+	// assigned must win over it.
+	const hintID = "123e4567-e89b-12d3-a456-426614174000"
 	bin := fakeHarnessBin(t)
-	env := fakeScriptEnv(t, fakeharness.New("claude-code").
-		Session(sessionID).
+	argvOut := argvOutPath(t)
+	env := fakeScriptEnvArgv(t, fakeharness.New("claude-code").
+		Session(hintID).
 		Idle().
 		AwaitSubmit().
 		Working(30, "Working").
 		Reply(40, "assistant reply: "+fakeharness.PromptRef(), "Baked", "1s").
 		StayAliveUntilStopped().
-		Build())
+		Build(), argvOut)
 
 	srv := NewServer()
 	ts := httptest.NewServer(srv.Routes())
@@ -58,8 +61,8 @@ func TestRunTurnEndpoint_ClaudeStyleOneShot(t *testing.T) {
 	if !strings.Contains(out.Turn.Text, "assistant reply: ship the HTTP turn API") {
 		t.Fatalf("turn text missing assistant reply: %q", out.Turn.Text)
 	}
-	if out.Session.HarnessSessionID != "123e4567-e89b-12d3-a456-426614174000" {
-		t.Fatalf("harness_session_id = %q", out.Session.HarnessSessionID)
+	if argv := readArgvDump(t, argvOut); len(argv) < 2 || argv[0] != "--session-id" || out.Session.HarnessSessionID != argv[1] {
+		t.Fatalf("harness_session_id = %q, want the id the launch assigned (argv %q)", out.Session.HarnessSessionID, argv)
 	}
 	if !out.ProcessStoppedAfterTurn {
 		t.Fatal("process_stopped_after_turn = false, want true")

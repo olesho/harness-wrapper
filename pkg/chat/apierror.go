@@ -134,7 +134,7 @@ func (c *Conversation) captureTranscriptWatermark() int {
 		// first-Send case, not a failure.
 		return 0
 	}
-	tturns, err := reader.ReadTranscript(sessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	switch {
 	case err == nil:
 		return len(tturns)
@@ -191,7 +191,7 @@ func (c *Conversation) apiErrorVerdictOfCurrentTurn() (apiErrorVerdict, bool) {
 		return apiErrorVerdict{}, false
 	}
 
-	tturns, err := reader.ReadTranscript(sessionID, c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	if err != nil {
 		// The harness may simply not have flushed yet. One pause, one retry —
 		// the same wait applySwallowedPromptVerdict already pays on this file.
@@ -200,7 +200,7 @@ func (c *Conversation) apiErrorVerdictOfCurrentTurn() (apiErrorVerdict, bool) {
 		if !c.waitForTranscriptFlush() {
 			return apiErrorVerdict{}, false
 		}
-		if tturns, err = reader.ReadTranscript(sessionID, c.opts.WorkingDir); err != nil {
+		if tturns, err = reader.ReadTranscript(sessionID, c.transcriptDir()); err != nil {
 			return apiErrorVerdict{}, false
 		}
 	}

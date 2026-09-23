@@ -13,11 +13,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"golang.org/x/term"
 )
 
@@ -50,7 +52,7 @@ func run() error {
 	var captured string
 
 	for _, step := range sc.Steps {
-		done, err := runStep(in, step, &captured)
+		done, err := runStep(in, step, sc.SessionID, &captured)
 		if err != nil {
 			return err
 		}
@@ -116,14 +118,17 @@ func enterRawMode() func() {
 
 // runStep executes one timeline step. It returns done=true when the step ends
 // replay (a Hold), updating captured through its pointer for a capturing
-// WaitInput.
-func runStep(in *bufio.Reader, step fakeharness.Step, captured *string) (bool, error) {
+// WaitInput. scriptSession is the session id the script names.
+func runStep(in *bufio.Reader, step fakeharness.Step, scriptSession string, captured *string) (bool, error) {
 	switch {
 	case step.Frame != nil:
 		return false, paintFrame(step.Frame, *captured)
 
 	case step.WaitInput != nil:
 		return false, waitInput(in, step.WaitInput, captured)
+
+	case step.Transcript != nil:
+		return false, appendTranscript(step.Transcript, scriptSession, *captured)
 
 	case step.Hold != nil:
 		// Hold at the prompt until the wrapper closes the PTY (it kills us
@@ -162,6 +167,87 @@ func paintFrame(f *fakeharness.Frame, captured string) error {
 		return fmt.Errorf("paint frame: %w", err)
 	}
 	return nil
+}
+
+// appendTranscript writes a Transcript step's records to the session transcript
+// the launch names, creating it and its directory as claude-code does.
+func appendTranscript(tr *fakeharness.Transcript, scriptSession, captured string) error {
+	if tr.DelayMs > 0 {
+		time.Sleep(time.Duration(tr.DelayMs) * time.Millisecond)
+	}
+	path, err := transcriptPath(launchSessionID(os.Args[1:], scriptSession))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("transcript dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("open transcript: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	for _, line := range tr.Lines {
+		line = strings.ReplaceAll(line, "{{prompt}}", jsonEscape(captured))
+		if _, err := io.WriteString(f, line+"\n"); err != nil {
+			return fmt.Errorf("write transcript: %w", err)
+		}
+	}
+	return nil
+}
+
+// launchSessionID returns the session id argv names — the value of
+// --session-id, else of --resume — or fallback when it names none.
+func launchSessionID(argv []string, fallback string) string {
+	resume := ""
+	for i := 0; i < len(argv); i++ {
+		switch {
+		case argv[i] == "--":
+			i = len(argv)
+		case argv[i] == "--session-id" && i+1 < len(argv):
+			return argv[i+1]
+		case strings.HasPrefix(argv[i], "--session-id="):
+			return strings.TrimPrefix(argv[i], "--session-id=")
+		case argv[i] == "--resume" && i+1 < len(argv) && resume == "":
+			resume = argv[i+1]
+		}
+	}
+	if resume != "" {
+		return resume
+	}
+	return fallback
+}
+
+// transcriptPath is where claude-code keeps session id's transcript for this
+// process: under CLAUDE_CONFIG_DIR (relative to the cwd, as claude takes it
+// verbatim), else $HOME/.claude, in the project dir named after the cwd's
+// realpath.
+func transcriptPath(id string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("cwd: %w", err)
+	}
+	if real, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = real
+	}
+	root := os.Getenv("CLAUDE_CONFIG_DIR")
+	if root == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("home: %w", err)
+		}
+		root = filepath.Join(home, ".claude")
+	} else if !filepath.IsAbs(root) {
+		root = filepath.Join(cwd, root)
+	}
+	return filepath.Join(root, "projects", transcriptcc.EncodedCWD(cwd), id+".jsonl"), nil
+}
+
+// jsonEscape returns s as the body of a JSON string literal, so a captured
+// prompt can be spliced into a JSONL record.
+func jsonEscape(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1])
 }
 
 // waitInput blocks until the typed bytes match the step's regex, capturing the

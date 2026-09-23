@@ -52,6 +52,8 @@ type Options struct {
 	Args        []string // passed verbatim to the harness
 	Resume      string   // harness session id to resume; Args must not carry any flag the
 	                     // adapter reserves via turns.SessionControlFlags
+	HarnessSessionID string // id for a FRESH session, where the adapter takes one (claude-code,
+	                     // pi); minted when empty — see History below
 	WorkingDir  string
 	Env         []string
 	Effort      string   // reasoning effort ("" = harness default)
@@ -316,13 +318,25 @@ message time.
 When the adapter implements `turns.TranscriptReader` **and** the harness session ID is known,
 `History` reads the harness's own persisted JSONL log — the higher-fidelity source, since it records
 exactly what the model said, not what the TUI rendered. See [Transcripts](../internal/transcript.md)
-for the on-disk paths. Otherwise it falls back to the `Store`'s recorded turns.
+for the on-disk paths. Otherwise — and while the harness has not written its transcript yet — it
+falls back to the `Store`'s recorded turns.
 
-Harness session IDs are extracted opportunistically: after each `TurnComplete`, the `Conversation`
-invokes the adapter's `SessionIDExtractor` (if any) on the current screen, persists the ID via
-`Store.UpdateSession`, and stops re-querying. Adapters that surface the id only as the TUI tears down
-(claude-code, on `/quit`) implement `turns.RawSessionIDExtractor` instead; `Open` taps the wrapper's
-durable line stream and captures the id the moment the exit hint (`claude --resume <uuid>`) streams by.
+Harness session IDs are **assigned at launch** where the harness takes one. claude-code and pi
+implement `turns.SessionAssigner`, so every fresh `Open` starts them with `--session-id <uuid>` —
+`Options.HarnessSessionID`, or a minted UUID when that is empty — and the stored `Session` carries the
+id before the first turn. Everything that reads the harness's own record (`History`, the API-error
+verdicts, the swallowed-prompt check) therefore works from turn 1. `Open` refuses an
+`Options.HarnessSessionID` the adapter cannot take, one not in the harness's form, one alongside
+`Resume`, and one whose transcript already exists (`ErrHarnessSessionInUse`, wrapped in
+`ErrInvalidOptions` — resume that session instead). Whenever chat assigns or resumes an id,
+`Options.Args` may not carry the adapter's session-control flags (`--session-id`, `--resume`,
+`--continue`, …).
+
+Other harnesses' IDs are extracted opportunistically: after each `TurnComplete`, the `Conversation`
+invokes the adapter's `SessionIDExtractor` (if any) on the current screen, then its
+`SessionIDLocator` (on-disk state), persists the ID via `Store.UpdateSession`, and stops re-querying.
+An adapter that surfaces the id only as the TUI tears down implements `turns.RawSessionIDExtractor`;
+`Open` taps the wrapper's durable line stream for it while the id is still unknown.
 
 ## Graceful quit
 
@@ -331,10 +345,10 @@ func (c *Conversation) Quit(ctx context.Context) error
 ```
 
 `Quit` sends the adapter's graceful-quit sequence (claude-code: the `/quit` command) through the
-writer the conversation already holds, so the harness exits cleanly. Combined with the raw session-id
-capture above, a `History` read *after* the process has exited still returns transcript-backed
-history — which is how the one-shot [`run`](cli.md) / [`POST /v1/turns`](gateway.md) paths end a turn
-yet still hand back the harness session id. Returns `ErrQuitUnsupported` when the adapter implements no
+writer the conversation already holds, so the harness exits cleanly and flushes its transcript. With
+the session id known from launch, a `History` read *after* the process has exited still returns
+transcript-backed history — which is how the one-shot [`run`](cli.md) / [`POST /v1/turns`](gateway.md)
+paths end a turn yet still hand back the harness session id. Returns `ErrQuitUnsupported` when the adapter implements no
 `turns.Quitter`.
 
 ## Permission mode at runtime

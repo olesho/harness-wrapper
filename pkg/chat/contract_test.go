@@ -120,6 +120,7 @@ func TestContract_GoAPI(t *testing.T) {
 		{"ErrQuitUnsupported", ErrQuitUnsupported},
 		{"ErrResumeUnsupported", ErrResumeUnsupported},
 		{"ErrNoHarnessSession", ErrNoHarnessSession},
+		{"ErrHarnessSessionInUse", ErrHarnessSessionInUse},
 		// Permission-mode switching. All six are listed on purpose:
 		// ErrPickerUnsupported / ErrPickerTimeout were NOT added when model
 		// discovery landed, and that gap is a precedent not to repeat for

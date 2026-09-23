@@ -151,12 +151,12 @@ for the endpoint reference and ready-to-run Python and TypeScript example client
 
 ## Supported harnesses
 
-| Harness     | Status detection | Turn detection           | Session ID extraction    | Transcript reader        |
+| Harness     | Status detection | Turn detection           | Session ID               | Transcript reader        |
 |-------------|------------------|--------------------------|--------------------------|--------------------------|
 | codex       | ✅                | ✅ `Token usage:` footer   | ✅ `codex resume <uuid>`   | ✅ `~/.codex/sessions/`    |
-| claude-code | ✅                | ✅ `✻ <verb> for Ns` line  | ✅ `claude --resume <uuid>`| ✅ `~/.claude/projects/`   |
+| claude-code | ✅                | ✅ `✻ <verb> for Ns` line  | ✅ assigned: `--session-id`| ✅ `~/.claude/projects/`   |
 | opencode    | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ⏳ (on-disk store in flux: JSON → SQLite) |
-| pi          | ✅                | ⏳ idle + `Busy` spinner    | ⏳ headless via `--mode json` | ✅ `~/.pi/agent/sessions/` |
+| pi          | ✅                | ⏳ idle + `Busy` spinner    | ✅ assigned: `--session-id`| ✅ `~/.pi/agent/sessions/` |
 | generic     | ✅ (fallback)     | ✅ via `waiting_for_input` | —                        | —                        |
 
 The per-harness detail and "adding a harness" workflow are in the

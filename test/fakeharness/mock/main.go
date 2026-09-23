@@ -46,6 +46,10 @@ func main() {
 	readyPrompt := flag.Bool("ready-prompt", false, "emit a Claude Code-style ready prompt and consume one input line before running the mode (so chat-layer readiness passes); composes with modes that don't otherwise read stdin")
 	failedMsg := flag.String("failed-msg", "Fatal: workspace is not writable.", "stderr message for failed mode")
 	emitFile := flag.String("emit-file", "", "for --mode emit: path to a file whose bytes are written verbatim to stdout")
+	// chat's claude-code and pi adapters start every fresh session under an
+	// assigned id (--session-id <uuid>). Accepted, as those harnesses accept it,
+	// so the mock can stand in for one; it names no transcript here.
+	_ = flag.String("session-id", "", "the session id a claude-code or pi launch assigns (accepted, unused)")
 	flag.Parse()
 
 	installSignalCleanup()

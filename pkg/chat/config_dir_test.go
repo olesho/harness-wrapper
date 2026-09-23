@@ -34,6 +34,13 @@ func stageClaudeTranscript(t *testing.T, configRoot, workingDir, sessionID, repl
 	}
 }
 
+// harnessIDOf reads the conversation's harness session id under its lock.
+func harnessIDOf(c *Conversation) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.session.HarnessID()
+}
+
 // TestClaudeConfigDir_TranscriptFoundUnderPerAgentRoot is the regression test
 // for PUPPET-494: a profiled agent is launched with CLAUDE_CONFIG_DIR pointing
 // at its OWN config root, so its transcript lives under
@@ -42,21 +49,19 @@ func stageClaudeTranscript(t *testing.T, configRoot, workingDir, sessionID, repl
 // so HistoryWithSource failed with ENOENT and every caller silently degraded to
 // the screen-scraped store fallback.
 func TestClaudeConfigDir_TranscriptFoundUnderPerAgentRoot(t *testing.T) {
-	const sessID = "11111111-2222-3333-4444-555555555555"
 	const reply = "the model's own words"
 
 	cfgDir := filepath.Join(t.TempDir(), "claude") // the per-agent CLAUDE_CONFIG_DIR
 	wd := t.TempDir()                              // the agent worktree
-	stageClaudeTranscript(t, cfgDir, wd, sessID, reply)
 
 	// A real Open over a real PTY: this is the wiring under test, not a
 	// hand-built Conversation.
-	script := fakeharness.New("claude-code").Session(sessID).Idle().StayAliveUntilStopped().Build()
+	script := fakeharness.New("claude-code").Idle().StayAliveUntilStopped().Build()
 	conv := openFake(t, script, func(o *Options) {
 		o.WorkingDir = wd
 		o.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+cfgDir)
 	})
-	conv.captureRawSessionID("claude --resume " + sessID)
+	stageClaudeTranscript(t, cfgDir, wd, harnessIDOf(conv), reply)
 
 	turns, src, err := conv.HistoryWithSource(context.Background())
 	if err != nil {
@@ -74,7 +79,6 @@ func TestClaudeConfigDir_TranscriptFoundUnderPerAgentRoot(t *testing.T) {
 // operator case: no CLAUDE_CONFIG_DIR in the launch env, so the reader must keep
 // its <home>/.claude/projects default. A careless fix breaks exactly this.
 func TestClaudeConfigDir_UnsetKeepsHomeDefault(t *testing.T) {
-	const sessID = "22222222-3333-4444-5555-666666666666"
 	const reply = "home-rooted transcript"
 
 	home := t.TempDir()
@@ -84,15 +88,14 @@ func TestClaudeConfigDir_UnsetKeepsHomeDefault(t *testing.T) {
 	// would smuggle the operator's profile in.
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	wd := t.TempDir()
-	stageClaudeTranscript(t, filepath.Join(home, ".claude"), wd, sessID, reply)
 
-	script := fakeharness.New("claude-code").Session(sessID).Idle().StayAliveUntilStopped().Build()
+	script := fakeharness.New("claude-code").Idle().StayAliveUntilStopped().Build()
 	conv := openFake(t, script, func(o *Options) {
 		o.WorkingDir = wd
 		// os.Environ() carries the t.Setenv'd HOME and a blank CLAUDE_CONFIG_DIR.
 		o.Env = os.Environ()
 	})
-	conv.captureRawSessionID("claude --resume " + sessID)
+	stageClaudeTranscript(t, filepath.Join(home, ".claude"), wd, harnessIDOf(conv), reply)
 
 	turns, src, err := conv.HistoryWithSource(context.Background())
 	if err != nil {
@@ -137,7 +140,6 @@ func TestConfigureAdapterEnv_NonConfigurableAdapterIsNoOp(t *testing.T) {
 // child's working directory (Options.WorkingDir), which is not this process's
 // cwd. History must read from there.
 func TestClaudeConfigDir_RelativeRootResolvesAgainstWorkingDir(t *testing.T) {
-	const sessID = "33333333-4444-5555-6666-777777777777"
 	const reply = "relative-root transcript"
 
 	// Build the fake first: the build runs in the cwd and caches modules under
@@ -145,15 +147,14 @@ func TestClaudeConfigDir_RelativeRootResolvesAgainstWorkingDir(t *testing.T) {
 	buildFakeHarness(t)
 	t.Setenv("HOME", t.TempDir())
 	wd := t.TempDir()
-	stageClaudeTranscript(t, filepath.Join(wd, ".agent-claude"), wd, sessID, reply)
 	t.Chdir(t.TempDir()) // the wrapper's cwd is not the child's
 
-	script := fakeharness.New("claude-code").Session(sessID).Idle().StayAliveUntilStopped().Build()
+	script := fakeharness.New("claude-code").Idle().StayAliveUntilStopped().Build()
 	conv := openFake(t, script, func(o *Options) {
 		o.WorkingDir = wd
 		o.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR=.agent-claude")
 	})
-	conv.captureRawSessionID("claude --resume " + sessID)
+	stageClaudeTranscript(t, filepath.Join(wd, ".agent-claude"), wd, harnessIDOf(conv), reply)
 
 	turns, src, err := conv.HistoryWithSource(context.Background())
 	if err != nil {

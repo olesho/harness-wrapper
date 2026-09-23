@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"strings"
@@ -40,6 +41,24 @@ type Options struct {
 	// Args must not carry any flag the adapter reserves via
 	// turns.SessionControlFlags (else Open returns ErrInvalidOptions).
 	Resume string
+
+	// HarnessSessionID is the harness's own id for the FRESH session Open
+	// starts. When the adapter can take one (turns.SessionAssigner: claude-code
+	// and pi, launched with --session-id <uuid>), every fresh Open assigns an id
+	// at launch — this one, or a minted UUID when it is empty — and seeds
+	// Session.HarnessSessionID with it before the harness starts, so the
+	// transcript verdicts and History work from the first turn. Set it when the
+	// id must be known before launch, e.g. to record it first: it names the
+	// session's transcript.
+	//
+	// Open refuses it, with ErrInvalidOptions, when the adapter cannot take an
+	// id (codex, opencode, generic), when it is not in the harness's form (a
+	// UUID), when Resume is also set, and when the harness already has a
+	// transcript for it (also ErrHarnessSessionInUse): resume that session
+	// instead. An assigned id makes session control chat's, so Args may not
+	// carry any flag the adapter reserves via turns.SessionControlFlags
+	// (--session-id, --resume, --continue, …), exactly as on a resume.
+	HarnessSessionID string
 
 	// WorkingDir is the harness's working directory. Defaults to the
 	// current process's CWD.
@@ -237,6 +256,13 @@ type Conversation struct {
 	// when a new request arrives and when one resolves.
 	inputUnresolved *InputUnresolvedError
 
+	// harnessDir is the directory the harness runs in: Options.WorkingDir, or
+	// this process's working directory when that is empty, which the harness
+	// inherits. Every read of the harness's transcript keys on it — the harness
+	// files its transcript under its working directory — so an empty WorkingDir
+	// does not turn those reads off. Set once at Open.
+	harnessDir string
+
 	// writeStdin, when non-nil, replaces sess.WriteStdin for interactive
 	// answer keystrokes. Production leaves it nil (writes go to the PTY); it
 	// exists so the input-resolution path is testable without a live session.
@@ -381,6 +407,12 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 	if err != nil {
 		return nil, err
 	}
+	harnessDir := opts.WorkingDir
+	if harnessDir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			harnessDir = wd
+		}
+	}
 
 	// A contained conversation — requested now, or recorded — is prepared
 	// before anything else: its record validated or created, and private
@@ -406,31 +438,30 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		configureAdapterEnv(adapter, opts.Env)
 	}
 
-	// Resolve resume args up front so an unsupported harness fails before launch.
-	var resumeArgs []string
-	if opts.Resume != "" {
-		resumer, ok := adapter.(turns.SessionResumer)
-		if !ok {
-			return nil, fmt.Errorf("chat: harness %s cannot resume: %w", opts.Harness, ErrResumeUnsupported)
-		}
-		resumeArgs = resumer.ResumeArgs(opts.Resume)
-
-		// Whenever chat injects a resume prefix the caller must NOT also pass raw
+	// Resolve the session args up front — a resume, or the id assigned to a
+	// fresh session — so an unsupported request fails before launch.
+	sessionArgs, harnessID, err := sessionLaunch(adapter, opts, harnessDir, contained)
+	if err != nil {
+		return nil, err
+	}
+	if len(sessionArgs) > 0 {
+		// Whenever chat injects a session prefix the caller must NOT also pass raw
 		// session-control flags in Options.Args — they would diverge the real
 		// transcript from the persisted harness session id. Reject before launch.
 		// Adapters that declare no reserved flags (e.g. codex) accept anything.
 		if scf, ok := adapter.(turns.SessionControlFlags); ok {
 			if bad := firstSessionControlConflict(opts.Args, scf.SessionControlFlags()); bad != "" {
-				return nil, fmt.Errorf("%w: argument %s conflicts with chat-managed session control; use Options.Resume / Reopen", ErrInvalidOptions, bad)
+				return nil, fmt.Errorf("%w: argument %s conflicts with chat-managed session control; use Options.HarnessSessionID, Options.Resume or Reopen", ErrInvalidOptions, bad)
 			}
 		}
 
-		// Seed the session's harness id with the resume id so History and
-		// session-id capture reflect the resumed session immediately. This composes
-		// with the existing first-write-wins guards (maybeExtractSessionID /
-		// captureRawSessionID both short-circuit on a non-empty id). A contained
-		// session keeps it in its record, never in the legacy field.
-		session = session.withHarnessID(opts.Resume)
+		// Seed the session's harness id before launch, so History and the
+		// transcript verdicts read the right session from the start. This composes
+		// with the first-write-wins guards (maybeExtractSessionID /
+		// captureRawSessionID both short-circuit on a non-empty id), so nothing the
+		// harness prints later replaces it. A contained session keeps it in its
+		// record, never in the legacy field.
+		session = session.withHarnessID(harnessID)
 	}
 
 	scr := screen.New(opts.Cols, opts.Rows)
@@ -446,6 +477,7 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		screen:       scr,
 		queue:        newControlQueue(),
 		session:      session,
+		harnessDir:   harnessDir,
 		eventCh:      make(chan ConversationEvent, opts.EventBuffer),
 		inputStateCh: make(chan struct{}, 1),
 		markerArmCh:  make(chan struct{}, 1),
@@ -455,11 +487,11 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		sentTranscriptWatermark: watermarkUnknown,
 	}
 
-	// Prepend the resume fragment AHEAD of the caller's args so the resume verb
-	// leads the argv; empty for a fresh launch.
+	// Prepend the session fragment AHEAD of the caller's args so the resume verb
+	// or the assigned id leads the argv; empty when the adapter takes neither.
 	launchArgs := opts.Args
-	if len(resumeArgs) > 0 {
-		launchArgs = append(append([]string{}, resumeArgs...), opts.Args...)
+	if len(sessionArgs) > 0 {
+		launchArgs = append(append([]string{}, sessionArgs...), opts.Args...)
 	}
 
 	cfg := wrapper.Config{
@@ -480,13 +512,14 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		KeepAliveOnClassification: opts.KeepAliveOnClassification,
 	}
 	// When the adapter can recover the harness's own session id from a raw
-	// output line, tap the wrapper's durable, no-drop line stream to capture
-	// it. Claude Code prints "claude --resume <uuid>" only to the normal screen
-	// as the TUI tears down on exit, where it never reaches the rendered
-	// snapshot a turns.SessionIDExtractor scrapes — so the raw line is the only
-	// surface that carries it. Wired only when the capability is present, so
-	// other harnesses pay no per-line tap cost.
-	if _, ok := adapter.(turns.RawSessionIDExtractor); ok {
+	// output line and the id is not already known, tap the wrapper's durable,
+	// no-drop line stream to capture it. Claude Code prints "claude --resume
+	// <uuid>" only to the normal screen as the TUI tears down on exit, where it
+	// never reaches the rendered snapshot a turns.SessionIDExtractor scrapes — so
+	// the raw line is the only surface that carries it. A resumed or assigned id
+	// is known from launch and nothing may replace it, so the tap is not wired
+	// then; nor for adapters without the capability, which pay no per-line cost.
+	if _, ok := adapter.(turns.RawSessionIDExtractor); ok && session.HarnessID() == "" {
 		cfg.OnLine = c.captureRawSessionID
 	}
 
@@ -597,6 +630,71 @@ func firstSessionControlConflict(args, banned []string) string {
 		}
 	}
 	return ""
+}
+
+// sessionLaunch returns the argv fragment chat prepends to identify the
+// harness session, and the harness session id it names: the resume fragment
+// for Options.Resume; for a fresh Open with a turns.SessionAssigner, the
+// assigned id's fragment — Options.HarnessSessionID, or a minted id — and
+// nil otherwise. Every refusal is decided here, before anything launches.
+func sessionLaunch(adapter turns.Adapter, opts Options, harnessDir string, contained bool) ([]string, string, error) {
+	if opts.Resume != "" {
+		if opts.HarnessSessionID != "" {
+			return nil, "", fmt.Errorf("%w: HarnessSessionID names a fresh session and Resume resumes one; set one of them", ErrInvalidOptions)
+		}
+		resumer, ok := adapter.(turns.SessionResumer)
+		if !ok {
+			return nil, "", fmt.Errorf("chat: harness %s cannot resume: %w", opts.Harness, ErrResumeUnsupported)
+		}
+		return resumer.ResumeArgs(opts.Resume), opts.Resume, nil
+	}
+	assigner, ok := adapter.(turns.SessionAssigner)
+	if !ok {
+		if opts.HarnessSessionID != "" {
+			return nil, "", fmt.Errorf("%w: harness %s cannot start a session under an assigned id", ErrInvalidOptions, opts.Harness)
+		}
+		return nil, "", nil
+	}
+	id := opts.HarnessSessionID
+	if id == "" {
+		// A minted id cannot collide, so it needs no in-use check.
+		id = assigner.NewSessionID()
+		return assigner.SessionIDArgs(id), id, nil
+	}
+	if err := assigner.ValidSessionID(id); err != nil {
+		return nil, "", fmt.Errorf("%w: HarnessSessionID: %w", ErrInvalidOptions, err)
+	}
+	// A contained Open starts in private state allocated for it, whose root the
+	// adapter learns only once the launch exists; a caller-managed StateDir that
+	// already holds the session is refused by claude itself.
+	if !contained {
+		if err := harnessSessionInUse(adapter, id, harnessDir); err != nil {
+			return nil, "", err
+		}
+	}
+	return assigner.SessionIDArgs(id), id, nil
+}
+
+// harnessSessionInUse refuses id when the adapter can already read a transcript
+// for it: the session exists, so launching a fresh one under the same id would
+// be refused by the harness (claude: "Session ID … is already in use") or would
+// silently continue it (pi reuses an existing session). A read that fails for
+// any reason but a missing file cannot establish that the id is free, so it
+// refuses too. Adapters without a transcript reader cannot tell, and pass.
+func harnessSessionInUse(adapter turns.Adapter, id, workingDir string) error {
+	reader, ok := adapter.(turns.TranscriptReader)
+	if !ok {
+		return nil
+	}
+	_, err := reader.ReadTranscript(id, workingDir)
+	switch {
+	case err == nil:
+		return fmt.Errorf("%w: %w: harness session %s already has a transcript; resume it instead", ErrInvalidOptions, ErrHarnessSessionInUse, id)
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	default:
+		return fmt.Errorf("%w: %w: cannot establish that harness session %s is unused: %w", ErrInvalidOptions, ErrHarnessSessionInUse, id, err)
+	}
 }
 
 // SessionID returns the chat-level session ID. Distinct from the
@@ -1105,9 +1203,9 @@ func (c *Conversation) captureRawSessionID(line string) {
 // because the harness records exactly what the model said, not what
 // the TUI rendered.
 //
-// When transcript reading isn't possible (adapter has no reader, or
-// the harness session ID has not yet been extracted), History falls
-// back to the Store's recorded turns. The fallback only contains the
+// When transcript reading isn't possible (adapter has no reader, the
+// harness session ID is not known, or the harness has not written its
+// transcript yet), History falls back to the Store's recorded turns. The fallback only contains the
 // user-side text and any screen-derived assistant text the watcher
 // captured at TurnComplete.
 // assistantText returns the clean assistant reply for a completed turn: when
@@ -1235,8 +1333,8 @@ const (
 	HistorySourceTranscript HistorySource = "transcript"
 	// HistorySourceStore means the turns came from the chat store fallback:
 	// user-side text plus whatever screen-derived assistant text the watcher
-	// captured. Used when the adapter can't read transcripts or the harness
-	// session id was never captured.
+	// captured. Used when the adapter can't read transcripts, the harness
+	// session id is not known, or its transcript does not exist yet.
 	HistorySourceStore HistorySource = "store"
 )
 
@@ -1256,7 +1354,14 @@ func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySo
 		return out, HistorySourceStore, err
 	}
 
-	tturns, err := reader.ReadTranscript(sessionCopy.HarnessID(), c.opts.WorkingDir)
+	tturns, err := reader.ReadTranscript(sessionCopy.HarnessID(), c.transcriptDir())
+	if errors.Is(err, fs.ErrNotExist) {
+		// The id is known but the harness has not written its transcript yet —
+		// an id assigned at launch is known before the first flush. That is the
+		// store's history, not a failure.
+		out, err := c.store.ListTurns(ctx, sessionCopy.ID)
+		return out, HistorySourceStore, err
+	}
 	if err != nil {
 		return nil, HistorySourceTranscript, fmt.Errorf("chat: read transcript: %w", err)
 	}
@@ -1272,6 +1377,16 @@ func (c *Conversation) HistoryWithSource(ctx context.Context) ([]Turn, HistorySo
 		})
 	}
 	return out, HistorySourceTranscript, nil
+}
+
+// transcriptDir is the working directory the harness's transcript is filed
+// under: harnessDir, or Options.WorkingDir for a Conversation built without
+// Open.
+func (c *Conversation) transcriptDir() string {
+	if c.harnessDir != "" {
+		return c.harnessDir
+	}
+	return c.opts.WorkingDir
 }
 
 // emit pushes an event onto the chan. Drops if the buffer is full

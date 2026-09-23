@@ -59,7 +59,8 @@ feature-detect with a type assertion):
 | Interface | Method | Purpose |
 |---|---|---|
 | `SessionIDExtractor` | `ExtractSessionID(snap) (string, bool)` | Scrape the harness's resume UUID from the rendered screen (e.g. `codex resume <uuid>`). |
-| `RawSessionIDExtractor` | `ExtractSessionIDFromLine(line) (string, bool)` | Recover the UUID from a raw PTY line — for hints that flash by as the TUI tears down on exit and never reach a rendered snapshot (claude-code prints `claude --resume <uuid>` on `/quit`). |
+| `RawSessionIDExtractor` | `ExtractSessionIDFromLine(line) (string, bool)` | Recover the UUID from a raw PTY line — for hints that flash by as the TUI tears down on exit and never reach a rendered snapshot (claude-code prints `claude --resume <uuid>` on `/quit`). Consulted only while the id is unknown. |
+| `SessionAssigner` | `NewSessionID() string`, `ValidSessionID(id) error`, `SessionIDArgs(id) []string` | Start a FRESH session under an id chosen before launch (claude-code, pi: `--session-id <uuid>`). `chat.Open` assigns one on every fresh open — `Options.HarnessSessionID` or a minted one — so the id is known from the first turn instead of learned from an exit hint. |
 | `TranscriptReader` | `ReadTranscript(harnessSessionID, workingDir) ([]transcript.Turn, error)` | Locate + parse the harness's own JSONL log. |
 | `Quitter` | `QuitSequence() []byte` | Bytes for a graceful exit (claude-code: the `/quit` command + enhanced Enter). |
 | `MessageExtractor` | `ExtractMessage(snap) (string, bool)` | Isolate the assistant reply from TUI chrome. |
@@ -138,9 +139,9 @@ place per adapter and are pinned by [corpus replay](testing/corpus.md). The shap
 
 | Adapter | Turn complete | Busy | Session id | Blocking prompts |
 |---|---|---|---|---|
-| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | the "esc to interrupt" footer + the spinner's elapsed-time form | the `--resume <uuid>` hint, captured from the **raw line stream** as the TUI tears down | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
+| `claudecode` | a thinking-summary line ending the turn, **only when not busy** | the "esc to interrupt" footer + the spinner's elapsed-time form | **assigned at launch** (`--session-id <uuid>`); the `--resume <uuid>` exit hint on the raw line stream only when an id was not assigned | folder trust, the alternate trust wording, and the bypass-permissions acceptance screen — all one kind |
 | `codex` | a fresh end-of-turn footer, deduped by exact text | — (no busy model) | scraped from the resume hint, plus an on-disk lookup of the latest session for the working directory | startup interstitials (update, model migration, generic notice) and **approval dialogs** |
-| `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | — | — |
+| `pi` | — (idle fallback) | a "Working…" / "Thinking…" spinner | **assigned at launch** (`--session-id <uuid>`) | — |
 | `opencode` | — (idle fallback) | — | — | — |
 | `generic` | wrapper status only | — | — | — |
 
