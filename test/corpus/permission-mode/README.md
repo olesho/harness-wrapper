@@ -101,6 +101,14 @@ capture): a `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSIO
 marker` warning row, because the rig ran nested inside another Claude Code
 session, and a scratch-directory cwd row.
 
+That warning row is the same nesting artefact `pkg/harnessenv` exists to prevent
+at a *launch* site: a nested claude persists no transcript, so anything that
+reads the rollout back (History, the swallowed-prompt rescue in
+`pkg/chat/swallowed.go`) silently degrades. Harmless here — this rig only
+records footers and never submits a turn — but see `pkg/harnessenv` and
+`docs/md/internal/versions-drift.md` before copying the recording setup into
+anything that does. (PUPPET-671)
+
 ## Live footer strings (claude-code 2.1.217, observed)
 
 ```

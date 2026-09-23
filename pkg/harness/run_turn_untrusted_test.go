@@ -85,9 +85,9 @@ func TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog(t *testing.T) {
 		Harness:    "claude",
 		BinaryPath: claudePath,
 		Args:       []string{"--dangerously-skip-permissions"},
-		// After t.Setenv above, so the fresh CLAUDE_CONFIG_DIR is carried
-		// through; only the nesting markers are dropped.
-		Env:           scrubbedRealClaudeEnv(t),
+		// After the t.Setenv above, so the fresh CLAUDE_CONFIG_DIR is carried
+		// through — it is not a nesting marker and survives the scrub.
+		Env:           realClaudeEnv(t),
 		WorkingDir:    workDir,
 		Prompt:        "Reply with exactly: HARNESS_WRAPPER_RUNTURN_OK",
 		ExitAfterTurn: true,

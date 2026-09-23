@@ -79,7 +79,17 @@ type TurnConfig struct {
 	// not print/headless args.
 	Args []string
 
-	// WorkingDir and Env are passed through to the harness process.
+	// WorkingDir and Env are passed through to the harness process verbatim;
+	// a nil Env means the harness inherits THIS process's environment (see
+	// pkg/wrapper). RunTurn applies no env policy of its own.
+	//
+	// A caller that may itself be running inside a Claude Code session must
+	// pass harnessenv.Cleaned(): an inherited CLAUDECODE /
+	// CLAUDE_CODE_CHILD_SESSION marker makes the spawned claude disable session
+	// persistence ("⚠ Transcript saving is off"), which silently removes the
+	// transcript-backed History path AND the swallowed-prompt rescue in
+	// pkg/chat/swallowed.go, turning a transient screen misread into a hard
+	// ErrTurnErrored. (PUPPET-671)
 	WorkingDir string
 	Env        []string
 
@@ -176,9 +186,13 @@ type TurnResult struct {
 	// harness session ID was captured; otherwise it is the chat store fallback.
 	History []chat.Turn
 
-	// HistorySource reports which of those two paths produced History. The
-	// presence of turns alone can't distinguish them — the store fallback also
-	// returns non-empty slices — so callers that care about fidelity (e.g. the
+	// HistorySource reports which of those two paths produced History. A
+	// silent degradation to HistorySourceStore is most often a NESTED launch:
+	// a spawned claude that inherited the CLAUDE_CODE_* markers writes no
+	// transcript at all. See TurnConfig.Env and pkg/harnessenv. (PUPPET-671)
+	//
+	// The presence of turns alone can't distinguish them — the store fallback
+	// also returns non-empty slices — so callers that care about fidelity (e.g. the
 	// run command's debug logging) must consult this field, not len(History).
 	HistorySource chat.HistorySource
 

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessenv"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 )
 
@@ -59,8 +60,13 @@ func TestTrustDialogLive(t *testing.T) {
 		Harness:    chatClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: workDir,
+		// harnessenv.Cleaned(), not os.Environ(): run from inside a Claude Code
+		// session, the inherited CLAUDECODE / CLAUDE_CODE_CHILD_SESSION markers
+		// make the spawned claude disable session persistence, so it behaves as
+		// a nested child rather than as the top-level session this repro is
+		// about. (PUPPET-671)
 		Env: append(
-			os.Environ(),
+			harnessenv.Cleaned(),
 			"CLAUDE_CONFIG_DIR="+configDir,
 			"HOME="+configDir,
 		),

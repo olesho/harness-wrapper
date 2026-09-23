@@ -221,6 +221,34 @@ shift a startup screen without a single corpus test going red.
 5. **Re-run** `go test ./pkg/turns/harness/<harness>/...` — canonical and adversarial must both pass.
 6. Bump the pin and commit.
 
+## When a real-Claude test fails from inside a Claude Code session
+
+A live test (`HARNESS_WRAPPER_REAL_CLAUDE_RUNTURN=1`, `scripts/claude-release-check.sh`) that fails
+**well inside its deadline** with
+
+```
+harness: turn errored
+claude-code: prompt not accepted / no assistant output; …
+```
+
+on a screen carrying
+
+```
+⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker
+```
+
+is an **env leak, not an upstream regression**. Check `CLAUDECODE` in the launching shell first —
+the cron and the agent shells are themselves Claude Code sessions. A spawned `claude` that inherits
+those markers disables session persistence and writes no rollout, which removes both the
+transcript-backed History path and the swallowed-prompt rescue in `pkg/chat/swallowed.go`; a lagged
+TUI repaint then becomes a hard `ErrTurnErrored` with nothing left to overturn it.
+
+The fix is at the launch site: pass `harnessenv.Cleaned()` as `TurnConfig.Env` (`pkg/harnessenv` owns
+the policy, `CLAUDE_CODE_OAUTH_TOKEN` exempted). When the rescue was impossible for this reason the
+turn's `Reason` now says so — `chat.DiagTranscriptUnavailable` — instead of the generic
+`transcript has no assistant output`. Do **not** re-bake the corpus or bump the pin for this shape.
+(PUPPET-671)
+
 ## When a transcript schema drifts
 
 If a corpus canary runs a live short reply through a harness, re-parses the fresh JSONL, and the reader

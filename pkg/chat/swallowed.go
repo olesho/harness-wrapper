@@ -26,7 +26,38 @@ const (
 	// transcript when the first read found no rollout at all — the shape a
 	// harness that has not flushed yet produces.
 	transcriptFlushRetryGap = 400 * time.Millisecond
+
+	// transcriptOffMarker is the narrow, stable substring of Claude Code's
+	// "⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker"
+	// footer row. Deliberately NOT the full banner: the trailing hint is
+	// width-truncated by the TUI (a captured 2026-09-18 artefact ends
+	// "restart with CLAUDE_CODE_FORCE_SESSION_PE…").
+	//
+	// If Anthropic rewords the banner this stops matching and the diag reverts
+	// to the generic "transcript has no assistant output" text — a graceful
+	// degradation, not a failure.
+	transcriptOffMarker = "Transcript saving is off"
 )
+
+// DiagTranscriptUnavailable is the swallowed-prompt diag for a harness that is
+// not persisting a transcript at all, which is a different fact from "the
+// rollout held no assistant output": no rollout CAN exist, so no rescue was
+// ever possible and the screen-only verdict is unappealable by construction.
+//
+// The cause is a nested launch — the spawned claude inherited CLAUDECODE /
+// CLAUDE_CODE_CHILD_SESSION from its parent. pkg/harnessenv is the fix at the
+// launch site. (PUPPET-671)
+const DiagTranscriptUnavailable = "harness session persistence is off (a nested CLAUDE_CODE_CHILD_SESSION marker disables it) — no rollout can exist to overturn the screen verdict; see pkg/harnessenv"
+
+// transcriptSavingOff reports whether the settled screen carries Claude Code's
+// transcript-off banner.
+//
+// It is only ever consulted on the already-failing swallow path, where the
+// adapter found no assistant extraction at all, so an assistant reply that
+// merely quotes the phrase cannot reach it.
+func transcriptSavingOff(screenText string) bool {
+	return strings.Contains(screenText, transcriptOffMarker)
+}
 
 // swallowedPromptVerdict is what the idle-completion path does with a screen
 // the adapter says was never accepted.
@@ -60,7 +91,23 @@ func (c *Conversation) promptWasSwallowed(snap screen.Snapshot) bool {
 // the exact prompt — would need the pre-send watermark meta-harness keeps, and
 // getting that wrong turns a rescue into a false success, which is the one
 // direction this must not fail in.
-func (c *Conversation) transcriptProofOfCurrentTurn() swallowedPromptVerdict {
+//
+// snap is the settled screen the verdict is about. It is read only to LABEL a
+// miss, never to skip the search: "no rescue was POSSIBLE" (persistence off, no
+// rollout can exist) and "the rescue was declined" (a rollout exists and holds
+// no assistant output) used to share one diag, and the operator could not tell
+// which had happened without reading this file. Every read still runs first, so
+// a rollout that does exist keeps its power to overturn the screen.
+func (c *Conversation) transcriptProofOfCurrentTurn(snap screen.Snapshot) swallowedPromptVerdict {
+	v := c.searchTranscriptProof()
+	if v.proofText == "" && transcriptSavingOff(snap.Text) {
+		v.diag = DiagTranscriptUnavailable
+	}
+	return v
+}
+
+// searchTranscriptProof is the transcript search itself, with no screen input.
+func (c *Conversation) searchTranscriptProof() swallowedPromptVerdict {
 	reader, hasReader := c.adapter.(turns.TranscriptReader)
 	if !hasReader {
 		return swallowedPromptVerdict{diag: "adapter cannot read the harness transcript"}
@@ -118,7 +165,7 @@ func (c *Conversation) tryTranscriptProof(reader turns.TranscriptReader, session
 // Order matters: the transcript gets to speak first, because a rescue is only
 // possible before the turn is declared failed.
 func (c *Conversation) applySwallowedPromptVerdict(turn *Turn, snap screen.Snapshot) bool {
-	v := c.transcriptProofOfCurrentTurn()
+	v := c.transcriptProofOfCurrentTurn(snap)
 	turn.CompletedAt = time.Now()
 
 	if v.proofText != "" {

@@ -66,7 +66,7 @@ func runStructuredRun(args []string) int {
 	defer cancel()
 
 	// Strip Claude Code's nesting markers (minus the credential exemption in
-	// nestingExemptEnvKeys) so the spawned harness persists a transcript AND
+	// pkg/harnessenv) so the spawned harness persists a transcript AND
 	// stays authenticated (see runOneShot for the full rationale), then apply the
 	// opt-in --sandbox-defaults injection on top. Both are env/arg POLICY and
 	// stay a cmd/ concern: pkg/oneshot receives the ALREADY-CLEANED Env/Args.

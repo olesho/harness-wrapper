@@ -409,7 +409,7 @@ func TestTranscriptProof_RejectsATaggedEntry(t *testing.T) {
 		userLine("go"),
 		errorLine("server_error", "API Error: 529 Overloaded"),
 	)
-	v := c.transcriptProofOfCurrentTurn()
+	v := c.transcriptProofOfCurrentTurn(screen.Snapshot{Text: "❯ \n"})
 	if v.proofText != "" {
 		t.Fatalf("proofText = %q, want empty — an API error is not proof of completion", v.proofText)
 	}
@@ -419,7 +419,7 @@ func TestTranscriptProof_RejectsATaggedEntry(t *testing.T) {
 
 	// ...and a real reply still proves it.
 	ok := convWithTranscript(t, "sess-proof-ok", userLine("go"), replyLine("Done."))
-	if got := ok.transcriptProofOfCurrentTurn(); got.proofText != "Done." {
+	if got := ok.transcriptProofOfCurrentTurn(screen.Snapshot{Text: "❯ \n"}); got.proofText != "Done." {
 		t.Errorf("proofText = %q, want %q", got.proofText, "Done.")
 	}
 }
