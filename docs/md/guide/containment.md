@@ -46,9 +46,9 @@ Linux 6.12–7.0, see [Kernels before Landlock ABI 9](#kernels-before-landlock-a
    D-Bus are out of its reach, and TCP reaches only port 443. A contained codex also needs
    `--permission-mode bypass` (see [Harness profiles](#harness-profiles)).
 
-> **Both profiles are inactive for now**, so step 3 is refused at the `profile` stage until their
-> authenticated conformance runs pass. Steps 1 and 2 work today: a login does not need an activated
-> profile.
+> **The codex profile is inactive for now**, so step 3 is refused for codex at the `profile` stage
+> until its authenticated conformance runs pass; claude's have. Steps 1 and 2 work for both: a login
+> does not need an activated profile.
 
 ## Requesting it
 
@@ -198,7 +198,17 @@ the only boundary.
 Each profile is **activated** only once its authenticated conformance runs pass (a real model turn
 with file edits, a subagent, one stdio MCP server, resume, managed settings and a login in a caller
 StateDir). Until then a contained launch of that harness is refused at the `profile` stage, except
-its login (see [Signing in](#signing-in)).
+its login (see [Signing in](#signing-in)). **claude-code 2.1.270 is activated; codex 0.144.5 is not
+yet.** claude's runs left one item unexercised: remote managed settings, which claude-code loads only
+for team and enterprise subscriptions.
+
+The runs are the `TestRealClaude*` tests in `pkg/wrapper`, `pkg/chat` and `cmd/harness-wrapper`. They
+use real credentials and the account's quota, so they run by hand in an ABI 9 guest, never in CI, and
+skip unless named: `HW_REAL_CLAUDE` (the pinned binary), `HW_REAL_CLAUDE_STATE_DIR` (a directory
+signed in with `contain-login`), `HW_REAL_CLAUDE_OAUTH_TOKEN` (a token, as `claude setup-token` prints,
+for the private-state and uncontained sessions) and `HW_TEST_MCP_PROBE` (a built `test/mcpprobe`). The
+stored-conversation run also needs a delegated cgroup, as under `systemd-run --user --scope -p
+Delegate=yes`.
 
 ## Private state
 
