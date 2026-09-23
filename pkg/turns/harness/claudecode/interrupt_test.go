@@ -247,6 +247,61 @@ func TestComposerText(t *testing.T) {
 	}
 }
 
+// TestComposerText_Placeholder pins the example prompt claude 2.1.281 paints in
+// an empty composer, from a live run whose Send refused it as a draft that
+// would not clear: the cursor parked at its start makes it empty, and the same
+// text with the cursor at its end is a draft.
+func TestComposerText_Placeholder(t *testing.T) {
+	const hint = `❯ Try "create a util logging.py that..."`
+	at := func(snap screen.Snapshot, col int) screen.Snapshot {
+		snap.CursorRow, snap.CursorCol = 3, col
+		return snap
+	}
+	for _, tc := range []struct {
+		name string
+		snap screen.Snapshot
+		text string
+	}{
+		{"placeholder", at(box([]string{"⏺ hi", ""}, hint), 2), ""},
+		{"the same text typed", at(box([]string{"⏺ hi", ""}, hint), len([]rune(hint))), `Try "create a util logging.py that..."`},
+		{"a draft with the cursor at its start", at(box([]string{"⏺ hi", ""}, "❯ fix the build"), 2), "fix the build"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if text, ok := New().ComposerText(tc.snap); text != tc.text || !ok {
+				t.Fatalf("ComposerText = %q, %v; want %q, true", text, ok, tc.text)
+			}
+		})
+	}
+}
+
+// Every settled frame of the 2.1.270 recordings that shows the placeholder
+// reads as an empty composer.
+func TestComposerText_PlaceholderRecordings(t *testing.T) {
+	a := New()
+	for _, scenario := range []string{"multi-turn", "tool-call", "interrupted-mid-reply"} {
+		t.Run(scenario, func(t *testing.T) {
+			seen := false
+			for _, snap := range frames(t, scenario) {
+				lines := strings.Split(snap.Text, "\n")
+				top, bottom, ok := composerBounds(lines)
+				if !ok || top < 0 || snap.CursorRow != top+1 || snap.CursorCol != placeholderCol {
+					continue
+				}
+				if !strings.HasPrefix(composerText(lines, top, bottom), `Try "`) {
+					continue
+				}
+				seen = true
+				if text, _ := a.ComposerText(snap); text != "" {
+					t.Fatalf("placeholder frame reads %q, want an empty composer:\n%s", text, snap.Text)
+				}
+			}
+			if !seen {
+				t.Fatal("no frame shows the placeholder with the cursor at its start")
+			}
+		})
+	}
+}
+
 func TestClearComposerSequence(t *testing.T) {
 	for n, composer := range []string{"", "one", "one\ntwo", "one\ntwo\nthree"} {
 		lines := max(n, 1)
