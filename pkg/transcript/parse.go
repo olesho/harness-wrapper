@@ -62,12 +62,24 @@ func parseTranscriptLines(reader *bufio.Reader, startLine int) ([]Line, error) {
 // appendParsedLine unmarshals lineBytes into a Line and appends it to lines.
 // Malformed lines are skipped, returning lines unchanged.
 func appendParsedLine(lines []Line, lineBytes []byte) []Line {
-	var line Line
-	if err := json.Unmarshal(lineBytes, &line); err != nil {
+	line, err := ParseLine(lineBytes)
+	if err != nil {
 		return lines
 	}
-	normalizeLineType(&line)
 	return append(lines, line)
+}
+
+// ParseLine parses one transcript record the way ParseFromBytes parses each
+// line, but returns the error for a malformed record instead of skipping it —
+// for a caller, such as a Follower's decoder, that must report what it could
+// not read.
+func ParseLine(record []byte) (Line, error) {
+	var line Line
+	if err := json.Unmarshal(record, &line); err != nil {
+		return Line{}, fmt.Errorf("malformed transcript line: %w", err)
+	}
+	normalizeLineType(&line)
+	return line, nil
 }
 
 // normalizeLineType ensures line.Type is populated for all transcript formats.

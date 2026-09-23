@@ -68,6 +68,9 @@ each is defined in full.
   metadata only — bodies live in the harness's own log.
 - **Transcript** — [`pkg/transcript`](transcript.md): read-only parsers for a harness's own JSONL
   session log, preferred by `History` over screen-scraped text.
+- **Follower** — [`transcript.Follower`](transcript.md#following-a-transcript-as-it-grows): reads a
+  transcript as the harness appends to it, a batch of complete records past a stored checkpoint at a
+  time, and moves only when the caller acknowledges the batch.
 
 ## Testing & drift
 

@@ -3,10 +3,13 @@
 // Ported from github.com/entireio/cli (MIT, (c) 2026 Entire Inc.) via loomcli's
 // internal/sessions/transcript/claude. See ../ORIGIN.md. Local adaptations:
 // each Event is tagged Source=file, and a dedup-stable NativeID is set (the
-// wrapper dedups events by NativeID; loom's Event had neither field).
+// wrapper dedups events by NativeID; loom's Event had neither field). The
+// per-line parse also reports the content block each event came from, and why
+// a line it could not read was unreadable, for the Follower.
 package claudecode
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -26,15 +29,15 @@ func Events(data []byte) ([]transcript.Event, error) {
 	}
 
 	events := make([]transcript.Event, 0, len(lines))
-	seq := 0
-
 	for _, line := range lines {
-		ts := parseLineTimestamp(line.Timestamp)
-		switch line.Type {
-		case transcript.TypeUser:
-			events = append(events, userLineEvents(line, ts, &seq)...)
-		case transcript.TypeAssistant:
-			events = append(events, assistantLineEvents(line, ts, &seq)...)
+		// An unreadable line yields no events, as it always has: Read skips
+		// what it cannot parse. The Follower reports it instead.
+		blocks, _ := lineEvents(line)
+		for _, b := range blocks {
+			e := b.Event
+			e.Seq = len(events)
+			e.NativeID = legacyNativeID(e)
+			events = append(events, e)
 		}
 	}
 	return events, nil
@@ -113,6 +116,19 @@ func parseLineTimestamp(s string) time.Time {
 	return time.Time{}
 }
 
+// legacyNativeID is the NativeID Events gives e, which Read's callers dedup
+// on: kind-qualified tool ids, and for text the line UUID plus the event's Seq.
+func legacyNativeID(e transcript.Event) string {
+	switch e.Type {
+	case transcript.EventToolUse:
+		return "tool-use:" + e.ToolUseID
+	case transcript.EventToolResult:
+		return "tool-result:" + e.ToolUseID
+	default:
+		return textNativeID(e.UUID, e.Seq)
+	}
+}
+
 // textNativeID gives a per-source-stable id for a text event, which has no
 // shared native id across live/file (review: source-prefixed; the authority
 // filter ensures only one source feeds the parent, so this need not be
@@ -122,12 +138,55 @@ func textNativeID(lineUUID string, seq int) string {
 	return fmt.Sprintf("%s:text:%s:%d", transcript.SourceFile, lineUUID, seq)
 }
 
-func userLineEvents(line transcript.Line, ts time.Time, seq *int) []transcript.Event {
+// decodeRecord is the Follower's decoder: one JSONL entry to its events, each
+// with the index of its content block — the events Events gives for the line.
+// An entry that is not JSON, or a user or assistant entry that cannot be read,
+// is an error: the follower reports it rather than skipping it.
+//
+// Only user and assistant entries hold events, so only they must fit Line.
+// Other entries are skipped however they are shaped: a system api_error entry
+// carries an object in "error", which Line reads as a string, so it fails to
+// parse as a Line at all — Read drops it for that, and it held no events.
+func decodeRecord(record []byte) ([]transcript.BlockEvent, error) {
+	line, err := transcript.ParseLine(record)
+	if err == nil {
+		return lineEvents(line)
+	}
+	var kind struct {
+		Type string `json:"type"`
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(record, &kind) == nil {
+		switch cmp.Or(kind.Type, kind.Role) {
+		case transcript.TypeUser, transcript.TypeAssistant:
+		default:
+			return nil, nil
+		}
+	}
+	return nil, err
+}
+
+// lineEvents returns one line's events, without Seq or NativeID: those are
+// the caller's, since Read and the Follower number and identify events
+// differently. Lines of other types (permission-mode, system, attachment, …)
+// carry no conversation and yield none.
+func lineEvents(line transcript.Line) ([]transcript.BlockEvent, error) {
+	ts := parseLineTimestamp(line.Timestamp)
+	switch line.Type {
+	case transcript.TypeUser:
+		return userLineEvents(line, ts)
+	case transcript.TypeAssistant:
+		return assistantLineEvents(line, ts)
+	}
+	return nil, nil
+}
+
+func userLineEvents(line transcript.Line, ts time.Time) ([]transcript.BlockEvent, error) {
 	var msgEnvelope struct {
 		Content json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(line.Message, &msgEnvelope); err != nil {
-		return nil
+		return nil, fmt.Errorf("user entry: unreadable message: %w", err)
 	}
 
 	// Try string content (direct user prompt).
@@ -135,15 +194,12 @@ func userLineEvents(line transcript.Line, ts time.Time, seq *int) []transcript.E
 	if err := json.Unmarshal(msgEnvelope.Content, &str); err == nil {
 		text := transcript.StripIDEContextTags(str)
 		if text == "" {
-			return nil
+			return nil, nil
 		}
-		e := transcript.Event{
-			Seq: *seq, Timestamp: ts, Role: transcript.RoleUser, Type: transcript.EventText,
+		return []transcript.BlockEvent{{Event: transcript.Event{
+			Timestamp: ts, Role: transcript.RoleUser, Type: transcript.EventText,
 			Text: text, UUID: line.UUID, Source: transcript.SourceFile,
-			NativeID: textNativeID(line.UUID, *seq),
-		}
-		*seq++
-		return []transcript.Event{e}
+		}}}, nil
 	}
 
 	// Array content — text blocks and tool_result blocks.
@@ -154,40 +210,36 @@ func userLineEvents(line transcript.Line, ts time.Time, seq *int) []transcript.E
 		Content   json.RawMessage `json:"content"`
 	}
 	if err := json.Unmarshal(msgEnvelope.Content, &blocks); err != nil {
-		return nil
+		return nil, fmt.Errorf("user entry: content is neither text nor a block array: %w", err)
 	}
 
-	var out []transcript.Event
-	for _, b := range blocks {
+	var out []transcript.BlockEvent
+	for i, b := range blocks {
 		switch b.Type {
 		case "text":
 			txt := transcript.StripIDEContextTags(b.Text)
 			if txt == "" {
 				continue
 			}
-			out = append(out, transcript.Event{
-				Seq: *seq, Timestamp: ts, Role: transcript.RoleUser, Type: transcript.EventText,
+			out = append(out, transcript.BlockEvent{Block: i, Event: transcript.Event{
+				Timestamp: ts, Role: transcript.RoleUser, Type: transcript.EventText,
 				Text: txt, UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: textNativeID(line.UUID, *seq),
-			})
-			*seq++
+			}})
 		case "tool_result":
-			out = append(out, transcript.Event{
-				Seq: *seq, Timestamp: ts, Role: transcript.RoleTool, Type: transcript.EventToolResult,
+			out = append(out, transcript.BlockEvent{Block: i, Event: transcript.Event{
+				Timestamp: ts, Role: transcript.RoleTool, Type: transcript.EventToolResult,
 				Output: extractToolResultText(b.Content), ToolUseID: b.ToolUseID,
 				UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: "tool-result:" + b.ToolUseID,
-			})
-			*seq++
+			}})
 		}
 	}
-	return out
+	return out, nil
 }
 
-func assistantLineEvents(line transcript.Line, ts time.Time, seq *int) []transcript.Event {
+func assistantLineEvents(line transcript.Line, ts time.Time) ([]transcript.BlockEvent, error) {
 	var msg transcript.AssistantMessage
 	if err := json.Unmarshal(line.Message, &msg); err != nil {
-		return nil
+		return nil, fmt.Errorf("assistant entry: unreadable message: %w", err)
 	}
 
 	// A synthetic API-error line is shaped exactly like an assistant reply —
@@ -209,34 +261,32 @@ func assistantLineEvents(line transcript.Line, ts time.Time, seq *int) []transcr
 		} `json:"content"`
 	}{Content: &toolUseIDs})
 
-	var out []transcript.Event
+	var out []transcript.BlockEvent
 	for i, block := range msg.Content {
 		switch block.Type {
 		case transcript.ContentTypeText:
 			if block.Text == "" {
 				continue
 			}
-			out = append(out, transcript.Event{
-				Seq: *seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventText,
+			out = append(out, transcript.BlockEvent{Block: i, Event: transcript.Event{
+				Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventText,
 				Text: block.Text, UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: textNativeID(line.UUID, *seq), APIError: apiErrorTag,
-			})
-			*seq++
+				APIError: apiErrorTag,
+			}})
 		case transcript.ContentTypeToolUse:
 			var id string
 			if i < len(toolUseIDs) {
 				id = toolUseIDs[i].ID
 			}
-			out = append(out, transcript.Event{
-				Seq: *seq, Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventToolUse,
+			out = append(out, transcript.BlockEvent{Block: i, Event: transcript.Event{
+				Timestamp: ts, Role: transcript.RoleAssistant, Type: transcript.EventToolUse,
 				ToolName: block.Name, ToolUseID: id, ToolInput: block.Input,
 				UUID: line.UUID, Source: transcript.SourceFile,
-				NativeID: "tool-use:" + id, APIError: apiErrorTag,
-			})
-			*seq++
+				APIError: apiErrorTag,
+			}})
 		}
 	}
-	return out
+	return out, nil
 }
 
 // extractToolResultText pulls the text out of a tool_result block's content,
