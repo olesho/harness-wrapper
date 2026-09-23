@@ -19,8 +19,8 @@ phrase arms — `rate limit`, `usage limit`, `resets at`, `please try again`, `n
 That welds diagnosis to lifetime: a verdict was also the decision to end the process. It fits
 run-to-completion supervision — `wrapper.Run`, `harness.RunTurn`, oneshot and structured-run, where a
 stuck run must still end in a verdict. It does not fit a caller that keeps the harness alive between
-messages. There, silence is the resting state: Claude Code paints nothing while it sits at its
-composer, nor while a turn waits on a background command. `chat.Open` built its `wrapper.Config` with
+messages. There, silence is the resting state: Claude Code writes little while it sits at its
+composer, and nothing while a turn waits on a background command. `chat.Open` built its `wrapper.Config` with
 no way to say so, so a conversation idle for a minute was killed whenever its recent output happened
 to contain a phrase — and with no turn in flight chat dropped the event, so the caller was never told.
 
@@ -81,13 +81,9 @@ idle, so any phrase kills at once — and it is the value a caller reaches for, 
 - It fired on a working agent in loom's fleet: on 2026-09-03 a worker implementing a rate limiter went
   quiet while a build ran in the background, the arm matched `rate-limit` in its own output, and the
   resulting account wall parked seven agents for fifteen minutes.
-- Against claude 2.1.280 (`TestKeepAliveLive`), a reply naming a rate limit followed by silence ends
-  the default-mode harness as `blocked_by_cost`, and the same process answers the next message under
-  keep-alive. Recording its idle output showed why the kill is intermittent at the composer rather than
-  certain: a few seconds after a turn claude paints a usage notice ("You've used 92% of your weekly
-  limit · resets 6pm") and clears it, and after about 59 s it rings the bell, which resets a 60 s idle
-  gate just before it opens. A claude waiting on a background command, as on 2026-09-03, writes neither.
-  The notice is no wall, and a row pins that none of the matchers reads it as one.
+- claude 2.1.280 paints a usage notice a few seconds after a turn when the account is near its limit
+  ("You've used 92% of your weekly limit · resets 6pm"). It names a limit and a reset time but is no
+  wall; `TestUsageWarningIsNotAWall` pins that none of the matchers reads it as one.
 
 ## Consequences
 
