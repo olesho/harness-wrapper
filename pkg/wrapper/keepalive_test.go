@@ -372,3 +372,18 @@ func TestKeepAlive_ResultIsTheExits(t *testing.T) {
 		})
 	}
 }
+
+// TestUsageWarningIsNotAWall is a line claude 2.1.280 paints a few seconds after
+// a turn while the account is near its limit, recorded live: it names a limit
+// and a reset time, but it is a notice — the harness keeps working. No matcher,
+// in either mode, may read it as a wall.
+func TestUsageWarningIsNotAWall(t *testing.T) {
+	const notice = "You've used 92% of your weekly limit · resets 6pm (Europe/Tirane)"
+	raw := "\x1b[?25l\x1b[H\r\x1b[53C\x1b[34B\x1b[38;2;255;193;7m" + notice + "\x1b[39m\x1b[40;1H\x1b[37;3H\x1b[?25h"
+	if got := wrapper.ClassifyOutput("claude", raw); got.Status != "" || got.Class != wrapper.ErrNone {
+		t.Fatalf("ClassifyOutput = %+v, want no classification", got)
+	}
+	if got := wrapper.ClassifyFinishedOutput("claude", notice); got.Status != "" || got.Class != wrapper.ErrNone {
+		t.Fatalf("ClassifyFinishedOutput = %+v, want no classification", got)
+	}
+}
