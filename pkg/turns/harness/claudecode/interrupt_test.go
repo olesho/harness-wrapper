@@ -30,24 +30,31 @@ func firstReading(frames []screen.Snapshot, start int, prompt string) (turns.Int
 	return turns.InterruptPending, "", -1
 }
 
-// TestInterruptRecordings replays claude 2.1.280 interrupted through
-// Conversation.Interrupt (test/corpus/claude-code/interrupt-*): each turn reads
-// pending until the harness answers, and then what it did.
+// TestInterruptRecordings replays claude interrupted through
+// Conversation.Interrupt (test/corpus/claude-code/interrupt-*: 2.1.280 on macOS,
+// 2.1.281 on Linux as *-linux): each turn reads pending until the harness
+// answers, and then what it did.
 func TestInterruptRecordings(t *testing.T) {
-	t.Run("mid-reply", func(t *testing.T) {
-		outcome, partial, _ := firstReading(frames(t, "interrupt-mid-reply"), 0, "HW_STREAM tell me a story")
+	for _, suffix := range []string{"", "-linux"} {
+		interruptRecordings(t, suffix)
+	}
+}
+
+func interruptRecordings(t *testing.T, suffix string) {
+	t.Run("mid-reply"+suffix, func(t *testing.T) {
+		outcome, partial, _ := firstReading(frames(t, "interrupt-mid-reply"+suffix), 0, "HW_STREAM tell me a story")
 		if outcome != turns.InterruptStopped || !strings.HasPrefix(partial, "word 1 word 2 word 3 word 4 word 5 word 6") {
 			t.Fatalf("reading = %v %q, want stopped with the partial reply", outcome, partial)
 		}
 	})
-	t.Run("mid-tool", func(t *testing.T) {
-		outcome, partial, _ := firstReading(frames(t, "interrupt-mid-tool"), 0, "HW_TOOL run a command")
+	t.Run("mid-tool"+suffix, func(t *testing.T) {
+		outcome, partial, _ := firstReading(frames(t, "interrupt-mid-tool"+suffix), 0, "HW_TOOL run a command")
 		if outcome != turns.InterruptStopped || partial != "" {
 			t.Fatalf("reading = %v %q, want stopped with no reply: the tool call is not one", outcome, partial)
 		}
 	})
-	t.Run("before-first-token", func(t *testing.T) {
-		all := frames(t, "interrupt-before-first-token")
+	t.Run("before-first-token"+suffix, func(t *testing.T) {
+		all := frames(t, "interrupt-before-first-token"+suffix)
 		outcome, _, at := firstReading(all, 0, "HW_DELAY answer slowly")
 		if outcome != turns.InterruptCancelled {
 			t.Fatalf("reading = %v, want cancelled", outcome)
@@ -57,8 +64,8 @@ func TestInterruptRecordings(t *testing.T) {
 			t.Fatalf("next turn reads %v, want finished", outcome)
 		}
 	})
-	t.Run("second-turn", func(t *testing.T) {
-		all := frames(t, "interrupt-second-turn")
+	t.Run("second-turn"+suffix, func(t *testing.T) {
+		all := frames(t, "interrupt-second-turn"+suffix)
 		outcome, _, at := firstReading(all, 0, "HW_STREAM first story")
 		if outcome != turns.InterruptStopped {
 			t.Fatalf("first turn reads %v, want stopped", outcome)
@@ -95,8 +102,14 @@ func TestOnScreenEmitsNoInterruptEvent(t *testing.T) {
 // TestRewindPickerIsNoComposer: two Escs on an idle composer open claude's
 // Rewind picker, whose "❯ (current)" row is not a composer.
 func TestRewindPickerIsNoComposer(t *testing.T) {
+	for _, scenario := range bothPlatforms("rewind-picker") {
+		t.Run(scenario, func(t *testing.T) { rewindPickerIsNoComposer(t, scenario) })
+	}
+}
+
+func rewindPickerIsNoComposer(t *testing.T, scenario string) {
 	var picker screen.Snapshot
-	for _, snap := range frames(t, "rewind-picker") {
+	for _, snap := range frames(t, scenario) {
 		if strings.Contains(snap.Text, "Esc to cancel") {
 			picker = snap
 			break
@@ -273,5 +286,37 @@ func TestInterruptKeysMatchFakeharness(t *testing.T) {
 	}
 	if got := strings.TrimSpace(fakeharness.InterruptMarkerLine()); got != interruptMarker {
 		t.Fatalf("fakeharness paints %q, the adapter reads %q", got, interruptMarker)
+	}
+}
+
+// TestExtractMessage_BulletGlyphs: claude draws a message bullet as ⏺ on macOS
+// and ● on Linux; the reply is read under either, and the effort indicator —
+// "● high · /effort" on macOS, the Linux bullet's glyph — is never a message.
+func TestExtractMessage_BulletGlyphs(t *testing.T) {
+	footer := func(effort string) []string {
+		return []string{
+			strings.Repeat(" ", 90) + effort + " · /effort",
+			strings.Repeat("─", 100), "❯ ", strings.Repeat("─", 100),
+			"  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		lines  []string
+		want   string
+		wantOK bool
+	}{
+		{"macOS reply", append([]string{"❯ hello", "", "⏺ pong: hello", "", "✻ Baked for 1s"}, footer("● high")...), "pong: hello", true},
+		{"Linux reply", append([]string{"❯ hello", "", "● pong: hello", "", "✻ Baked for 1s"}, footer("◐ medium")...), "pong: hello", true},
+		{"Linux reply, high effort", append([]string{"❯ hello", "", "● pong: hello", "", "✻ Baked for 1s"}, footer("● high")...), "pong: hello", true},
+		{"no reply, macOS footer", append([]string{"❯ hello", "", "✻ Baked for 1s"}, footer("● high")...), "", false},
+		{"no reply, no summary, macOS footer", append([]string{"❯ hello"}, footer("● high")...), "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := New().ExtractMessage(screen.Snapshot{Text: strings.Join(tc.lines, "\n")})
+			if ok != tc.wantOK || got != tc.want {
+				t.Fatalf("ExtractMessage = %q, %v; want %q, %v", got, ok, tc.want, tc.wantOK)
+			}
+		})
 	}
 }

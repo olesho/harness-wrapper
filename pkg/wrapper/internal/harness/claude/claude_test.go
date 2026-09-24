@@ -19,6 +19,22 @@ type apiErrorCase struct {
 func TestMatchAPIError(t *testing.T) {
 	cases := []apiErrorCase{
 		{
+			// Linux draws the message bullet as ● (macOS: ⏺); recorded on
+			// claude 2.1.281 on Ubuntu 26.04 against a local API answering 400.
+			name:        "Cl0: Linux bullet before the error",
+			in:          " ● API Error: 400 mock bad request",
+			wantOK:      true,
+			wantCode:    400,
+			msgContains: "mock bad request",
+		},
+		{
+			name:        "Cl0b: macOS bullet before the error",
+			in:          "⏺ API Error: 400 mock bad request",
+			wantOK:      true,
+			wantCode:    400,
+			msgContains: "mock bad request",
+		},
+		{
 			name:        "Cl1: golden 529 from user's transcript",
 			in:          "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.",
 			wantOK:      true,
@@ -179,6 +195,13 @@ func TestMatchSessionLimit(t *testing.T) {
 			in:          "  ⎿  You've hit your session limit · resets 6:40pm (Europe/Warsaw)\n     /usage-credits to finish what you're working on.",
 			wantOK:      true,
 			wantResume:  time.Date(2026, 5, 20, 18, 40, 0, 0, warsaw),
+			msgContains: "session limit",
+		},
+		{
+			name:        "SL1b: Linux message bullet",
+			in:          "● You've hit your session limit · resets 8pm (UTC)",
+			wantOK:      true,
+			wantResume:  time.Date(2026, 5, 20, 20, 0, 0, 0, time.UTC),
 			msgContains: "session limit",
 		},
 		{

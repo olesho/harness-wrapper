@@ -1,0 +1,41 @@
+7[r8[?25h[?25l[?2004h[?2031h[?1004h]0;✳ Claude Code[2G▐▛███▛█[12GClaude[19GCode[24Gv2.1.281
+▝▜██████▀[12GOpus[17G5.5[21G(1M[25Gcontext)[34G·[36GAPI[40GUsage[46GBilling
+[3G▝▝[6G▝▝[12G/tmp/hw-rebake/api-error-retry-gives-up
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[>0q[?u[c[2D[3B[2C[3AHW_RECORD_PROMPT:[21Greply[27Gwith[32Gexactly[40GRECOVERED_REPLY_OK[7m [39C[2B[27m [42G [44G   [48G      
+[57C[3A]0;◐ Claude Code[57D[3B[4A❯ HW_RECORD_PROMPT: reply with exactly RECOVERED_REPLY_OK[K[1B[K[1B✻ API error · Retrying in 1s · attempt 1/10[K[2C[1B[K
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42Gesc[46Gto[49Ginterrupt[59G·[61G←[63Gfor[67Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[2D[3B[26C[6A2[40G2
+
+
+
+
+
+[2C[3A[2D[3B[6A●[4Guto mode[13Glets Claude handle[32Gpermission prompts[51Gautomatically[65G—[67GClaude[74Gchecks[81Geach[86Gtool[91Gcall[96Gfor[100Grisky[106Gactions[2C[1Band[7Gprompt[14Ginjection[24Gbefore[31Gexecuting.[42GActions[50GClaude[57Gidentifies[68Gas[71Gsafe[76Gare[80Gexecuted,[90Gwhile[96Gactions[104GClaude[1B  identifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks.[K[1B  Sessions[12Gare[16Gslightly[25Gmore[30Gexpensive.[41GClaude[48Gcan[52Gmake[57Gmistakes[66Gthat[71Gallow[77Gharmful[85Gcommands[94Gto[97Grun,[102Git's[1B  recommended to only use in isolated environments. Shift+Tab to change mode.[K[2C[1B[K
+✻[3GAPI[7Gerror[13G·[15GRetrying[24Gin[27G2s[30G·[32Gattempt[40G2/10
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42Gesc[46Gto[49Ginterrupt[59G·[61G←[63Gfor[67Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[2D[3B[26C[6A1
+
+
+
+
+
+[2C[3A]0;◑ Claude Code]0;✳ Claude Code[2D[3B[6A●[7GE[12G: Repeated 529[27GOverload[36Gd errors.[46GThe[50GAPI[54Gis[57Gat[60Gcapacity[69G—[71Gthis[76Gis[79Gusually[87Gtemporary.[98GTry[102Gagain[108Gin[111Ga[2C[1Bmoment.[11GIf[14Git[17Gpersists,[27Gcheck[33Gyour[38Ginference[48Ggateway[56G(127.0.0.1:34431).[1B[K[1B✻ Cogitated[13Gfor[17G1s[20G·[22Gdone[27G4:35[32GPM[1B[K[1B────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A(B[?1006l[?1003l[?1002l[?1000l[2D[3B[?1004l[>4m[<u[?2031l[?2004l(B[?1016l[?1006l[?1003l[?1002l[?1000l[?25h7[r8]0;
+Resume this session with:
+claude --resume fcf7c520-2e84-4f90-8f83-5df1212a94a9
