@@ -70,9 +70,13 @@ func TestStreamAccountLive(t *testing.T) {
 		"skipDangerousModePermissionPrompt": true,
 		"hooks":                             map[string]any{"PreToolUse": hook, "PostToolUse": hook},
 	})
+	self, err := os.Executable() // absolute: claude cannot spawn a relative MCP command (ENOENT)
+	if err != nil {
+		t.Fatal(err)
+	}
 	mcpConfig := filepath.Join(root, "mcp.json")
 	writeJSON(mcpConfig, map[string]any{"mcpServers": map[string]any{"probe": map[string]any{
-		"type": "stdio", "command": os.Args[0], "args": []string{},
+		"type": "stdio", "command": self, "args": []string{},
 		"env": map[string]string{mcpFakeEnv: mcpLog},
 	}}})
 
