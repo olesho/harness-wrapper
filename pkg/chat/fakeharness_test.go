@@ -23,6 +23,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv(streamFakeEnv) != "" {
 		os.Exit(runStreamFake()) // this process is a fake claude (stream_fake_test.go)
 	}
+	if p := os.Getenv(mcpFakeEnv); p != "" {
+		os.Exit(runMCPFake(p)) // this process is a stdio MCP server (stream_account_live_test.go)
+	}
 	code := m.Run()
 	fakeharness.Cleanup()
 	os.Exit(code)
