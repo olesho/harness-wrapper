@@ -244,7 +244,7 @@ func echoOf(prompt, row string) bool {
 func lastReply(rows []string) string {
 	for i := len(rows) - 1; i >= 0; i-- {
 		m := bulletRE.FindStringSubmatch(rows[i])
-		if m == nil || toolCallRE.MatchString(m[1]) {
+		if m == nil || !isBullet(rows[i]) || toolCallRE.MatchString(m[1]) {
 			continue
 		}
 		return assembleMessage(collectBlock(rows, i))

@@ -516,9 +516,18 @@ func inputID(req *turns.InputRequest) string {
 }
 
 // bulletRE matches the start of a rendered assistant/tool message: Claude Code
-// prefixes each with U+23FA (⏺) and a space. Leading column padding (none of it
-// the bullet itself) is tolerated. Group 1 is the text after the bullet.
-var bulletRE = regexp.MustCompile(`^[^\S\r\n]*⏺ (.*)$`)
+// prefixes each with a bullet and a space — U+23FA (⏺) on macOS, U+25CF (●) on
+// Linux (test/corpus/claude-code/*-linux). Leading column padding (none of it
+// the bullet itself) is tolerated. Group 1 is the text after the bullet. Match
+// through isBullet: macOS paints the effort indicator with ● too.
+var bulletRE = regexp.MustCompile(`^[^\S\r\n]*[⏺●] (.*)$`)
+
+// isBullet reports whether ln starts a message block. The effort indicator
+// ("● high · /effort", right-aligned above the composer) shares the Linux
+// bullet's glyph and is never a message.
+func isBullet(ln string) bool {
+	return bulletRE.MatchString(ln) && !effortLineRE.MatchString(ln)
+}
 
 // toolResultRE matches a tool-result continuation line (U+23BF "⎿"), which
 // belongs to a tool call, not the assistant's prose reply.
@@ -529,7 +538,8 @@ var toolResultRE = regexp.MustCompile(`^[^\S\r\n]*⎿`)
 var boxOrRuleRE = regexp.MustCompile(`^[^\S\r\n]*[─━╭╮╰╯│┌┐└┘]`)
 
 // ExtractMessage isolates the assistant's final reply from the rendered TUI.
-// Claude Code renders each assistant message as a "⏺ <text>" block whose
+// Claude Code renders each assistant message as a "⏺ <text>" block ("● <text>"
+// on Linux) whose
 // continuation lines are indented under the bullet; the block ends at the
 // "✻ <verb> for Ns" thinking footer, a tool-result line, a box/rule, the next
 // "⏺"/"❯", or a blank line. We take the LAST such block before the thinking
@@ -573,7 +583,7 @@ func lastThinkingFooter(lines []string) int {
 func lastBulletStart(lines []string, limit int) int {
 	start := -1
 	for i := 0; i < limit; i++ {
-		if bulletRE.MatchString(lines[i]) {
+		if isBullet(lines[i]) {
 			start = i
 		}
 	}
@@ -581,7 +591,7 @@ func lastBulletStart(lines []string, limit int) int {
 		return start
 	}
 	for i, ln := range lines {
-		if bulletRE.MatchString(ln) {
+		if isBullet(ln) {
 			start = i
 		}
 	}
@@ -592,7 +602,7 @@ func lastBulletStart(lines []string, limit int) int {
 // block: the next bullet, a tool-result line, a box/rule, the thinking footer,
 // or the "❯" input prompt. A blank line is deliberately NOT a boundary.
 func isBlockBoundary(ln string) bool {
-	if bulletRE.MatchString(ln) || toolResultRE.MatchString(ln) || boxOrRuleRE.MatchString(ln) {
+	if isBullet(ln) || toolResultRE.MatchString(ln) || boxOrRuleRE.MatchString(ln) {
 		return true
 	}
 	if thinkingRE.MatchString(ln) {
