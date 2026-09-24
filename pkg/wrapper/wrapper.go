@@ -406,6 +406,24 @@ func Start(ctx context.Context, cfg Config) (*Session, error) {
 	return startSession(ctx, cfg)
 }
 
+// HarnessArgs validates cfg exactly as Start does and returns the argv Start
+// would launch the harness with: cfg.Args with the Effort, Model and
+// PermissionMode flags injected. It starts nothing. It is for a caller that
+// runs the harness itself over another transport — pkg/chat's claude-code
+// stream-json driver — and must honour the same knobs the same way. The I/O
+// fields are not needed: Stdout defaults to io.Discard here.
+func HarnessArgs(cfg Config) ([]string, error) {
+	if cfg.Stdout == nil {
+		cfg.Stdout = io.Discard
+	}
+	if err := validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+	args := argsWithHarnessEffort(cfg.Harness, cfg.Args, cfg.Effort)
+	args = argsWithHarnessModel(cfg.Harness, args, cfg.Model)
+	return argsWithHarnessPermissionMode(cfg.Harness, args, cfg.PermissionMode), nil
+}
+
 // QueueLimits bounds an OnEvent queue: the events it holds at once, and their
 // payload bytes. A zero field takes its default — 1024 events, 16 MiB.
 type QueueLimits struct {

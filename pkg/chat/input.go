@@ -110,6 +110,9 @@ func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAn
 	if !c.queue.Held() {
 		return ErrNoControl
 	}
+	if c.stream != nil {
+		return c.streamAnswer(requestID, ans)
+	}
 	c.mu.Lock()
 	req := c.currentInput
 	c.mu.Unlock()
@@ -203,6 +206,9 @@ func (c *Conversation) inputAwaitingClient() bool {
 // exactly as inputAwaitingClient reports false. PendingInput answers "what is
 // awaiting me?"; inputAwaitingClient answers "is anything?".
 func (c *Conversation) PendingInput() *InputRequest {
+	if c.stream != nil {
+		return c.streamPendingInput()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.currentInput == nil || !c.inputSurfaced {

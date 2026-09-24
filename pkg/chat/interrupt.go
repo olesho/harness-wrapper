@@ -116,6 +116,9 @@ func (c *Conversation) Interrupt(ctx context.Context) (InterruptResult, error) {
 		return "", ErrClosed
 	default:
 	}
+	if c.stream != nil {
+		return c.streamInterrupt(ctx)
+	}
 	ir, ok := c.adapter.(turns.Interrupter)
 	if !ok {
 		return "", ErrInterruptUnsupported
