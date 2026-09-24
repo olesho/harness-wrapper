@@ -98,6 +98,10 @@ again with the next one: the model sees it.
   API: turns with transcript History, the three interrupts, an exhausted and a non-retried API error,
   Quit then Reopen, and a SIGKILL from outside. Passed on macOS, Ubuntu 26.04 and Debian 13 with
   claude 2.1.281.
+- `pkg/chat/stream_account_live_test.go` (`HW_LIVE_ACCOUNT=1`) runs the real claude against the
+  Anthropic API on a real account: a reply, a Bash tool with PreToolUse and PostToolUse hooks
+  firing, a stdio MCP tool call, an interrupt mid-reply (`stopped`), Quit, then Reopen remembering
+  the first answer. Passed on macOS, Ubuntu 26.04 and Debian 13 with claude 2.1.281 on haiku.
 
 ## Consequences
 
