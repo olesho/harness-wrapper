@@ -97,6 +97,9 @@ func (c *Conversation) State() State {
 	}
 	c.mu.Unlock()
 	st.Input = c.PendingInput()
+	if c.stream != nil {
+		c.streamState(&st)
+	}
 	if c.sess != nil {
 		st.PID = c.sess.PID()
 		snap := c.sess.Snapshot()
@@ -205,6 +208,13 @@ func (c *Conversation) handleExit(final wrapper.SessionEvent) {
 			}
 		}
 	}
+	c.exitWith(info)
+}
+
+// exitWith records how the harness ended and ends the conversation's stream:
+// the turn it left in flight ends errored, every turn ending already under
+// way queues its event, and EventExited goes last.
+func (c *Conversation) exitWith(info ExitInfo) {
 	c.mu.Lock()
 	c.exit = &info
 	c.mu.Unlock()

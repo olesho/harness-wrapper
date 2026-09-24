@@ -47,6 +47,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	}
 	c.mu.Unlock()
 
+	if c.stream != nil {
+		return c.streamSend(ctx, text)
+	}
+
 	if err := c.waitReadyForSend(ctx); err != nil {
 		// The harness is stuck on a logged-out / onboarding screen and will never
 		// reach a ready prompt. Record a terminal assistant turn carrying the
@@ -75,65 +79,10 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		}
 	}
 
-	// Record the turn and announce it — the user's turn, then the assistant's,
-	// pending — before the prompt is typed: nothing can end a turn that has not
-	// been submitted, so no terminal event can precede its pending one
-	// (ADR-008). The announcements wait for room in the event queue, so they go
-	// out holding no lock; EventExited waits for them.
-	c.mu.Lock()
-	switch {
-	case c.currentTurn != nil:
-		c.mu.Unlock()
-		return "", ErrTurnInFlight
-	case c.exit != nil:
-		c.mu.Unlock()
-		return "", ErrExited
+	assistantTurn, err := c.beginTurn(ctx, text)
+	if err != nil {
+		return "", err
 	}
-	c.sending.Add(1)
-	c.mu.Unlock()
-	recording := true
-	defer func() {
-		if recording {
-			c.sending.Done()
-		}
-	}()
-
-	now := time.Now()
-	userTurn := Turn{
-		ID:          newID(),
-		SessionID:   c.session.ID,
-		Role:        RoleUser,
-		State:       TurnStateComplete,
-		Text:        text,
-		StartedAt:   now,
-		CompletedAt: now,
-	}
-	if err := c.store.AppendTurn(ctx, &userTurn); err != nil {
-		return "", fmt.Errorf("chat: append user turn: %w", err)
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: userTurn})
-
-	assistantTurn := Turn{
-		ID:        newID(),
-		SessionID: c.session.ID,
-		Role:      RoleAssistant,
-		State:     TurnStatePending,
-		StartedAt: now,
-	}
-	if err := c.store.AppendTurn(ctx, &assistantTurn); err != nil {
-		return "", fmt.Errorf("chat: append assistant turn: %w", err)
-	}
-	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
-
-	c.mu.Lock()
-	turnCopy := assistantTurn
-	c.currentTurn = &turnCopy
-	c.currentPrompt = text
-	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
-	c.heldReason = ""       // nor a Blocked to hold it on
-	c.mu.Unlock()
-	c.sending.Done()
-	recording = false
 	// From here, the screen showing the harness at work means it took this
 	// prompt: it sat idle through the busy gate before anything was typed.
 	c.acceptAfter.Store(time.Now().UnixNano())
@@ -168,6 +117,63 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	// The turn may already have ended — a fast reply, the harness exiting —
 	// and its terminal event been delivered before Send returns.
 	return assistantTurn.ID, nil
+}
+
+// beginTurn records the turn a Send is about to submit and announces it — the
+// user's turn, then the assistant's, pending — and makes the assistant's the
+// turn in flight. It runs before the prompt reaches the harness: nothing can
+// end a turn that has not been submitted, so no terminal event can precede
+// its pending one (ADR-008). The announcements wait for room in the event
+// queue, so they go out holding no lock; EventExited waits for them.
+func (c *Conversation) beginTurn(ctx context.Context, text string) (Turn, error) {
+	c.mu.Lock()
+	switch {
+	case c.currentTurn != nil:
+		c.mu.Unlock()
+		return Turn{}, ErrTurnInFlight
+	case c.exit != nil:
+		c.mu.Unlock()
+		return Turn{}, ErrExited
+	}
+	c.sending.Add(1)
+	c.mu.Unlock()
+	defer c.sending.Done()
+
+	now := time.Now()
+	userTurn := Turn{
+		ID:          newID(),
+		SessionID:   c.session.ID,
+		Role:        RoleUser,
+		State:       TurnStateComplete,
+		Text:        text,
+		StartedAt:   now,
+		CompletedAt: now,
+	}
+	if err := c.store.AppendTurn(ctx, &userTurn); err != nil {
+		return Turn{}, fmt.Errorf("chat: append user turn: %w", err)
+	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: userTurn})
+
+	assistantTurn := Turn{
+		ID:        newID(),
+		SessionID: c.session.ID,
+		Role:      RoleAssistant,
+		State:     TurnStatePending,
+		StartedAt: now,
+	}
+	if err := c.store.AppendTurn(ctx, &assistantTurn); err != nil {
+		return Turn{}, fmt.Errorf("chat: append assistant turn: %w", err)
+	}
+	c.emit(ConversationEvent{Type: EventTurn, Turn: assistantTurn})
+
+	c.mu.Lock()
+	turnCopy := assistantTurn
+	c.currentTurn = &turnCopy
+	c.currentPrompt = text
+	c.endMarkerSeen = false // fresh turn: no end-of-turn marker seen yet
+	c.heldReason = ""       // nor a Blocked to hold it on
+	c.mu.Unlock()
+	return assistantTurn, nil
 }
 
 // failSubmit ends a turn whose prompt could not be submitted, once: if
@@ -267,6 +273,9 @@ func (c *Conversation) Quit(ctx context.Context) error {
 	default:
 	}
 
+	if c.stream != nil {
+		return c.streamQuit(ctx)
+	}
 	q, ok := c.adapter.(turns.Quitter)
 	if !ok {
 		return ErrQuitUnsupported

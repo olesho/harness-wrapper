@@ -4,6 +4,7 @@ type Options struct
 	field Args []string
 	field Resume string
 	field HarnessSessionID string
+	field Transport chat.Transport
 	field WorkingDir string
 	field Env []string
 	field Effort string
@@ -23,6 +24,7 @@ type Options struct
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 type ReopenOptions struct
 	field SessionID string
+	field Transport chat.Transport
 	field BinaryPath string
 	field Args []string
 	field Env []string
