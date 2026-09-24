@@ -205,6 +205,9 @@ var codexPlanRefusalRE = regexp.MustCompile(
 // carries no signal (an onboarding wall, a modal covering the footer), never
 // "readable, and not the mode you asked about".
 func (c *Conversation) PermissionMode() (string, bool) {
+	if c.stream != nil {
+		return c.streamPermissionMode()
+	}
 	d, ok := c.adapter.(turns.PermissionModeDetector)
 	if !ok {
 		return "", false
@@ -413,6 +416,9 @@ func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (st
 	c.mu.Unlock()
 	if inFlight {
 		return "", ErrTurnInFlight
+	}
+	if c.stream != nil {
+		return c.streamSetPermissionMode(ctx, target)
 	}
 
 	ringLen, bypassOnRing := c.cycleRing()

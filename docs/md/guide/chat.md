@@ -54,6 +54,7 @@ type Options struct {
 	                     // adapter reserves via turns.SessionControlFlags
 	HarnessSessionID string // id for a FRESH session, where the adapter takes one (claude-code,
 	                     // pi); minted when empty — see History below
+	Transport   Transport // TransportTUI (default) | TransportStreamJSON (claude-code) — see below
 	WorkingDir  string
 	Env         []string
 	Effort      string   // reasoning effort ("" = harness default)
@@ -94,6 +95,19 @@ open between messages sets `KeepAliveOnClassification`: nothing the harness prin
 never read as evidence, and walls are still reported — on the turn, where `Code` and `ResumeAt` say
 what happened and when to retry ([ADR-006](../internal/decisions/adr-006-classification-and-lifetime.md)).
 The gateway opens every conversation this way.
+
+**Transport.** A conversation reads its harness's screen by default (`TransportTUI`). claude-code can
+instead run on its machine protocol, `TransportStreamJSON`: one `claude -p --input-format stream-json
+--output-format stream-json` process on pipes, whose frames state what the screen only shows — a
+`result` per turn, `api_retry` while a turn retries, a receipt for each message and each interrupt
+([ADR-009](../internal/decisions/adr-009-stream-json-transport.md)). The Conversation API is the same:
+`Send` returns once claude has received the message, a turn ends on its result (text, or the API
+error's status, reason and code), `Interrupt` reports `stopped`, `cancelled`, `no_turn` or `too_late`
+as claude settled it, and events, `State`, `Quit`, `Close` and `History` behave as on the TUI. Nothing
+is rendered: `ScreenSnapshot` is empty, `Resize` does nothing, `Wrapper` is nil, and `Containment` is
+refused. Below the bypass rung, claude's permission prompts arrive as `InputRequest`s of kind
+`permission_prompt` with the options `allow` and `deny`. Pass the same `Transport` to `Reopen`; the
+session record does not store it.
 
 ### Reopen
 

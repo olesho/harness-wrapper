@@ -10,6 +10,16 @@ import (
 
 // frames replays a recording in small writes and returns every distinct
 // snapshot, in order.
+// bothPlatforms names each scenario's macOS recording and its Linux one
+// (<name>-linux): claude draws message bullets as ⏺ on macOS and ● on Linux.
+func bothPlatforms(scenarios ...string) []string {
+	var out []string
+	for _, s := range scenarios {
+		out = append(out, s, s+"-linux")
+	}
+	return out
+}
+
 func frames(t *testing.T, scenario string) []screen.Snapshot {
 	t.Helper()
 	raw := corpusBytes(t, scenario)
@@ -32,7 +42,7 @@ func frames(t *testing.T, scenario string) []screen.Snapshot {
 // such frame must read busy — whatever the footer shows while it repaints.
 func TestBusy_RetryBackoffIsBusy(t *testing.T) {
 	a := New()
-	for _, scenario := range []string{"api-error-retry-recovers", "api-error-retry-gives-up"} {
+	for _, scenario := range bothPlatforms("api-error-retry-recovers", "api-error-retry-gives-up") {
 		t.Run(scenario, func(t *testing.T) {
 			backoff := 0
 			for _, snap := range frames(t, scenario) {
@@ -82,6 +92,8 @@ func TestRetryRecordings_EndSettled(t *testing.T) {
 	for _, tc := range []struct{ scenario, reply string }{
 		{"api-error-retry-recovers", "RECOVERED_REPLY_OK"},
 		{"api-error-retry-gives-up", "API Error: Repeated 529 Overloaded errors."},
+		{"api-error-retry-recovers-linux", "RECOVERED_REPLY_OK"},
+		{"api-error-retry-gives-up-linux", "API Error: Repeated 529 Overloaded errors."},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			a := New()

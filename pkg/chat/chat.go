@@ -175,6 +175,21 @@ type Turn struct {
 	ResumeAt time.Time
 }
 
+// Transport selects how a Conversation talks to its harness (Options.Transport).
+type Transport string
+
+const (
+	// TransportTUI runs the harness on a PTY and reads its rendered screen.
+	// The zero value selects it.
+	TransportTUI Transport = "tui"
+
+	// TransportStreamJSON runs claude-code as `claude -p --input-format
+	// stream-json --output-format stream-json` on pipes and reads its protocol
+	// frames: turn results, retries, interrupts and message receipts arrive as
+	// frames, not as screen text (ADR-009). claude-code only.
+	TransportStreamJSON Transport = "stream-json"
+)
+
 // EventType discriminates the variants of a ConversationEvent.
 type EventType string
 

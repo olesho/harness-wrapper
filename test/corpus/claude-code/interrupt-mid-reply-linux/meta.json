@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.281",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "Interrupt while the reply streams: \"⎿  Interrupted · What should Claude do instead?\" lands below the partial reply, the composer is empty, and the transcript holds the partial reply, then a user entry \"[Request interrupted by user]\". Recorded on Linux, where claude draws message bullets as \"●\" rather than macOS's \"⏺\". Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` (pkg/chat/interrupt_record_test.go), interrupting through chat.Conversation.Interrupt: the real claude against a local Messages API, in /tmp/hw-rebake/interrupt-mid-reply with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-09-24T14:35:16.554633104Z",
+ "rows": 40
+}

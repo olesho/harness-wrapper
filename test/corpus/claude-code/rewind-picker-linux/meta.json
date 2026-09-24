@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.281",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "Two Escs 150 ms apart on an idle, empty composer open claude's Rewind picker (\"Enter to continue · Esc to cancel\"), which paints \"❯ (current)\" where the composer was; a third Esc closes it. Interrupt writes one Esc per turn for this reason, and the composer reading refuses the picker. Recorded on Linux, where claude draws message bullets as \"●\" rather than macOS's \"⏺\". Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` (pkg/chat/interrupt_record_test.go), interrupting through chat.Conversation.Interrupt: the real claude against a local Messages API, in /tmp/hw-rebake/rewind-picker with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-09-24T14:35:41.448359817Z",
+ "rows": 40
+}

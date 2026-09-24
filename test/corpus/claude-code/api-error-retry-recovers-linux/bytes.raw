@@ -1,0 +1,28 @@
+7[r8[?25h[?25l[?2004h[?2031h[?1004h]0;✳ Claude Code[2G▐▛███▛█[12GClaude[19GCode[24Gv2.1.281
+▝▜██████▀[12GOpus[17G5.5[21G(1M[25Gcontext)[34G·[36GAPI[40GUsage[46GBilling
+[3G▝▝[6G▝▝[12G/tmp/hw-rebake/api-error-retry-recovers
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[>0q[?u[c[2D[3B[2C[3AHW_RECORD_PROMPT:[21Greply[27Gwith[32Gexactly[40GRECOVERED_REPLY_OK[7m [39C[2B[27m [42G [44G   [48G      
+[57C[3A]0;◐ Claude Code[57D[3B[4A❯ HW_RECORD_PROMPT: reply with exactly RECOVERED_REPLY_OK[K[1B[K[1B✻ API error · Retrying in 1s · attempt 1/10[K[2C[1B[K
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42Gesc[46Gto[49Ginterrupt[59G·[61G←[63Gfor[67Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A]0;✳ Claude Code[2D[3B[6A●[3GRECOVERED_REPLY_OK[K[2B✻ Cooked for 0s · done 4:35 PM[K[1B[K[2B❯ [7m [27m[K
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[2D[3B[4A● Auto mode lets Claude handle permission prompts automatically — Claude checks each tool call for risky actions[K[1B  and[7Gprompt[14Ginjection[24Gbefore[31Gexecuting.[42GActions[50GClaude[57Gidentifies[68Gas[71Gsafe[76Gare[80Gexecuted,[90Gwhile[96Gactions[104GClaude[1B  identifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks.[K[2C[1BSessions ar[16Gslightly more[30Gexpensive. Claude[48Gcan make[57Gmistakes[66Gthat[71Gallow[77Gharmful[85Gcommands[94Gto[97Grun, it's[K
+[3Grecommended[15Gto[18Gonly[23Guse[27Gin[30Gisolated[39Genvironments.[53GShift+Tab[63Gto[66Gchange[73Gmode.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [7m [27m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[3G⏵⏵[6Gauto[11Gmode[16Gon[19G(shift+tab[30Gto[33Gcycle)[40G·[42G←[44Gfor[48Gagents[101G◐[103Gmedium[110G·[112G/effort
+[2C[3A[?1006l[?1003l[?1002l[?1000l[2D[3B[?1004l[>4m[<u[?2031l[?2004l(B[?1016l[?1006l[?1003l[?1002l[?1000l[?25h7[r8]0;
+Resume this session with:
+claude --resume 907f2b39-11a5-4000-98d9-5ec46c2aa4c6

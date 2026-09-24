@@ -158,7 +158,7 @@ func recordAPIErrorScenario(t *testing.T, bin, version, name string, failed int,
 	conv.mu.Unlock()
 	_ = conv.Close(ctx)
 
-	out := filepath.Join("..", "..", "test", "corpus", "claude-code", name)
+	out := filepath.Join("..", "..", "test", "corpus", "claude-code", corpusName(name))
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func recordAPIErrorScenario(t *testing.T, bin, version, name string, failed int,
 		"recorded_at":    time.Now().UTC().Format(time.RFC3339Nano),
 		"cols":           120,
 		"rows":           40,
-		"notes": notes + " Recorded with `HW_RECORD_API_RETRY=1 go test ./pkg/chat -run RecordAPIErrorRetry` " +
+		"notes": notes + platformNote() + " Recorded with `HW_RECORD_API_RETRY=1 go test ./pkg/chat -run RecordAPIErrorRetry` " +
 			"(pkg/chat/apierror_retry_record_test.go): the real claude against a local Messages API, in " + wd +
 			" with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode auto) " +
 			"and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",

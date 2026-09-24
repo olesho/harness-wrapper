@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -238,7 +239,7 @@ func recordInterruptScenario(t *testing.T, bin, version string, sc interruptScen
 	id := conv.session.HarnessID()
 	conv.mu.Unlock()
 
-	out := filepath.Join("..", "..", "test", "corpus", "claude-code", sc.name)
+	out := filepath.Join("..", "..", "test", "corpus", "claude-code", corpusName(sc.name))
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func recordInterruptScenario(t *testing.T, bin, version string, sc interruptScen
 		"recorded_at":    time.Now().UTC().Format(time.RFC3339Nano),
 		"cols":           120,
 		"rows":           40,
-		"notes": sc.notes + " Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` " +
+		"notes": sc.notes + platformNote() + " Recorded with `HW_RECORD_INTERRUPT=1 go test ./pkg/chat -run RecordInterrupt` " +
 			"(pkg/chat/interrupt_record_test.go), interrupting through chat.Conversation.Interrupt: the real claude " +
 			"against a local Messages API, in " + wd + " with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory " +
 			"trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
@@ -384,4 +385,22 @@ func toolCall(w http.ResponseWriter, command string) {
 	event("content_block_stop", `{"type":"content_block_stop","index":0}`)
 	event("message_delta", `{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":20}}`)
 	event("message_stop", `{"type":"message_stop"}`)
+}
+
+// corpusName is the corpus directory a recording made on this platform goes
+// to. Claude draws its message bullets as ⏺ on macOS and ● on Linux, so a Linux
+// recording sits beside the macOS one as <name>-linux and both are replayed.
+func corpusName(name string) string {
+	if runtime.GOOS == "linux" {
+		return name + "-linux"
+	}
+	return name
+}
+
+// platformNote is the sentence a Linux recording's notes carry about it.
+func platformNote() string {
+	if runtime.GOOS == "linux" {
+		return " Recorded on Linux, where claude draws message bullets as \"●\" rather than macOS's \"⏺\"."
+	}
+	return ""
 }

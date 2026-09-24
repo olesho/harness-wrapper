@@ -62,6 +62,15 @@ type Options struct {
 	// (--session-id, --resume, --continue, …), exactly as on a resume.
 	HarnessSessionID string
 
+	// Transport is how chat talks to the harness. TransportTUI, the default
+	// and the only transport most harnesses have, runs it on a PTY and reads
+	// its screen. TransportStreamJSON (claude-code only) runs `claude -p` with
+	// stream-json input and output on pipes and reads its protocol frames
+	// instead (ADR-009). There is no screen then: ScreenSnapshot is empty,
+	// Resize does nothing, Wrapper is nil, and Containment and the Cols/Rows
+	// knobs do not apply.
+	Transport Transport
+
 	// WorkingDir is the harness's working directory. Defaults to the
 	// current process's CWD.
 	WorkingDir string
@@ -341,6 +350,11 @@ type Conversation struct {
 
 	resizeMu sync.Mutex
 
+	// stream is the claude process of a TransportStreamJSON conversation, nil
+	// on the TUI (stream.go). With it set there is no wrapper session, screen
+	// or watcher.
+	stream *streamProc
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -368,7 +382,9 @@ type ReopenOptions struct {
 	SessionID string
 
 	// The remaining fields mirror the identically-named Options knobs; see
-	// Options for their semantics.
+	// Options for their semantics. Transport is not stored with the session:
+	// reopen with the transport the conversation was opened with.
+	Transport                 Transport
 	BinaryPath                string
 	Args                      []string
 	Env                       []string
@@ -432,6 +448,7 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 		WorkingDir:                rec.WorkingDir,
 		Env:                       opts.Env,
 		Resume:                    rec.HarnessID(),
+		Transport:                 opts.Transport,
 		Effort:                    opts.Effort,
 		Model:                     opts.Model,
 		PermissionMode:            opts.PermissionMode,
@@ -487,6 +504,13 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		if wd, err := os.Getwd(); err == nil {
 			harnessDir = wd
 		}
+	}
+	switch opts.Transport {
+	case "", TransportTUI:
+	case TransportStreamJSON:
+		return openStream(ctx, opts, session, persist, adapter, harnessDir)
+	default:
+		return nil, fmt.Errorf("%w: unknown transport %q", ErrInvalidOptions, opts.Transport)
 	}
 
 	// A contained conversation — requested now, or recorded — is prepared
@@ -809,7 +833,12 @@ func (c *Conversation) Adapter() turns.Adapter { return c.adapter }
 // mutating independently. This is a pure read: it needs no control token, so
 // any number of observers can inspect a live (e.g. stuck) harness without
 // disturbing it.
-func (c *Conversation) ScreenSnapshot() screen.Snapshot { return c.screen.Snapshot() }
+func (c *Conversation) ScreenSnapshot() screen.Snapshot {
+	if c.screen == nil {
+		return screen.Snapshot{} // the stream-json transport has no screen
+	}
+	return c.screen.Snapshot()
+}
 
 // Events returns the channel of turn-state transitions. Closed after
 // Close has completed and the watcher has drained.
@@ -843,6 +872,9 @@ func (c *Conversation) Close(ctx context.Context) error {
 		if c.sess != nil {
 			_ = c.sess.Stop(ctx)
 		}
+		if c.stream != nil {
+			c.stopStream(ctx)
+		}
 		if c.watcher != nil {
 			_ = c.watcher.Close()
 		}
@@ -857,8 +889,8 @@ func (c *Conversation) Close(ctx context.Context) error {
 // interpreted. If the PTY resize fails, the screen remains untouched. Zero
 // dimensions are ignored, matching wrapper.Session.Resize.
 func (c *Conversation) Resize(cols, rows uint16) error {
-	if cols == 0 || rows == 0 {
-		return nil
+	if cols == 0 || rows == 0 || c.screen == nil {
+		return nil // the stream-json transport has no terminal
 	}
 
 	c.resizeMu.Lock()

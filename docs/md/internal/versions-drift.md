@@ -317,7 +317,12 @@ re-run the canary.
   paints nothing and restores the prompt into the composer. An `interrupt` step therefore takes an
   `"interrupt_key"` of `"ctrl-c"` (the default, which the codex corpus was baked with) or `"esc"`.
   Timing matters too: an Esc that lands before the first token is a cancel and is likewise painted as
-  nothing, so wait for the reply to start streaming (the `⏺` bullet) before pressing it.
+  nothing, so wait for the reply to start streaming (the `⏺` bullet, `●` on Linux) before pressing it.
+- **The platform changes the glyphs** — claude draws a message bullet as `⏺` on macOS and `●` on
+  Linux (tool calls and `API Error` lines included); everything else these recordings exercise
+  renders the same. A screen matcher must accept both, and a recording belongs to the platform it
+  was made on: the record tests (`HW_RECORD_INTERRUPT`, `HW_RECORD_API_RETRY`) write a Linux run
+  to `<scenario>-linux`, and the claude-code corpus tests replay both.
 - **Quiet corruption** — a truncated/auth-screen recording that still satisfies the regex is wrong
   without failing. After a successful `rebake-corpus-all`, eyeball a sample
   (`screenbench --corpus test/corpus --format markdown | less`).

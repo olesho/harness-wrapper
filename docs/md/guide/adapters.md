@@ -63,8 +63,8 @@ The most fully-featured adapter.
   *Pondered*, *Cooked*; multi-unit durations like `1m 22s` after a turn ≥ 60s).
 - **`Busy()`** reads the `esc to interrupt` footer + spinner so the chat layer never reports
   `complete` mid-turn (Claude streams in multiple parts: thinking → edit → tool run).
-- **Message extraction** isolates the `⏺ …` reply blocks from TUI chrome — important for clean
-  one-shot output.
+- **Message extraction** isolates the `⏺ …` reply blocks (`● …` on Linux) from TUI chrome —
+  important for clean one-shot output.
 - **Session-ID**: assigned at launch with `--session-id <uuid>` → resume with `claude --resume <uuid>`.
 - **Transcript**: JSONL under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`.
 - **Interactive input**: folder-trust prompt and `--dangerously-skip-permissions` bypass-acceptance,
