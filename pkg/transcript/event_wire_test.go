@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -85,5 +86,28 @@ func TestPublicEventJSONStillOmitsInternal(t *testing.T) {
 		if strings.Contains(string(data), banned) {
 			t.Errorf("public Event JSON leaked internal field %s: %s", banned, data)
 		}
+	}
+}
+
+// TestParsedEventsDurableRoundTripAgentType: a subagent's start and stop
+// markers keep their AgentType through the spool's durable form.
+func TestParsedEventsDurableRoundTripAgentType(t *testing.T) {
+	in := []ParsedEvent{{
+		HarnessSessionID: "agent-1", ParentSessionID: "sess-1",
+		Event: Event{
+			Role: RoleSystem, Type: EventSubagentStop, Text: "42", AgentType: "general-purpose",
+			Source: SourceHook, NativeID: "hook:subagent-stop:agent-1", SchemaVersion: SchemaVersion,
+		},
+	}}
+	data, err := MarshalParsedEvents(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := UnmarshalParsedEvents(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 1 || !reflect.DeepEqual(out[0], in[0]) {
+		t.Errorf("round trip = %+v, want %+v", out, in)
 	}
 }

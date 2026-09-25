@@ -25,14 +25,21 @@ type hookProvider struct{}
 // into the config and dispatched on in the fired subprocess. One per native
 // Claude hook event loom manages (+ the yield guard).
 const (
-	argSessionStart = "session-start"
-	argUserPrompt   = "user-prompt-submit"
-	argStop         = "stop"
-	argSessionEnd   = "session-end"
-	argPreTask      = "pre-task"
-	argPostTask     = "post-task"
-	argYieldGuard   = "yield-guard"
+	argSessionStart  = "session-start"
+	argUserPrompt    = "user-prompt-submit"
+	argStop          = "stop"
+	argSessionEnd    = "session-end"
+	argSubagentStart = harness.HookArgSubagentStart
+	argSubagentStop  = harness.HookArgSubagentStop
+	argPostTask      = "post-task"
+	argYieldGuard    = "yield-guard"
 )
+
+// argPreTask is the Task-matched PreToolUse entry an earlier harness-wrapper
+// installed; it fired before the subagent existed and spooled nothing, and
+// SubagentStart replaced it (ADR-011). A config written then still runs it
+// until its next ensure, so it stays accepted, and still spools nothing.
+const argPreTask = "pre-task"
 
 // hookOwner marks loom-managed entries in settings.json for idempotent
 // identify/upgrade/remove (review #5).
@@ -50,7 +57,14 @@ func (hookProvider) HookSpec() *harness.HookSpec {
 			{NativeEvent: "UserPromptSubmit", Arg: argUserPrompt},
 			{NativeEvent: "Stop", Arg: argStop},
 			{NativeEvent: "SessionEnd", Arg: argSessionEnd},
-			{NativeEvent: "PreToolUse", Matcher: "Task", Arg: argPreTask},
+			{NativeEvent: "SubagentStart", Arg: argSubagentStart},
+			{NativeEvent: "SubagentStop", Arg: argSubagentStop},
+			// The subagent's transcript again once its tool call returned —
+			// the records SubagentStop read, which consumers dedup by event
+			// id — kept for the consumers that read subagents through it
+			// (ADR-011). For a background subagent it fires at the launch.
+			// claude renamed the tool Agent and still matches the old name,
+			// Task.
 			{NativeEvent: "PostToolUse", Matcher: "Task", Arg: argPostTask},
 		},
 		Yield: &harness.HookEntry{NativeEvent: "PreToolUse", Arg: argYieldGuard},
@@ -72,8 +86,14 @@ type claudeHookPayload struct {
 //   - session-start / user-prompt-submit: emit a session marker carrying the
 //     session id — the early "hooks live" signal + P4 lock persistence — without
 //     reading the (possibly incomplete) file.
-//   - pre-task / post-task / yield-guard: no parent transcript here (subagent
-//     nesting + yield are handled by later steps), so return nil.
+//   - subagent-start: the subagent's start marker; subagent-stop: the
+//     subagent's transcript, from the path claude hands over, then its stop
+//     marker — see readSubagentHook.
+//   - post-task: the subagent's transcript, read once its tool call returned
+//     (empty for a subagent launched in the background) — see
+//     readSubagentTranscript.
+//   - pre-task (retired, ADR-011) and yield-guard: nothing (yield is a control
+//     hook HandleHookEvent answers itself).
 //   - pre-tool-use / post-tool-use / post-tool-use-failure (ToolHookEntries,
 //     installed only by a consumer that asks for them): one event per tool
 //     call — see readToolHook.
@@ -95,12 +115,14 @@ func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdi
 		return readParentTranscript(ctx, p)
 	case argSessionStart, argUserPrompt:
 		return []transcript.ParsedEvent{sessionMarker(p.SessionID)}, nil
+	case argSubagentStart, argSubagentStop:
+		return readSubagentHook(ctx, event, p, stdin)
 	case argPostTask:
 		return readSubagentTranscript(ctx, p, stdin)
 	case argPreToolUse, argPostToolUse, argPostToolUseFailure:
 		return readToolHook(event, p, stdin)
 	case argPreTask, argYieldGuard:
-		// PreToolUse[Task] fires BEFORE the subagent runs (no transcript yet);
+		// pre-task fired before the subagent existed (no transcript yet);
 		// yield-guard is a control hook handled by HandleHookEvent, not a
 		// transcript-bearing event.
 		return nil, nil
@@ -154,15 +176,25 @@ func readSubagentTranscript(ctx harness.HookContext, p claudeHookPayload, stdin 
 	if !found {
 		return nil, nil // subagent transcript not present yet — best-effort
 	}
+	out, err := subagentEvents(data, agentID, p.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("claude hook post-task: %w", err)
+	}
+	return out, nil
+}
+
+// subagentEvents parses a subagent's transcript and tags each event with the
+// subagent's own session under its parent's, so the Runs tab nests it.
+func subagentEvents(data []byte, agentID, parentSessionID string) ([]transcript.ParsedEvent, error) {
 	events, err := claudecode.Events(data)
 	if err != nil {
-		return nil, fmt.Errorf("claude hook post-task: parse subagent: %w", err)
+		return nil, fmt.Errorf("parse subagent: %w", err)
 	}
 	out := make([]transcript.ParsedEvent, len(events))
 	for i, e := range events {
 		out[i] = transcript.ParsedEvent{
-			HarnessSessionID: agentID,     // the subagent's own native session
-			ParentSessionID:  p.SessionID, // nested under the parent
+			HarnessSessionID: agentID,         // the subagent's own native session
+			ParentSessionID:  parentSessionID, // nested under the parent
 			Event:            e,
 		}
 	}
@@ -252,11 +284,7 @@ func validateTranscriptPath(ctx harness.HookContext, sessionID, tpath string) er
 	if tpath == "" {
 		return fmt.Errorf("claude hook: empty transcript_path")
 	}
-	configDir := transcript.ResolveHarnessPath(ctx.ConfigDir, ctx.Cwd)
-	if configDir == "" {
-		configDir = filepath.Join(ctx.Home, ".claude")
-	}
-	root := filepath.Join(configDir, "projects")
+	root := transcriptRoot(ctx)
 	clean := filepath.Clean(tpath)
 	if clean != root && !strings.HasPrefix(clean, root+string(os.PathSeparator)) {
 		return fmt.Errorf("claude hook: transcript_path %q not under transcript root %q", clean, root)

@@ -80,6 +80,9 @@ var Sections = []NavSection{
 		{"adr-006-classification-and-lifetime", "ADR-006 · Classification and lifetime", "internal/decisions/adr-006-classification-and-lifetime.md"},
 		{"adr-007-interrupt", "ADR-007 · Interrupt", "internal/decisions/adr-007-interrupt.md"},
 		{"adr-008-event-delivery", "ADR-008 · Event delivery", "internal/decisions/adr-008-event-delivery.md"},
+		{"adr-009-stream-json-transport", "ADR-009 · stream-json transport", "internal/decisions/adr-009-stream-json-transport.md"},
+		{"adr-010-per-tool-hooks", "ADR-010 · Per-tool hooks", "internal/decisions/adr-010-per-tool-hooks.md"},
+		{"adr-011-claude-subagent-hooks", "ADR-011 · claude subagent hooks", "internal/decisions/adr-011-claude-subagent-hooks.md"},
 	}},
 	{Block: "Developer", Title: "Roadmap", Pages: []PageEntry{
 		{"roadmap-v1", "Roadmap v1", "internal/roadmap-v1.md"},

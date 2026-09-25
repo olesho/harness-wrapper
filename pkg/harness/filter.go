@@ -11,10 +11,12 @@ import "github.com/olesho/harness-wrapper/pkg/transcript"
 // The decision is purely (effectiveMode, source, kind, isSubagent) — it never
 // inspects session identity beyond the parent/subagent distinction:
 //
-//   - HOOK-sourced events (transcript.SourceHook, the per-tool hooks of a
-//     ToolHookProvider) are never admitted, parent or subagent: each is a
-//     third copy of a tool call the stream or the file already records. A
-//     consumer that installs per-tool hooks reads them from the spool itself.
+//   - HOOK-sourced events (transcript.SourceHook: the per-tool hooks of a
+//     ToolHookProvider, and the start and stop markers of claude's subagent
+//     hooks) are never admitted, parent or subagent: a per-tool event is a
+//     third copy of a tool call the stream or the file already records, and
+//     a marker is not conversation. A consumer reads them from the spool
+//     itself.
 //   - SUBAGENT events (ParentSessionID set) are admitted in any mode: a
 //     subagent is a different native session, captured from the file/export
 //     side, and never competes with the parent's source.

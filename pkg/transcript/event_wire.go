@@ -28,6 +28,7 @@ type wireEvent struct {
 	ToolInput     json.RawMessage `json:"tool_input,omitempty"`
 	Output        string          `json:"output,omitempty"`
 	UUID          string          `json:"uuid,omitempty"`
+	AgentType     string          `json:"agent_type,omitempty"`
 	Source        string          `json:"source,omitempty"`
 	NativeID      string          `json:"native_id,omitempty"`
 	SchemaVersion int             `json:"schema_version"`
@@ -48,7 +49,7 @@ func toWire(pe ParsedEvent) wireParsedEvent {
 		Event: wireEvent{
 			Seq: e.Seq, Timestamp: e.Timestamp, Role: e.Role, Type: e.Type, Text: e.Text,
 			ToolName: e.ToolName, ToolUseID: e.ToolUseID, ToolInput: e.ToolInput,
-			Output: e.Output, UUID: e.UUID,
+			Output: e.Output, UUID: e.UUID, AgentType: e.AgentType,
 			Source: e.Source, NativeID: e.NativeID, SchemaVersion: e.SchemaVersion,
 		},
 	}
@@ -62,7 +63,7 @@ func fromWire(w wireParsedEvent) ParsedEvent {
 		Event: Event{
 			Seq: e.Seq, Timestamp: e.Timestamp, Role: e.Role, Type: e.Type, Text: e.Text,
 			ToolName: e.ToolName, ToolUseID: e.ToolUseID, ToolInput: e.ToolInput,
-			Output: e.Output, UUID: e.UUID,
+			Output: e.Output, UUID: e.UUID, AgentType: e.AgentType,
 			Source: e.Source, NativeID: e.NativeID, SchemaVersion: e.SchemaVersion,
 		},
 	}

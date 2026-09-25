@@ -169,6 +169,12 @@
       "json_tag": "api_error",
       "type": "string",
       "optional": true
+    },
+    {
+      "name": "AgentType",
+      "json_tag": "agent_type",
+      "type": "string",
+      "optional": true
     }
   ],
   "Grant": [

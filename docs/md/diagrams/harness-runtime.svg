@@ -77,5 +77,5 @@
   <rect class="lane" x="20" y="374" width="760" height="62" rx="10"/>
   <text class="lbl" x="32" y="394">EVERY EVENT LEAVES AS ONE ENVELOPE</text>
   <text class="ts mono" x="32" y="414">Seq · SchemaVersion · Source (live | file | hook) · NativeID · RunID · HarnessSessionID</text>
-  <text class="ts" x="32" y="429">a central authority filter decides which copy of a duplicated event is admitted; subagent events always are, per-tool hook events never</text>
+  <text class="ts" x="32" y="429">a central authority filter decides which copy of a duplicated event is admitted; subagent transcripts always are, hook events never</text>
 </svg>

@@ -33,9 +33,10 @@ func claudeHooks(t *testing.T) harness.HookProvider {
 }
 
 // TestToolHooksInstallAlongsideTheSpec: a consumer that adds claude's
-// per-tool entries to its spec gets them installed next to the Task-matched
-// and yield hooks of the same native events, idempotently, with its own
-// hook command — the form agentd uses (`agentd-proxy hooks claude <arg>`).
+// per-tool entries to its spec gets them installed next to the spec's own
+// hooks — the yield guard under the same PreToolUse, the subagent hooks —
+// idempotently, with its own hook command: the form agentd uses
+// (`agentd-proxy hooks claude <arg>`).
 func TestToolHooksInstallAlongsideTheSpec(t *testing.T) {
 	hp := claudeHooks(t)
 	th, ok := hp.(harness.ToolHookProvider)
@@ -100,12 +101,13 @@ func TestToolHooksInstallAlongsideTheSpec(t *testing.T) {
 		t.Errorf("%d user hooks survived, want 1", userHooks)
 	}
 	for _, k := range []key{
-		{"PreToolUse", "Task", "pre-task"},
 		{"PreToolUse", "", harness.HookArgPreToolUse},
 		{"PreToolUse", "", "yield-guard"},
 		{"PostToolUse", "Task", "post-task"},
 		{"PostToolUse", "", harness.HookArgPostToolUse},
 		{"PostToolUseFailure", "", harness.HookArgPostToolUseFailure},
+		{"SubagentStart", "", harness.HookArgSubagentStart},
+		{"SubagentStop", "", harness.HookArgSubagentStop},
 	} {
 		if got[k] != 1 {
 			t.Errorf("%+v installed %d times, want once (all: %v)", k, got[k], got)
