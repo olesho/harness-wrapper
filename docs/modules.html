@@ -220,6 +220,15 @@
 </section>
 
 <section class="iface-card">
+  <h3>interface ToolHookProvider <span class="path">in pkg/harness</span></h3>
+  <p class="pending">(description pending — run the veracity-docs skill)</p>
+  <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="528" height="111" viewBox="0 0 528 111" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="340" y1="55" x2="244" y2="55" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(340,34)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">hookProvider</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claude</text></g><rect x="258" y="45" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="292" y="56" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(20,20)"><rect width="224" height="71" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface ToolHookProvider</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/harness</text><text x="10" y="57" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">ToolHookEntries() []HookEntry</text></g></svg></div>
+  <p class="rel"><b>Depends on it:</b> none</p>
+  <p class="rel"><b>Implemented by:</b> <code>hookProvider (claude)</code></p>
+  <details><summary>methods</summary><ul><li><code>ToolHookEntries() []HookEntry</code></li></ul></details>
+</section>
+
+<section class="iface-card">
   <h3>interface Reader <span class="path">in pkg/transcript</span></h3>
   <p>Reads a harness&#39;s persisted transcript for one session (by harness session UUID &#43; working dir) into the canonical Event stream; safe for concurrent use.</p>
   <div class="diagram"><svg xmlns="http://www.w3.org/2000/svg" width="792" height="298" viewBox="0 0 792 298" font-family="ui-sans-serif, system-ui, sans-serif"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#ffffff"/><line x1="188" y1="149" x2="284" y2="148" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/><g transform="translate(20,128)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">harness-wrapper</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">github.com/olesho/harne…</text></g><rect x="202" y="138" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="236" y="149" font-size="10" fill="#475569" text-anchor="middle">depends on</text><line x1="604" y1="41" x2="508" y2="148" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(604,20)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">claudecode</text></g><line x1="604" y1="113" x2="508" y2="148" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(604,92)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">codex</text></g><line x1="604" y1="185" x2="508" y2="148" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(604,164)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">Reader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">pi</text></g><line x1="604" y1="257" x2="508" y2="148" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow)"/><g transform="translate(604,236)"><rect width="168" height="42" rx="6" fill="#f8fafc" stroke="#334155" stroke-width="1.5"/><text x="10" y="18" font-size="12" font-weight="700" fill="#0f172a">masterReader</text><text x="10" y="33" font-size="10" font-family="ui-monospace, monospace" fill="#64748b">wrapper</text></g><rect x="522" y="138" width="68" height="15" rx="3" fill="#ffffff" opacity="0.92"/><text x="556" y="149" font-size="10" fill="#475569" text-anchor="middle">implements</text><g transform="translate(284,96)"><rect width="224" height="105" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/><text x="10" y="24" font-size="13" font-weight="700" fill="#92400e">interface Reader</text><text x="10" y="40" font-size="10" font-family="ui-monospace, monospace" fill="#a16207">in pkg/transcript</text><text x="10" y="50" font-size="10" fill="#92400e">Reads a harness&apos;s persisted</text><text x="10" y="65" font-size="10" fill="#92400e">transcript for one session (by</text><text x="10" y="91" font-size="10" font-family="ui-monospace, monospace" fill="#78350f">Read(harnessSessionID, workingD…</text></g></svg></div>
@@ -588,7 +597,7 @@ table and a thread-scoped Landlock domain (ADR-004).
 pkg/wrapper is its only production caller. Nothing here runs unless a caller
 requested containment; the uncontained spawn path never reaches this
 package.</em></p>
-  <details><summary>exports</summary><ul><li><code>func ActivateProfilesForTest() (restore func())</code></li><li><code>func BaselineManifestVersion() int</code></li><li><code>func DisableSupervisionForTest() (restore func())</code></li><li><code>func OpenPTYPair() (master, slave int, err error)</code></li><li><code>func ProfileID(harness string) (string, int, error)</code></li><li><code>func RegisterTestProfile(tp TestProfile) (restore func())</code></li><li><code>func StateParent() (string, error)</code></li><li><code>func Targets(a *containment.Applied) map[string]string</code></li><li><code>func WithLaunchOptions(ctx context.Context, o LaunchOptions) context.Context</code></li><li><code>type Input</code></li><li><code>type Launch</code></li><li><code>func Prepare(Input) (*Launch, error)</code></li><li><code>type LaunchOptions</code></li><li><code>func LaunchOptionsFrom(ctx context.Context) LaunchOptions</code></li><li><code>type LoginFlow</code></li><li><code>func LoginFlowFor(harness string) (*LoginFlow, error)</code></li><li><code>type Preview</code></li><li><code>func PreviewLaunch(in Input) (*Preview, error)</code></li><li><code>type RefusalError</code></li><li><code>type State</code></li><li><code>func NewState(persistent bool) (*State, error)</code></li><li><code>func OpenState(id string) (*State, error)</code></li><li><code>type TestLogin</code></li><li><code>type TestProfile</code></li></ul></details>
+  <details><summary>exports</summary><ul><li><code>func ActivateProfilesForTest() (restore func())</code></li><li><code>func BaselineManifestVersion() int</code></li><li><code>func DisableSupervisionForTest() func()</code></li><li><code>func OpenPTYPair() (int, int, error)</code></li><li><code>func ProfileID(harness string) (string, int, error)</code></li><li><code>func RegisterTestProfile(tp TestProfile) (restore func())</code></li><li><code>func StateParent() (string, error)</code></li><li><code>func Targets(a *containment.Applied) map[string]string</code></li><li><code>func WithLaunchOptions(ctx context.Context, o LaunchOptions) context.Context</code></li><li><code>type Input</code></li><li><code>type Launch</code></li><li><code>func Prepare(Input) (*Launch, error)</code></li><li><code>type LaunchOptions</code></li><li><code>func LaunchOptionsFrom(ctx context.Context) LaunchOptions</code></li><li><code>type LoginFlow</code></li><li><code>func LoginFlowFor(harness string) (*LoginFlow, error)</code></li><li><code>type Preview</code></li><li><code>func PreviewLaunch(Input) (*Preview, error)</code></li><li><code>type RefusalError</code></li><li><code>type State</code></li><li><code>func NewState(bool) (*State, error)</code></li><li><code>func OpenState(string) (*State, error)</code></li><li><code>type TestLogin</code></li><li><code>type TestProfile</code></li></ul></details>
 </section>
 
 <section class="card">
@@ -889,7 +898,7 @@ Concurrency: all Conversation methods are safe for concurrent use.
 Send specifically requires that the caller&#39;s goroutine has previously
 acquired control via AcquireControl; otherwise it returns
 ErrNoControl.</em></p>
-  <details><summary>exports</summary><ul><li><code>func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error</code></li><li><code>func DialogAnchors(harness string) []string</code></li><li><code>func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)</code></li><li><code>type Conversation</code></li><li><code>func Open(ctx context.Context, opts Options) (*Conversation, error)</code></li><li><code>func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)</code></li><li><code>type ConversationEvent</code></li><li><code>type DeliveryState</code></li><li><code>type DiscoverModelsOptions</code></li><li><code>type Disposition</code></li><li><code>type DispositionKind</code></li><li><code>type EventType</code></li><li><code>type ExitInfo</code></li><li><code>type HistorySource</code></li><li><code>type InputAnswer</code></li><li><code>type InputOption</code></li><li><code>type InputPolicy</code></li><li><code>type InputRequest</code></li><li><code>type InputUnresolvedError</code></li><li><code>type InterruptResult</code></li><li><code>type Options</code></li><li><code>type PermissionModeBlockedError</code></li><li><code>type ReopenOptions</code></li><li><code>type Role</code></li><li><code>type ScreenAnchor</code></li><li><code>func AuthAnchors(harness string) []ScreenAnchor</code></li><li><code>type Session</code></li><li><code>type SessionContainment</code></li><li><code>type State</code></li><li><code>type Transport</code></li><li><code>type Turn</code></li><li><code>type TurnCode</code></li><li><code>type TurnState</code></li></ul></details>
+  <details><summary>exports</summary><ul><li><code>func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error</code></li><li><code>func DialogAnchors(harness string) []string</code></li><li><code>func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)</code></li><li><code>type Conversation</code></li><li><code>func Open(ctx context.Context, opts Options) (*Conversation, error)</code></li><li><code>func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)</code></li><li><code>type ConversationEvent</code></li><li><code>type DeliveryState</code></li><li><code>type DiscoverModelsOptions</code></li><li><code>type Disposition</code></li><li><code>type DispositionKind</code></li><li><code>type EventType</code></li><li><code>type ExitInfo</code></li><li><code>type HistorySource</code></li><li><code>type InputAnswer</code></li><li><code>type InputOption</code></li><li><code>type InputPolicy</code></li><li><code>type InputRequest</code></li><li><code>type InputUnresolvedError</code></li><li><code>type InterruptResult</code></li><li><code>type Options</code></li><li><code>type PermissionModeBlockedError</code></li><li><code>type RateLimit</code></li><li><code>type RateLimitStatus</code></li><li><code>type RateLimitWindow</code></li><li><code>type ReopenOptions</code></li><li><code>type Role</code></li><li><code>type ScreenAnchor</code></li><li><code>func AuthAnchors(harness string) []ScreenAnchor</code></li><li><code>type Session</code></li><li><code>type SessionContainment</code></li><li><code>type State</code></li><li><code>type Transport</code></li><li><code>type Turn</code></li><li><code>type TurnCode</code></li><li><code>type TurnState</code></li></ul></details>
 </section>
 
 <section class="card">
@@ -1440,16 +1449,18 @@ waiting_for_input.</em></p>
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.282, verified LIVE against that binary on 2026-09-24 by pkg/harness&#39;s
+2.1.283, verified LIVE against that binary on 2026-09-26 by pkg/harness&#39;s
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat&#39;s
 TestTrustDialogLive, TestKeepAliveLive and TestSessionAssignedLive; the
 stream-json transport (ADR-009) passed TestStreamLive, TestInterruptLive and
-TestStreamAccountLive there too. A turn completes only if thinkingRE matches
-a settled 2.1.282 end-of-turn summary and Busy() gates the in-flight frames,
-so those runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn
-keep-alive path, a large prompt arriving intact, and the folder-trust dialog,
-both reported in a directory claude has not trusted and answered.
+TestStreamAccountLive there too, and the hook surfaces passed pkg/harness&#39;s
+TestToolHooksLive (ADR-010) and TestSubagentHooksLive (ADR-011). A turn
+completes only if thinkingRE matches a settled 2.1.283 end-of-turn summary
+and Busy() gates the in-flight frames, so those runs cover END-OF-TURN
+DETECTION, reply extraction, the multi-turn keep-alive path, a large prompt
+arriving intact, and the folder-trust dialog, both reported in a directory
+claude has not trusted and answered.
 
 The recordings trail the pin, deliberately. The four scripted claude
 scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
@@ -1462,11 +1473,11 @@ the 2.1.280 interrupt-* recordings (ADR-007). The permission-mode footers in
 permmode.go are anchored at 2.1.217 and were re-confirmed by hand on 2.1.281.
 Nothing was re-baked for 2.1.281: the one fix its live runs needed, the
 composer placeholder in ComposerText, is a shape 2.1.270 already painted.
-Nothing was re-baked for 2.1.282 either: every live test above passed on it
-unchanged, and replay cannot confirm 2.1.282. The recordings are frozen
-renderings the adapter must keep handling: replaying them cannot confirm a
-newer release, so what verifies the pin is the live tests above and nothing
-else.
+Nothing was re-baked for 2.1.282 or 2.1.283 either: every live test above
+passed on them unchanged, and replay cannot confirm 2.1.283. The recordings
+are frozen renderings the adapter must keep handling: replaying them cannot
+confirm a newer release, so what verifies the pin is the live tests above
+and nothing else.
 
 The signals:
 
@@ -1623,7 +1634,7 @@ Schema:
 
 	{
 	  &#34;codex&#34;:       {&#34;package&#34;: &#34;@openai/codex&#34;,             &#34;binary&#34;: &#34;codex&#34;,    &#34;pinned&#34;: &#34;0.144.5&#34;, &#34;verified_at&#34;: &#34;2026-07-22&#34;},
-	  &#34;claude-code&#34;: {&#34;package&#34;: &#34;@anthropic-ai/claude-code&#34;, &#34;binary&#34;: &#34;claude&#34;,   &#34;pinned&#34;: &#34;2.1.282&#34;, &#34;verified_at&#34;: &#34;2026-09-24&#34;},
+	  &#34;claude-code&#34;: {&#34;package&#34;: &#34;@anthropic-ai/claude-code&#34;, &#34;binary&#34;: &#34;claude&#34;,   &#34;pinned&#34;: &#34;2.1.283&#34;, &#34;verified_at&#34;: &#34;2026-09-26&#34;},
 	  &#34;opencode&#34;:    {&#34;package&#34;: &#34;opencode-ai&#34;,               &#34;binary&#34;: &#34;opencode&#34;, &#34;pinned&#34;: &#34;&#34;,        &#34;verified_at&#34;: &#34;&#34;},
 	  &#34;pi&#34;:          {&#34;package&#34;: &#34;@earendil-works/pi-coding-agent&#34;, &#34;binary&#34;: &#34;pi&#34;,  &#34;pinned&#34;: &#34;0.76.0&#34;,  &#34;verified_at&#34;: &#34;2026-06-27&#34;}
 	}

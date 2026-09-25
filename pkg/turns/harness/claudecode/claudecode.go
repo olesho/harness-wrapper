@@ -2,16 +2,18 @@
 // Claude Code CLI (claude / @anthropic-ai/claude-code).
 //
 // Detection signals first observed on 2.1.141. The pin in versions.json is
-// 2.1.282, verified LIVE against that binary on 2026-09-24 by pkg/harness's
+// 2.1.283, verified LIVE against that binary on 2026-09-26 by pkg/harness's
 // TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 // TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 // TestTrustDialogLive, TestKeepAliveLive and TestSessionAssignedLive; the
 // stream-json transport (ADR-009) passed TestStreamLive, TestInterruptLive and
-// TestStreamAccountLive there too. A turn completes only if thinkingRE matches
-// a settled 2.1.282 end-of-turn summary and Busy() gates the in-flight frames,
-// so those runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn
-// keep-alive path, a large prompt arriving intact, and the folder-trust dialog,
-// both reported in a directory claude has not trusted and answered.
+// TestStreamAccountLive there too, and the hook surfaces passed pkg/harness's
+// TestToolHooksLive (ADR-010) and TestSubagentHooksLive (ADR-011). A turn
+// completes only if thinkingRE matches a settled 2.1.283 end-of-turn summary
+// and Busy() gates the in-flight frames, so those runs cover END-OF-TURN
+// DETECTION, reply extraction, the multi-turn keep-alive path, a large prompt
+// arriving intact, and the folder-trust dialog, both reported in a directory
+// claude has not trusted and answered.
 //
 // The recordings trail the pin, deliberately. The four scripted claude
 // scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
@@ -24,11 +26,11 @@
 // permmode.go are anchored at 2.1.217 and were re-confirmed by hand on 2.1.281.
 // Nothing was re-baked for 2.1.281: the one fix its live runs needed, the
 // composer placeholder in ComposerText, is a shape 2.1.270 already painted.
-// Nothing was re-baked for 2.1.282 either: every live test above passed on it
-// unchanged, and replay cannot confirm 2.1.282. The recordings are frozen
-// renderings the adapter must keep handling: replaying them cannot confirm a
-// newer release, so what verifies the pin is the live tests above and nothing
-// else.
+// Nothing was re-baked for 2.1.282 or 2.1.283 either: every live test above
+// passed on them unchanged, and replay cannot confirm 2.1.283. The recordings
+// are frozen renderings the adapter must keep handling: replaying them cannot
+// confirm a newer release, so what verifies the pin is the live tests above
+// and nothing else.
 //
 // The signals:
 //

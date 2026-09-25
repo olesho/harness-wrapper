@@ -274,9 +274,8 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() (restore func())`
-DisableSupervisionForTest makes every launch see a host that delegates no
-cgroup, until the returned function runs. Tests only.
+#### `func DisableSupervisionForTest() func()`
+DisableSupervisionForTest does nothing here.
 
 #### `func OpenPTYPair() (int, int, error)`
 OpenPTYPair reports ErrUnsupported.
@@ -1306,7 +1305,8 @@ it does NOT create a new store record — the record already exists.
 #### `type ConversationEvent`
 ConversationEvent is a discriminated event observed on
 Conversation.Events(). Inspect Type to learn which payload is set: Turn
-for EventTurn, Input for EventInputRequest / EventInputResolved.
+for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+EventExited, RateLimit for EventRateLimit.
 
 #### `type DeliveryState`
 DeliveryState is the event queue's pressure, for diagnostics: a consumer
@@ -1380,6 +1380,17 @@ cannot perform.
 
 Observed is the last posture read before the driver stopped pressing; it is
 also returned as SetPermissionMode's string result.
+
+#### `type RateLimit`
+RateLimit is the harness's report of the account's usage limit, as it stood
+when the harness last reported it. Each field is the harness's own figure;
+a zero field means the report did not include it.
+
+#### `type RateLimitStatus`
+RateLimitStatus is where the account stands against its usage limit.
+
+#### `type RateLimitWindow`
+RateLimitWindow is one usage window's standing.
 
 #### `type ReopenOptions`
 ReopenOptions configures Reopen. It is the Options knobs that make sense when
@@ -2121,6 +2132,28 @@ authoritative monotonic Seq from arrival order (stream lines carry no native
 per-line timestamp, so arrival order is the order).
 
 - `ParseStreamLine(line string) []transcript.ParsedEvent`
+
+#### `ToolHookProvider`
+
+> ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+harness can report every tool call through its hooks: one event when a tool
+starts, one when it finishes or fails. Its entries are not in HookSpec,
+because they run a hook subprocess on every tool call; a consumer that wants
+per-tool events — one reading the spool with ReadSpool — adds them to the
+spec it ensures:
+
+	spec := *hp.HookSpec()
+	if th, ok := hp.(ToolHookProvider); ok {
+		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+	}
+
+Each fired entry spools one event (transcript.SourceHook) in a spool file
+named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+file as well as by the event. The authority filter never admits these
+events to Run's OnEvent.
+
+- `ToolHookEntries() []HookEntry`
 
 ## Module: all (`pkg/harness/all`)
 
@@ -3419,16 +3452,18 @@ _(summary pending — run the veracity-docs skill)_
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.282, verified LIVE against that binary on 2026-09-24 by pkg/harness's
+2.1.283, verified LIVE against that binary on 2026-09-26 by pkg/harness's
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 TestTrustDialogLive, TestKeepAliveLive and TestSessionAssignedLive; the
 stream-json transport (ADR-009) passed TestStreamLive, TestInterruptLive and
-TestStreamAccountLive there too. A turn completes only if thinkingRE matches
-a settled 2.1.282 end-of-turn summary and Busy() gates the in-flight frames,
-so those runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn
-keep-alive path, a large prompt arriving intact, and the folder-trust dialog,
-both reported in a directory claude has not trusted and answered.
+TestStreamAccountLive there too, and the hook surfaces passed pkg/harness's
+TestToolHooksLive (ADR-010) and TestSubagentHooksLive (ADR-011). A turn
+completes only if thinkingRE matches a settled 2.1.283 end-of-turn summary
+and Busy() gates the in-flight frames, so those runs cover END-OF-TURN
+DETECTION, reply extraction, the multi-turn keep-alive path, a large prompt
+arriving intact, and the folder-trust dialog, both reported in a directory
+claude has not trusted and answered.
 
 The recordings trail the pin, deliberately. The four scripted claude
 scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
@@ -3441,11 +3476,11 @@ the 2.1.280 interrupt-* recordings (ADR-007). The permission-mode footers in
 permmode.go are anchored at 2.1.217 and were re-confirmed by hand on 2.1.281.
 Nothing was re-baked for 2.1.281: the one fix its live runs needed, the
 composer placeholder in ComposerText, is a shape 2.1.270 already painted.
-Nothing was re-baked for 2.1.282 either: every live test above passed on it
-unchanged, and replay cannot confirm 2.1.282. The recordings are frozen
-renderings the adapter must keep handling: replaying them cannot confirm a
-newer release, so what verifies the pin is the live tests above and nothing
-else.
+Nothing was re-baked for 2.1.282 or 2.1.283 either: every live test above
+passed on them unchanged, and replay cannot confirm 2.1.283. The recordings
+are frozen renderings the adapter must keep handling: replaying them cannot
+confirm a newer release, so what verifies the pin is the live tests above
+and nothing else.
 
 The signals:
 
@@ -3716,7 +3751,7 @@ Schema:
 
 	{
 	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.282", "verified_at": "2026-09-24"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
