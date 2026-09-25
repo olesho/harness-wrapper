@@ -315,7 +315,48 @@ Two filters keep a drained spool honest:
 - **Authority filter** — when the same logical event can arrive twice (once live, once from the file),
   exactly one copy is admitted: under the stream strategy the live copy wins; under hooks the file copy
   wins for conversation content, while non-conversation events (session metadata and the like) are
-  still accepted live. Subagent events bypass the filter entirely.
+  still accepted live. Subagent events bypass the filter entirely. Per-tool hook events (below) are
+  never admitted, parent or subagent.
+
+### Per-tool hooks
+
+The default `HookSpec` hooks a harness's lifecycle — session start, prompt, stop, session end — and
+claude's subagents (`Task`). A consumer that wants every tool call as it happens adds the per-tool
+entries of a provider that offers them, `ToolHookProvider`, to the spec it ensures:
+
+```go
+type ToolHookProvider interface{ ToolHookEntries() []HookEntry }
+
+spec := *hp.HookSpec()
+if th, ok := hp.(harness.ToolHookProvider); ok {
+	spec.Events = append(spec.Events, th.ToolHookEntries()...)
+}
+```
+
+They are opt-in because each runs a hook subprocess on every tool call, and `Run` never needs them.
+claude's are `PreToolUse`, `PostToolUse` and `PostToolUseFailure`, for every tool, under the canonical
+arguments `HookArgPreToolUse` (`pre-tool-use`), `HookArgPostToolUse` (`post-tool-use`) and
+`HookArgPostToolUseFailure` (`post-tool-use-failure`). Each fired hook spools one event, in a file
+named after its argument:
+
+| Argument | Event | Carries |
+|---|---|---|
+| `pre-tool-use` | `tool_use` | the tool's name, its `tool_use_id` and its input |
+| `post-tool-use` | `tool_result` | the tool's name, its `tool_use_id` and its response as text |
+| `post-tool-use-failure` | `tool_result` | the tool's name, its `tool_use_id` and the error, prefixed `interrupted: ` when claude says the tool was interrupted |
+
+- The event is stamped when the hook fired, its `Source` is `transcript.SourceHook`, and its native id
+  is `hook:<argument>:<tool_use_id>`, so a finish, a failure and the stream's or the file's copy of
+  the same call never collapse into one another.
+- A tool run inside a subagent (claude's `agent_id`) is tagged with the subagent's session under the
+  parent's, as the subagent's transcript is.
+- Input and output are bounded by `MaxToolHookBytes` (16 KiB each). Output past it is cut and ends
+  with `ToolHookTruncated`; input past it becomes a JSON string holding the same cut of its JSON text.
+- A failure's file name also starts with `post-tool-use-`: match the longer argument first.
+
+The authority filter never admits these events to `Run`'s `OnEvent` — each is a third copy of a call
+the stream or the file records — so a consumer that installs per-tool hooks reads them with
+`ReadSpool`, as agentd does.
 
 ### Yield: cooperative preemption
 
