@@ -3,6 +3,7 @@ package chat
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -436,5 +437,118 @@ func TestReadBoundedLine(t *testing.T) {
 	}
 	if strings.Join(got, "|") != "short|next|tail" {
 		t.Fatalf("lines = %q, want the 100-byte line dropped whole", got)
+	}
+}
+
+// TestStream_RateLimit: claude's rate_limit_event arrives as EventRateLimit
+// before the turn it came with ends, and State carries the last report.
+func TestStream_RateLimit(t *testing.T) {
+	r := openStreamRig(t, nil)
+	if st := r.conv.State(); st.RateLimit != nil {
+		t.Fatalf("State.RateLimit = %+v before any report, want nil", st.RateLimit)
+	}
+	id := r.send("RATE")
+	if turn := r.ended(id); turn.State != TurnStateComplete {
+		t.Fatalf("turn = %+v", turn)
+	}
+	var rateAt, endAt int
+	evs := r.events()
+	for i, ev := range evs {
+		switch {
+		case ev.Type == EventRateLimit:
+			rateAt = i
+		case ev.Type == EventTurn && ev.Turn.ID == id && ev.Turn.State == TurnStateComplete:
+			endAt = i
+		}
+	}
+	rl := evs[rateAt].RateLimit
+	if evs[rateAt].Type != EventRateLimit || rl == nil || rateAt > endAt {
+		t.Fatalf("rate limit at %d, turn end at %d: want the report first (%+v)", rateAt, endAt, evs)
+	}
+	resets := time.Unix(fakeResetsAt, 0)
+	if rl.Status != RateLimitAllowed || !rl.ResetsAt.Equal(resets) || rl.Window != "five_hour" || rl.Utilization != nil ||
+		rl.OverageStatus != RateLimitRejected || rl.UsingOverage || rl.ObservedAt.IsZero() {
+		t.Errorf("RateLimit = %+v", rl)
+	}
+	if w := rl.Windows["five_hour"]; w.Utilization != 0.1 || !w.ResetsAt.Equal(resets) {
+		t.Errorf("five_hour window = %+v", w)
+	}
+	if w := rl.Windows["seven_day"]; w.Utilization != 0.08 || !w.ResetsAt.Equal(resets.Add(511200*time.Second)) {
+		t.Errorf("seven_day window = %+v", w)
+	}
+	st := r.conv.State()
+	if st.RateLimit == nil || st.RateLimit.Status != RateLimitAllowed || len(st.RateLimit.Windows) != 2 {
+		t.Fatalf("State.RateLimit = %+v, want the report", st.RateLimit)
+	}
+	// State hands out a copy: changing it changes nothing inside.
+	st.RateLimit.Windows["five_hour"] = RateLimitWindow{}
+	if r.conv.State().RateLimit.Windows["five_hour"].Utilization != 0.1 {
+		t.Error("State.RateLimit aliases the conversation's own record")
+	}
+
+	// A warning, and a status this build does not know.
+	for _, c := range []struct {
+		text string
+		want RateLimitStatus
+	}{{"RATE allowed_warning", RateLimitWarning}, {"RATE someday_new", RateLimitUnknown}} {
+		r.ended(r.send(c.text))
+		r.await("rate limit for "+c.text, func(ev ConversationEvent) bool {
+			return ev.Type == EventRateLimit && ev.RateLimit.Status == c.want
+		})
+		if got := r.conv.State().RateLimit.Status; got != c.want {
+			t.Errorf("%s: State status %q, want %q", c.text, got, c.want)
+		}
+	}
+
+	// The wall: the rejected report, then the turn ends usage_limited.
+	id = r.send("LIMIT")
+	if turn := r.ended(id); turn.Code != CodeUsageLimited {
+		t.Fatalf("turn = %+v, want usage_limited", turn)
+	}
+	if st := r.conv.State(); st.RateLimit == nil || st.RateLimit.Status != RateLimitRejected || !st.RateLimit.ResetsAt.Equal(resets) {
+		t.Fatalf("State.RateLimit = %+v after the wall, want rejected", st.RateLimit)
+	}
+}
+
+// TestStream_RateLimitWithoutStatusIsDropped: a report that names no status
+// is not one; the turn is unaffected and State keeps the last real report.
+func TestStream_RateLimitWithoutStatusIsDropped(t *testing.T) {
+	r := openStreamRig(t, nil)
+	if turn := r.ended(r.send("RATEBAD")); turn.State != TurnStateComplete {
+		t.Fatalf("turn = %+v", turn)
+	}
+	for _, ev := range r.events() {
+		if ev.Type == EventRateLimit {
+			t.Fatalf("a report without a status was delivered: %+v", ev.RateLimit)
+		}
+	}
+	if st := r.conv.State(); st.RateLimit != nil {
+		t.Fatalf("State.RateLimit = %+v, want nil", st.RateLimit)
+	}
+}
+
+func TestParseRateLimit(t *testing.T) {
+	now := time.Unix(1790270000, 0)
+	for name, c := range map[string]struct {
+		raw  string
+		want *RateLimit
+	}{
+		"empty":      {``, nil},
+		"not json":   {`[`, nil},
+		"no status":  {`{"resetsAt":1}`, nil},
+		"status":     {`{"status":"allowed"}`, &RateLimit{Status: RateLimitAllowed, ObservedAt: now}},
+		"float time": {`{"status":"rejected","resetsAt":1.7902728e9,"utilization":1.2}`, &RateLimit{Status: RateLimitRejected, ResetsAt: time.Unix(1790272800, 0), ObservedAt: now}},
+		"bad window": {`{"status":"allowed","unifiedWindows":{"five_hour":{}}}`, &RateLimit{Status: RateLimitAllowed, ObservedAt: now}},
+	} {
+		got := parseRateLimit(json.RawMessage(c.raw), now)
+		switch {
+		case c.want == nil && got != nil:
+			t.Errorf("%s: parsed %+v, want nothing", name, got)
+		case c.want != nil && (got == nil || got.Status != c.want.Status || !got.ResetsAt.Equal(c.want.ResetsAt) || !got.ObservedAt.Equal(now) || len(got.Windows) != 0):
+			t.Errorf("%s: parsed %+v, want %+v", name, got, c.want)
+		}
+	}
+	if got := parseRateLimit(json.RawMessage(`{"status":"rejected","utilization":1.2}`), now); got.Utilization == nil || *got.Utilization != 1.2 {
+		t.Errorf("utilization over 1 = %+v", got)
 	}
 }

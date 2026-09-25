@@ -1,6 +1,6 @@
 # ADR-009: claude-code can run on its stream-json protocol instead of its screen
 
-**Status:** Accepted (2026-09-24)
+**Status:** Accepted (2026-09-24); amended 2026-09-25
 
 **Intent:** principle 1, *the screen is a contract we don't own*, and principle 4, *prefer the
 harness's own record* ([INTENT](../../../../INTENT.md#design-principles)) — claude has a
@@ -61,6 +61,12 @@ harness.
    `SetPermissionMode` sends a `set_permission_mode` control request. A `can_use_tool` request is an
    `InputRequest` of kind `permission_prompt` with `allow` and `deny`, resolved by `InputPolicy`,
    `OnInputRequest` or `Answer`.
+9. **The account's usage limit**: claude's `rate_limit_event`, which it sends for a claude.ai
+   subscription account whenever the limit changes, is `EventRateLimit` and `State().RateLimit`: a
+   `RateLimit` with claude's figures — status (`allowed`, `warning`, `rejected`; `unknown` for one
+   this build does not know), reset time, the limiting window, utilization, overage, and the usage of
+   every window. It ends no turn and blocks nothing; a turn a wall refused still ends with its own
+   `Code` and `ResumeAt`. A report without a status is dropped. The TUI transport has none.
 
 ## Alternatives
 
@@ -83,7 +89,9 @@ Not guaranteed: the protocol is not published as a versioned contract. `command_
 internal in the CLI's own schema, and frames can change between versions; the capability gate and
 the recorded corpus are how a change is caught. A process a tool detaches into its own session
 outlives Close unless a cgroup holds it. After a cancelled or failed turn, claude sends that prompt
-again with the next one: the model sees it.
+again with the next one: the model sees it. A `RateLimit` is claude's report as it stood when sent,
+not a live reading; its per-window usage comes from a part of the report claude marks internal, and
+an API-key account never reports one.
 
 ## Evidence
 
@@ -101,7 +109,12 @@ again with the next one: the model sees it.
 - `pkg/chat/stream_account_live_test.go` (`HW_LIVE_ACCOUNT=1`) runs the real claude against the
   Anthropic API on a real account: a reply, a Bash tool with PreToolUse and PostToolUse hooks
   firing, a stdio MCP tool call, an interrupt mid-reply (`stopped`), Quit, then Reopen remembering
-  the first answer. Passed on macOS, Ubuntu 26.04 and Debian 13 with claude 2.1.281 on haiku.
+  the first answer. Passed on macOS, Ubuntu 26.04 and Debian 13 with claude 2.1.281 on haiku. Since
+  the amendment it also checks the first reply brings the account's `RateLimit` (status, reset time,
+  window, two windows' usage): passed on macOS with claude 2.1.282 and on Ubuntu 26.04 with 2.1.281.
+- `TestStream_RateLimit` and `TestParseRateLimit`: a real account's `rate_limit_event`, replayed by
+  the fake, arrives before its turn ends and in `State`; a warning, an unknown status, the rejected
+  report ahead of a usage wall, and a report without a status dropped.
 
 ## Consequences
 
@@ -112,5 +125,13 @@ again with the next one: the model sees it.
 
 ## Follow-ups
 
-- chatd exposes no transport choice; one comes when a remote consumer needs it.
+- chatd exposes no transport choice; one comes when a remote consumer needs it. Its SSE frames do not
+  carry `EventRateLimit` yet.
 - meta-harness mirrors the transport and the corpus.
+- The recorded corpus has no `rate_limit_event`: its sessions ran against a local API, which claude
+  gets no usage limit from.
+
+## History
+
+- 2026-09-25: claude's `rate_limit_event` surfaces as `EventRateLimit` and `State().RateLimit`
+  (Decision 9).

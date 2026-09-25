@@ -55,6 +55,11 @@ type State struct {
 	// Exit is how the process ended, nil while it runs.
 	Exit *ExitInfo
 
+	// RateLimit is the account's usage limit as the harness last reported
+	// it (EventRateLimit); nil until it has, and always on the TUI
+	// transport.
+	RateLimit *RateLimit
+
 	// Delivery is the event queue's pressure.
 	Delivery DeliveryState
 }
@@ -162,6 +167,12 @@ func (c *Conversation) deliver(ev ConversationEvent) {
 // eventSize is an event's payload bytes, for the queue's byte bound.
 func eventSize(ev ConversationEvent) int64 {
 	n := int64(256 + len(ev.Turn.Text) + len(ev.Turn.Reason))
+	if rl := ev.RateLimit; rl != nil {
+		n += int64(len(rl.Window))
+		for k := range rl.Windows {
+			n += int64(64 + len(k))
+		}
+	}
 	if in := ev.Input; in != nil {
 		n += int64(len(in.Prompt) + len(in.Header))
 		for _, o := range in.Options {
