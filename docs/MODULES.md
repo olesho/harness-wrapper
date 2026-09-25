@@ -3077,24 +3077,28 @@ _(summary pending — run the veracity-docs skill)_
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.270, verified LIVE against that binary on 2026-09-14 by pkg/harness's
+2.1.281, verified LIVE against that binary on 2026-09-23 by pkg/harness's
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
 TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
-2.1.270 end-of-turn summary and Busy() gates the in-flight frames, so those
+2.1.281 end-of-turn summary and Busy() gates the in-flight frames, so those
 runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
 path, a large prompt arriving intact, and the folder-trust dialog, both
 reported in a directory claude has not trusted and answered.
 
-The four scripted claude scenarios under test/corpus/claude-code/ —
-settled-after-turn, multi-turn, tool-call and interrupted-mid-reply — are
-recorded at 2.1.270 from a directory claude had never trusted
-(meta.json.binary_version is the recorded proof), so interruptMarker and the
-tool-call rendering are verified at the pin by replay. The permission-mode
-footers in permmode.go are still anchored at 2.1.217. The recordings are
-frozen renderings the adapter must keep handling: once the pin moves on they
-trail it, and replaying them cannot confirm the newer release; only the live
-tests above can.
+The recordings trail the pin, deliberately. The four scripted claude
+scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
+tool-call and interrupted-mid-reply — are recorded at 2.1.270 from a
+directory claude had never trusted (meta.json.binary_version is the recorded
+proof), the interrupt-* recordings at 2.1.280, and the two trust-dialog
+recordings at 2.1.261; so the tool-call rendering is verified by replay at
+2.1.270 and interruptMarker by the 2.1.280 interrupt-* recordings (ADR-007).
+The permission-mode footers in permmode.go are anchored at 2.1.217 and were
+re-confirmed by hand on 2.1.281. Nothing was re-baked for 2.1.281: the one
+fix its live runs needed, the composer placeholder in ComposerText, is a
+shape 2.1.270 already painted. The recordings are frozen renderings the
+adapter must keep handling: replaying them cannot confirm a newer release,
+so what verifies the pin is the live tests above and nothing else.
 
 The signals:
 
@@ -3105,12 +3109,12 @@ The signals:
     on screen, the turn just completed.
 
   - User interrupt: a "⎿  Interrupted · What should Claude do
-    instead?" line appears. The turn ended in a recoverable error
-    state. Re-confirmed verbatim on 2.1.270. What changed at 2.1.24x
-    is which KEY produces it — Esc interrupts, Ctrl-C clears the
-    composer and paints nothing — which matters to the recorder, not
-    to this adapter; see the interrupt step in
-    internal/screenbench/cmd/screenbench-record/script.go.
+    instead?" line appears below the stopped reply. Re-confirmed
+    verbatim on 2.1.280. It is read per turn, by InterruptOutcome
+    (interrupt.go, ADR-007), never by its presence on screen: an earlier
+    turn's marker stays painted above the next turn. OnScreen emits no
+    event for it. Esc interrupts; Ctrl-C clears the composer and paints
+    nothing.
 
 This adapter embeds generic.Adapter so wrapper-level status events
 (blocked_by_cost, retry_later, failed) keep flowing through.
@@ -3356,15 +3360,17 @@ each supported harness CLI to a specific upstream package version.
 versions.json is the single source of truth that ties an adapter's
 code (regex fingerprints, classifier patterns, transcript schema
 assumptions) to a specific upstream release. The version-sentry CLI
-reads it to compare against npm registry latest; corpus tests read
-it to verify that recordings under test/corpus/ were made against
-the same version the adapter targets.
+reads it to compare against npm registry latest, and the env-gated
+conformance tests compare it against the binary actually installed.
+Nothing compares it to test/corpus/: a recording's
+meta.json.binary_version is free to trail the pin, and routinely does
+— see docs/md/internal/versions-drift.md.
 
 Schema:
 
 	{
-	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.142.5", "verified_at": "2026-07-05"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.201", "verified_at": "2026-07-05"},
+	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.281", "verified_at": "2026-09-23"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
