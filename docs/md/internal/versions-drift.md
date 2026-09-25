@@ -13,7 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.270", "verified_at": "2026-09-14"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 }
@@ -31,17 +31,28 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.270` as of 2026-09-14, verified live against the installed
-> 2.1.270 binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`:
-> end-of-turn detection, reply extraction, the multi-turn keep-alive path, a large prompt arriving
-> intact, and the folder-trust dialog, both reported and answered. The four scripted claude scenarios
-> are recorded at 2.1.270 too, so the `interruptMarker` and tool-call surfaces are verified at the pin
-> by replay; the permission-mode footers remain anchored at 2.1.217. Recordings are frozen renderings
+> Both files carry claude-code `2.1.283` as of 2026-09-26, verified live against the installed
+> 2.1.283 binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`,
+> `TestKeepAliveLive` and `TestSessionAssignedLive`: end-of-turn detection, reply extraction, the
+> multi-turn keep-alive path, a large prompt arriving intact, session assignment, and the folder-trust
+> dialog, both reported and answered. The stream-json transport (ADR-009) passed `TestStreamLive`,
+> `TestInterruptLive` and `TestStreamAccountLive` on 2.1.283, and the claude hook surfaces passed
+> `pkg/harness`'s `TestToolHooksLive` (per-tool hooks, ADR-010) and `TestSubagentHooksLive`
+> (subagent hooks, ADR-011) there too; the stream-json replay corpus
+> (`test/corpus/claude-code-stream`) stays recorded at 2.1.281. The recordings trail that pin: the
+> four scripted claude scenarios are still at 2.1.270, the `interrupt-*` recordings at 2.1.280 and the
+> two trust-dialog captures at 2.1.261, so the tool-call surface is verified by replay at 2.1.270 and
+> `interruptMarker` by the 2.1.280 `interrupt-*` recordings (ADR-007), and the permission-mode
+> footers remain anchored at 2.1.217 (re-confirmed by hand on 2.1.281). The five TUI live tests first passed at
+> 2.1.281 once `ComposerText` learned to read the empty composer's `Try "…"` placeholder as empty — a
+> shape 2.1.270 already painted, so nothing was re-baked; 2.1.282 and 2.1.283 passed every live
+> test unchanged, so nothing was re-baked for them either. Recordings are frozen renderings
 > the adapter must keep handling, so once the pin moves on they trail it by design rather than by
-> neglect. meta-harness's own pin file is still at `2.1.218` (verified 2026-07-23) and has to follow —
-> until it does, `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design,
-> the snapshot is a parity *target* rather than a mirror of what meta-harness ships today, and the
-> no-args mode would drag this repo's pin *backwards* from 2.1.270 to 2.1.218.
+> neglect — only the live tests can speak for the pin. meta-harness's own pin file is still at
+> `2.1.218` (verified 2026-07-23) and has to follow — until it does,
+> `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, the snapshot
+> is a parity *target* rather than a mirror of what meta-harness ships today, and the no-args mode
+> would drag this repo's pin *backwards* from 2.1.283 to 2.1.218.
 
 The read API:
 

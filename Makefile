@@ -3,8 +3,9 @@
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Deliberately NOT every script under test/scripts/: a
 # version-shape recording that exists for one harness only (e.g.
-# claude/settled-after-turn, which pins Claude Code 2.1.247's "· done <clock>"
-# end-of-turn clause) is rebaked on demand via `make rebake-corpus`, not in the
+# claude/settled-after-turn, which pins the "· done <clock>" end-of-turn
+# clause Claude Code introduced at 2.1.247 — the recording itself is at
+# 2.1.270) is rebaked on demand via `make rebake-corpus`, not in the
 # all-harnesses loop that would try to record it for codex too.
 SCENARIOS := short-reply long-markdown code-block interrupted-mid-reply tool-call multi-turn
 HARNESSES := codex claude
