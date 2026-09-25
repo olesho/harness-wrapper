@@ -75,6 +75,23 @@ const (
 	HookArgPostToolUseFailure = "post-tool-use-failure"
 )
 
+// The canonical subagent hook arguments: the `<harness> <arg>` a harness's
+// subagent hooks run, and the prefix of the spool file each writes. They are
+// in the default HookSpec of a harness that reports its subagents through
+// hooks (claude's SubagentStart and SubagentStop).
+const (
+	// HookArgSubagentStart fires when a subagent starts. Its event is a
+	// transcript.EventSubagentStart tagged with the subagent's session under
+	// its parent's and carrying the subagent's type.
+	HookArgSubagentStart = "subagent-start"
+	// HookArgSubagentStop fires when a subagent has finished. Its events are
+	// the subagent's transcript, tagged the same way and read once it holds
+	// the subagent's last reply (waiting at most a second for it), then a
+	// transcript.EventSubagentStop carrying the subagent's type and that
+	// reply, cut to MaxToolHookBytes.
+	HookArgSubagentStop = "subagent-stop"
+)
+
 // MaxToolHookBytes bounds what one per-tool hook event carries of the tool's
 // input and of its output. Output over the bound is cut to that many bytes and
 // ends with ToolHookTruncated. Input over it is replaced by a JSON string
@@ -162,10 +179,9 @@ type HookEntry struct {
 	// NativeEvent is the harness-native hook name written to the config (e.g.
 	// "SessionStart", "PreToolUse").
 	NativeEvent string
-	// Matcher is the tool matcher (e.g. "Task" for the subagent hooks); empty
-	// means match all.
+	// Matcher is the tool matcher (e.g. "Bash"); empty means match all.
 	Matcher string
 	// Arg is the `loom hooks <harness> <Arg>` subcommand the fired hook invokes
-	// (e.g. "session-start", "stop", "pre-task").
+	// (e.g. "session-start", "stop", "subagent-start").
 	Arg string
 }

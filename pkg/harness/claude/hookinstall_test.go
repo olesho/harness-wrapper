@@ -40,8 +40,8 @@ func loomOwned(m harness.SettingsHookMatcher) bool {
 }
 
 // scanPreToolUse inspects the PreToolUse matchers, asserting every command is
-// owner-marked and reporting whether the Task pre-task and all-matcher
-// yield-guard hooks are present.
+// owner-marked and reporting whether a Task pre-task hook (retired, ADR-011)
+// and the all-matcher yield-guard hook are present.
 func scanPreToolUse(t *testing.T, matchers []harness.SettingsHookMatcher) (sawTask, sawYieldAll bool) {
 	t.Helper()
 	for _, m := range matchers {
@@ -67,17 +67,21 @@ func TestEnsureConfigFreshInstall(t *testing.T) {
 	}
 	hooks := readSettings(t, wt)
 
-	// All six managed events present.
-	for _, ev := range []string{"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "PreToolUse", "PostToolUse"} {
+	// The lifecycle and subagent events, PreToolUse for the yield guard and
+	// PostToolUse for the subagent's transcript.
+	for _, ev := range []string{"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd", "SubagentStart", "SubagentStop", "PreToolUse", "PostToolUse"} {
 		if len(hooks[ev]) == 0 {
 			t.Errorf("event %s missing from settings.json", ev)
 		}
 	}
-	// PreToolUse carries BOTH the Task-matched pre-task hook AND the all-matcher
-	// yield-guard — the double-matcher case.
+	// A subagent's start is its own hook (ADR-011): PreToolUse carries no
+	// Task-matched pre-task, only the yield guard.
 	sawTask, sawYieldAll := scanPreToolUse(t, hooks["PreToolUse"])
-	if !sawTask || !sawYieldAll {
-		t.Errorf("PreToolUse must have both pre-task(Task) and yield-guard(all): task=%v yield=%v", sawTask, sawYieldAll)
+	if sawTask || !sawYieldAll {
+		t.Errorf("PreToolUse must carry only the yield-guard(all): task=%v yield=%v", sawTask, sawYieldAll)
+	}
+	if post := hooks["PostToolUse"]; len(post) != 1 || post[0].Matcher != "Task" || !strings.Contains(post[0].Hooks[0].Command, "post-task") {
+		t.Errorf("PostToolUse = %+v, want the Task-matched post-task", post)
 	}
 	// Commands are shell-guarded.
 	if !strings.Contains(hooks["Stop"][0].Hooks[0].Command, "HW_EVENT_SPOOL") {
@@ -196,5 +200,67 @@ func TestEnsureConfigConcurrent(t *testing.T) {
 	}
 	if loomCount != 1 {
 		t.Errorf("Stop has %d loom matchers after %d concurrent ensures, want 1", loomCount, n)
+	}
+}
+
+// TestEnsureConfigMigratesTaskHooks: a settings.json an earlier
+// harness-wrapper wrote — its Task-matched pre-task / post-task entries next
+// to the user's own hooks — comes out of one ensure with pre-task gone, the
+// native subagent hooks in, post-task refreshed, and the user's hooks
+// untouched (ADR-011). pre-task goes because the ensure rewrites every
+// managed entry under PreToolUse, where the yield guard lives.
+func TestEnsureConfigMigratesTaskHooks(t *testing.T) {
+	wt := t.TempDir()
+	old := func(arg string) string {
+		return harness.RenderHookCommand([]string{"/old/loom", "hooks"}, "claude", arg, hookOwner)
+	}
+	entry := func(matcher, cmd string) map[string]any {
+		return map[string]any{"matcher": matcher, "hooks": []map[string]string{{"type": "command", "command": cmd}}}
+	}
+	prev := map[string]any{"hooks": map[string]any{
+		"PreToolUse":  []any{entry("Task", old("pre-task")), entry("", old("yield-guard")), entry("Bash", "echo user-pre")},
+		"PostToolUse": []any{entry("Task", old("post-task")), entry("Edit", "echo user-post")},
+		"Stop":        []any{entry("", old("stop"))},
+	}}
+	if err := os.MkdirAll(filepath.Join(wt, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(prev)
+	if err := os.WriteFile(filepath.Join(wt, ".claude", "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (hookProvider{}).EnsureConfig(wt, []string{"/abs/loom", "hooks"}); err != nil {
+		t.Fatal(err)
+	}
+	hooks := readSettings(t, wt)
+	for ev, matchers := range hooks {
+		for _, m := range matchers {
+			for _, h := range m.Hooks {
+				if strings.Contains(h.Command, "pre-task") || strings.Contains(h.Command, "/old/loom") {
+					t.Errorf("%s still runs a retired or stale hook: %s", ev, h.Command)
+				}
+			}
+		}
+	}
+	for _, ev := range []string{"SubagentStart", "SubagentStop"} {
+		if len(hooks[ev]) != 1 {
+			t.Errorf("%s = %+v, want the native subagent hook", ev, hooks[ev])
+		}
+	}
+	userCmds := map[string]bool{}
+	for _, matchers := range hooks {
+		for _, m := range matchers {
+			for _, h := range m.Hooks {
+				if !harness.IsManagedHookCommand(h.Command) {
+					userCmds[m.Matcher+":"+h.Command] = true
+				}
+			}
+		}
+	}
+	if !userCmds["Bash:echo user-pre"] || !userCmds["Edit:echo user-post"] || len(userCmds) != 2 {
+		t.Errorf("user hooks after the migration: %v", userCmds)
+	}
+	if post := hooks["PostToolUse"]; len(post) != 2 {
+		t.Errorf("PostToolUse = %+v, want the user's hook and the refreshed post-task", post)
 	}
 }

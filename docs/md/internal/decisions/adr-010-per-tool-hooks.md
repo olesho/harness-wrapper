@@ -1,6 +1,6 @@
 # ADR-010: Per-tool hooks are opt-in, and their events stay out of Run's conversation
 
-**Status:** Accepted (2026-09-25)
+**Status:** Accepted (2026-09-25); amended 2026-09-25
 
 **Intent:** principle 6, *evolve public contracts deliberately*, and principle 3, *normalize, don't
 leak* ([INTENT](../../../../INTENT.md#design-principles)) — per-tool hooks are added beside the
@@ -90,5 +90,8 @@ longer argument first.
 ## Follow-ups
 
 - Codex and the other harnesses offer no per-tool hooks yet.
-- claude's `pre-task` hook spools nothing, so a subagent's start has no event of its own beyond its
-  `Task` call's `pre-tool-use`.
+
+## History
+
+- 2026-09-25: the follow-up on a subagent's start is closed by [ADR-011](adr-011-claude-subagent-hooks.md):
+  claude's own `SubagentStart` and `SubagentStop` hooks report it, and `pre-task` is retired.
