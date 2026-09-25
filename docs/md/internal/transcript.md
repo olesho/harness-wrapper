@@ -66,17 +66,18 @@ type Event struct {
 	Seq       int             `json:"seq"`
 	Timestamp time.Time       `json:"timestamp"`
 	Role      string          `json:"role"`  // user | assistant | tool | system
-	Type      string          `json:"type"`  // text | tool_use | tool_result | session_meta
+	Type      string          `json:"type"`  // text | tool_use | tool_result | session_meta | subagent_start | subagent_stop
 	Text      string          `json:"text,omitempty"`
 	ToolName  string          `json:"tool_name,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	ToolInput json.RawMessage `json:"tool_input,omitempty"`
 	Output    string          `json:"output,omitempty"` // tool_result text
 	UUID      string          `json:"uuid,omitempty"`
+	AgentType string          `json:"agent_type,omitempty"` // a subagent's type, on subagent_start / subagent_stop
 
 	// Internal metadata — never part of the public DTO:
 	SchemaVersion int    `json:"-"`
-	Source        string `json:"-"` // live | file
+	Source        string `json:"-"` // live | file | hook
 	NativeID      string `json:"-"` // primary identity, parser-owned
 }
 
@@ -96,7 +97,11 @@ never collapse into each other), and finally a content hash.
 That fallback hash is deliberately **cross-source stable** — it excludes anything parser-local or
 arrival-time, so the same logical event observed *live* (streamed from the harness's stdout) and
 *from the file* (read back from the log) produces one row, not two. The
-[hook-driven acquisition path](harness.md#hooks) depends on exactly that property.
+[hook-driven acquisition path](harness.md#hooks) depends on exactly that property. Hook events
+(`hook`) are the deliberate exception. A [per-tool hook](harness.md#per-tool-hooks)'s native id,
+`hook:<argument>:<tool_use_id>`, keeps the moment a tool started or ended apart from the transcript's
+copy of the call. A [subagent marker](harness.md#claudes-subagents)'s, `hook:<argument>:<agent_id>`,
+is the same on every replay of its hook.
 
 ### Two serializations
 

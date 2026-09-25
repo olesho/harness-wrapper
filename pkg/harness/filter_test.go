@@ -93,3 +93,17 @@ func TestIsParentConversationKind(t *testing.T) {
 		}
 	}
 }
+
+func TestAdmitParentNeverAdmitsHookSource(t *testing.T) {
+	// A per-tool hook observation is a third copy of a tool call; no mode
+	// admits it, parent or subagent, whatever its kind.
+	for _, mode := range []Mode{TranscriptStreamParse, TranscriptHooks, TranscriptOff, TranscriptAuto} {
+		for _, kind := range []string{transcript.EventToolUse, transcript.EventToolResult, transcript.EventText, transcript.EventSessionMeta} {
+			for _, sub := range []bool{false, true} {
+				if admitParent(mode, transcript.SourceHook, kind, sub) {
+					t.Errorf("hook source admitted: mode=%s kind=%s subagent=%v", mode, kind, sub)
+				}
+			}
+		}
+	}
+}

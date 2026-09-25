@@ -24,6 +24,11 @@ import (
 var mockBin string
 
 func TestMain(m *testing.M) {
+	if os.Getenv(hookHandlerEnv) == "1" {
+		// Fired by claude as a hook command (toolhooks_live_test.go):
+		// be the `<harness> <event>` handler, as a consumer's binary is.
+		os.Exit(runHookHandler(os.Args[1:]))
+	}
 	tmp, err := os.MkdirTemp("", "harness-e2e-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

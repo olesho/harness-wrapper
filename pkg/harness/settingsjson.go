@@ -39,10 +39,10 @@ func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []str
 			return nil, err
 		}
 		// Group managed entries by native event FIRST: one native event can carry
-		// several loom matchers (e.g. Claude's PreToolUse has the Task-matched
-		// capture hook AND the all-matcher yield-guard), and the upsert removes
-		// all loom-owned matchers for an event before re-adding — so they must be
-		// added together or the second would delete the first.
+		// several loom matchers (e.g. Claude's PreToolUse carries the yield-guard
+		// and, for a consumer that adds them, the per-tool hook), and the upsert
+		// removes all loom-owned matchers for an event before re-adding — so they
+		// must be added together or the second would delete the first.
 		byEvent := map[string][]SettingsHookMatcher{}
 		add := func(e HookEntry) {
 			cmd := RenderHookCommand(loomArgv, harnessName, e.Arg, spec.Owner)

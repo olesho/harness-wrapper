@@ -45,9 +45,15 @@ type Event struct {
 	// will report a failed turn as answered.
 	APIError string `json:"api_error,omitempty"`
 
+	// AgentType is a subagent's type as the harness names it (claude's
+	// agent_type, e.g. "general-purpose"), set on the EventSubagentStart and
+	// EventSubagentStop events of a harness's subagent hooks and empty on
+	// every other event.
+	AgentType string `json:"agent_type,omitempty"`
+
 	// --- INTERNAL metadata (json:"-"): durable store row only, NOT public DTO ---
 	SchemaVersion int    `json:"-"` // wire-schema version stamped at write
-	Source        string `json:"-"` // SourceLive | SourceFile — for the mode authority filter
+	Source        string `json:"-"` // SourceLive | SourceFile | SourceHook — for the mode authority filter
 	NativeID      string `json:"-"` // PRIMARY identity (parser-owned); see ID()
 }
 
@@ -66,6 +72,13 @@ const (
 	EventToolUse     = "tool_use"
 	EventToolResult  = "tool_result"
 	EventSessionMeta = "session_meta"
+	// EventSubagentStart and EventSubagentStop mark a subagent starting and
+	// finishing, from the harness's own subagent hooks (SourceHook). Each is
+	// tagged with the subagent's session under its parent's and carries the
+	// subagent's AgentType; a stop also carries the subagent's last reply as
+	// Text.
+	EventSubagentStart = "subagent_start"
+	EventSubagentStop  = "subagent_stop"
 )
 
 // Event provenance (Source) — which acquisition produced the event. Used by the
@@ -74,6 +87,16 @@ const (
 const (
 	SourceLive = "live"
 	SourceFile = "file"
+	// SourceHook marks an observation a hook made at the moment it fired: a
+	// per-tool hook's tool_use when a tool started and tool_result when it
+	// finished (harness.ToolHookProvider), or a subagent's start and stop
+	// (EventSubagentStart, EventSubagentStop). A per-tool event is a third
+	// copy of a tool call the stream and the file also record, and a
+	// subagent's start and stop are markers, not conversation, so the
+	// authority filter never admits a SourceHook event to Run's
+	// conversation; it is for a consumer reading the spool itself
+	// (harness.ReadSpool).
+	SourceHook = "hook"
 )
 
 // ID returns the stable dedup identity for the event. Identity is PARSER-OWNED:

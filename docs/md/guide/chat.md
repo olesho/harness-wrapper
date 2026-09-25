@@ -106,8 +106,10 @@ error's status, reason and code), `Interrupt` reports `stopped`, `cancelled`, `n
 as claude settled it, and events, `State`, `Quit`, `Close` and `History` behave as on the TUI. Nothing
 is rendered: `ScreenSnapshot` is empty, `Resize` does nothing, `Wrapper` is nil, and `Containment` is
 refused. Below the bypass rung, claude's permission prompts arrive as `InputRequest`s of kind
-`permission_prompt` with the options `allow` and `deny`. Pass the same `Transport` to `Reopen`; the
-session record does not store it.
+`permission_prompt` with the options `allow` and `deny`. On a claude.ai subscription account, claude
+also reports the account's usage limit whenever it changes; it arrives as `EventRateLimit` and in
+`State().RateLimit` (see [Events](#events)). Pass the same `Transport` to `Reopen`; the session record
+does not store it.
 
 ### Reopen
 
@@ -299,14 +301,16 @@ const (
 	EventInputRequest  EventType = "input_request"
 	EventInputResolved EventType = "input_resolved"
 	EventExited        EventType = "exited"
+	EventRateLimit     EventType = "rate_limit" // stream-json transport only
 )
 
 type ConversationEvent struct {
-	Type  EventType     // which payload is set
-	Turn  Turn          // affected turn (EventTurn; zero otherwise)
-	Input *InputRequest // interactive prompt (EventInputRequest / EventInputResolved)
-	Exit  *ExitInfo     // how the process ended (EventExited)
-	Err   error         // non-nil only for chat-level errors (e.g. Store failures)
+	Type      EventType     // which payload is set
+	Turn      Turn          // affected turn (EventTurn; zero otherwise)
+	Input     *InputRequest // interactive prompt (EventInputRequest / EventInputResolved)
+	Exit      *ExitInfo     // how the process ended (EventExited)
+	RateLimit *RateLimit    // the account's usage limit (EventRateLimit)
+	Err       error         // non-nil only for chat-level errors (e.g. Store failures)
 }
 
 func (c *Conversation) Events() <-chan ConversationEvent
@@ -318,6 +322,15 @@ terminal event. Switch on `Type`; turn-only consumers can read `Turn` directly (
 for other events). `EventExited` is the last event: the harness process ended, the turn that was in
 flight has had its terminal event, and `Exit` says how — status, exit code, signal, reason, error
 class.
+
+`EventRateLimit` comes only from the stream-json transport, when claude reports that a claude.ai
+subscription account's usage limit changed; an API-key account never sends one. `RateLimit` holds
+claude's figures as reported: `Status` (`allowed`, `warning` near the limit, `rejected` over it, or
+`unknown` for a status this build does not know), `ResetsAt`, the limiting `Window` (claude's name,
+such as `five_hour`), `Utilization` when reported, the overage fields, and `Windows` — the usage of
+every window claude tracks, from a part of its report claude marks internal, so a release may change
+or drop it. The event ends no turn and blocks nothing: a turn a wall refused still ends with its own
+`Code` and `ResumeAt`.
 
 ### Delivery: `OnEvent` and `Events()`
 
@@ -350,7 +363,8 @@ func (c *Conversation) State() State
 One call reads the live conversation: whether the process is alive, its pid, the turn in flight, the
 pending interactive prompt, whether the screen shows the harness working, when it last wrote, the
 wrapper's latest classification and when it was made, the harness session id, how the process ended,
-and the event queue's pressure (`Delivery`: queued events and bytes, the longest a producer has
+the account's usage limit as last reported (`RateLimit`, stream-json only), and the event queue's
+pressure (`Delivery`: queued events and bytes, the longest a producer has
 waited for room, how long the `OnEvent` call now running has taken, and the counts delivered, dropped
 and oversized).
 

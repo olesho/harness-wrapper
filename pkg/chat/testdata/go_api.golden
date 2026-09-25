@@ -89,6 +89,7 @@ type ConversationEvent struct
 	field Turn chat.Turn
 	field Input *chat.InputRequest
 	field Exit *chat.ExitInfo
+	field RateLimit *chat.RateLimit
 	field Err error
 type InputRequest struct
 	field ID string `json:"id"`

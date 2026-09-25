@@ -139,6 +139,21 @@ func TestStreamAccountLive(t *testing.T) {
 
 	lv := open("")
 	expect("reply", lv.turn("Reply with exactly the word PONG"+nonce+" and nothing else."), "PONG"+nonce)
+	// A subscription account reports its usage limit with its first reply.
+	var rl *RateLimit
+	for _, ev := range lv.rig.events() {
+		if ev.Type == EventRateLimit {
+			rl = ev.RateLimit
+		}
+	}
+	if rl == nil || rl.Status == "" || rl.Status == RateLimitUnknown || rl.ResetsAt.IsZero() {
+		t.Errorf("rate limit = %+v, want the account's report with its status and reset time", rl)
+	} else {
+		t.Logf("%-10s status=%s window=%s resets=%s windows=%d", "ratelimit", rl.Status, rl.Window, rl.ResetsAt.Format(time.RFC3339), len(rl.Windows))
+	}
+	if st := lv.conv.State(); st.RateLimit == nil || st.RateLimit.Status != rl.Status {
+		t.Errorf("State.RateLimit = %+v, want the last report", st.RateLimit)
+	}
 	expect("bash", lv.turn("Use the Bash tool to run exactly this command: echo hw-bash-"+nonce+
 		" — then reply with the command's output and nothing else."), "hw-bash-"+nonce)
 	expect("mcp", lv.turn("Call the echo tool of the probe MCP server with the text hw-mcp-"+nonce+

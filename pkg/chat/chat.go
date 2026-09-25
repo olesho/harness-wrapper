@@ -212,11 +212,89 @@ const (
 	// follows the terminal event of the turn that was in flight, if any, and
 	// is the last event: Events() closes after it (ADR-008).
 	EventExited EventType = "exited"
+
+	// EventRateLimit carries the harness's report of the account's usage
+	// limit. RateLimit is populated. Only the stream-json transport emits
+	// it: claude reports the limit of a claude.ai subscription account when
+	// it changes (ADR-009). It ends no turn and blocks nothing; a turn a
+	// wall refused still ends with its own Code and ResumeAt.
+	EventRateLimit EventType = "rate_limit"
 )
+
+// RateLimitStatus is where the account stands against its usage limit.
+type RateLimitStatus string
+
+const (
+	// RateLimitAllowed: under the limit.
+	RateLimitAllowed RateLimitStatus = "allowed"
+	// RateLimitWarning: still allowed, close to the limit (claude's
+	// allowed_warning).
+	RateLimitWarning RateLimitStatus = "warning"
+	// RateLimitRejected: over the limit; requests are refused until the
+	// window resets.
+	RateLimitRejected RateLimitStatus = "rejected"
+	// RateLimitUnknown: the harness reported a status this build does not
+	// know. It is reported as unknown rather than guessed.
+	RateLimitUnknown RateLimitStatus = "unknown"
+)
+
+// RateLimit is the harness's report of the account's usage limit, as it stood
+// when the harness last reported it. Each field is the harness's own figure;
+// a zero field means the report did not include it.
+type RateLimit struct {
+	Status RateLimitStatus
+	// ResetsAt is when the limiting window resets.
+	ResetsAt time.Time
+	// Window is the harness's name for the limiting window — claude's
+	// five_hour, seven_day, seven_day_opus, … It is a label for display;
+	// decide on Status and ResetsAt.
+	Window string
+	// Utilization is the fraction of the limiting window used: usually 0 to
+	// 1, above 1 when usage ran past the cap. nil when not reported.
+	Utilization *float64
+	// OverageStatus, OverageResetsAt and UsingOverage describe paid usage
+	// past the limit, for an account that has it.
+	OverageStatus   RateLimitStatus
+	OverageResetsAt time.Time
+	UsingOverage    bool
+	// Windows is every window the harness tracks, by its name: claude's
+	// per-window utilization and reset time. claude marks this part of its
+	// report internal, so a claude release may change or drop it; empty
+	// when the report has none.
+	Windows map[string]RateLimitWindow
+	// ObservedAt is when the report arrived.
+	ObservedAt time.Time
+}
+
+// RateLimitWindow is one usage window's standing.
+type RateLimitWindow struct {
+	Utilization float64
+	ResetsAt    time.Time
+}
+
+// clone returns a copy of r that shares nothing with it.
+func (r *RateLimit) clone() *RateLimit {
+	if r == nil {
+		return nil
+	}
+	c := *r
+	if r.Utilization != nil {
+		u := *r.Utilization
+		c.Utilization = &u
+	}
+	if r.Windows != nil {
+		c.Windows = make(map[string]RateLimitWindow, len(r.Windows))
+		for k, w := range r.Windows {
+			c.Windows[k] = w
+		}
+	}
+	return &c
+}
 
 // ConversationEvent is a discriminated event observed on
 // Conversation.Events(). Inspect Type to learn which payload is set: Turn
-// for EventTurn, Input for EventInputRequest / EventInputResolved.
+// for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+// EventExited, RateLimit for EventRateLimit.
 type ConversationEvent struct {
 	// Type selects the populated payload. For back-compat, code that only
 	// cares about turns may read Turn directly: it is the zero Turn (empty
@@ -233,6 +311,10 @@ type ConversationEvent struct {
 	// Exit is how the harness process ended, for EventExited. nil for every
 	// other event.
 	Exit *ExitInfo
+
+	// RateLimit is the account's usage limit as the harness reported it,
+	// for EventRateLimit. nil for every other event.
+	RateLimit *RateLimit
 
 	// Err is non-nil if the event represents an out-of-band error, e.g.
 	// Store failures. It is independent of Turn.State == TurnStateErrored

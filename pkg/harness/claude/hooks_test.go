@@ -143,16 +143,28 @@ func TestHookSpecShape(t *testing.T) {
 	if spec.Owner != "loom" {
 		t.Errorf("Owner = %q, want loom", spec.Owner)
 	}
-	if len(spec.Events) != 6 {
-		t.Fatalf("got %d events, want 6", len(spec.Events))
+	if len(spec.Events) != 7 {
+		t.Fatalf("got %d events, want 7", len(spec.Events))
 	}
-	// The subagent hooks are Task-matched; the others match all.
+	// A subagent's start and stop are claude's own SubagentStart and
+	// SubagentStop (ADR-011); its transcript is still the Task-matched
+	// post-task, which fires once the subagent's tool call returned. Every
+	// other entry matches all.
 	byArg := map[string]harness.HookEntry{}
 	for _, e := range spec.Events {
 		byArg[e.Arg] = e
+		if e.Arg != "post-task" && e.Matcher != "" {
+			t.Errorf("%s has matcher %q, want none", e.Arg, e.Matcher)
+		}
 	}
-	if byArg["pre-task"].Matcher != "Task" || byArg["post-task"].Matcher != "Task" {
-		t.Error("pre-task/post-task should be Task-matched")
+	if byArg[harness.HookArgSubagentStart].NativeEvent != "SubagentStart" || byArg[harness.HookArgSubagentStop].NativeEvent != "SubagentStop" {
+		t.Errorf("subagent entries = %+v / %+v", byArg[harness.HookArgSubagentStart], byArg[harness.HookArgSubagentStop])
+	}
+	if pt := byArg["post-task"]; pt.NativeEvent != "PostToolUse" || pt.Matcher != "Task" {
+		t.Errorf("post-task = %+v, want PostToolUse matching Task", pt)
+	}
+	if _, ok := byArg["pre-task"]; ok {
+		t.Error("the retired pre-task entry is still in the spec")
 	}
 	if byArg["session-start"].NativeEvent != "SessionStart" {
 		t.Errorf("session-start NativeEvent = %q", byArg["session-start"].NativeEvent)
