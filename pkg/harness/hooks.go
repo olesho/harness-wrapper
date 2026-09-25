@@ -39,6 +39,53 @@ type HookProvider interface {
 	EnsureConfig(worktreePath string, loomArgv []string) error
 }
 
+// ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+// harness can report every tool call through its hooks: one event when a tool
+// starts, one when it finishes or fails. Its entries are not in HookSpec,
+// because they run a hook subprocess on every tool call; a consumer that wants
+// per-tool events — one reading the spool with ReadSpool — adds them to the
+// spec it ensures:
+//
+//	spec := *hp.HookSpec()
+//	if th, ok := hp.(ToolHookProvider); ok {
+//		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+//	}
+//
+// Each fired entry spools one event (transcript.SourceHook) in a spool file
+// named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+// HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+// file as well as by the event. The authority filter never admits these
+// events to Run's OnEvent.
+type ToolHookProvider interface {
+	ToolHookEntries() []HookEntry
+}
+
+// The canonical per-tool hook arguments (ToolHookProvider): the `<harness>
+// <arg>` a fired per-tool hook runs, and the prefix of the spool file it
+// writes.
+const (
+	// HookArgPreToolUse fires before a tool runs. Its event is a tool_use:
+	// the tool's name, its tool_use id and its input.
+	HookArgPreToolUse = "pre-tool-use"
+	// HookArgPostToolUse fires after a tool succeeded. Its event is a
+	// tool_result: the tool's name, its tool_use id and its output.
+	HookArgPostToolUse = "post-tool-use"
+	// HookArgPostToolUseFailure fires after a tool failed. Its event is a
+	// tool_result whose output is the failure.
+	HookArgPostToolUseFailure = "post-tool-use-failure"
+)
+
+// MaxToolHookBytes bounds what one per-tool hook event carries of the tool's
+// input and of its output. Output over the bound is cut to that many bytes and
+// ends with ToolHookTruncated. Input over it is replaced by a JSON string
+// holding the same cut of its JSON text, so a consumer that expects an object
+// sees the difference.
+const MaxToolHookBytes = 16 << 10
+
+// ToolHookTruncated ends the text of a per-tool hook event's input or output
+// that was cut to MaxToolHookBytes.
+const ToolHookTruncated = "\n[truncated by harness-wrapper]"
+
 // StaticHookProfile is an OPTIONAL interface a Profile implements when the
 // harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
 // the payload parser WITHOUT running Resolve: static hook availability is a

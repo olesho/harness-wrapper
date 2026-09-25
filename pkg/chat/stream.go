@@ -84,6 +84,7 @@ type streamProc struct {
 	retrying      string // the api_retry the open turn is in, "" when none
 	retryingSince time.Time
 	permission    *streamPermission // a can_use_tool request awaiting an answer
+	rateLimit     *RateLimit        // the last rate_limit_event, nil before one
 }
 
 // streamTurn is the protocol state of the turn in flight.
@@ -187,6 +188,10 @@ type streamFrame struct {
 		Response  json.RawMessage `json:"response"`
 		Error     string          `json:"error"`
 	} `json:"response"`
+
+	// rate_limit_event. Raw, so that a field's shape changing costs the
+	// report, never the frame.
+	RateLimitInfo json.RawMessage `json:"rate_limit_info"`
 }
 
 // openStream is openWithSession for TransportStreamJSON.
@@ -526,7 +531,99 @@ func (c *Conversation) onStreamFrame(f *streamFrame, raw []byte) {
 		ch <- streamControlResult{response: f.Response.Response}
 	case "control_request":
 		c.onStreamControlRequest(f)
+	case "rate_limit_event":
+		c.onStreamRateLimit(f)
 	}
+}
+
+// onStreamRateLimit records claude's rate_limit_event — the account's usage
+// limit, sent when it changes — for State and delivers it as EventRateLimit.
+// A report without a status is not one, and is dropped.
+func (c *Conversation) onStreamRateLimit(f *streamFrame) {
+	rl := parseRateLimit(f.RateLimitInfo, time.Now())
+	if rl == nil {
+		return
+	}
+	c.mu.Lock()
+	c.stream.rateLimit = rl
+	c.mu.Unlock()
+	c.emit(ConversationEvent{Type: EventRateLimit, RateLimit: rl.clone()})
+}
+
+// rateLimitInfo is claude's rate_limit_info (claude 2.1.281). Numbers are
+// read as float64 so that an integer written as 1.79e9 still reads.
+type rateLimitInfo struct {
+	Status          string   `json:"status"`
+	ResetsAt        *float64 `json:"resetsAt"` // Unix seconds
+	RateLimitType   string   `json:"rateLimitType"`
+	Utilization     *float64 `json:"utilization"`
+	OverageStatus   string   `json:"overageStatus"`
+	OverageResetsAt *float64 `json:"overageResetsAt"`
+	IsUsingOverage  bool     `json:"isUsingOverage"`
+	UnifiedWindows  map[string]struct {
+		Utilization *float64 `json:"utilization"`
+		ResetsAt    *float64 `json:"resetsAt"`
+	} `json:"unifiedWindows"`
+}
+
+// parseRateLimit reads a rate_limit_info object; nil when it is not one.
+func parseRateLimit(raw json.RawMessage, now time.Time) *RateLimit {
+	var info rateLimitInfo
+	if len(raw) == 0 || json.Unmarshal(raw, &info) != nil || info.Status == "" {
+		return nil
+	}
+	rl := &RateLimit{
+		Status:          rateLimitStatus(info.Status),
+		ResetsAt:        unixSeconds(info.ResetsAt),
+		Window:          info.RateLimitType,
+		OverageResetsAt: unixSeconds(info.OverageResetsAt),
+		UsingOverage:    info.IsUsingOverage,
+		ObservedAt:      now,
+	}
+	if info.Utilization != nil {
+		u := *info.Utilization
+		rl.Utilization = &u
+	}
+	if info.OverageStatus != "" {
+		rl.OverageStatus = rateLimitStatus(info.OverageStatus)
+	}
+	for name, w := range info.UnifiedWindows {
+		if w.Utilization == nil && w.ResetsAt == nil {
+			continue
+		}
+		if rl.Windows == nil {
+			rl.Windows = map[string]RateLimitWindow{}
+		}
+		win := RateLimitWindow{ResetsAt: unixSeconds(w.ResetsAt)}
+		if w.Utilization != nil {
+			win.Utilization = *w.Utilization
+		}
+		rl.Windows[name] = win
+	}
+	return rl
+}
+
+// rateLimitStatus normalizes claude's status; one this build does not know is
+// RateLimitUnknown.
+func rateLimitStatus(s string) RateLimitStatus {
+	switch s {
+	case "allowed":
+		return RateLimitAllowed
+	case "allowed_warning":
+		return RateLimitWarning
+	case "rejected":
+		return RateLimitRejected
+	}
+	return RateLimitUnknown
+}
+
+// unixSeconds is a Unix-seconds figure as a time, zero when absent or not
+// positive.
+func unixSeconds(v *float64) time.Time {
+	if v == nil || *v <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(int64(*v), 0)
 }
 
 func (c *Conversation) onStreamInit(f *streamFrame) {
@@ -938,6 +1035,7 @@ func (c *Conversation) streamState(st *State) {
 	if p.retrying != "" {
 		st.Status, st.StatusReason, st.ClassifiedAt = wrapper.StatusAPIError, p.retrying, p.retryingSince
 	}
+	st.RateLimit = p.rateLimit.clone()
 	c.mu.Unlock()
 }
 

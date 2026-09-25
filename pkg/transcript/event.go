@@ -47,7 +47,7 @@ type Event struct {
 
 	// --- INTERNAL metadata (json:"-"): durable store row only, NOT public DTO ---
 	SchemaVersion int    `json:"-"` // wire-schema version stamped at write
-	Source        string `json:"-"` // SourceLive | SourceFile — for the mode authority filter
+	Source        string `json:"-"` // SourceLive | SourceFile | SourceHook — for the mode authority filter
 	NativeID      string `json:"-"` // PRIMARY identity (parser-owned); see ID()
 }
 
@@ -74,6 +74,13 @@ const (
 const (
 	SourceLive = "live"
 	SourceFile = "file"
+	// SourceHook marks an observation a per-tool hook made while the tool
+	// ran (harness.ToolHookProvider): a tool_use when it started, a
+	// tool_result when it finished. It is a third copy of a tool call the
+	// stream and the file also record, so the authority filter never admits
+	// it to the parent conversation; it is for a consumer reading the spool
+	// itself (harness.ReadSpool).
+	SourceHook = "hook"
 )
 
 // ID returns the stable dedup identity for the event. Identity is PARSER-OWNED:

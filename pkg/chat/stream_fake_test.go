@@ -24,7 +24,11 @@ import (
 //	DELAY        2 s before the first token; interruptible
 //	TOOL         a tool call, then 2 s "running"; interruptible
 //	ERR529       two api_retry frames, then an error turn tagged server_error
-//	LIMIT        an error turn tagged rate_limit: "You've hit your session limit"
+//	LIMIT        a rejected rate_limit_event, then an error turn tagged
+//	             rate_limit: "You've hit your session limit"
+//	RATE <s>     a rate_limit_event with status s (default allowed), shaped as
+//	             a real subscription account's, then reply "ok"
+//	RATEBAD      a rate_limit_event without a status, then reply "ok"
 //	PERM         a can_use_tool request; replies with what the host decided
 //	REFUSE       the message is refused (no result)
 //	EXIT         exit 3 mid-turn, with a line on stderr
@@ -32,6 +36,10 @@ import (
 //
 // Stdin EOF finishes the turn in flight and exits 0, as claude does.
 const streamFakeEnv = "HW_STREAM_FAKE"
+
+// fakeResetsAt is the reset time the fake's rate_limit_event reports, in
+// Unix seconds.
+const fakeResetsAt = 1790272800
 
 // streamFakeCapsEnv overrides the capabilities system/init advertises.
 const streamFakeCapsEnv = "HW_STREAM_FAKE_CAPS"
@@ -268,7 +276,30 @@ func (f *streamFake) turn(uuid, text string) {
 		}
 		errorTurn("server_error", "API Error: Repeated 529 Overloaded errors.", 529)
 	case "LIMIT":
+		f.send(map[string]any{"type": "rate_limit_event", "uuid": "rl-2", "rate_limit_info": map[string]any{
+			"status": "rejected", "resetsAt": fakeResetsAt, "rateLimitType": "five_hour",
+			"overageStatus": "rejected", "isUsingOverage": false,
+		}})
 		errorTurn("rate_limit", "You've hit your session limit · resets 6:40pm (UTC)", 429)
+	case "RATE":
+		status := arg
+		if status == "" {
+			status = "allowed"
+		}
+		// The frame a claude.ai subscription account produced on claude
+		// 2.1.281 (agentd P11, real account), with its figures.
+		f.send(map[string]any{"type": "rate_limit_event", "uuid": "rl-1", "rate_limit_info": map[string]any{
+			"status": status, "resetsAt": fakeResetsAt, "rateLimitType": "five_hour",
+			"overageStatus": "rejected", "overageDisabledReason": "org_level_disabled", "isUsingOverage": false,
+			"unifiedWindows": map[string]any{
+				"five_hour": map[string]any{"utilization": 0.1, "resetsAt": fakeResetsAt},
+				"seven_day": map[string]any{"utilization": 0.08, "resetsAt": fakeResetsAt + 511200},
+			},
+		}})
+		reply("ok")
+	case "RATEBAD":
+		f.send(map[string]any{"type": "rate_limit_event", "uuid": "rl-3", "rate_limit_info": map[string]any{"resetsAt": fakeResetsAt}})
+		reply("ok")
 	case "PERM":
 		id := "perm-1"
 		ch := make(chan json.RawMessage, 1)

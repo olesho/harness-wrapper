@@ -74,6 +74,9 @@ type claudeHookPayload struct {
 //     reading the (possibly incomplete) file.
 //   - pre-task / post-task / yield-guard: no parent transcript here (subagent
 //     nesting + yield are handled by later steps), so return nil.
+//   - pre-tool-use / post-tool-use / post-tool-use-failure (ToolHookEntries,
+//     installed only by a consumer that asks for them): one event per tool
+//     call — see readToolHook.
 func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error) {
 	var p claudeHookPayload
 	if err := json.Unmarshal(stdin, &p); err != nil {
@@ -94,6 +97,8 @@ func (hookProvider) ParseHookPayload(ctx harness.HookContext, event string, stdi
 		return []transcript.ParsedEvent{sessionMarker(p.SessionID)}, nil
 	case argPostTask:
 		return readSubagentTranscript(ctx, p, stdin)
+	case argPreToolUse, argPostToolUse, argPostToolUseFailure:
+		return readToolHook(event, p, stdin)
 	case argPreTask, argYieldGuard:
 		// PreToolUse[Task] fires BEFORE the subagent runs (no transcript yet);
 		// yield-guard is a control hook handled by HandleHookEvent, not a

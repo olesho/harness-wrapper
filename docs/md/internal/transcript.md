@@ -76,7 +76,7 @@ type Event struct {
 
 	// Internal metadata — never part of the public DTO:
 	SchemaVersion int    `json:"-"`
-	Source        string `json:"-"` // live | file
+	Source        string `json:"-"` // live | file | hook
 	NativeID      string `json:"-"` // primary identity, parser-owned
 }
 
@@ -96,7 +96,10 @@ never collapse into each other), and finally a content hash.
 That fallback hash is deliberately **cross-source stable** — it excludes anything parser-local or
 arrival-time, so the same logical event observed *live* (streamed from the harness's stdout) and
 *from the file* (read back from the log) produces one row, not two. The
-[hook-driven acquisition path](harness.md#hooks) depends on exactly that property.
+[hook-driven acquisition path](harness.md#hooks) depends on exactly that property. A per-tool hook's event (`hook`,
+[per-tool hooks](harness.md#per-tool-hooks)) is the one deliberate exception: its native id,
+`hook:<argument>:<tool_use_id>`, keeps the moment a tool started or ended apart from the transcript's
+copy of the call.
 
 ### Two serializations
 
