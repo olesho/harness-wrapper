@@ -45,6 +45,16 @@ var echoLineRE = regexp.MustCompile(`^❯ (.*)$`)
 // "Read(main.go)", "Web Search(…)" — which is not reply text.
 var toolCallRE = regexp.MustCompile(`^[A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)?\(`)
 
+// placeholderRE matches the example prompt Claude paints, dimmed, in an empty
+// composer — `Try "write a test for conversation.go"`, a long one cut short
+// inside the quotes. Observed on 2.1.270 through 2.1.281; claude paints it only
+// for some profiles, so the interrupt-* recordings never show it.
+var placeholderRE = regexp.MustCompile(`^Try "[^"\n]*"$`)
+
+// placeholderCol is where Claude parks the cursor over a placeholder: on the
+// composer's first row, just past "❯ ". Text typed there puts it at the end.
+const placeholderCol = 2
+
 // minComposerMatch is how much of a prompt a composer must hold, without
 // whitespace, before it counts as that prompt put back: a short word a person
 // typed must not read as a cancelled turn.
@@ -110,15 +120,21 @@ func (a *Adapter) InterruptOutcome(prompt string, snap screen.Snapshot) (turns.I
 	}
 }
 
-// ComposerText returns the text in Claude's composer box, as painted.
-// Implements turns.Interrupter.
+// ComposerText returns the text in Claude's composer box, as painted, and ""
+// for an empty one showing its placeholder: the screen carries no dimming, so
+// the placeholder is told from a draft of the same shape by the cursor, which
+// Claude parks at its start. Implements turns.Interrupter.
 func (*Adapter) ComposerText(snap screen.Snapshot) (string, bool) {
 	lines := strings.Split(snap.Text, "\n")
 	top, bottom, ok := composerBounds(lines)
 	if !ok {
 		return "", false
 	}
-	return composerText(lines, top, bottom), true
+	text := composerText(lines, top, bottom)
+	if top >= 0 && snap.CursorRow == top+1 && snap.CursorCol == placeholderCol && placeholderRE.MatchString(text) {
+		return "", true
+	}
+	return text, true
 }
 
 // ClearComposerSequence returns keys that empty a composer holding composer,
