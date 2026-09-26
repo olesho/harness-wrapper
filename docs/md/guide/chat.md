@@ -453,7 +453,20 @@ Other harnesses' IDs are extracted opportunistically: after each `TurnComplete`,
 invokes the adapter's `SessionIDExtractor` (if any) on the current screen, then its
 `SessionIDLocator` (on-disk state), persists the ID via `Store.UpdateSession`, and stops re-querying.
 An adapter that surfaces the id only as the TUI tears down implements `turns.RawSessionIDExtractor`;
-`Open` taps the wrapper's durable line stream for it while the id is still unknown.
+`Open` taps the wrapper's durable line stream for it while the id is still unknown. The first id
+recorded wins: no later capture replaces it, in memory or in the Store.
+
+The locator is keyed on the harness's working directory and on when `Open` launched it, because the
+directory holds every session ever run there. Codex's names the one rollout whose session started
+since the launch, and none while there is no such rollout or more than one — two Codex
+conversations started in one directory cannot be told apart on disk, and guessing would give one
+the other's transcript. Such a conversation keeps no harness session id; its `History` comes from
+the Store.
+
+A Store that refuses the id does not lose it: the conversation writes it again at each turn's end
+and when the harness exits. Until the write succeeds, `State().HarnessSessionIDErr` is
+`ErrHarnessSessionIDNotSaved` wrapping the Store's error, and if the id never reaches the Store,
+`EventExited` carries that error — the stored record cannot be resumed with `Reopen`.
 
 ## Graceful quit
 

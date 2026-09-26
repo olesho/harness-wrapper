@@ -51,6 +51,11 @@ type State struct {
 
 	// HarnessSessionID is the harness's own session id, empty until known.
 	HarnessSessionID string
+	// HarnessSessionIDErr is non-nil while HarnessSessionID is known but the
+	// Store refused it: ErrHarnessSessionIDNotSaved wrapping the Store's
+	// error. The conversation writes the id again at each turn's end and at
+	// exit.
+	HarnessSessionIDErr error
 
 	// Exit is how the process ended, nil while it runs.
 	Exit *ExitInfo
@@ -101,6 +106,7 @@ func (c *Conversation) State() State {
 		st.Turn = &t
 	}
 	c.mu.Unlock()
+	st.HarnessSessionIDErr = c.harnessIDSaveFailure()
 	st.Input = c.PendingInput()
 	if c.stream != nil {
 		c.streamState(&st)
@@ -226,6 +232,10 @@ func (c *Conversation) handleExit(final wrapper.SessionEvent) {
 // the turn it left in flight ends errored, every turn ending already under
 // way queues its event, and EventExited goes last.
 func (c *Conversation) exitWith(info ExitInfo) {
+	// The last chance to save a harness session id the Store refused: after
+	// this no turn ends to retry it.
+	c.saveHarnessID()
+
 	c.mu.Lock()
 	c.exit = &info
 	c.mu.Unlock()
@@ -244,7 +254,7 @@ func (c *Conversation) exitWith(info ExitInfo) {
 		c.finishTurn(turn, nil)
 	}
 	c.ending.Wait()
-	c.delivery.PushLast(ConversationEvent{Type: EventExited, Exit: &info})
+	c.delivery.PushLast(ConversationEvent{Type: EventExited, Exit: &info, Err: c.harnessIDSaveFailure()})
 }
 
 // claimTurnLocked takes the turn in flight to end it, holding EventExited

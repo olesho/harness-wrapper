@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -96,5 +97,29 @@ func TestValidateConfig_ClaudeCodeEffort(t *testing.T) {
 	err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: "claude-code", Effort: "high"})
 	if err != nil {
 		t.Fatalf("validateConfig() = %v, want nil", err)
+	}
+}
+
+// A Model for a harness argsWithHarnessModel has no flag for used to pass
+// validation and then be dropped from the argv, so the harness ran on its
+// default model while the caller believed it had chosen one. It is refused
+// now, as an Effort on such a harness is.
+func TestValidateConfig_ModelNeedsAModelFlag(t *testing.T) {
+	for _, harness := range []string{"opencode", "pi", "cursor", "generic", ""} {
+		err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: harness, Model: "gpt-5"})
+		if !errors.Is(err, ErrInvalidConfig) {
+			t.Errorf("harness %q with a Model: validateConfig() = %v, want ErrInvalidConfig", harness, err)
+		}
+		if _, err := HarnessArgs(Config{BinaryPath: "x", Harness: harness, Model: "gpt-5"}); !errors.Is(err, ErrInvalidConfig) {
+			t.Errorf("harness %q with a Model: HarnessArgs() = %v, want ErrInvalidConfig", harness, err)
+		}
+		if err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: harness}); err != nil {
+			t.Errorf("harness %q without a Model: validateConfig() = %v, want nil", harness, err)
+		}
+	}
+	for _, harness := range []string{"claude", "claude-code", "codex", " Codex "} {
+		if err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: harness, Model: "m"}); err != nil {
+			t.Errorf("harness %q with a Model: validateConfig() = %v, want nil", harness, err)
+		}
 	}
 }

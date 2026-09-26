@@ -158,3 +158,151 @@ func TestLocateLatestSession_MatchesThroughSymlinkedWorkingDir(t *testing.T) {
 		t.Fatalf("LocateLatestSession(%q) = %q, want %q", linkDir, got, want)
 	}
 }
+
+// writeLaunchRollout writes a rollout for a session started at start, as Codex
+// does: in the <YYYY>/<MM>/<DD> directory of the start's date in loc, with the
+// start in session_meta's payload and source as the session's source (a
+// launcher's name, or a subagent object).
+func writeLaunchRollout(t *testing.T, root, sessionID, cwd string, start time.Time, loc *time.Location, source string) {
+	t.Helper()
+	local := start.In(loc)
+	dir := filepath.Join(root, local.Format("2006"), local.Format("01"), local.Format("02"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ts := start.UTC().Format("2006-01-02T15:04:05.000Z")
+	body := `{"timestamp":"` + ts + `","type":"session_meta","payload":{"session_id":"` + sessionID + `","timestamp":"` + ts +
+		`","cwd":"` + cwd + `","source":` + source + `,"cli_version":"0.157.1"}}` + "\n"
+	path := filepath.Join(dir, "rollout-"+local.Format("2006-01-02T15-04-05")+"-"+sessionID+".jsonl")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const (
+	sessionA = "019f0001-aaaa-7000-8000-00000000000a"
+	sessionB = "019f0001-bbbb-7000-8000-00000000000b"
+)
+
+// Two Codex conversations in one directory: A launched first, B while A still
+// ran. Nothing on disk says which rollout belongs to which process, and the
+// newest-modified rule handed A the id of B's session — whichever wrote last —
+// and with it B's transcript. A's lookup now refuses; B's, launched after A's
+// session started, has only its own to find.
+func TestLocateLaunchSession_TwoConversationsInOneDirectory(t *testing.T) {
+	root := t.TempDir()
+	const cwd = "/work/shared"
+	launchA := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	launchB := launchA.Add(30 * time.Second)
+	writeLaunchRollout(t, root, sessionA, cwd, launchA.Add(time.Second), time.UTC, `"cli"`)
+	writeLaunchRollout(t, root, sessionB, cwd, launchB.Add(time.Second), time.UTC, `"cli"`)
+
+	r := &Reader{SessionsRoot: root}
+	if got, ok := r.LocateLaunchSession(cwd, launchA); ok {
+		t.Fatalf("A's lookup = %q, want none: two sessions started in the directory since A launched", got)
+	}
+	if got, ok := r.LocateLaunchSession(cwd, launchB); !ok || got != sessionB {
+		t.Fatalf("B's lookup = (%q, %v), want (%q, true)", got, ok, sessionB)
+	}
+}
+
+// The directory's earlier sessions are never the launch's, however recently
+// their rollouts were written: before the launch's own session writes its
+// rollout the answer is none — LocateLatestSession answers with the earlier
+// one — and after, it is the launch's.
+func TestLocateLaunchSession_IgnoresSessionsFromBeforeTheLaunch(t *testing.T) {
+	root := t.TempDir()
+	const cwd = "/work/project"
+	launch := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	writeLaunchRollout(t, root, sessionA, cwd, launch.Add(-time.Hour), time.UTC, `"cli"`)
+
+	r := &Reader{SessionsRoot: root}
+	if got, ok := r.LocateLaunchSession(cwd, launch); ok {
+		t.Fatalf("lookup = %q before the launch's session wrote its rollout, want none", got)
+	}
+	writeLaunchRollout(t, root, sessionB, cwd, launch.Add(2*time.Second), time.UTC, `"cli"`)
+	if got, ok := r.LocateLaunchSession(cwd, launch); !ok || got != sessionB {
+		t.Fatalf("lookup = (%q, %v), want the launch's session (%q, true)", got, ok, sessionB)
+	}
+}
+
+// A session Codex starts for itself (a /review, a spawned agent) writes its
+// own rollout in the same directory; it is the launch's child, not a second
+// launch.
+func TestLocateLaunchSession_SkipsSubagentSessions(t *testing.T) {
+	root := t.TempDir()
+	const cwd = "/work/project"
+	launch := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	writeLaunchRollout(t, root, sessionA, cwd, launch.Add(time.Second), time.UTC, `"cli"`)
+	writeLaunchRollout(t, root, sessionB, cwd, launch.Add(time.Minute), time.UTC, `{"subagent":"review"}`)
+
+	r := &Reader{SessionsRoot: root}
+	if got, ok := r.LocateLaunchSession(cwd, launch); !ok || got != sessionA {
+		t.Fatalf("lookup = (%q, %v), want (%q, true)", got, ok, sessionA)
+	}
+}
+
+// The start bound is whole seconds, and the day directories it prunes are a
+// margin away from the launch's date: a Codex whose clock records whole
+// seconds, or whose local date is the day before the launch's UTC date, is
+// still found.
+func TestLocateLaunchSession_Margins(t *testing.T) {
+	const cwd = "/work/project"
+	t.Run("whole-second start", func(t *testing.T) {
+		root := t.TempDir()
+		launch := time.Date(2026, 9, 26, 10, 0, 0, 700_000_000, time.UTC)
+		writeLaunchRollout(t, root, sessionA, cwd, launch.Truncate(time.Second), time.UTC, `"cli"`)
+		if got, ok := (&Reader{SessionsRoot: root}).LocateLaunchSession(cwd, launch); !ok || got != sessionA {
+			t.Fatalf("lookup = (%q, %v), want (%q, true)", got, ok, sessionA)
+		}
+	})
+	t.Run("previous local date", func(t *testing.T) {
+		root := t.TempDir()
+		launch := time.Date(2026, 9, 26, 0, 30, 0, 0, time.UTC)
+		// 2026-09-25 19:30 in UTC-5: filed under 2026/09/25.
+		writeLaunchRollout(t, root, sessionA, cwd, launch.Add(time.Second), time.FixedZone("UTC-5", -5*3600), `"cli"`)
+		if got, ok := (&Reader{SessionsRoot: root}).LocateLaunchSession(cwd, launch); !ok || got != sessionA {
+			t.Fatalf("lookup = (%q, %v), want (%q, true)", got, ok, sessionA)
+		}
+	})
+	t.Run("old day directories are not read", func(t *testing.T) {
+		root := t.TempDir()
+		launch := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+		writeLaunchRollout(t, root, sessionA, cwd, launch.Add(time.Second), time.UTC, `"cli"`)
+		// A rollout claiming a start after the launch, filed a week before it:
+		// read, it would make the lookup ambiguous.
+		dir := filepath.Join(root, "2026", "09", "19")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ts := launch.Add(time.Minute).Format("2006-01-02T15:04:05.000Z")
+		body := `{"timestamp":"` + ts + `","type":"session_meta","payload":{"session_id":"` + sessionB + `","timestamp":"` + ts + `","cwd":"` + cwd + `","source":"cli"}}` + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "rollout-x-"+sessionB+".jsonl"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := (&Reader{SessionsRoot: root}).LocateLaunchSession(cwd, launch); !ok || got != sessionA {
+			t.Fatalf("lookup = (%q, %v), want (%q, true)", got, ok, sessionA)
+		}
+	})
+}
+
+// With no launch time there is no start bound: the directory's one session is
+// found, and a second makes the answer ambiguous rather than the newer.
+func TestLocateLaunchSession_ZeroLaunchTime(t *testing.T) {
+	root := t.TempDir()
+	const cwd = "/work/project"
+	start := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	writeLaunchRollout(t, root, sessionA, cwd, start, time.UTC, `"cli"`)
+
+	r := &Reader{SessionsRoot: root}
+	if got, ok := r.LocateLaunchSession(cwd, time.Time{}); !ok || got != sessionA {
+		t.Fatalf("lookup = (%q, %v), want (%q, true)", got, ok, sessionA)
+	}
+	writeLaunchRollout(t, root, sessionB, cwd, start.Add(time.Hour), time.UTC, `"cli"`)
+	if got, ok := r.LocateLaunchSession(cwd, time.Time{}); ok {
+		t.Fatalf("lookup = %q with two sessions in the directory, want none", got)
+	}
+	if _, ok := r.LocateLaunchSession("", time.Time{}); ok {
+		t.Fatal("lookup with an empty working directory found a session")
+	}
+}

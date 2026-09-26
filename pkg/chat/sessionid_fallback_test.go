@@ -133,3 +133,79 @@ func TestMaybeIdleComplete_RecoversCodexSessionID(t *testing.T) {
 		t.Fatalf("persisted HarnessSessionID = %q, want %q", got.HarnessSessionID, uuid)
 	}
 }
+
+// writeCodexRolloutStarted writes a codex rollout for a session started at
+// start, which session_meta records as codex does.
+func writeCodexRolloutStarted(t *testing.T, sessionsRoot, sessionID, cwd string, start time.Time) {
+	t.Helper()
+	start = start.UTC()
+	dir := filepath.Join(sessionsRoot, start.Format("2006"), start.Format("01"), start.Format("02"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ts := start.Format("2006-01-02T15:04:05.000Z")
+	body := `{"timestamp":"` + ts + `","type":"session_meta","payload":{"session_id":"` + sessionID + `","timestamp":"` + ts + `","cwd":"` + cwd + `","source":"cli","cli_version":"0.157.1"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "rollout-"+start.Format("2006-01-02T15-04-05")+"-"+sessionID+".jsonl"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A codex working directory holds every session run there. The disk fallback
+// used to take the most recently written rollout, so a conversation picked up
+// an earlier conversation's session id before its own session had written a
+// rollout, or a concurrent conversation's — and read that session's
+// transcript as its History. It now takes the one session started since its
+// launch, and none while there is no such session or more than one.
+func TestMaybeExtractSessionID_CodexSharedDirectory(t *testing.T) {
+	const (
+		earlier = "019f0263-0000-7013-a43a-000000000001"
+		ours    = "019f0263-0000-7013-a43a-000000000002"
+		theirs  = "019f0263-0000-7013-a43a-000000000003"
+	)
+	launch := time.Now().Add(-time.Minute).Truncate(time.Millisecond)
+	open := func(t *testing.T) (*Conversation, *fakeStore, string, string) {
+		cwd, sessionsRoot := t.TempDir(), t.TempDir()
+		adapter := codex.New()
+		adapter.SessionsRoot = sessionsRoot
+		store := newFakeStore()
+		sess := Session{ID: "chat-shared-dir", Harness: "codex"}
+		if err := store.CreateSession(context.Background(), &sess); err != nil {
+			t.Fatal(err)
+		}
+		c := &Conversation{
+			opts:       Options{Harness: "codex", WorkingDir: cwd},
+			adapter:    adapter,
+			screen:     screen.New(120, 40),
+			store:      store,
+			session:    sess,
+			launchedAt: launch,
+		}
+		return c, store, cwd, sessionsRoot
+	}
+
+	t.Run("an earlier session is not ours", func(t *testing.T) {
+		c, store, cwd, root := open(t)
+		writeCodexRolloutStarted(t, root, earlier, cwd, launch.Add(-time.Hour))
+		c.maybeExtractSessionID()
+		if got := c.session.HarnessSessionID; got != "" {
+			t.Fatalf("recovered %q before this launch's session wrote a rollout, want nothing", got)
+		}
+		writeCodexRolloutStarted(t, root, ours, cwd, launch.Add(time.Second))
+		c.maybeExtractSessionID()
+		if got := c.session.HarnessSessionID; got != ours {
+			t.Fatalf("recovered %q, want this launch's session %q", got, ours)
+		}
+		if got, _ := store.GetSession(context.Background(), c.session.ID); got.HarnessSessionID != ours {
+			t.Fatalf("persisted %q, want %q", got.HarnessSessionID, ours)
+		}
+	})
+	t.Run("a concurrent conversation's session makes it ambiguous", func(t *testing.T) {
+		c, _, cwd, root := open(t)
+		writeCodexRolloutStarted(t, root, ours, cwd, launch.Add(time.Second))
+		writeCodexRolloutStarted(t, root, theirs, cwd, launch.Add(20*time.Second))
+		c.maybeExtractSessionID()
+		if got := c.session.HarnessSessionID; got != "" {
+			t.Fatalf("recovered %q with two sessions started in the directory since the launch, want nothing", got)
+		}
+	})
+}

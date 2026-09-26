@@ -158,11 +158,12 @@ Wrapper flags go *before* the harness name:
 `--effort` / `--model` reach the same per-harness translation as the gateway's `effort` / `model`
 fields (via `wrapper.Start` / `wrapper.Run`), so behaviors 1, 3 and 4 of
 [the gateway's `effort` and `model` semantics](gateway.md#effort-and-model-semantics) hold here
-verbatim: `--effort` is validated and hard-fails while `--model` is silently dropped on a harness
-that has none, an explicit `--effort`/`--model` (or codex `-c` key) in the harness args wins over
-the flag, and codex remaps `max` → `xhigh`. **Behavior 2 differs**: this CLI's harness registry is
-`codex`, `claude`, `opencode`, `pi`, and it rejects `claude-code` outright — so its effort-capable
-names are `codex` and `claude`, not the gateway's `codex` and `claude-code`. (`run` maps `claude` →
+verbatim: `--effort` and `--model` both hard-fail on a harness that has no such flag (and
+`--effort` on a level outside the enum), an explicit `--effort`/`--model` (or codex `-c` key) in the
+harness args wins over the flag, and codex remaps `max` → `xhigh`. **Behavior 2 differs**: this
+CLI's harness registry is `codex`, `claude`, `opencode`, `pi`, and it rejects `claude-code` outright
+— so its effort- and model-capable names are `codex` and `claude`, not the gateway's `codex` and
+`claude-code`. (`run` maps `claude` →
 `claude-code` internally before `chat.Open` sees it, so the two never disagree about which harness
 runs — only about which name you type.)
 

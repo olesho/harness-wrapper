@@ -163,6 +163,9 @@ func Normalize(r *Request) (*Request, error) {
 		if !filepath.IsAbs(r.StateDir) {
 			return nil, fmt.Errorf("%w: StateDir %q is not an absolute path", ErrInvalidRequest, r.StateDir)
 		}
+		if strings.ContainsRune(r.StateDir, 0) {
+			return nil, fmt.Errorf("%w: StateDir %q contains a NUL byte", ErrInvalidRequest, r.StateDir)
+		}
 		out.StateDir = filepath.Clean(r.StateDir)
 	}
 

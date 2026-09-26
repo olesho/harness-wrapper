@@ -21,8 +21,9 @@ type waitResult struct {
 
 // copyPTYOutput reads bytes from the PTY master and writes them to the
 // caller's stdout, recording the timestamp of the most recent byte for
-// idle detection.
-func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recentOutput *recentOutputBuffer, tap *lineSplitter) {
+// idle detection. It returns the error that ended the read, which
+// outputEnded tells apart from a failure to read.
+func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recentOutput *recentOutputBuffer, tap *lineSplitter) error {
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := src.Read(buf)
@@ -38,9 +39,20 @@ func copyPTYOutput(src io.Reader, dst io.Writer, lastOutput *atomic.Int64, recen
 		if err != nil {
 			// EOF: deliver any final unterminated line before the goroutine ends.
 			tap.flush()
-			return
+			return err
 		}
 	}
+}
+
+// outputEnded reports whether err, which ended the read of the PTY master, is
+// the end of the harness's output rather than a failure to read it: EOF (what
+// macOS reports once nothing holds the terminal, and what a contained
+// session's reader reports when the supervisor stops it), EIO (Linux's report
+// of the same), or the master closed by the supervisor after the drain budget.
+// A read the supervisor ended itself is the end whatever it reports; see
+// Session.stoppingOutput.
+func outputEnded(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed)
 }
 
 // classifyExit maps a finished os/exec process state into the wrapper's

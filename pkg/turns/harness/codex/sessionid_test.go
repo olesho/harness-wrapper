@@ -76,7 +76,8 @@ func TestLocateSessionID_RecoversFromDisk(t *testing.T) {
 	a := New()
 	a.SessionsRoot = root // test seam: override default ~/.codex/sessions
 
-	id, ok := a.LocateSessionID(cwd)
+	launchedAt := time.Date(2026, 6, 26, 5, 25, 20, 0, time.UTC) // just before the session started
+	id, ok := a.LocateSessionID(cwd, launchedAt)
 	if !ok || id != uuid {
 		t.Fatalf("LocateSessionID = %q ok=%v, want %q ok=true", id, ok, uuid)
 	}

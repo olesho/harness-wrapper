@@ -358,9 +358,11 @@ func (c *Conversation) recordLaunch(ctx context.Context, cl *containedLaunch) er
 		rec.Targets = contain.Targets(applied)
 	}
 	c.session.Containment = rec
-	updated := c.session.clone()
 	c.mu.Unlock()
-	if err := c.store.UpdateSession(ctx, &updated); err != nil {
+	// Through saveSession: the line tap may be saving a captured harness
+	// session id concurrently, and whichever write landed last used to drop
+	// the other's change.
+	if err := c.saveSession(ctx); err != nil {
 		return fmt.Errorf("chat: record the applied containment policy: %w", err)
 	}
 	return nil

@@ -94,3 +94,21 @@ func TestCloneAppArmor(t *testing.T) {
 		t.Fatal("Clone shares the socket layer with the original")
 	}
 }
+
+// No path in a request may carry a NUL byte: the kernel would read it as the
+// end of the path, which then names another file than the one validated.
+// StateDir was the one path Normalize let through with one.
+func TestNormalizeRefusesNULInPaths(t *testing.T) {
+	for name, r := range map[string]*Request{
+		"StateDir":  {Kind: KindLandlock, StateDir: "/state\x00/elsewhere"},
+		"ReadOnly":  {Kind: KindLandlock, ReadOnly: []string{"/ro\x00/elsewhere"}},
+		"ReadWrite": {Kind: KindLandlock, ReadWrite: []string{"/rw\x00/elsewhere"}},
+	} {
+		if _, err := Normalize(r); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("%s with a NUL byte: Normalize err = %v, want ErrInvalidRequest", name, err)
+		}
+	}
+	if _, err := Normalize(&Request{Kind: KindLandlock, StateDir: "/state/dir"}); err != nil {
+		t.Errorf("a plain StateDir: Normalize err = %v", err)
+	}
+}

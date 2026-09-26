@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -110,6 +111,13 @@ type Session struct {
 	fanout  *outputFanout
 	stdinMu sync.Mutex
 
+	// stoppingOutput is set when the supervisor ends the read of the PTY
+	// master itself (stopOutput, then closing it): whatever error ends the
+	// read after that — a contained session's reader reports the closed
+	// descriptor as Go's internal "use of closed file" — is the end of the
+	// output, not a failure to read it.
+	stoppingOutput atomic.Bool
+
 	// term signals the harness's process group and owns the escalation to
 	// SIGKILL through to the group being empty; see groupTerminator.
 	term *groupTerminator
@@ -117,10 +125,19 @@ type Session struct {
 	writerMu   sync.Mutex
 	writerHeld bool
 
+	// failed closes on the first supervision failure (fail), which ends the
+	// run. finalErr, under mu, is that failure: what Wait returns.
+	failed   chan struct{}
+	failOnce sync.Once
+
 	mu       sync.Mutex
 	snap     Snapshot
 	result   Result
 	finalErr error
+	// finished, under mu, is set with result: what Wait returns is final, and
+	// a failure recorded later — a classifier pass still running when the
+	// supervisor finished — no longer changes it.
+	finished bool
 }
 
 // classification is the internal mid-run handoff between the classifier
@@ -145,8 +162,15 @@ type classification struct {
 // Wait blocks until the Session terminates and returns the final
 // Result. Calling Wait more than once is safe; every call returns the
 // same value. Errors are returned only when the wrapper itself failed
-// during supervision (PTY IO, classifier panic). Harness-level
-// outcomes are reported via Result.Status with err == nil.
+// during supervision: reading the harness's output failed (ErrPTYRead), or
+// the Classifier panicked (ErrClassifierPanic). Harness-level outcomes are
+// reported via Result.Status with err == nil.
+//
+// A supervision failure while the harness runs ends the run: the wrapper
+// terminates the harness as Stop would, and the Result it returns with the
+// error has Status StatusUnknown — the wrapper stopped watching, so it has no
+// verdict — and a Reason naming the failure. A failure after the harness
+// exited on its own leaves the Result describing that exit.
 //
 // When the wrapper TERMINATED the run — context cancellation, Stop, or a
 // terminal classification — Wait returns only once the harness's process
@@ -315,6 +339,7 @@ func newSession(cfg Config, ptmx *os.File, pid int, startedAt time.Time, term *g
 		stopRequest:  make(chan struct{}),
 		classifierCh: make(chan classification, 1),
 		classifierOn: make(chan struct{}),
+		failed:       make(chan struct{}),
 		doneCh:       make(chan struct{}),
 		fanout:       newOutputFanout(cfg.Stdout),
 		term:         term,
@@ -366,7 +391,10 @@ func (s *Session) supervise(ctx context.Context) {
 		defer close(outDone)
 		// newLineSplitter is nil when no durable line tap is configured, and all
 		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
-		copyPTYOutput(ptyOutputReader(s.outputSource()), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		err := copyPTYOutput(ptyOutputReader(s.outputSource()), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		if !outputEnded(err) && !s.stoppingOutput.Load() {
+			s.fail(fmt.Errorf("%w: %w", ErrPTYRead, err))
+		}
 	}()
 
 	stdinDone := s.startStdinCopy()
@@ -400,6 +428,7 @@ func (s *Session) supervise(ctx context.Context) {
 	// contained session's read is woken first: closing its blocking master
 	// would not end a read that nothing else ends.
 	drained := awaitOutputEnd(outDone, outputDrainBudget)
+	s.stoppingOutput.Store(true)
 	s.stopOutput()
 	_ = s.ptmx.Close()
 	<-outDone
@@ -447,6 +476,7 @@ func (s *Session) supervise(ctx context.Context) {
 
 	s.mu.Lock()
 	s.result = res
+	s.finished = true
 	s.snap.Status = res.Status
 	s.snap.Reason = res.Reason
 	s.snap.ClassifiedAt = time.Now()
@@ -480,6 +510,8 @@ type superviseOutcome struct {
 	endedAt           time.Time
 	terminalClassDone *classification
 	stopRequested     bool
+	// failed reports that a supervision failure (fail) ended the run.
+	failed bool
 	// lastErrClass is the most recent non-ErrNone class observed during
 	// the run (terminal or not). It lets Result.Class inherit a mid-run
 	// error class — e.g. a non-terminal API error — when the harness then
@@ -517,8 +549,9 @@ func (s *Session) startStdinCopy() chan struct{} {
 }
 
 // awaitTermination blocks until the harness exits, a terminal
-// classification fires, or a Stop is requested, returning how the run
-// ended. Non-terminal classifications are recorded as they arrive.
+// classification fires, a Stop is requested, or supervision fails,
+// returning how the run ended. Non-terminal classifications are recorded
+// as they arrive.
 func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 	var out superviseOutcome
 	for {
@@ -556,6 +589,10 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 			out.stopRequested = true
 			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
 			return out
+		case <-s.failed:
+			out.failed = true
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
+			return out
 		}
 	}
 }
@@ -570,6 +607,13 @@ func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
 // errors — which exit before the idle classifier ever polls — still
 // upgrade StatusFailed into an actionable, retryable status.
 func (s *Session) resolveActionable(res *Result, out superviseOutcome) *classification {
+	if out.failed {
+		// The wrapper ended the run because it could no longer supervise it,
+		// so how the harness took the SIGTERM says nothing about the run.
+		res.Status = StatusUnknown
+		res.Reason = "supervision failed: " + s.failure().Error()
+		return nil
+	}
 	if s.cfg.KeepAliveOnClassification {
 		return s.resolveKeepAlive(res, out)
 	}
@@ -708,7 +752,8 @@ func (s *Session) terminateAndWait(waitCh <-chan waitResult) (time.Time, error) 
 // cadence, building a ClassifierInput from the live activity counters
 // and forwarding non-empty Classifications to the supervisor. It also
 // emits the original output_quiet / output_classify_threshold trace
-// events for parity with the original idle classifier.
+// events for parity with the original idle classifier. A Classifier that
+// panics ends the polling and, through fail, the run.
 func runSessionClassifier(ctx context.Context, s *Session) {
 	cfg := s.cfg
 	tick := max(cfg.IdleQuiet/3, 100*time.Millisecond)
@@ -724,10 +769,15 @@ func runSessionClassifier(ctx context.Context, s *Session) {
 		case <-s.classifierOn:
 			return
 		case <-ticker.C:
+			var err error
 			if cfg.KeepAliveOnClassification {
-				st.onTickKeepAlive(ctx, s, cfg)
+				err = st.onTickKeepAlive(ctx, s, cfg)
 			} else {
-				st.onTick(s, cfg)
+				err = st.onTick(s, cfg)
+			}
+			if err != nil {
+				s.fail(err)
+				return
 			}
 		}
 	}
@@ -754,11 +804,12 @@ type classifierState struct {
 }
 
 // onTick evaluates the activity counters once and, when the output has
-// settled, emits threshold traces and dispatches a classification.
-func (st *classifierState) onTick(s *Session, cfg Config) {
+// settled, emits threshold traces and dispatches a classification. The
+// error is the Classifier's panic.
+func (st *classifierState) onTick(s *Session, cfg Config) error {
 	last := s.lastOutput.Load()
 	if last == 0 {
-		return
+		return nil
 	}
 	outputChanged := last != st.lastSeen
 	if outputChanged {
@@ -780,9 +831,9 @@ func (st *classifierState) onTick(s *Session, cfg Config) {
 	st.emitThresholdTraces(s, cfg, sinceLast, quiet, idle, stale)
 
 	if st.dispatched {
-		return
+		return nil
 	}
-	st.dispatchClassification(s, cfg, sinceLast, quiet, idle)
+	return st.dispatchClassification(s, cfg, sinceLast, quiet, idle)
 }
 
 // onTickKeepAlive is onTick for Config.KeepAliveOnClassification. A pass runs
@@ -790,11 +841,12 @@ func (st *classifierState) onTick(s *Session, cfg Config) {
 // pass; it reads only what was written after the last verdict, and it never
 // sets Idle, so the idle-gated phrase arms never run. Every result goes to the
 // supervisor in order — a verdict to record, or, for new output that yields
-// none, a clear — so the status always describes the latest evidence.
-func (st *classifierState) onTickKeepAlive(ctx context.Context, s *Session, cfg Config) {
+// none, a clear — so the status always describes the latest evidence. The
+// error is the Classifier's panic.
+func (st *classifierState) onTickKeepAlive(ctx context.Context, s *Session, cfg Config) error {
 	last := s.lastOutput.Load()
 	if last == 0 {
-		return
+		return nil
 	}
 	outputChanged := last != st.lastSeen
 	if outputChanged {
@@ -811,29 +863,33 @@ func (st *classifierState) onTickKeepAlive(ctx context.Context, s *Session, cfg 
 
 	newOutput := s.recentOutput.Total() != st.passedThrough
 	if !newOutput && (!quiet || st.quietPassed) {
-		return
+		return nil
 	}
 	text, through := s.recentOutput.TextFrom(st.mark)
 	st.passedThrough = through
 	if quiet {
 		st.quietPassed = true
 	}
-	c := s.classifier.Classify(ClassifierInput{
+	c, err := s.classify(ClassifierInput{
 		RecentOutput:    text,
 		SinceLastOutput: sinceLast,
 		Quiet:           quiet,
 	})
+	if err != nil {
+		return err
+	}
 	if c.Status == "" {
 		if newOutput {
 			st.hand(ctx, s, classification{clear: true})
 		}
-		return
+		return nil
 	}
 	emitClassifierTrace(cfg, c)
 	st.mark = through
 	ic := toInternalClassification(c)
 	ic.mark = through
 	st.hand(ctx, s, ic)
+	return nil
 }
 
 // hand delivers a keep-alive pass's result to the supervisor. Unlike the
@@ -894,16 +950,19 @@ func (st *classifierState) emitThresholdTraces(s *Session, cfg Config, sinceLast
 
 // dispatchClassification runs the configured Classifier and forwards a
 // non-empty result to the supervisor, latching dispatched on a terminal
-// classification.
-func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceLast time.Duration, quiet, idle bool) {
-	classification := s.classifier.Classify(ClassifierInput{
+// classification. The error is the Classifier's panic.
+func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceLast time.Duration, quiet, idle bool) error {
+	classification, err := s.classify(ClassifierInput{
 		RecentOutput:    s.recentOutput.String(),
 		SinceLastOutput: sinceLast,
 		Quiet:           quiet,
 		Idle:            idle,
 	})
+	if err != nil {
+		return err
+	}
 	if classification.Status == "" {
-		return
+		return nil
 	}
 
 	emitClassifierTrace(cfg, classification)
@@ -914,6 +973,7 @@ func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceL
 		}
 	default:
 	}
+	return nil
 }
 
 // classifyOnExit runs a final one-shot classification over the harness's
@@ -927,18 +987,68 @@ func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceL
 //
 // In keep-alive mode the pass keeps the mid-run rules: it reads only what was
 // written from mark on — after the last verdict — and never sets Idle.
+//
+// A Classifier that panics here is recorded as the run's supervision failure
+// and yields nil: the harness has already exited, so the Result still
+// describes that exit.
 func (s *Session) classifyOnExit(mark int64) *classification {
 	in := ClassifierInput{RecentOutput: s.recentOutput.String(), Idle: true}
 	if s.cfg.KeepAliveOnClassification {
 		in.RecentOutput, _ = s.recentOutput.TextFrom(mark)
 		in.Idle = false
 	}
-	c := s.classifier.Classify(in)
+	c, err := s.classify(in)
+	if err != nil {
+		s.fail(err)
+		return nil
+	}
 	if c.Status == "" || c.Status == StatusWaitingForInput {
 		return nil
 	}
 	ic := toInternalClassification(c)
 	return &ic
+}
+
+// classify runs the session's Classifier with a recover at its boundary. A
+// Classifier is code the supervisor does not own — the caller's, or a
+// built-in pattern set — and a panic on the classifier goroutine would end
+// the whole process, not just this run. The panic comes back as an error
+// wrapping ErrClassifierPanic, and a classifier_panic trace event carries its
+// stack.
+func (s *Session) classify(in ClassifierInput) (c Classification, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.cfg.Trace.Emit(trace.Event{
+				At:   time.Now(),
+				Kind: "classifier_panic",
+				Fields: map[string]any{
+					"panic": fmt.Sprint(r),
+					"stack": string(debug.Stack()),
+				},
+			})
+			err = fmt.Errorf("%w: %v", ErrClassifierPanic, r)
+		}
+	}()
+	return s.classifier.Classify(in), nil
+}
+
+// fail records err as the run's supervision failure — the error Wait returns
+// — unless one is recorded already or the run's outcome is final, and asks
+// the supervisor to end the run. Safe from any goroutine, any number of times.
+func (s *Session) fail(err error) {
+	s.mu.Lock()
+	if s.finalErr == nil && !s.finished {
+		s.finalErr = err
+	}
+	s.mu.Unlock()
+	s.failOnce.Do(func() { close(s.failed) })
+}
+
+// failure returns the recorded supervision failure, nil when there is none.
+func (s *Session) failure() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.finalErr
 }
 
 func toInternalClassification(c Classification) classification {

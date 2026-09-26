@@ -210,7 +210,9 @@ const (
 
 	// EventExited signals the harness process ended. Exit is populated. It
 	// follows the terminal event of the turn that was in flight, if any, and
-	// is the last event: Events() closes after it (ADR-008).
+	// is the last event: Events() closes after it (ADR-008). Its Err is
+	// ErrHarnessSessionIDNotSaved when the harness session id never reached
+	// the Store.
 	EventExited EventType = "exited"
 
 	// EventRateLimit carries the harness's report of the account's usage
@@ -433,6 +435,15 @@ var (
 	// event was delivered to OnEvent and Events(). The remaining events are
 	// dropped, and State().Delivery counts them.
 	ErrUndelivered = errors.New("chat: events left undelivered")
+
+	// ErrHarnessSessionIDNotSaved reports a harness session id the
+	// conversation knows but could not save to the Store, wrapping the
+	// Store's error: the stored record has no id, so Reopen cannot resume the
+	// harness session and History after the conversation ends reads no
+	// transcript. It is State().HarnessSessionIDErr while the conversation
+	// keeps retrying, and EventExited's Err when the id never reached the
+	// Store.
+	ErrHarnessSessionIDNotSaved = errors.New("chat: harness session id not saved")
 
 	// ErrNoInputPending is returned by Answer when no interactive prompt is
 	// currently awaiting an answer.

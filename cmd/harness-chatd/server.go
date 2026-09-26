@@ -575,7 +575,7 @@ func writeChatError(w http.ResponseWriter, err error) {
 	// fire (chat always sets Stdout), the IdleClassify/StaleThreshold ordering
 	// checks cannot fire (chatd never sets those knobs), "BinaryPath is
 	// required" is caught earlier as chat.ErrInvalidOptions (already a 400),
-	// and Effort/PermissionMode come straight off the request. Whoever later
+	// and Effort/Model/PermissionMode come straight off the request. Whoever later
 	// adds a *server-side* cause to validateConfig should note that chatd
 	// would blame the client for it, and split this arm.
 	case errors.Is(err, wrapper.ErrInvalidConfig):
