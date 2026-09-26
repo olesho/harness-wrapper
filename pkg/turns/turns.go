@@ -240,10 +240,17 @@ type RawSessionIDExtractor interface {
 // screen, leaving the persisted session log's metadata as the only anchor.
 // Because it touches disk it must stay version-independent and tolerate junk
 // files by returning ("", false).
+//
+// A directory holds every session anyone ran there, so a locator must name
+// the session THIS launch started or none: the latest one in the directory
+// may be an earlier conversation's, or a concurrent one's.
 type SessionIDLocator interface {
-	// LocateSessionID returns the harness session UUID associated with
-	// workingDir, or ("", false) if none can be found.
-	LocateSessionID(workingDir string) (string, bool)
+	// LocateSessionID returns the UUID of the harness session launched in
+	// workingDir at launchedAt: one that started there no earlier than the
+	// launch. It returns ("", false) when none can be found, and when more
+	// than one could be the launch's — an ambiguous directory is never
+	// settled by guessing. A zero launchedAt sets no start bound.
+	LocateSessionID(workingDir string, launchedAt time.Time) (string, bool)
 }
 
 // TranscriptReader is an optional capability adapters may implement to

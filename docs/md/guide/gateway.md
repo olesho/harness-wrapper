@@ -51,17 +51,18 @@ of the [testing tiers](../internal/testing/README.md)).
 ### `effort` and `model` semantics
 
 Both fields are accepted on `POST /v1/conversations` and `POST /v1/turns`, and both are threaded to
-`wrapper.Config`. They do **not** behave symmetrically:
+`wrapper.Config`:
 
-1. **`effort` is validated and hard-fails; `model` is never validated.** `wrapper.validateConfig`
-   rejects an effort outside the enum `low`, `medium`, `high`, `xhigh`, `max`, and rejects *any*
-   effort on a harness with no effort axis. `model` has no validation at all: on a harness the
-   wrapper has no model flag for, the request is accepted and the value is **silently dropped**. So
-   `{"harness":"pi","model":"…"}` is a silent no-op, while `{"harness":"pi","effort":"…"}` is an
-   error. Do not assume the two knobs fail the same way.
-2. **The effort-capable harness names on this gateway are exactly `"codex"` and `"claude-code"`,
-   case-sensitively.** `effort` against `opencode`, `pi`, or `generic`/`""` is rejected — the exact
-   opposite of `model`, which is a silent no-op on those same three. The gateway resolves the
+1. **Both hard-fail on a harness without the knob; only `effort`'s value is validated.**
+   `wrapper.validateConfig` rejects *any* effort, and *any* model, on a harness the wrapper has no
+   flag for — `{"harness":"pi","model":"…"}` is a 400 `invalid_config` just as
+   `{"harness":"pi","effort":"…"}` is — and it rejects an effort outside the enum `low`, `medium`,
+   `high`, `xhigh`, `max`. A model id is passed to the harness as given. (A model on a harness
+   without a model flag used to be accepted and silently dropped, leaving the harness on its
+   default model.)
+2. **The effort- and model-capable harness names on this gateway are exactly `"codex"` and
+   `"claude-code"`, case-sensitively.** `effort` or `model` against `opencode`, `pi`, or
+   `generic`/`""` is rejected. The gateway resolves the
    adapter by raw string match, so it accepts only `codex`, `claude-code`, `opencode`, `pi`, and
    `generic`/`""`: plain `"claude"` is a 400 `unknown_harness` *before* effort is ever considered
    (even though `pkg/wrapper` itself accepts that spelling), and `"Codex"` 400s as

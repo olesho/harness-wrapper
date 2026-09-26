@@ -224,6 +224,10 @@ type Conversation struct {
 
 	session Session // chat-level Session record (also stored in Store)
 
+	// saveMu serializes the writes of session to the Store (saveSession), so
+	// a slow write of an older copy cannot land after a newer one.
+	saveMu sync.Mutex
+
 	eventCh chan ConversationEvent
 
 	// delivery hands every event to OnEvent and Events(), in order (ADR-008);
@@ -248,6 +252,13 @@ type Conversation struct {
 
 	mu          sync.Mutex
 	currentTurn *Turn // pending/streaming assistant turn, if any
+
+	// harnessIDUnsaved is set while the harness session id in session has not
+	// reached the Store: its write failed, or has not finished. It is written
+	// again at the next turn's end and at exit (saveHarnessID).
+	// harnessIDSaveErr is the error of the last write that carried it.
+	harnessIDUnsaved bool
+	harnessIDSaveErr error
 
 	// endMarkerSeen is set once the adapter has reported an end-of-turn marker
 	// for the in-flight turn (claude-code only; see handleTurnsEvent). It does
@@ -342,6 +353,12 @@ type Conversation struct {
 	// files its transcript under its working directory — so an empty WorkingDir
 	// does not turn those reads off. Set once at Open.
 	harnessDir string
+
+	// launchedAt is when Open started the harness. The on-disk session-id
+	// lookup (turns.SessionIDLocator) accepts only a session that started
+	// after it: the directory also holds every earlier session run there.
+	// Set once at Open, before the goroutines that read it start.
+	launchedAt time.Time
 
 	// writeStdin, when non-nil, replaces sess.WriteStdin for interactive
 	// answer keystrokes. Production leaves it nil (writes go to the PTY); it
@@ -651,14 +668,16 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 		startCtx = cl.ctx
 	}
 
+	c.launchedAt = time.Now()
 	sess, err := wrapper.Start(startCtx, cfg)
 	if err != nil {
 		c.discard()
 		// An invalid wrapper.Config reaching Start from here means a caller-supplied
-		// option (in practice Effort — see the reachability note in Options) failed
-		// validation, so surface it as ErrInvalidOptions and let transports map it to
-		// a 4xx. The multi-%w keeps wrapper.ErrInvalidConfig matchable for consumers
-		// that discriminate on it, and both arms carry the same breadcrumb.
+		// option (in practice Effort or Model — see the reachability note in
+		// invalid_config_test.go) failed validation, so surface it as
+		// ErrInvalidOptions and let transports map it to a 4xx. The multi-%w keeps
+		// wrapper.ErrInvalidConfig matchable for consumers that discriminate on it,
+		// and both arms carry the same breadcrumb.
 		if errors.Is(err, wrapper.ErrInvalidConfig) {
 			return nil, fmt.Errorf("%w: chat: wrapper start: %w", ErrInvalidOptions, err)
 		}
@@ -707,6 +726,9 @@ func openWithSession(ctx context.Context, opts Options, session Session, persist
 			_ = sess.Stop(context.Background())
 			return nil, fmt.Errorf("chat: store CreateSession: %w", err)
 		}
+		// An id the tap captured before the record existed failed its write,
+		// and may have missed the copy above; the record exists now.
+		c.saveHarnessID()
 	}
 
 	c.watcher = turns.WatchScreen(scr, adapter)
@@ -1320,34 +1342,34 @@ func (c *Conversation) maybeIdleComplete() {
 
 // maybeExtractSessionID opportunistically recovers the harness's own session
 // ID, preferring a cheap screen scrape (turns.SessionIDExtractor) and falling
-// back to an on-disk lookup keyed on the working directory
-// (turns.SessionIDLocator). The disk fallback exists because some harnesses
-// (Codex 0.142+) stopped printing the "resume <uuid>" hint to the screen, so
-// the scrape returns nothing and the only remaining anchor is the persisted
-// session log. Once we've persisted an ID we don't probe again. No-op for
-// adapters that implement neither capability.
+// back to an on-disk lookup keyed on the working directory and the launch
+// time (turns.SessionIDLocator). The disk fallback exists because some
+// harnesses (Codex 0.142+) stopped printing the "resume <uuid>" hint to the
+// screen, so the scrape returns nothing and the only remaining anchor is the
+// persisted session log. Once an ID is known we don't probe again — but while
+// the Store has not got it, each call writes it again. No-op for adapters
+// that implement neither capability.
 func (c *Conversation) maybeExtractSessionID() {
 	c.mu.Lock()
-	if c.session.HarnessID() != "" {
-		c.mu.Unlock()
+	known := c.session.HarnessID() != ""
+	c.mu.Unlock()
+	if known {
+		c.saveHarnessID()
 		return
 	}
-	c.mu.Unlock()
 
 	id, ok := c.extractSessionID()
 	if !ok {
 		return
 	}
-
-	c.mu.Lock()
-	c.session.setHarnessID(id)
-	updated := c.session.clone()
-	c.mu.Unlock()
-	_ = c.store.UpdateSession(context.Background(), &updated)
+	c.recordHarnessID(id)
 }
 
 // extractSessionID tries the screen scrape first, then the on-disk locator.
-// Returns ("", false) when neither yields an ID.
+// Returns ("", false) when neither yields an ID. The locator looks where the
+// harness files its sessions — the directory it runs in, as every transcript
+// read does — for the one session started since the launch; it names none
+// while that is ambiguous, and the next turn's end asks again.
 func (c *Conversation) extractSessionID() (string, bool) {
 	if ext, ok := c.adapter.(turns.SessionIDExtractor); ok {
 		if id, ok := ext.ExtractSessionID(c.screen.Snapshot()); ok {
@@ -1355,7 +1377,7 @@ func (c *Conversation) extractSessionID() (string, bool) {
 		}
 	}
 	if loc, ok := c.adapter.(turns.SessionIDLocator); ok {
-		if id, ok := loc.LocateSessionID(c.opts.WorkingDir); ok {
+		if id, ok := loc.LocateSessionID(c.transcriptDir(), c.launchedAt); ok {
 			return id, true
 		}
 	}
@@ -1386,16 +1408,77 @@ func (c *Conversation) captureRawSessionID(line string) {
 	if !ok {
 		return
 	}
+	c.recordHarnessID(id)
+}
 
+// recordHarnessID records id as the harness's own session id and saves it:
+// the one write both capture paths share. First write wins — an id already
+// recorded (assigned at launch, resumed, or captured by the other path while
+// this one was still looking) is never replaced, in memory or in the Store.
+// The check and the write share one hold of mu: a screen scrape or a disk
+// lookup takes time, and a late one used to overwrite the id the line tap had
+// captured meanwhile, sending History to another session's transcript.
+func (c *Conversation) recordHarnessID(id string) {
 	c.mu.Lock()
 	if c.session.HarnessID() != "" {
 		c.mu.Unlock()
 		return
 	}
 	c.session.setHarnessID(id)
-	updated := c.session.clone()
+	c.harnessIDUnsaved = true
 	c.mu.Unlock()
-	_ = c.store.UpdateSession(context.Background(), &updated)
+	c.saveHarnessID()
+}
+
+// saveHarnessID writes the session record while the harness session id in it
+// has not reached the Store. A failed write keeps it unsaved — the running
+// conversation still knows the id — so it is written again on the next call:
+// at each turn's end (maybeExtractSessionID) and at exit (exitWith). Until
+// then State().HarnessSessionIDErr carries the failure, and EventExited
+// carries it if the id never reaches the Store.
+func (c *Conversation) saveHarnessID() {
+	c.mu.Lock()
+	unsaved := c.harnessIDUnsaved
+	c.mu.Unlock()
+	if unsaved {
+		_ = c.saveSession(context.Background())
+	}
+}
+
+// saveSession writes the session record to the Store. The copy is taken under
+// saveMu, when the write begins, so writes land in the order their copies were
+// taken and the Store ends up with the newest. A write carrying the harness
+// session id settles it: saved, or its error kept for the next attempt.
+func (c *Conversation) saveSession(ctx context.Context) error {
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+	c.mu.Lock()
+	rec := c.session.clone()
+	c.mu.Unlock()
+	err := c.store.UpdateSession(ctx, &rec)
+	if rec.HarnessID() != "" {
+		c.mu.Lock()
+		switch {
+		case err == nil:
+			c.harnessIDUnsaved, c.harnessIDSaveErr = false, nil
+		case c.harnessIDUnsaved:
+			c.harnessIDSaveErr = err
+		}
+		c.mu.Unlock()
+	}
+	return err
+}
+
+// harnessIDSaveFailure returns the failure to save the harness session id:
+// ErrHarnessSessionIDNotSaved wrapping the Store's error, or nil when the id
+// is saved, unknown, or its write has not failed.
+func (c *Conversation) harnessIDSaveFailure() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.harnessIDUnsaved || c.harnessIDSaveErr == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %s: %w", ErrHarnessSessionIDNotSaved, c.session.HarnessID(), c.harnessIDSaveErr)
 }
 
 // History returns the conversation history for this Conversation.

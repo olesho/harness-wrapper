@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // stageRelativeRollout writes a codex rollout for sessionID, recorded as run in
@@ -43,7 +44,8 @@ func TestRelativeCodexHomeUsesChildWorkingDir(t *testing.T) {
 	if len(turns) == 0 || turns[len(turns)-1].Text != "codex child reply" {
 		t.Fatalf("turns = %+v, want the staged rollout", turns)
 	}
-	if got, ok := a.LocateSessionID(wd); !ok || got != sid {
+	launchedAt := time.Date(2026, 5, 14, 11, 59, 59, 0, time.UTC) // just before the staged session started
+	if got, ok := a.LocateSessionID(wd, launchedAt); !ok || got != sid {
 		t.Fatalf("LocateSessionID(%q) = (%q, %v), want (%q, true)", wd, got, ok, sid)
 	}
 }

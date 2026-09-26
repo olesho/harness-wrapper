@@ -34,6 +34,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -228,13 +229,15 @@ func envLookup(env []string, key string) string {
 	return val
 }
 
-// LocateSessionID recovers the Codex session UUID from the most recent
-// on-disk rollout whose session_meta cwd matches workingDir. This is the
-// version-independent fallback for the screen-scrape ExtractSessionID, which
-// returns nothing on Codex 0.142+ (the resume hint is no longer rendered).
-// Implements turns.SessionIDLocator.
-func (a *Adapter) LocateSessionID(workingDir string) (string, bool) {
-	return a.reader(workingDir).LocateLatestSession(workingDir)
+// LocateSessionID recovers the Codex session UUID from the on-disk rollout of
+// the session launched in workingDir at launchedAt — the one whose
+// session_meta names that cwd and a start no earlier than the launch, or none
+// when two or more do (see transcriptcodex.Reader.LocateLaunchSession). This
+// is the version-independent fallback for the screen-scrape ExtractSessionID,
+// which returns nothing on Codex 0.142+ (the resume hint is no longer
+// rendered). Implements turns.SessionIDLocator.
+func (a *Adapter) LocateSessionID(workingDir string, launchedAt time.Time) (string, bool) {
+	return a.reader(workingDir).LocateLaunchSession(workingDir, launchedAt)
 }
 
 // ReadTranscript reads the on-disk Codex session log. Implements

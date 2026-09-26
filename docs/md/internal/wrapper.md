@@ -17,10 +17,13 @@ func ClassifyOutput(harness, output string) Classification
 `ctx` is cancelled. `Start` returns a live `*Session` for callers that need to observe transitions,
 stream output, or stop cleanly; `Run` is a thin convenience over `Start` + `Wait`.
 
-A non-nil error always means the **wrapper itself** failed to start (`ErrInvalidConfig`,
-`ErrBinaryNotFound`, `ErrPTYAllocation`). Once `Start` returns a session, every *harness* outcome
-flows through `Result`/`SessionEvent` with a nil error. Context cancellation yields
-`StatusInterrupted` and does **not** propagate `ctx.Err()`.
+A non-nil error always means the **wrapper itself** failed: to start (`ErrInvalidConfig`,
+`ErrBinaryNotFound`, `ErrPTYAllocation`), or, from `Wait`, to supervise — a read of the harness's
+output that failed (`ErrPTYRead`) or a `Classifier` that panicked (`ErrClassifierPanic`, recovered at
+the call). A supervision failure while the harness runs ends the run as a Stop would, and the
+`Result` that comes with the error has `StatusUnknown`. Every *harness* outcome flows through
+`Result`/`SessionEvent` with a nil error. Context cancellation yields `StatusInterrupted` and does
+**not** propagate `ctx.Err()`.
 
 `ClassifyOutput` is a stateless helper: it runs the resolved per-harness classifier over a finished
 output blob (e.g. a log tail), forcing the idle gate open so cost/retry/transport patterns are
@@ -65,7 +68,8 @@ translator, and all three are applied in order inside `wrapper.Start` — `argsW
 `argsWithHarnessModel`, then `argsWithHarnessPermissionMode` — after `validateConfig` / `applyDefaults`
 and before `startSession`. That call site, not a free-floating statement, is where a fourth knob
 translator would go. The three are not symmetric: `Effort` is validated and hard-fails, `Model` is
-never validated (an unsupported harness is a silent no-op), and `PermissionMode` is validated by
+refused (`ErrInvalidConfig`) on a harness it has no flag for — only claude and codex have one — rather
+than dropped from the argv, and `PermissionMode` is validated by
 `validatePermissionMode`, restricted to the claude/codex harnesses, value-rejecting per harness
 (codex has no `plan`), and additionally rejected when a bypass-enabling flag — see the exported
 `BypassEnablingFlags(cfg.Harness)` — is already present in `Args`.
@@ -231,7 +235,7 @@ func NewSlogAdapter(logger *slog.Logger) Emitter  // Kind → message, Fields �
 | Startup | `wrapper_started`, `pty_opened` |
 | Terminal setup (TTY passthrough only) | `winsize_initial`, `raw_mode_enabled`, `raw_mode_setup_failed`, `winsize_changed` |
 | Quiet thresholds | `output_quiet`, `output_classify_threshold`, `harness_stale` |
-| Classification | `harness_api_error`, `harness_blocked_by_cost`, `harness_retry_later`, `harness_waiting_for_input`, `harness_classified` |
+| Classification | `harness_api_error`, `harness_blocked_by_cost`, `harness_retry_later`, `harness_waiting_for_input`, `harness_classified`, `classifier_panic` (with the panic's `stack`) |
 | Shutdown | `pty_closed`, `harness_exited` |
 
 `pty_closed` carries `output_drained`: `false` means the output was cut off because a process the

@@ -136,7 +136,8 @@ type Config struct {
 
 	// Model requests a specific model for this run. Empty leaves the harness
 	// default. Supported harnesses map this to their native flag (Claude Code
-	// --model, Codex -c model="…").
+	// --model, Codex -c model="…"); for any other harness Start refuses it with
+	// ErrInvalidConfig rather than launch the harness on its default model.
 	Model string
 
 	// PermissionMode requests a launch-time permission posture for this run.
@@ -357,6 +358,10 @@ var (
 	ErrBinaryNotFound = errors.New("wrapper: binary not found")
 	ErrPTYAllocation  = errors.New("wrapper: pty allocation failed")
 	ErrPTYRead        = errors.New("wrapper: pty read failed")
+
+	// ErrClassifierPanic is returned by Wait (and Run) when the session's
+	// Classifier panicked; the wrapper recovers it at the call.
+	ErrClassifierPanic = errors.New("wrapper: classifier panicked")
 )
 
 // Run starts the configured harness under a pseudoterminal, supervises
@@ -366,7 +371,8 @@ var (
 //
 // Errors are returned only when the wrapper itself fails to do its job
 // (invalid configuration, missing binary, PTY allocation failure, IO
-// errors on the master fd). Harness-level outcomes — clean exit,
+// errors on the master fd, a Classifier panic; see Session.Wait for the
+// Result that comes with the last two). Harness-level outcomes — clean exit,
 // non-zero exit, signal termination, idle classification — are always
 // reported through the returned Result with a nil error.
 //
@@ -462,6 +468,11 @@ func validateConfig(cfg *Config) error {
 			return fmt.Errorf("%w: Effort is only supported for claude and codex harnesses", ErrInvalidConfig)
 		}
 	}
+	// argsWithHarnessModel has no flag for any other harness, so a Model
+	// accepted here would be dropped and the harness would run on its default.
+	if cfg.Model != "" && !harnessSupportsModel(cfg.Harness) {
+		return fmt.Errorf("%w: Model is only supported for claude and codex harnesses", ErrInvalidConfig)
+	}
 	if err := validatePermissionMode(cfg); err != nil {
 		return err
 	}
@@ -526,6 +537,17 @@ func normHarness(h string) string { return strings.ToLower(strings.TrimSpace(h))
 const harnessClaudeCode = "claude-code"
 
 func harnessSupportsEffort(harness string) bool {
+	switch normHarness(harness) {
+	case "claude", harnessClaudeCode, "codex":
+		return true
+	default:
+		return false
+	}
+}
+
+// harnessSupportsModel reports whether argsWithHarnessModel has a model flag
+// for harness.
+func harnessSupportsModel(harness string) bool {
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode, "codex":
 		return true

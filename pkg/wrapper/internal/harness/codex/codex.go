@@ -18,7 +18,8 @@ var retryLimitRE = regexp.MustCompile(`(?i)exceeded retry limit,\s*last status:\
 // codexPhraseHits maps known Codex error-display phrases (from
 // codex-rs/protocol/src/error.rs CodexErr Display impls and from
 // chatwidget rate-limit handling) to inferred HTTP codes. The matcher
-// scans for the first phrase that appears in the output.
+// scans for the first phrase that appears in the output. Phrases are
+// lower-case ASCII: MatchAPIError finds them in asciiLower of the output.
 var codexPhraseHits = []struct {
 	Phrase string
 	Code   int
@@ -37,8 +38,6 @@ var codexPhraseHits = []struct {
 // not required — matching on the inner phrase is sufficient and works
 // across both display paths.
 func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
-	lower := strings.ToLower(stripped)
-
 	if m := retryLimitRE.FindStringSubmatch(stripped); m != nil {
 		code := 0
 		for _, r := range m[1] {
@@ -52,6 +51,13 @@ func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
 		return hit, true
 	}
 
+	// An offset found in lower must be the same offset in stripped, so only
+	// ASCII letters are folded. strings.ToLower does not keep offsets: it
+	// changes the UTF-8 length of some runes (Ⱥ is two bytes and ⱥ three, İ is
+	// two and i one), so every offset after such a rune named another place in
+	// stripped — past its end, a panic that took the host process down, or
+	// the wrong text.
+	lower := asciiLower(stripped)
 	for _, p := range codexPhraseHits {
 		if idx := strings.Index(lower, p.Phrase); idx >= 0 {
 			// Extract the matched phrase as it appears in the
@@ -67,6 +73,18 @@ func MatchAPIError(stripped string) (detector.APIErrorHit, bool) {
 	}
 
 	return detector.APIErrorHit{}, false
+}
+
+// asciiLower returns s with its ASCII letters lower-cased and every other
+// byte as it was, so each byte of the result sits at its offset in s.
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
 }
 
 // Patterns is the Codex harness fingerprint set consumed by the
