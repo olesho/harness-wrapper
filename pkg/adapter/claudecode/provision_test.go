@@ -96,7 +96,8 @@ func goldenRequest(t *testing.T, g golden) contract.ProvisionRequest {
 	}
 	return contract.ProvisionRequest{
 		Contract: contract.Version, HarnessRoot: "/opt/harnesses/claude-code",
-		Layout: contract.Layout{Home: "/w/home", Config: "/w/profile", Workspace: "/w/workspace", Secrets: "/w/secrets", Scratch: "/w/scratch"},
+		// agentd's spool directory is the scratch root.
+		Layout: contract.Layout{Home: "/w/home", Config: "/w/profile", Workspace: "/w/workspace", Secrets: "/w/secrets", Scratch: "/w/spool"},
 		Spec:   spec,
 	}
 }
@@ -160,10 +161,10 @@ func hooksOf(t *testing.T, settings string) (map[string][]string, map[string]any
 
 // Provision keeps the meaning of the profile agentd rendered before it. The
 // differences are the reviewed ones: each hook runs the distribution's helper
-// under this profile's owner; the spool is in the scratch root; agentd's own
-// variables and the yield file are gone; PATH and LANG are the Host's, added
-// at launch; and the model, effort and permission flags hw added at launch
-// are in the arguments.
+// under this profile's owner; agentd's own variables and the yield file are
+// gone; PATH and LANG are the Host's, added at launch; and the model, effort
+// and permission flags hw added at launch are in the arguments. With agentd's
+// spool directory as the scratch root, the spool is where it was.
 func TestProvisionMatchesAgentdProfile(t *testing.T) {
 	g := loadGolden(t)
 	req := goldenRequest(t, g)
@@ -229,21 +230,16 @@ func TestProvisionMatchesAgentdProfile(t *testing.T) {
 	if cfg.Binary != BinaryPath(req.HarnessRoot) || cfg.WorkingDir != req.Layout.Workspace {
 		t.Errorf("binary %s, working dir %s", cfg.Binary, cfg.WorkingDir)
 	}
-	drop := map[string]bool{"PATH": true, "LANG": true, "AGENTD_AGENT_ID": true, "AGENTD_LAUNCH_ID": true, "HW_YIELD_FILE": true, "HW_EVENT_SPOOL": true}
+	drop := map[string]bool{"PATH": true, "LANG": true, "AGENTD_AGENT_ID": true, "AGENTD_LAUNCH_ID": true, "HW_YIELD_FILE": true}
 	var wantEnv, gotEnv []string
 	for _, kv := range g.Env {
 		if k, _, _ := strings.Cut(kv, "="); !drop[k] {
 			wantEnv = append(wantEnv, kv)
 		}
 	}
-	for _, kv := range cfg.Env {
-		if k, v, _ := strings.Cut(kv, "="); k == "HW_EVENT_SPOOL" {
-			if v != "/w/scratch/spool" || cfg.Spool != v {
-				t.Errorf("spool %s (open_config %s), want /w/scratch/spool", v, cfg.Spool)
-			}
-			continue
-		}
-		gotEnv = append(gotEnv, kv)
+	gotEnv = append(gotEnv, cfg.Env...)
+	if cfg.Spool != "/w/spool" {
+		t.Errorf("spool %s, want the scratch root, /w/spool", cfg.Spool)
 	}
 	sort.Strings(wantEnv)
 	sort.Strings(gotEnv)

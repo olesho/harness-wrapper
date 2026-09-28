@@ -59,7 +59,8 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   two side by side): `settings.json` with the hooks, `.claude.json` with onboarding, bypass and
   workspace trust answered, the persona, skills, memory, `mcp.json` and the workspace's `CLAUDE.md`,
   and `open_config` with claude's arguments and environment. Each hook runs the helper, which writes
-  what it reports to the spool in `layout.scratch/spool`.
+  what it reports to the spool: the scratch root itself, beside the markers' directory, so a spool a
+  host kept before this profile, at the root it now names scratch, is read where it is.
 - **Transport:** stream-json, one claude process per Session in a process group of its own. An input
   is a user message whose uuid is the input's native id, a fresh UUID kept in its submission marker;
   claude's `command_lifecycle` receipt returns `Send`, and its transcript keeps the uuid as the prompt
@@ -78,6 +79,9 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
   `unknown`.
+- **`LegacyHookFacts`**, off by default, makes each Stop and SessionEnd hook's firing an observation
+  of kind `x_legacy_hook`, outside the contract: a transitional source for a host that must go on
+  publishing the advisory facts it published before (agentd's `hook.stop` and `hook.session_end`).
 
 `TestClaudeConforms` runs the conformance kit, and `TestClaudeObservations` the profile's own
 checks, against a real claude driving `internal/mockapi` — a Go port of agentd's P11 mock Messages

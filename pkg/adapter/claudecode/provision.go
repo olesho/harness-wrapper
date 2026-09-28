@@ -30,7 +30,6 @@ const (
 	skillsDir     = "skills"
 	memoryDir     = "memory"
 	workspaceFile = "CLAUDE.md"
-	spoolDir      = "spool"
 )
 
 // hookOwner marks the profile's entries in settings.json.
@@ -51,7 +50,9 @@ type openConfig struct {
 	Env        []string `json:"env"`
 	WorkingDir string   `json:"working_dir"`
 	// Spool is the hook spool: where the hook helper writes, and the record
-	// reader reads.
+	// reader reads. It is the scratch root itself, beside the submission
+	// markers' directory, so a spool a host kept before this profile — at
+	// the root it now names scratch — is read where it is.
 	Spool string `json:"spool"`
 }
 
@@ -171,7 +172,7 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			"USER=" + filepath.Base(l.Home),
 			"CLAUDE_CONFIG_DIR=" + l.Config,
 			"TERM=xterm-256color",
-			harnesscore.EnvSpool + "=" + filepath.Join(l.Scratch, spoolDir),
+			harnesscore.EnvSpool + "=" + l.Scratch,
 			harnesscore.EnvHookCwd + "=" + l.Workspace,
 			harnesscore.EnvHome + "=" + l.Home,
 			harnesscore.EnvConfigDir + "=" + l.Config,
@@ -182,7 +183,7 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 		},
 		WorkingDir: l.Workspace,
-		Spool:      filepath.Join(l.Scratch, spoolDir),
+		Spool:      l.Scratch,
 	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {

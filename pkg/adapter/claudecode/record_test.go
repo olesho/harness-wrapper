@@ -368,3 +368,51 @@ func TestUnmarkedPromptTakesNoInput(t *testing.T) {
 		}
 	}
 }
+
+// With LegacyHookFacts, a Stop hook's file reports its firing, keyed by the
+// file's digest; without, nothing.
+func TestLegacyHookFacts(t *testing.T) {
+	l, oc, m := recordAgent(t, fixtureSession, "../../transcript/claudecode/testdata/entries-2.1.283.jsonl", nil)
+	cfg, _ := parseOpenConfig(oc)
+	stop := transcript.ParsedEvent{HarnessSessionID: fixtureSession, Event: transcript.Event{Type: transcript.EventSessionMeta, Source: transcript.SourceFile}}
+	write := func(name string) {
+		data, _ := transcript.MarshalParsedEvents([]transcript.ParsedEvent{stop})
+		if err := os.WriteFile(filepath.Join(cfg.Spool, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy := func() []contract.Observation {
+		items, _ := readAll(t, openReader(t, fixtureSession, l, oc, m, nil), contract.MaxObserveBytes)
+		var out []contract.Observation
+		for _, o := range items {
+			if o.Kind == KindLegacyHook {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	write("stop-1-1-1.json")
+	if got := legacy(); len(got) != 0 {
+		t.Errorf("without LegacyHookFacts: %v", got)
+	}
+	LegacyHookFacts.Store(true)
+	defer LegacyHookFacts.Store(false)
+	write("stop-1-1-2.json")
+	write("session-end-1-1-3.json")
+	got := legacy()
+	if len(got) != 2 {
+		t.Fatalf("legacy hook facts %v, want the stop and the session end", got)
+	}
+	hooks := map[string]bool{}
+	for _, o := range got {
+		var d LegacyHookData
+		_ = o.Decode(&d)
+		hooks[d.Hook] = true
+		if !strings.HasPrefix(d.Digest, "sha256:") || o.Key() != strings.TrimPrefix(d.Digest, "sha256:")[:24] {
+			t.Errorf("%s: digest %s", o.ID, d.Digest)
+		}
+	}
+	if !hooks["stop"] || !hooks["session_end"] {
+		t.Errorf("hooks %v", hooks)
+	}
+}
