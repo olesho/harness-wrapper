@@ -1,8 +1,10 @@
-// Package mockapi is a local stand-in for the Anthropic Messages API, for
-// driving a real claude binary through scripted scenarios with no account and
-// no network. It is a Go port of agentd's P11 mockapi.py, and routes on the
-// text of the last user message that carries text (claude appends system
-// reminders as separate blocks; tool results continue a scenario):
+// Package mockapi is a local stand-in for a harness's model API, for driving a
+// real harness binary through scripted scenarios with no account and no
+// network: the Anthropic Messages API, for claude, and the OpenAI Responses
+// API, for codex (responses.go). It began as a Go port of agentd's P11
+// mockapi.py. The Messages API routes on the text of the last user message
+// that carries text (claude appends system reminders as separate blocks; tool
+// results continue a scenario):
 //
 //	PING <n>        reply "PONG <n>"
 //	SLOW <n>        reply "slow<i> " in <n> chunks, Server.ChunkDelay apart (default 40)
@@ -38,6 +40,10 @@ type Server struct {
 	srv *httptest.Server
 	// ChunkDelay is the pause between SLOW's chunks.
 	ChunkDelay time.Duration
+	// RetryBudget is how many failed attempts in a row the harness retries:
+	// on the Responses API, the attempt after that many failures of an ERR
+	// 529 scenario answers overloaded. Set it to codex's stream_max_retries.
+	RetryBudget int
 
 	mu       sync.Mutex
 	seen     map[string]int
@@ -45,11 +51,12 @@ type Server struct {
 	n        int
 }
 
-// Request is one Messages request the mock answered.
+// Request is one request the mock answered.
 type Request struct {
 	N        int
 	Scenario string
-	// System is the request's system prompt, joined.
+	// System is the request's system prompt, joined: the Responses API's
+	// instructions.
 	System string
 	Stream bool
 	Model  string
@@ -57,12 +64,13 @@ type Request struct {
 
 // Start starts a mock on a loopback port.
 func Start() *Server {
-	s := &Server{ChunkDelay: 100 * time.Millisecond, seen: map[string]int{}}
+	s := &Server{ChunkDelay: 100 * time.Millisecond, RetryBudget: 2, seen: map[string]int{}}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.serve))
 	return s
 }
 
-// URL is the base URL: claude's ANTHROPIC_BASE_URL.
+// URL is the base URL: claude's ANTHROPIC_BASE_URL; with /v1, a codex model
+// provider's base_url.
 func (s *Server) URL() string { return s.srv.URL }
 
 // Close stops the mock, and every stream it is serving.
@@ -156,8 +164,17 @@ func route(b body) (scenario string, toolResult *string) {
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"mock","object":"model"}]}`))
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/responses") {
+		s.serveResponses(w, raw)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/v1/messages") || strings.Contains(r.URL.Path, "count_tokens") {
