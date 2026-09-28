@@ -553,8 +553,17 @@ every profile's effective version includes.
 DisableSupervisionForTest makes every launch see a host that delegates no
 cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (int, int, error)`
-OpenPTYPair reports ErrUnsupported.
+#### `func OpenPTYPair() (master, slave int, err error)`
+OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
+O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
+than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
+Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
+pty.Open — and the caller wraps the master in an *os.File only after the
+spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
+
+It runs on an ordinary thread: Landlock fixes a file's rights when the file
+is opened, so a master opened on the restricted thread would deny the
+wrapper's later resize calls.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -589,8 +598,9 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(Input) (*Launch, error)`
-Prepare reports ErrUnsupported: Landlock containment is Linux-only.
+#### `func Prepare(in Input) (l *Launch, err error)`
+Prepare turns in into a Launch, or refuses it before anything runs. On
+refusal it releases whatever it acquired, including ephemeral state.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -618,8 +628,10 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(Input) (*Preview, error)`
-PreviewLaunch reports ErrUnsupported.
+#### `func PreviewLaunch(in Input) (*Preview, error)`
+PreviewLaunch runs the checks Prepare runs, collecting every problem
+instead of stopping at the first, and allocates nothing: no state, no
+cgroup, no ruleset. Only an invalid request is an error.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -2236,6 +2248,497 @@ Supervision records how the session's process tree is supervised.
 
 #### `type TCP`
 TCP describes the network part of an applied policy.
+
+## Module: contract (`pkg/contract`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package contract is the Harness Adapter Interface: the Go interface a
+Harness Adapter implements and a runtime's Agent Adapter calls to drive a
+coding-agent harness without naming it (ADR-012).
+
+The interface is specified in "Harness Adapter Interface v1"
+(https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
+package is its normative form. Every type has a JSON form with the field
+names the specification uses, generated as JSON Schema (schema.json), for
+where a type crosses a process boundary or is journaled.
+
+Two callers use an Adapter:
+
+  - the Supervisor, before any agent process exists, calls Describe and
+    Provision — the pure rendering of a harness-neutral Agent Spec into the
+    harness's files, argv and environment, which the Supervisor writes;
+  - the Host, one per agent and inside the agent's isolation, opens Sessions
+    (NewSession, then Open … Close) and record handles (OpenRecord).
+
+An Adapter registers itself under its harness's name (Register), in its
+package's init; a runtime links the harnesses it offers through one file of
+blank imports, its harness list, and finds them with Lookup.
+
+This package imports only the standard library, so importing it links
+nothing else of harness-wrapper.
+
+### Exported Types & Functions
+
+#### `func CheckRelPath(p string) error`
+CheckRelPath refuses a path that is not relative, clean and slash-separated,
+with no empty, "." or ".." component: what a file beneath a root may be.
+
+#### `func CheckSpec(d Descriptor, s AgentSpec) error`
+CheckSpec refuses an Agent Spec that uses a field or value d does not
+support, with CodeUnsupported naming the field, or that is malformed, with
+CodeInvalidSpec. An adapter's Provision calls it first; it checks only what
+the Descriptor can say.
+
+#### `func Compatible(v string) bool`
+Compatible reports whether a caller of this package may use an adapter
+declaring contract version v: the majors match. The caller then sends it
+requests no newer than v's minor.
+
+#### `func Names() []string`
+Names lists every registered harness, sorted.
+
+#### `func ObservationID(kind Kind, key string) string`
+ObservationID is the id of kind's fact with key.
+
+#### `func ParseVersion(v string) (major, minor int, err error)`
+ParseVersion splits a contract version, harness-adapter/<major>.<minor>,
+into its parts.
+
+#### `func Register(name string, a Adapter)`
+Register makes a available under name, the harness's name. A harness
+profile calls it from its package's init, so a runtime links a harness by
+importing its profile — one line of its harness list — and finds it with
+Lookup, never through a switch over known harnesses. Registering a name
+twice panics.
+
+#### `func ValidID(s string) bool`
+ValidID reports whether s is an id: 1–128 characters of [A-Za-z0-9._:-].
+
+#### `type APIErrorData`
+APIErrorData is api_error's payload.
+
+#### `func Lookup(name string) (Adapter, bool)`
+Lookup returns the adapter registered under name.
+
+#### `type AgentSpec`
+AgentSpec is the harness-neutral definition of an agent. Provision refuses
+a field the harness's Descriptor does not name, with CodeUnsupported.
+
+#### `type AssistantTextData`
+AssistantTextData is assistant_text's payload.
+
+#### `type Batch`
+Batch is one Observe result. A batch with items, a checkpoint, a reset, a
+rescan or faults has a BatchID and must be acknowledged; an empty poll has
+none and needs no acknowledgement.
+
+#### `type Block`
+Block is a condition that refuses input.
+
+#### `type BlockReason`
+BlockReason is why a Session refuses input.
+
+#### `type Capability`
+Capability is a named behaviour an adapter may offer. Each adds exactly
+what its constant says; without it, the operations answer CodeUnsupported,
+or the observations never appear. The set is closed in 1.0.
+
+#### `type Certainty`
+Certainty is whether a failed Send may have reached the harness.
+
+#### `func CertaintyOf(err error) Certainty`
+CertaintyOf is whether a failed Send may have reached the harness: the
+*Error's certainty, and maybe_submitted for anything else — a lost result
+included.
+
+#### `type Checkpoint`
+Checkpoint is an adapter's position in its record. The Host may read
+Format; Data is opaque. At most MaxCheckpointBytes.
+
+#### `type Choice`
+Choice answers a prompt: exactly one of OptionID, OptionIDs and Text.
+
+#### `type CloseReason`
+CloseReason is why the Host closes a Session.
+
+#### `type CloseResult`
+CloseResult is what Close established.
+
+#### `type Code`
+Code is an error's class, the set closed in 1.0. Callers act on the code,
+its Reason and its Certainty, never on its message.
+
+#### `func CodeOf(err error) Code`
+CodeOf is err's code: its *Error's, or CodeInternal.
+
+#### `type Connector`
+Connector is one tool server. It has exactly one of Stdio or HTTP.
+
+#### `type ContentPart`
+ContentPart is one part of an input.
+
+#### `type CredentialFile`
+CredentialFile is a staged credential: its kind, and the file holding it.
+
+#### `type CredentialRef`
+CredentialRef names a credential's kind.
+
+#### `type Descriptor`
+Descriptor is what an adapter offers: Describe's result, and the entry a
+Runtime's descriptor lists for it verbatim.
+
+#### `type Error`
+Error is every error the interface returns.
+
+#### `func ErrAdapterMissing(name string) *Error`
+ErrAdapterMissing is the error for a harness no adapter is registered
+under: open_failed with reason adapter_missing.
+
+#### `func Errorf(code Code, format string, args ...any) *Error`
+Errorf is an *Error with a formatted message.
+
+#### `type ErrorClass`
+ErrorClass classifies a turn's or an API call's failure.
+
+#### `type ExitClass`
+ExitClass is how a harness process ended.
+
+#### `type Fault`
+Fault reports observations lost, cut or rejected.
+
+#### `type File`
+File is one rendered file. It has exactly one of Text and Bytes.
+
+#### `func TextFile(root Root, path, mode, text string) File`
+TextFile is a text file.
+
+#### `type HTTPConnector`
+HTTPConnector is a server at a URL.
+
+#### `type HarnessInfo`
+HarnessInfo names a harness, its version and its adapter.
+
+#### `type Input`
+Input is one input to Send.
+
+#### `func Text(inputID, text string) Input`
+Text is an input of one text part.
+
+#### `type Instructions`
+Instructions are an agent's standing instructions.
+
+#### `type InterruptOutcome`
+InterruptOutcome is what an interrupt did.
+
+#### `type InterruptRequest`
+InterruptRequest names the input whose turn to stop.
+
+#### `type Kind`
+Kind is an observation's kind. The set is closed in 1.0.
+
+#### `type Layout`
+Layout is an agent's roots. They are distinct, absolute and clean, exist
+before the Host starts, and are writable only by the agent's workload
+identity.
+
+#### `type Limits`
+Limits bounds what an adapter takes.
+
+#### `type Memory`
+Memory is an agent's memory directory, seeded with its files.
+
+#### `type MemoryFile`
+MemoryFile is one seeded memory file, at a relative slash path.
+
+#### `type Models`
+Models is either any model id, or a list of them. Its JSON form is the
+string "any" or an array.
+
+#### `type Observation`
+Observation is a fact an adapter reports.
+
+ID is "<kind>:<key>": unique within the Session, and stable — the same fact
+has the same id in every batch, process and adapter version. Keys by kind:
+turn_started and turn_ended, the input id; user_input and api_error, the
+record entry's id; assistant_text, the message id and block index; tool_*,
+the tool use id; subagent_*, the subagent id; prompt_*, the prompt id;
+text_delta, the message id and index; retrying, the input id and attempt;
+rate_limit, blocked, unblocked and session_exited, an id of the harness
+process instance and a counter. The Supervisor stores an observation under
+(agent, session, id): the same id in another Session is another fact.
+
+#### `func NewObservation(kind Kind, key string, origin Origin, at time.Time, data any) Observation`
+NewObservation is an observation of kind with key, carrying data.
+
+#### `type OpenFailure`
+OpenFailure is why Open failed.
+
+#### `type OpenMode`
+OpenMode is how Open starts a Session.
+
+#### `type OpenRequest`
+OpenRequest is what NewSession takes.
+
+#### `type OpenResult`
+OpenResult is what Open returns.
+
+#### `type Origin`
+Origin is where an observation came from.
+
+#### `type Phase`
+Phase is a Session's state.
+
+#### `type PromptInfo`
+PromptInfo is a prompt the harness raised, awaiting Answer.
+
+#### `type PromptOption`
+PromptOption is one option of a prompt.
+
+#### `type PromptResolvedData`
+PromptResolvedData is prompt_resolved's payload.
+
+#### `type ProvisionRequest`
+ProvisionRequest is what the Supervisor asks an adapter to render.
+
+#### `type ProvisionResult`
+ProvisionResult is what Provision rendered, for the Supervisor to apply.
+
+The Supervisor writes each file beneath its root without following a
+symlink at any component, owned by the agent's workload identity, with the
+file's mode, atomically: a temporary file in the same directory, fsync,
+rename, then fsync of the directory. It journals the result and keeps a
+manifest of the files it wrote; applying a later result replaces the files
+it names and removes those the previous manifest named that it does not.
+Files it did not write — the harness's own record — are never touched. A
+result is applied only while no Host runs for the agent, and completely
+before the next Open; after a crash it is applied again.
+
+#### `type RateLimitData`
+RateLimitData is rate_limit's payload.
+
+#### `type RateLimitWindow`
+RateLimitWindow is one usage window's standing.
+
+#### `type Receipt`
+Receipt is Send's answer: the input was handed to the harness.
+
+#### `type RecordRequest`
+RecordRequest is what OpenRecord takes.
+
+#### `type Recovered`
+Recovered is Recover's answer.
+
+#### `type RecoveredOutcome`
+RecoveredOutcome is what Recover found.
+
+#### `type Rescan`
+Rescan says why the record was read again from its start.
+
+#### `type Reset`
+Reset says why the record no longer continues a checkpoint.
+
+#### `type RetryInfo`
+RetryInfo is the retry a turn is in (capability retry_visible).
+
+#### `type RetryingData`
+RetryingData is retrying's payload.
+
+#### `type Root`
+Roots names a Layout's roots.
+
+#### `type RootPath`
+RootPath names a path beneath a root.
+
+#### `type SendResult`
+SendResult is Send's result, returned once the adapter has handed the input
+to the harness, and no earlier.
+
+#### `type SessionExitedData`
+SessionExitedData is session_exited's payload, read from the process's exit
+status, never from its last message.
+
+#### `type Skill`
+Skill is a skill directory: its files, one of which is SKILL.md at the top.
+
+#### `type SkillFile`
+SkillFile is one file of a skill, at a relative slash path.
+
+#### `type SpecSupport`
+SpecSupport is the part of the Agent Spec a harness honours.
+
+#### `type State`
+State is a Session's snapshot. It is observational: nothing may be
+authorized from it.
+
+#### `type StdioConnector`
+StdioConnector is a server the harness starts and speaks to on its pipes.
+
+#### `type SubagentData`
+SubagentData is subagent_started's and subagent_stopped's payload.
+
+#### `type TextData`
+TextData is user_input's payload.
+
+#### `type TextDeltaData`
+TextDeltaData is text_delta's payload.
+
+#### `type ToolFinishedData`
+ToolFinishedData is tool_finished's payload.
+
+#### `type ToolResultData`
+ToolResultData is tool_result's payload.
+
+#### `type ToolUseData`
+ToolUseData is tool_use's and tool_started's payload.
+
+#### `type TurnEndedData`
+TurnEndedData is turn_ended's payload.
+
+#### `type TurnError`
+TurnError is why a turn failed.
+
+#### `type TurnOutcome`
+TurnOutcome is how a turn ended.
+
+### Interfaces (Boundaries)
+
+#### `Adapter`
+
+> Adapter is one harness, exposed through the interface. Describe and
+Provision are pure and serve the Supervisor; NewSession and OpenRecord serve
+the Host.
+
+- `Describe() Descriptor`
+- `NewSession(OpenRequest) (Session, error)`
+- `OpenRecord(ctx context.Context, req RecordRequest) (Record, error)`
+- `Provision(ProvisionRequest) (ProvisionResult, error)`
+
+#### `Record`
+
+> Record is a read-only handle on one Session's durable record.
+
+- `Ack(batchID string) error`
+- `Close() error`
+- `Observe(ctx context.Context, wait time.Duration, maxBytes int) (Batch, error)`
+- `Recover(ctx context.Context, inputID string) (Recovered, error)`
+
+#### `Session`
+
+> Session is one harness conversation. Its methods are safe to call
+concurrently: State, Observe and Ack are never blocked by an outstanding
+Send, and Interrupt and Answer are ordered after its result.
+
+- `Ack(batchID string) error`
+- `Answer(ctx context.Context, promptID string, c Choice) error`
+- `Close(ctx context.Context, reason CloseReason, drain time.Duration) (CloseResult, error)`
+- `Interrupt(ctx context.Context, req InterruptRequest) (InterruptOutcome, error)`
+- `Observe(ctx context.Context, wait time.Duration, maxBytes int) (Batch, error)`
+- `Open(ctx context.Context) (OpenResult, error)`
+- `Send(ctx context.Context, in Input) (SendResult, error)`
+- `State() State`
+
+## Module: conformance (`pkg/contract/conformance`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package conformance is the Harness Adapter Interface's conformance kit: a
+fake Agent Adapter — Supervisor and Host both — and scenarios that drive an
+adapter through the interface and check it keeps the contract.
+
+A scenario speaks the prompt language of agentd's P11 mock Messages API
+(PING, SLOW, STALL, TOOL, ERR, BIG, ASK; see fakeadapter), so it runs the
+same against the fake adapter as against a real harness that talks to that
+mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
+and every rule has a deliberately broken adapter that fails it.
+
+	func TestConformance(t *testing.T) {
+	    conformance.Run(conformance.Testing(t), conformance.Fixture{...})
+	}
+
+### Exported Types & Functions
+
+#### `func Apply(l contract.Layout, r contract.ProvisionResult) error`
+Apply writes a ProvisionResult under a layout the way a Supervisor does:
+each file beneath its root, never through a symlink, with its mode. It
+validates the result first.
+
+#### `func Run(t T, f Fixture)`
+Run runs every scenario against the fixture, each as a subtest.
+
+#### `func Scenarios() []string`
+Scenarios lists the kit's scenarios, in the order Run runs them.
+
+#### `type Fixture`
+Fixture is the adapter under test and what the kit needs to drive it.
+
+#### `func Testing(t *testing.T) T`
+Testing adapts a *testing.T.
+
+### Interfaces (Boundaries)
+
+#### `T`
+
+> T is what the kit reports through: *testing.T, through Testing, or a
+recorder in the kit's own negative tests.
+
+- `Errorf(format string, args ...any)`
+- `Helper()`
+- `Logf(format string, args ...any)`
+- `Run(name string, f func(T)) bool`
+- `TempDir() string`
+
+## Module: fakeadapter (`pkg/contract/fakeadapter`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package fakeadapter is a Harness Adapter for a harness that exists only in
+this process: the reference the conformance kit is proved against, and a
+stand-in for a harness in a runtime's tests.
+
+Its harness runs one goroutine per Session and answers the prompt language
+of agentd's P11 mock Messages API, so a scenario reads the same against it
+as against a real harness talking to that mock:
+
+	PING <n>       reply "PONG <n>"
+	SLOW <n>       reply "slow" in <n> chunks, one per tick (default 40)
+	STALL <s>      nothing for <s> seconds (default 60), then "ok"
+	TOOL <command> a tool call running <command>, then "TOOL DONE"
+	ERR <code> <k> the model call fails with <code> <k> times, retried up to
+	               MaxRetries times: "RECOVERED" once it passes, else the turn
+	               errors (429: usage_limit, 401: auth, 402: billing, else
+	               overloaded); a usage, auth or billing error blocks the Session
+	BIG <kib>      reply with <kib> KiB of text
+	ASK            raise a prompt (yes/no); on its answer, "ANSWERED <choice>"
+	CRASH          the harness process dies mid-turn
+	anything else  reply "ok"
+
+It keeps its record — every record-origin observation, one JSON line each —
+and its submission markers under the layout's scratch root, so a record
+handle, or a Session reopened by another Adapter value, reads what an
+earlier one left, as it would after a crash.
+
+### Exported Types & Functions
+
+#### `func BinaryPath(harnessRoot string) string`
+BinaryPath is where Provision tells the fake harness's binary to be, under
+the harness root: Open refuses with binary_not_found when it is absent.
+
+#### `func Kill(s contract.Session)`
+Kill crashes a Session's harness — the process dies without Close — for a
+test's crash scenarios. It is a no-op for a Session not from this package.
+
+#### `func Register()`
+Register registers a fake Adapter under Name.
+
+#### `type Adapter`
+Adapter is the fake harness's adapter.
+
+#### `func New(opts Options) *Adapter`
+New returns an Adapter.
+
+#### `type Options`
+Options configure an Adapter.
 
 ## Module: discovery (`pkg/discovery`)
 

@@ -53,4 +53,6 @@ two transports (an HTTP gateway and a CLI) that import the chat layer:
   — running a single job, anywhere.
 - **[Discovery](internal/discovery.md)** · **[Versions & Drift](internal/versions-drift.md)** — what is
   installed, and what we verified against.
+- **[Harness Adapter Interface](internal/contract.md)** — the one interface a runtime drives every
+  harness through, and its conformance kit.
 - **[Testing Tiers](internal/testing/README.md)** — how any of this stays true across upstream releases.

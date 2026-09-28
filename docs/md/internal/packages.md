@@ -35,6 +35,9 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/discovery` | Is a harness installed, at what version? | [Discovery](discovery.md) |
 | `pkg/discovery/models` | Offline model registry + the `/model` picker parser | [Discovery](discovery.md#which-models-offline) |
 | `pkg/versions` | The embedded pins binding each adapter to an upstream release | [Versions & Drift](versions-drift.md) |
+| `pkg/contract` | The Harness Adapter Interface: the types, `Adapter` / `Session` / `Record`, the registry and the generated JSON Schema; standard library only | [Harness Adapter Interface](contract.md) |
+| `pkg/contract/conformance` | The interface's conformance kit: a fake Agent Adapter and scenarios in P11's prompt language | [Running the kit](contract.md#running-the-kit) |
+| `pkg/contract/fakeadapter` | An in-process harness's adapter: the kit's reference, and a stand-in for a runtime's tests | [Harness Adapter Interface](contract.md) |
 
 ## Internal packages
 
@@ -83,6 +86,8 @@ Consequences worth keeping true:
   without the process-probing half.
 - **Transports import the core; the core knows nothing about transports.** No package under `pkg/`
   imports `net/http`.
+- **`pkg/contract` imports only the standard library** (`TestStandardLibraryOnly`), so a runtime links
+  the interface without any of hw's harness code.
 - **The cores name no harness.** `internal/chatcore` and `internal/wrapcore` import no screen adapter,
   transcript reader or classifier pattern set; a harness is what is registered under its name. A
   binary that imports a core and one harness's adapter links no other harness

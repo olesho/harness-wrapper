@@ -1,0 +1,1331 @@
+{
+  "$defs": {
+    "APIErrorData": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "http_status": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "AgentSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "connectors": {
+          "items": {
+            "$ref": "#/$defs/Connector"
+          },
+          "type": "array"
+        },
+        "credential": {
+          "$ref": "#/$defs/CredentialRef"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "instructions": {
+          "$ref": "#/$defs/Instructions"
+        },
+        "memory": {
+          "$ref": "#/$defs/Memory"
+        },
+        "model": {
+          "type": "string"
+        },
+        "permission_posture": {
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/Skill"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AssistantTextData": {
+      "properties": {
+        "message_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "Batch": {
+      "properties": {
+        "batch_id": {
+          "type": "string"
+        },
+        "checkpoint": {
+          "$ref": "#/$defs/Checkpoint"
+        },
+        "end_of_record": {
+          "type": "boolean"
+        },
+        "faults": {
+          "items": {
+            "$ref": "#/$defs/Fault"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Observation"
+          },
+          "type": "array"
+        },
+        "rescan": {
+          "$ref": "#/$defs/Rescan"
+        },
+        "reset": {
+          "$ref": "#/$defs/Reset"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "Block": {
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/BlockReason"
+        },
+        "resume_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "BlockReason": {
+      "enum": [
+        "usage_limited",
+        "auth_required",
+        "billing",
+        "unrecognized_dialog"
+      ],
+      "type": "string"
+    },
+    "Capability": {
+      "enum": [
+        "resume",
+        "assign_session_id",
+        "prompts",
+        "streaming_text",
+        "tools_observed",
+        "subagents",
+        "rate_limits",
+        "retry_visible"
+      ],
+      "type": "string"
+    },
+    "Certainty": {
+      "enum": [
+        "not_submitted",
+        "maybe_submitted"
+      ],
+      "type": "string"
+    },
+    "Checkpoint": {
+      "properties": {
+        "data": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "format": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "data",
+        "format"
+      ],
+      "type": "object"
+    },
+    "Choice": {
+      "additionalProperties": false,
+      "properties": {
+        "option_id": {
+          "type": "string"
+        },
+        "option_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CloseResult": {
+      "properties": {
+        "drained": {
+          "type": "boolean"
+        },
+        "stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "drained",
+        "stopped"
+      ],
+      "type": "object"
+    },
+    "Code": {
+      "enum": [
+        "protocol",
+        "batch_too_large",
+        "unknown_field",
+        "unexpected",
+        "unsupported",
+        "invalid_spec",
+        "invalid_input",
+        "busy",
+        "prompt_pending",
+        "blocked",
+        "prompt_gone",
+        "invalid_choice",
+        "interrupt_unconfirmed",
+        "open_failed",
+        "exited",
+        "closed",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "Connector": {
+      "additionalProperties": false,
+      "properties": {
+        "http": {
+          "$ref": "#/$defs/HTTPConnector"
+        },
+        "name": {
+          "type": "string"
+        },
+        "stdio": {
+          "$ref": "#/$defs/StdioConnector"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ContentPart": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "CredentialFile": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "CredentialRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "Descriptor": {
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/Capability"
+          },
+          "type": "array"
+        },
+        "checkpoint_format": {
+          "type": "integer"
+        },
+        "contract": {
+          "type": "string"
+        },
+        "credential_kinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessInfo"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "spec": {
+          "$ref": "#/$defs/SpecSupport"
+        }
+      },
+      "required": [
+        "capabilities",
+        "checkpoint_format",
+        "contract",
+        "credential_kinds",
+        "harness",
+        "limits",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "Error": {
+      "properties": {
+        "certainty": {
+          "$ref": "#/$defs/Certainty"
+        },
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "field": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/OpenFailure"
+        },
+        "required_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "ErrorClass": {
+      "enum": [
+        "api",
+        "overloaded",
+        "usage_limit",
+        "auth",
+        "billing",
+        "max_output",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "ExitClass": {
+      "enum": [
+        "clean",
+        "crashed",
+        "killed",
+        "binary_missing",
+        "auth"
+      ],
+      "type": "string"
+    },
+    "Fault": {
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "File": {
+      "properties": {
+        "bytes": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/Root"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "path",
+        "root"
+      ],
+      "type": "object"
+    },
+    "HTTPConnector": {
+      "additionalProperties": false,
+      "properties": {
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "headers_env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "HarnessInfo": {
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter",
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Input": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "items": {
+            "$ref": "#/$defs/ContentPart"
+          },
+          "type": "array"
+        },
+        "input_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "input_id"
+      ],
+      "type": "object"
+    },
+    "Instructions": {
+      "additionalProperties": false,
+      "properties": {
+        "persona": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InterruptRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "deadline_ms": {
+          "type": "integer"
+        },
+        "input_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_id"
+      ],
+      "type": "object"
+    },
+    "Kind": {
+      "enum": [
+        "turn_started",
+        "turn_ended",
+        "user_input",
+        "assistant_text",
+        "tool_use",
+        "tool_result",
+        "api_error",
+        "text_delta",
+        "tool_started",
+        "tool_finished",
+        "subagent_started",
+        "subagent_stopped",
+        "prompt_raised",
+        "prompt_resolved",
+        "rate_limit",
+        "retrying",
+        "blocked",
+        "unblocked",
+        "session_exited"
+      ],
+      "type": "string"
+    },
+    "Layout": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "scratch": {
+          "type": "string"
+        },
+        "secrets": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "config",
+        "home",
+        "scratch",
+        "secrets",
+        "workspace"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "properties": {
+        "max_input_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_input_bytes"
+      ],
+      "type": "object"
+    },
+    "Memory": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/MemoryFile"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "MemoryFile": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path"
+      ],
+      "type": "object"
+    },
+    "Observation": {
+      "properties": {
+        "data": {},
+        "id": {
+          "type": "string"
+        },
+        "input_id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        },
+        "time": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "id",
+        "kind",
+        "origin",
+        "time"
+      ],
+      "type": "object"
+    },
+    "OpenFailure": {
+      "enum": [
+        "adapter_missing",
+        "binary_not_found",
+        "version_unsupported",
+        "capability_missing",
+        "auth_required",
+        "session_not_found",
+        "session_in_use",
+        "config_invalid"
+      ],
+      "type": "string"
+    },
+    "OpenMode": {
+      "enum": [
+        "fresh",
+        "reopen"
+      ],
+      "type": "string"
+    },
+    "OpenRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "$ref": "#/$defs/Checkpoint"
+        },
+        "credential": {
+          "$ref": "#/$defs/CredentialFile"
+        },
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "mode": {
+          "$ref": "#/$defs/OpenMode"
+        },
+        "open_config": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layout",
+        "mode",
+        "open_config"
+      ],
+      "type": "object"
+    },
+    "OpenResult": {
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/State"
+        }
+      },
+      "required": [
+        "session_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "Origin": {
+      "enum": [
+        "record",
+        "live"
+      ],
+      "type": "string"
+    },
+    "Phase": {
+      "enum": [
+        "unopened",
+        "starting",
+        "idle",
+        "busy",
+        "awaiting_answer",
+        "blocked",
+        "exited"
+      ],
+      "type": "string"
+    },
+    "PromptInfo": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "multi_select": {
+          "type": "boolean"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/PromptOption"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "prompt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "prompt",
+        "prompt_id"
+      ],
+      "type": "object"
+    },
+    "PromptOption": {
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "option_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "option_id"
+      ],
+      "type": "object"
+    },
+    "PromptResolvedData": {
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "prompt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "prompt_id"
+      ],
+      "type": "object"
+    },
+    "ProvisionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "type": "string"
+        },
+        "harness_root": {
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "spec": {
+          "$ref": "#/$defs/AgentSpec"
+        }
+      },
+      "required": [
+        "contract",
+        "harness_root",
+        "layout",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "ProvisionResult": {
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/File"
+          },
+          "type": "array"
+        },
+        "history_roots": {
+          "items": {
+            "$ref": "#/$defs/RootPath"
+          },
+          "type": "array"
+        },
+        "open_config": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "secret_paths": {
+          "items": {
+            "$ref": "#/$defs/RootPath"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files",
+        "open_config"
+      ],
+      "type": "object"
+    },
+    "RateLimitData": {
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/RateLimitWindow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "RateLimitWindow": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "resets_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "used_pct": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Receipt": {
+      "enum": [
+        "submitted"
+      ],
+      "type": "string"
+    },
+    "RecordRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint": {
+          "$ref": "#/$defs/Checkpoint"
+        },
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "open_config": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layout",
+        "open_config",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "Recovered": {
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/RecoveredOutcome"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "RecoveredOutcome": {
+      "enum": [
+        "completed",
+        "errored",
+        "interrupted",
+        "cancelled",
+        "refused",
+        "not_found",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Rescan": {
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Reset": {
+      "properties": {
+        "previous": {
+          "$ref": "#/$defs/Checkpoint"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RetryInfo": {
+      "properties": {
+        "attempt": {
+          "type": "integer"
+        },
+        "max": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt",
+        "max"
+      ],
+      "type": "object"
+    },
+    "RetryingData": {
+      "properties": {
+        "attempt": {
+          "type": "integer"
+        },
+        "delay_ms": {
+          "type": "integer"
+        },
+        "http_status": {
+          "type": "integer"
+        },
+        "max": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempt",
+        "max"
+      ],
+      "type": "object"
+    },
+    "Root": {
+      "enum": [
+        "home",
+        "config",
+        "workspace",
+        "secrets",
+        "scratch"
+      ],
+      "type": "string"
+    },
+    "RootPath": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/Root"
+        }
+      },
+      "required": [
+        "path",
+        "root"
+      ],
+      "type": "object"
+    },
+    "SendResult": {
+      "properties": {
+        "receipt": {
+          "$ref": "#/$defs/Receipt"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "receipt",
+        "turn_id"
+      ],
+      "type": "object"
+    },
+    "SessionExitedData": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/ExitClass"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "signal": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "Skill": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/$defs/SkillFile"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "files",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SkillFile": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "path"
+      ],
+      "type": "object"
+    },
+    "SpecSupport": {
+      "properties": {
+        "connectors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "efforts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input_content": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "instructions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "memory": {
+          "type": "boolean"
+        },
+        "models": {
+          "oneOf": [
+            {
+              "const": "any"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "permission_postures": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "type": "object"
+    },
+    "State": {
+      "properties": {
+        "block": {
+          "$ref": "#/$defs/Block"
+        },
+        "input_id": {
+          "type": "string"
+        },
+        "phase": {
+          "$ref": "#/$defs/Phase"
+        },
+        "prompt": {
+          "$ref": "#/$defs/PromptInfo"
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryInfo"
+        },
+        "turn_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase"
+      ],
+      "type": "object"
+    },
+    "StdioConnector": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "SubagentData": {
+      "properties": {
+        "last_message": {
+          "type": "string"
+        },
+        "subagent_id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subagent_id"
+      ],
+      "type": "object"
+    },
+    "TextData": {
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "TextDeltaData": {
+      "properties": {
+        "final": {
+          "type": "boolean"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "message_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ToolFinishedData": {
+      "properties": {
+        "failed": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        },
+        "tool_use_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tool_use_id"
+      ],
+      "type": "object"
+    },
+    "ToolResultData": {
+      "properties": {
+        "is_error": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        },
+        "tool_use_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "output",
+        "tool_use_id"
+      ],
+      "type": "object"
+    },
+    "ToolUseData": {
+      "properties": {
+        "input": {},
+        "name": {
+          "type": "string"
+        },
+        "tool_use_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "tool_use_id"
+      ],
+      "type": "object"
+    },
+    "TurnEndedData": {
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/TurnError"
+        },
+        "outcome": {
+          "$ref": "#/$defs/TurnOutcome"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "TurnError": {
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "http_status": {
+          "type": "integer"
+        },
+        "resume_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "retry_after_s": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "type": "object"
+    },
+    "TurnOutcome": {
+      "enum": [
+        "completed",
+        "errored",
+        "interrupted",
+        "cancelled",
+        "refused"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harness Adapter Interface harness-adapter/1.0"
+}
