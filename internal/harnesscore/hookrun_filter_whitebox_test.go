@@ -1,4 +1,4 @@
-package harness
+package harnesscore
 
 import (
 	"testing"

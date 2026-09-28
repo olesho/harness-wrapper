@@ -2,6 +2,8 @@ package harness
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -191,7 +193,11 @@ func TestDrainHooksEmitsFileEventsAsHooks(t *testing.T) {
 		{HarnessSessionID: "s", Event: transcript.Event{Type: transcript.EventSessionMeta, Source: transcript.SourceFile}},
 		{HarnessSessionID: "s", Event: transcript.Event{Type: transcript.EventText, Text: "from file", Source: transcript.SourceFile}},
 	}
-	if err := writeSpool(spool, "stop", events); err != nil {
+	data, err := transcript.MarshalParsedEvents(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(spool, "stop-1-1-1.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var got []transcript.EventEnvelope

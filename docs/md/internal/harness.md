@@ -9,6 +9,12 @@ do with it on this run — and how do we get its transcript out?*
 > busy detection). `pkg/harness/*` is about **capabilities and orchestration**: session-id extraction
 > from a machine-readable stream, resume argv, hook installation, transcript acquisition.
 
+Everything here except `Run` and `RunTurn` lives in `internal/harnesscore`, which `pkg/harness`
+forwards to. `Run` and `RunTurn` drive a harness through `pkg/chat` and so link every built-in
+harness; the profiles in `pkg/harness/*` are built on the core alone, so one harness's hook handler
+and spool reader link no chat and no other harness
+([Cores that link one harness at a time](architecture.md#cores-that-link-one-harness-at-a-time)).
+
 ![pkg/harness entry points, profiles and acquisition](../diagrams/harness-runtime.svg)
 
 ## Two entry points

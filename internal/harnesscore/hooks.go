@@ -1,4 +1,4 @@
-package harness
+package harnesscore
 
 import "github.com/olesho/harness-wrapper/pkg/transcript"
 

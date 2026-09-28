@@ -1,4 +1,4 @@
-package harness
+package harnesscore
 
 import (
 	"encoding/json"
@@ -34,36 +34,45 @@ type SettingsHookCmd struct {
 // refreshes the loom path each call (self-healing). flock-guarded + atomic.
 func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []string, harnessName string) error {
 	return WithLockedFile(settingsPath, func(existing []byte) ([]byte, error) {
-		settings, hooks, err := loadSettingsJSON(existing)
-		if err != nil {
+		return RenderSettingsJSONHooks(existing, spec, loomArgv, harnessName)
+	})
+}
+
+// RenderSettingsJSONHooks is EnsureSettingsJSONHooks without the file: it
+// returns existing — a settings.json's bytes, nil for none — with spec's hooks
+// installed, exactly as the ensure would write them. It does no I/O, so a
+// renderer that must not touch the filesystem (a Harness Adapter's Provision)
+// gets the same bytes.
+func RenderSettingsJSONHooks(existing []byte, spec *HookSpec, loomArgv []string, harnessName string) ([]byte, error) {
+	settings, hooks, err := loadSettingsJSON(existing)
+	if err != nil {
+		return nil, err
+	}
+	// Group managed entries by native event FIRST: one native event can carry
+	// several loom matchers (e.g. Claude's PreToolUse carries the yield-guard
+	// and, for a consumer that adds them, the per-tool hook), and the upsert
+	// removes all loom-owned matchers for an event before re-adding — so they
+	// must be added together or the second would delete the first.
+	byEvent := map[string][]SettingsHookMatcher{}
+	add := func(e HookEntry) {
+		cmd := RenderHookCommand(loomArgv, harnessName, e.Arg, spec.Owner)
+		byEvent[e.NativeEvent] = append(byEvent[e.NativeEvent], SettingsHookMatcher{
+			Matcher: e.Matcher,
+			Hooks:   []SettingsHookCmd{{Type: "command", Command: cmd}},
+		})
+	}
+	for _, e := range spec.Events {
+		add(e)
+	}
+	if spec.Yield != nil {
+		add(*spec.Yield)
+	}
+	for nativeEvent, loomMatchers := range byEvent {
+		if err := upsertSettingsHooks(hooks, nativeEvent, loomMatchers); err != nil {
 			return nil, err
 		}
-		// Group managed entries by native event FIRST: one native event can carry
-		// several loom matchers (e.g. Claude's PreToolUse carries the yield-guard
-		// and, for a consumer that adds them, the per-tool hook), and the upsert
-		// removes all loom-owned matchers for an event before re-adding — so they
-		// must be added together or the second would delete the first.
-		byEvent := map[string][]SettingsHookMatcher{}
-		add := func(e HookEntry) {
-			cmd := RenderHookCommand(loomArgv, harnessName, e.Arg, spec.Owner)
-			byEvent[e.NativeEvent] = append(byEvent[e.NativeEvent], SettingsHookMatcher{
-				Matcher: e.Matcher,
-				Hooks:   []SettingsHookCmd{{Type: "command", Command: cmd}},
-			})
-		}
-		for _, e := range spec.Events {
-			add(e)
-		}
-		if spec.Yield != nil {
-			add(*spec.Yield)
-		}
-		for nativeEvent, loomMatchers := range byEvent {
-			if err := upsertSettingsHooks(hooks, nativeEvent, loomMatchers); err != nil {
-				return nil, err
-			}
-		}
-		return marshalSettingsJSON(settings, hooks)
-	})
+	}
+	return marshalSettingsJSON(settings, hooks)
 }
 
 // loadSettingsJSON parses the settings file into (top-level map, hooks map),

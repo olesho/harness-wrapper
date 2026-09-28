@@ -1,4 +1,4 @@
-package harness
+package harnesscore
 
 // Mode selects how the orchestrator acquires the transcript for a run. It is
 // the F1 flag of the P3 rollout: default Off (no acquisition, no behavior

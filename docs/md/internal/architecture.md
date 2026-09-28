@@ -46,13 +46,14 @@ This keeps the conversation semantics in one place and lets new transports (a fu
 
 ## Cores that link one harness at a time
 
-`pkg/chat` and `pkg/wrapper` are thin: each is a core package plus every built-in harness
-([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
+`pkg/chat`, `pkg/wrapper` and `pkg/harness` are thin: each is a core package plus what links
+every built-in harness ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 
 | Public package | Its core | What the public package adds |
 |---|---|---|
 | `pkg/wrapper` | `internal/wrapcore` | Registers each built-in harness's classifier patterns (`wrapcore.RegisterPatterns`) |
 | `pkg/chat` | `internal/chatcore` | Registers each built-in screen adapter under its name (`chatcore.RegisterAdapter`) |
+| `pkg/harness` | `internal/harnesscore` | `Run` and `RunTurn`, which drive a harness through `pkg/chat` |
 
 Every exported identifier of a public package is an alias of, or forwards to, its core's
 (`go generate` writes them), so callers see one API and one set of types. A core names no harness:
@@ -60,7 +61,9 @@ the conversation reads a harness's screens through its adapter's optional capabi
 `pkg/turns` — `ReadinessDetector`, `DialogDetector`, `DialogAnchorer`, `DialogReader`,
 `InterstitialDismisser` — not through a switch on its name. So code that must contain one harness
 and no other — a runtime's harness list, the Harness Adapter's profiles — imports the cores and
-registers only its own; `internal/chatcore`'s `TestLinks_OneHarnessAtATime` holds that line.
+registers only its own; `internal/chatcore`'s `TestLinks_OneHarnessAtATime` holds that line. A
+harness's hook profile (`pkg/harness/claude`, …) is built on `internal/harnesscore`, so its hook
+handler and spool link no chat and no other harness (`TestLinks_NoChatOneHarness`).
 
 ## Beyond the four layers
 

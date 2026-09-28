@@ -45,7 +45,8 @@ Where everything lives, what depends on what, and which page documents it.
 |---|---|---|
 | `internal/wrapcore` | `pkg/wrapper` without any classifier patterns; `harness/*` holds each harness's patterns, `detector` their matcher | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
 | `internal/chatcore` | `pkg/chat` without any screen adapter: a harness is whatever adapter is registered under its name | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
-| `internal/facadegen` | Writes `pkg/chat`'s and `pkg/wrapper`'s forwarding declarations from their cores (`go generate`) | — |
+| `internal/harnesscore` | `pkg/harness` without `Run` and `RunTurn`: the profile registry, hook specs, the hook handler and its spool, the settings.json merge. The per-harness hook profiles build on it, so they link no chat | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [Harness profiles & runs](harness.md) |
+| `internal/facadegen` | Writes `pkg/chat`'s, `pkg/wrapper`'s and `pkg/harness`'s forwarding declarations from their cores (`go generate`) | — |
 | `internal/env` | The environment core: provisioners, containments, `Workspace`, `Compose`, lifecycle, retention | [Execution environments](env.md) · [ADR-003](decisions/adr-003-env-visibility.md) |
 | `internal/env/daytona`, `internal/env/openshell` | The shipped provisioner / containment drivers | [Two orthogonal axes](env.md#two-orthogonal-axes) |
 | `internal/fakeharness` | Script format and builder for the scriptable real-PTY fake | [Fake Harness](testing/fakeharness.md) |
@@ -72,6 +73,8 @@ cmd/*  →  pkg/chat · pkg/harness · pkg/oneshot · pkg/wrapper
 pkg/oneshot  →  pkg/harness  →  pkg/chat  →  internal/chatcore  →  pkg/turns  →  pkg/screen · internal/wrapcore
 pkg/chat     →  pkg/turns/harness/* · pkg/turns/generic · pkg/wrapper   (the built-ins it registers)
 pkg/wrapper  →  internal/wrapcore · internal/wrapcore/harness/*          (the built-ins it registers)
+pkg/harness  →  internal/harnesscore · pkg/chat · pkg/wrapper
+pkg/harness/*  →  internal/harnesscore · pkg/transcript/*                (a hook profile links no chat)
 pkg/turns  →  pkg/transcript          (for the reader capability's return type)
 pkg/env    →  internal/env · pkg/turnproto
 ```
@@ -91,7 +94,8 @@ Consequences worth keeping true:
 - **The cores name no harness.** `internal/chatcore` and `internal/wrapcore` import no screen adapter,
   transcript reader or classifier pattern set; a harness is what is registered under its name. A
   binary that imports a core and one harness's adapter links no other harness
-  (`TestLinks_OneHarnessAtATime`).
+  (`TestLinks_OneHarnessAtATime`). `internal/harnesscore` imports no chat, so one harness's hook
+  profile links neither chat nor another harness (`TestLinks_NoChatOneHarness`).
 
 ## Nested modules
 
