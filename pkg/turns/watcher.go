@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
+	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
 	"github.com/olesho/harness-wrapper/pkg/screen"
-	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // Watcher composes a wrapper.Session, a screen.Screen, and an Adapter

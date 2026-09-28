@@ -69,7 +69,7 @@ func TestContract_WireTypes(t *testing.T) {
 			fmt.Fprintf(&b, "\t%s %s `json:%q`\n", f.Name, f.Type.String(), f.Tag.Get("json"))
 		}
 	}
-	assertGolden(t, "wire_contract.golden", b.String())
+	assertGolden(t, "wire_contract.golden", callerNames.Replace(b.String()))
 }
 
 // TestContract_Routes freezes the HTTP method+path surface.
@@ -124,3 +124,10 @@ func assertGolden(t *testing.T, name, got string) {
 		t.Errorf("contract drift in %s — if intentional, regenerate with UPDATE_GOLDEN=1\n--- got ---\n%s\n--- want ---\n%s", name, got, string(want))
 	}
 }
+
+// callerNames writes each type under the package the gateway names it by:
+// pkg/chat's types are internal/chatcore's, and pkg/wrapper's
+// internal/wrapcore's — aliases, so identical types — while reflection reports
+// the defining package. The wire contract does not change when a type moves
+// between a facade and its core.
+var callerNames = strings.NewReplacer("chatcore.", "chat.", "wrapcore.", "wrapper.")

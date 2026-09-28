@@ -16,9 +16,9 @@ package turns
 import (
 	"time"
 
+	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
-	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // Kind is the categorical type of a turn event.
@@ -550,4 +550,71 @@ type PermissionPostureDetector interface {
 	// as in PermissionModeDetector. It never means "readable, and not the
 	// posture you asked about".
 	PermissionPosture(snap screen.Snapshot) (PermissionPosture, bool)
+}
+
+// ReadinessDetector is an optional capability adapters implement when their
+// harness paints its composer before it will take a message — during startup,
+// behind a blocking dialog, or while a turn runs. The chat layer then types a
+// message only once ReadyForInput holds, and completes a turn by idleness only
+// at a ready prompt. An adapter without it is always ready.
+type ReadinessDetector interface {
+	// ReadyForInput reports whether the rendered screen shows a composer that
+	// will take a message now.
+	ReadyForInput(text string) bool
+}
+
+// DialogState is what an adapter's DialogDetector sees on a screen. The states
+// are distinct because "no dialog" and "a dialog whose choices cannot be read"
+// look alike to a yes/no reading, and only the first ever clears on its own.
+type DialogState int
+
+const (
+	// DialogNone: no blocking dialog on screen.
+	DialogNone DialogState = iota
+	// DialogPending: a dialog's anchor is up but its choices have not painted
+	// yet — a mid-render frame.
+	DialogPending
+	// DialogUnparseable: a dialog's anchor and choice-shaped lines are up, but
+	// no usable option set could be read. It never clears on its own.
+	DialogUnparseable
+	// DialogReadable: a dialog whose choices were read; the adapter reports it
+	// as an InputRequest.
+	DialogReadable
+)
+
+// DialogDetector is an optional capability adapters implement to tell the
+// chat layer which DialogState a screen is in, so that a dialog nothing can
+// answer fails a send quickly instead of waiting out its deadline.
+type DialogDetector interface {
+	DialogState(text string) DialogState
+}
+
+// DialogAnchorer is an optional capability adapters implement to name the
+// literal lines their harness's blocking dialogs paint, for a caller telling a
+// modal from a login wall.
+type DialogAnchorer interface {
+	DialogAnchors() []string
+}
+
+// DialogReader is an optional capability adapters implement when a dialog can
+// be read again from any later screen. The chat layer uses it to confirm that
+// an answer landed — the dialog left, or its highlight moved — instead of
+// trusting the write.
+type DialogReader interface {
+	// ReadDialog parses the answerable dialog on the screen; false when none
+	// can be answered.
+	ReadDialog(text string) (*InputRequest, bool)
+	// DialogAnchorPresent reports whether a dialog's anchor is still painted,
+	// including a dialog whose choices have not rendered yet.
+	DialogAnchorPresent(text string) bool
+}
+
+// InterstitialDismisser is an optional capability adapters implement when
+// their harness paints startup interstitials: screens that block input but
+// carry no decision for the caller, which the chat layer clears itself.
+type InterstitialDismisser interface {
+	// DismissKeys returns the keystrokes that safely dismiss req, and whether
+	// req is such an interstitial. updates says whether an update prompt counts
+	// as one; by default it is the caller's choice to make.
+	DismissKeys(req *InputRequest, updates bool) ([]byte, bool)
 }

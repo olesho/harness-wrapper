@@ -17,14 +17,14 @@ Where everything lives, what depends on what, and which page documents it.
 
 | Path | Responsibility | Docs |
 |---|---|---|
-| `pkg/wrapper` | Run a harness under a PTY; classify the run into a normalized `Status`; translate the execution-mode knobs into argv | [Wrapper & Status](wrapper.md) |
+| `pkg/wrapper` | Run a harness under a PTY; classify the run into a normalized `Status`; translate the execution-mode knobs into argv. `internal/wrapcore` plus every built-in harness's classifier patterns | [Wrapper & Status](wrapper.md) |
 | `pkg/wrapper/trace` | Diagnostic event vocabulary (observability only, not a stability surface) | [Trace vs. events](wrapper.md#trace-vs-events) |
 | `pkg/screen` | vt100 emulator wrapper turning PTY bytes into a queryable snapshot | [Screen](screen.md) |
 | `pkg/turns` | The per-harness `Adapter` contract, capability interfaces, and the `Watcher` | [Turns & Adapters](turns.md) |
 | `pkg/turns/generic` | The status-only fallback adapter every other adapter embeds | [Adapter Matrix](../guide/adapters.md#generic) |
 | `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode`, `pi` | [Adapter Matrix](../guide/adapters.md) |
-| `pkg/chat` | The `Conversation` API: control, send, events, history, interactive input, permission switching | [Chat API](../guide/chat.md) |
-| `pkg/chat/memstore` | The in-memory `Store` implementation | [Store interface](../guide/chat.md#store-interface) |
+| `pkg/chat` | The `Conversation` API: control, send, events, history, interactive input, permission switching. `internal/chatcore` plus every built-in screen adapter | [Chat API](../guide/chat.md) |
+| `pkg/chat/memstore` | The in-memory `Store` implementation, written against the chat core so it links no harness | [Store interface](../guide/chat.md#store-interface) |
 | `pkg/transcript` | Read-only parsers for harness-owned JSONL logs — whole-file readers and a checkpointed follower — and the canonical `Event` | [Transcripts](transcript.md) |
 | `pkg/transcript/*` | Per-harness readers: `claudecode`, `codex`, `pi` | [Transcripts](transcript.md#per-harness-logs) |
 | `pkg/harness` | Per-harness **capability profiles**, hook installation, transcript acquisition, and `RunTurn` | [Harness profiles & runs](harness.md) |
@@ -40,6 +40,9 @@ Where everything lives, what depends on what, and which page documents it.
 
 | Path | Responsibility | Docs |
 |---|---|---|
+| `internal/wrapcore` | `pkg/wrapper` without any classifier patterns; `harness/*` holds each harness's patterns, `detector` their matcher | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
+| `internal/chatcore` | `pkg/chat` without any screen adapter: a harness is whatever adapter is registered under its name | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
+| `internal/facadegen` | Writes `pkg/chat`'s and `pkg/wrapper`'s forwarding declarations from their cores (`go generate`) | — |
 | `internal/env` | The environment core: provisioners, containments, `Workspace`, `Compose`, lifecycle, retention | [Execution environments](env.md) · [ADR-003](decisions/adr-003-env-visibility.md) |
 | `internal/env/daytona`, `internal/env/openshell` | The shipped provisioner / containment drivers | [Two orthogonal axes](env.md#two-orthogonal-axes) |
 | `internal/fakeharness` | Script format and builder for the scriptable real-PTY fake | [Fake Harness](testing/fakeharness.md) |
@@ -63,7 +66,9 @@ The rule is one-way and load-bearing: **a layer may import the one below it, nev
 
 ```
 cmd/*  →  pkg/chat · pkg/harness · pkg/oneshot · pkg/wrapper
-pkg/oneshot  →  pkg/harness  →  pkg/chat  →  pkg/turns  →  pkg/screen · pkg/wrapper
+pkg/oneshot  →  pkg/harness  →  pkg/chat  →  internal/chatcore  →  pkg/turns  →  pkg/screen · internal/wrapcore
+pkg/chat     →  pkg/turns/harness/* · pkg/turns/generic · pkg/wrapper   (the built-ins it registers)
+pkg/wrapper  →  internal/wrapcore · internal/wrapcore/harness/*          (the built-ins it registers)
 pkg/turns  →  pkg/transcript          (for the reader capability's return type)
 pkg/env    →  internal/env · pkg/turnproto
 ```
@@ -78,6 +83,10 @@ Consequences worth keeping true:
   without the process-probing half.
 - **Transports import the core; the core knows nothing about transports.** No package under `pkg/`
   imports `net/http`.
+- **The cores name no harness.** `internal/chatcore` and `internal/wrapcore` import no screen adapter,
+  transcript reader or classifier pattern set; a harness is what is registered under its name. A
+  binary that imports a core and one harness's adapter links no other harness
+  (`TestLinks_OneHarnessAtATime`).
 
 ## Nested modules
 

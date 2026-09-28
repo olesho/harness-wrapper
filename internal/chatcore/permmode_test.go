@@ -1,0 +1,1561 @@
+package chatcore
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/screen"
+	"github.com/olesho/harness-wrapper/pkg/turns"
+	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
+	"github.com/olesho/harness-wrapper/pkg/wrapper"
+)
+
+// Hermetic tests for the permission-mode driver. They drive a real screen
+// emulator and the real adapters through the cheap c.writeStdin seam
+// (conversation.go:178 — the same seam input_test.go:38 and quit_test.go:21
+// already use), so a full switch cycle runs with no PTY and no child process:
+// the fake's write handler repaints the screen exactly the way the harness
+// would, and the driver reads it back through turns.PermissionModeDetector.
+//
+// The PTY-driven half — a real process, real Shift+Tab bytes over a real
+// terminal — lives in permmode_ring_test.go.
+
+// --- screen vocabulary ---------------------------------------------------
+
+// claudeFooters is the live claude-code footer line for each canonical rung,
+// copied from the shapes pinned in claudecode/permmode.go (captured from
+// claude-code 2.1.217). "manual mode" deliberately carries NO "(shift+tab to
+// cycle)" hint, matching the real footer.
+//
+// The map is keyed by RING POSITION, not by rung: "dontAsk" is claude's
+// launch-only sixth footer word, which reports the SAME manual rung while
+// sitting off the Shift+Tab ring. Because claudeModeScreen keys straight off
+// this map, a fake ring may now contain "dontAsk" and paint it faithfully.
+var claudeFooters = map[string]string{
+	"plan":    "⏸ plan mode on (shift+tab to cycle) · ← for agents",
+	"manual":  "⏸ manual mode on · ← for agents",
+	"ask":     "⏵⏵ accept edits on (shift+tab to cycle) · ← for agents",
+	"auto":    "⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+	"bypass":  "⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+	"dontAsk": "⏵⏵ don't ask on (shift+tab to cycle) · ← for agents",
+}
+
+// claudePosture is the posture the claude-code adapter reads back for one of
+// claudeFooters' keys. It is written out longhand rather than derived, so a
+// change to the adapter's tables trips these tests instead of moving with them.
+var claudePosture = map[string]turns.PermissionPosture{
+	"plan":    {Rung: "plan", Native: "plan", OnRing: true},
+	"manual":  {Rung: "manual", Native: "default", OnRing: true},
+	"ask":     {Rung: "ask", Native: "acceptEdits", OnRing: true},
+	"auto":    {Rung: "auto", Native: "auto", OnRing: true},
+	"bypass":  {Rung: "bypass", Native: "bypassPermissions", OnRing: true},
+	"dontAsk": {Rung: "manual", Native: "dontAsk", OnRing: false},
+}
+
+// claudeModeScreen is a settled claude composer painting the footer for rung.
+// It carries the "Claude Code" header and the "❯" composer so readyForInput
+// passes, which SetPermissionMode gates on before its first press.
+func claudeModeScreen(rung string) []string {
+	return []string{"Claude Code", "", "❯ ", "", claudeFooters[rung]}
+}
+
+// codexModeScreen is a settled codex composer. Codex paints a marker ONLY in
+// Plan mode, right-aligned in the hint row's gutter, so "default" is the
+// absence of one — exactly the asymmetry codex.collaborationMode reads.
+func codexModeScreen(mode string) []string {
+	lines := []string{"Codex", "", "› ", ""}
+	if mode == codexCollabPlan {
+		lines = append(lines, strings.Repeat(" ", 60)+"Plan mode (shift+tab to cycle)")
+	}
+	return lines
+}
+
+// codexPlanRefusalScreen is codex refusing the slash command while its startup
+// MCP boot still counts as a task in progress. The composer is ALREADY painted
+// (that is the whole trap: prompt-readiness does not gate this), so the screen
+// stays readable and readyForInput keeps returning true.
+func codexPlanRefusalScreen() []string {
+	return []string{
+		"Codex",
+		"",
+		"■ '/plan' is disabled while a task is in progress.",
+		"",
+		"› ",
+		"",
+	}
+}
+
+// bypassAcceptScreen is claude's bypass-acceptance dialog, the shape pinned in
+// claudecode/input_test.go:24 (bypassScreen) and
+// cmd/harness-wrapper/permission_pin_test.go:13. claudecode.DetectInput
+// classifies it BLOCKING; the footer is gone, so the mode marker is unreadable
+// while it is up — which is precisely why the ring is unreachable through it.
+func bypassAcceptScreen() []string {
+	return []string{
+		"WARNING: Claude Code running in Bypass Permissions mode",
+		"",
+		"By proceeding, you accept all risks.",
+		"",
+		"❯ 1. Yes, I accept",
+		"  2. No, exit",
+		"",
+	}
+}
+
+// paint repaints the emulator: clear + home, then each line with a CRLF so the
+// cursor returns to column 0 (a bare "\n" would stair-step).
+func paint(sc *screen.Screen, lines []string) {
+	var b strings.Builder
+	b.WriteString("\x1b[2J\x1b[H")
+	for _, l := range lines {
+		b.WriteString(l)
+		b.WriteString("\r\n")
+	}
+	_, _ = sc.Write([]byte(b.String()))
+}
+
+// --- the hermetic fake ---------------------------------------------------
+
+// permModeFake stands in for the harness's stdin: it records every keystroke
+// the driver writes and repaints the screen the way the real TUI would.
+//
+// ring/idx model the harness's own permission-mode cycle. advance is the knob
+// the scenarios vary: the healthy fake steps one position per Shift+Tab, a
+// STUCK fake ignores the press entirely (bound exhaustion), and a RATCHET fake
+// walks upward and then refuses to come back down (the indeterminate case).
+type permModeFake struct {
+	mu sync.Mutex
+
+	conv    *Conversation
+	sc      *screen.Screen
+	harness string
+
+	ring []string
+	idx  int
+
+	writes    [][]byte
+	shiftTabs int
+	planCmds  int
+
+	// advance maps the current ring index to the next one on a Shift+Tab.
+	// nil means "step forward by one", the healthy cycle.
+	advance func(idx int) int
+
+	// onPress runs after the ring index moved and before the repaint, so a
+	// scenario can substitute a different screen (a modal) for this frame.
+	// Returning false suppresses the normal mode repaint.
+	onPress func(f *permModeFake) bool
+
+	// onPlan runs instead of the normal repaint when the driver submits
+	// "/plan". Returning false suppresses the normal repaint.
+	onPlan func(f *permModeFake) bool
+}
+
+func (f *permModeFake) mode() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ring[f.idx]
+}
+
+func (f *permModeFake) counts() (shiftTabs, planCmds int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.shiftTabs, f.planCmds
+}
+
+// repaint paints the current ring position for the fake's harness.
+func (f *permModeFake) repaint() {
+	f.mu.Lock()
+	mode := f.ring[f.idx]
+	f.mu.Unlock()
+	if f.harness == "codex" {
+		paint(f.sc, codexModeScreen(mode))
+		return
+	}
+	paint(f.sc, claudeModeScreen(mode))
+}
+
+// write is the c.writeStdin seam. It runs on the DRIVER's goroutine, so every
+// repaint it performs is visible to the very next PermissionMode() read — which
+// keeps these tests deterministic without sleeps.
+func (f *permModeFake) write(p []byte) (int, error) {
+	f.mu.Lock()
+	f.writes = append(f.writes, append([]byte(nil), p...))
+	f.mu.Unlock()
+
+	switch {
+	case string(p) == shiftTabCSI9_2u:
+		f.mu.Lock()
+		f.shiftTabs++
+		if f.advance != nil {
+			f.idx = f.advance(f.idx)
+		} else {
+			f.idx = (f.idx + 1) % len(f.ring)
+		}
+		f.mu.Unlock()
+		if f.onPress != nil && !f.onPress(f) {
+			return len(p), nil
+		}
+		f.repaint()
+	case strings.HasPrefix(string(p), "/plan"):
+		f.mu.Lock()
+		f.planCmds++
+		f.mu.Unlock()
+		if f.onPlan != nil {
+			if !f.onPlan(f) {
+				return len(p), nil
+			}
+		} else {
+			// A healthy codex accepts the slash command and enters Plan mode.
+			f.mu.Lock()
+			for i, m := range f.ring {
+				if m == codexCollabPlan {
+					f.idx = i
+					break
+				}
+			}
+			f.mu.Unlock()
+		}
+		f.repaint()
+	default:
+		// A menu answer (an InputPolicy or a client Answer resolving a modal)
+		// or any other keystroke: no mode change, just repaint the composer so
+		// the dialog is gone.
+		f.repaint()
+	}
+	return len(p), nil
+}
+
+// newPermModeConv assembles a Conversation wired to a real screen and a real
+// adapter but no process: opts.Harness picks the adapter, the fake owns stdin.
+// The control token is NOT taken — tests that need it call AcquireControl, so
+// the ErrNoControl precondition stays honest.
+func newPermModeConv(t *testing.T, opts Options, ring []string, startIdx int) (*Conversation, *permModeFake) {
+	t.Helper()
+	if opts.Harness == "" {
+		opts.Harness = chatClaudeCode
+	}
+	if opts.permModeRenderTimeout == 0 {
+		// Short enough that the bound-exhaustion scenarios (2×ringLen presses,
+		// twice over) finish in well under a second.
+		opts.permModeRenderTimeout = 40 * time.Millisecond
+	}
+	adapter, err := resolveAdapter(opts.Harness)
+	if err != nil {
+		t.Fatalf("resolveAdapter(%q): %v", opts.Harness, err)
+	}
+	sc := screen.New(120, 40)
+	conv := &Conversation{
+		opts:         opts,
+		adapter:      adapter,
+		screen:       sc,
+		eventCh:      make(chan ConversationEvent, 16),
+		closed:       make(chan struct{}),
+		inputStateCh: make(chan struct{}, 1),
+		queue:        newControlQueue(),
+	}
+	fake := &permModeFake{conv: conv, sc: sc, harness: opts.Harness, ring: ring, idx: startIdx}
+	conv.writeStdin = fake.write
+	if len(ring) > 0 {
+		fake.repaint()
+	}
+	return conv, fake
+}
+
+// withControl acquires the control token for the duration of the test, the way
+// a real caller does. It is deliberately NOT folded into newPermModeConv: the
+// whole point of the precondition is that the DRIVER never acquires it.
+func withControl(t *testing.T, conv *Conversation) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	release, err := conv.AcquireControl(ctx)
+	if err != nil {
+		t.Fatalf("AcquireControl: %v", err)
+	}
+	t.Cleanup(release)
+}
+
+func testCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+var (
+	claudeRing4 = []string{"plan", "manual", "ask", "auto"}
+	claudeRing5 = []string{"plan", "manual", "ask", "auto", "bypass"}
+)
+
+// --- passive read --------------------------------------------------------
+
+// PermissionMode is a pure adapter consult: it takes no token, gates on no
+// readiness, and answers ("", false) for a harness whose adapter does not
+// implement turns.PermissionModeDetector.
+func TestPermissionMode_AdapterConsult(t *testing.T) {
+	for _, tc := range []struct {
+		harness string
+		lines   []string
+		want    string
+		wantOK  bool
+	}{
+		{chatClaudeCode, claudeModeScreen("plan"), "plan", true},
+		{chatClaudeCode, claudeModeScreen("bypass"), "bypass", true},
+		{chatClaudeCode, []string{"Claude Code", "", "❯ "}, "", false},
+		{"codex", codexModeScreen(codexCollabPlan), codexCollabPlan, true},
+		{"codex", codexModeScreen(codexCollabDefault), codexCollabDefault, true},
+		{"pi", claudeModeScreen("plan"), "", false},
+		{"opencode", claudeModeScreen("plan"), "", false},
+		{"generic", claudeModeScreen("plan"), "", false},
+	} {
+		t.Run(tc.harness+"/"+tc.want, func(t *testing.T) {
+			conv, _ := newPermModeConv(t, Options{Harness: tc.harness}, nil, 0)
+			paint(conv.screen, tc.lines)
+			got, ok := conv.PermissionMode()
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("PermissionMode() = (%q, %v), want (%q, %v)", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+// --- control token -------------------------------------------------------
+
+// The driver requires the token and NEVER acquires it: a caller that forgot
+// gets ErrNoControl rather than a switch performed behind another holder's back.
+func TestSetPermissionMode_RequiresControlToken(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 3)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
+	if !errors.Is(err, ErrNoControl) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want ErrNoControl", mode, err)
+	}
+	if st, _ := fake.counts(); st != 0 {
+		t.Errorf("wrote %d Shift+Tab presses without the token, want 0", st)
+	}
+}
+
+// The natural caller sequence — hold the token across the WHOLE
+// blocked → Answer → retry recovery — must not deadlock. It only works because
+// SetPermissionMode never calls AcquireControl itself: controlQueue is
+// non-reentrant, so a self-acquiring driver would block here until ctx expired.
+func TestSetPermissionMode_BlockedThenAnswerThenRetry_NoDeadlock(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing5, 3) // start: auto
+
+	var req *turns.InputRequest
+	// The first press lands on "bypass" and raises the acceptance dialog.
+	fake.onPress = func(f *permModeFake) bool {
+		if f.mode() != "bypass" || req != nil {
+			return true
+		}
+		paint(f.sc, bypassAcceptScreen())
+		r, ok := claudecode.DetectInput(f.sc.Snapshot().Text)
+		if !ok {
+			t.Errorf("claudecode.DetectInput did not classify the bypass acceptance screen")
+			return false
+		}
+		req = r
+		f.conv.handleInputRequested(r)
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	release, err := conv.AcquireControl(ctx)
+	if err != nil {
+		t.Fatalf("AcquireControl: %v", err)
+	}
+	defer release()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		mode, err := conv.SetPermissionMode(ctx, "bypass")
+		var blocked *PermissionModeBlockedError
+		if !errors.As(err, &blocked) {
+			t.Errorf("SetPermissionMode = (%q, %v), want *PermissionModeBlockedError", mode, err)
+			return
+		}
+		if !errors.Is(err, ErrPermissionModeBlockedByInput) {
+			t.Errorf("errors.Is(err, ErrPermissionModeBlockedByInput) = false for %v", err)
+		}
+
+		// The carried request is the CLIENT-facing shape, identical to what
+		// PendingInput reports — which is what makes Answer able to consume it.
+		pending := conv.PendingInput()
+		if pending == nil {
+			t.Errorf("PendingInput() = nil while blocked")
+			return
+		}
+		if blocked.Request.ID != pending.ID {
+			t.Errorf("blocked.Request.ID = %q, want %q (PendingInput)", blocked.Request.ID, pending.ID)
+		}
+		if len(blocked.Request.Options) != len(pending.Options) {
+			t.Errorf("blocked.Request has %d options, PendingInput has %d",
+				len(blocked.Request.Options), len(pending.Options))
+			return
+		}
+		for i := range pending.Options {
+			if blocked.Request.Options[i] != pending.Options[i] {
+				t.Errorf("Options[%d] = %+v, want %+v", i, blocked.Request.Options[i], pending.Options[i])
+			}
+		}
+
+		// Resolve it the documented way — still holding the token — then retry.
+		if err := conv.Answer(ctx, blocked.Request.ID, InputAnswer{OptionID: "1"}); err != nil {
+			t.Errorf("Answer: %v", err)
+			return
+		}
+		conv.handleInputResolved(req)
+
+		mode, err = conv.SetPermissionMode(ctx, "bypass")
+		if err != nil {
+			t.Errorf("retry SetPermissionMode: (%q, %v), want success", mode, err)
+		}
+		if mode != "bypass" {
+			t.Errorf("retry final mode = %q, want bypass", mode)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("SetPermissionMode / Answer / retry deadlocked — the driver must not acquire the control token itself")
+	}
+}
+
+// --- blocking input mid-cycle -------------------------------------------
+
+// The security-relevant case: the bypass acceptance dialog appears mid-cycle.
+// The driver must stop pressing IMMEDIATELY — never Shift+Tab into an open
+// modal — and hand the caller the request it needs to answer.
+func TestSetPermissionMode_StopsOnBypassAcceptanceDialog(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing5, 0) // start: plan
+	withControl(t, conv)
+
+	fake.onPress = func(f *permModeFake) bool {
+		paint(f.sc, bypassAcceptScreen())
+		r, ok := claudecode.DetectInput(f.sc.Snapshot().Text)
+		if !ok {
+			t.Errorf("DetectInput did not classify the bypass acceptance screen")
+			return false
+		}
+		f.conv.handleInputRequested(r)
+		return false
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "auto")
+
+	var blocked *PermissionModeBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want *PermissionModeBlockedError", mode, err)
+	}
+	if blocked.Request.Kind == "" {
+		t.Errorf("blocked.Request.Kind is empty; want the classified dialog kind")
+	}
+	if st, _ := fake.counts(); st != 1 {
+		t.Errorf("wrote %d Shift+Tab presses, want exactly 1 — the driver pressed into an open modal", st)
+	}
+	// Restoration is NOT attempted through a modal: the ring is unreachable
+	// there, so the error carries the last observed posture instead.
+	if mode != blocked.Observed {
+		t.Errorf("returned mode %q != blocked.Observed %q", mode, blocked.Observed)
+	}
+}
+
+// With an InputPolicy that resolves the dialog, the same cycle completes: the
+// policy's keystrokes clear the modal and the driver keeps going.
+func TestSetPermissionMode_InputPolicyResolvesDialog(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness: chatClaudeCode,
+		// claudecode classifies the bypass-acceptance screen under its own
+		// "bypass_acceptance" kind (claudecode.KindBypassAcceptance), distinct
+		// from the folder-trust dialog's "trust_prompt" — so this policy must
+		// name that kind, not the trust one, to resolve the dialog below.
+		InputPolicy: &InputPolicy{ByKind: map[string]Disposition{
+			claudecode.KindBypassAcceptance: {Kind: DispositionAnswer, OptionID: "1"},
+		}},
+	}, claudeRing5, 3) // start: auto
+	withControl(t, conv)
+
+	raised := 0
+	fake.onPress = func(f *permModeFake) bool {
+		if f.mode() != "bypass" || raised > 0 {
+			return true
+		}
+		raised++
+		paint(f.sc, bypassAcceptScreen())
+		r, ok := claudecode.DetectInput(f.sc.Snapshot().Text)
+		if !ok {
+			t.Errorf("DetectInput did not classify the bypass acceptance screen")
+			return false
+		}
+		// The policy answers inside handleInputRequested; the fake's default
+		// write arm repaints the (now bypass) composer, then we clear the
+		// pending request exactly as the adapter's InputResolved event would.
+		f.conv.handleInputRequested(r)
+		f.conv.handleInputResolved(r)
+		return false
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "bypass")
+	if err != nil {
+		t.Fatalf("SetPermissionMode = (%q, %v), want success once the policy resolves the dialog", mode, err)
+	}
+	if mode != "bypass" {
+		t.Errorf("final mode = %q, want bypass", mode)
+	}
+	if raised != 1 {
+		t.Errorf("acceptance dialog raised %d times, want 1", raised)
+	}
+}
+
+// --- bound exhaustion ----------------------------------------------------
+
+// A harness that ignores every press: the driver must give up at the bound,
+// restore the starting posture, and say so with ErrPermissionModeSwitchFailed.
+func TestSetPermissionMode_BoundExhausted_RestoresStart(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "auto",
+	}, claudeRing4, 3) // start: auto, and the fake never advances
+	fake.advance = func(idx int) int { return idx }
+	withControl(t, conv)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
+	if !errors.Is(err, ErrPermissionModeSwitchFailed) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want ErrPermissionModeSwitchFailed", mode, err)
+	}
+	if mode != "auto" {
+		t.Errorf("final mode = %q, want the starting posture auto", mode)
+	}
+	if live, _ := conv.PermissionMode(); live != "auto" {
+		t.Errorf("session left at %q, want the starting posture auto", live)
+	}
+	if st, _ := fake.counts(); st != 2*len(claudeRing4) {
+		t.Errorf("pressed %d times, want the 2×ringLen bound (%d)", st, 2*len(claudeRing4))
+	}
+}
+
+// A harness that ratchets UPWARD and will not come back down: the switch fails,
+// restoration fails, and the session is left strictly more permissive than it
+// started. That is the one outcome that must never be reported as a plain
+// failure — it is ErrPermissionModeIndeterminate.
+func TestSetPermissionMode_RatchetUp_Indeterminate(t *testing.T) {
+	// ring: plan(0) → auto(1) → bypass(2) → bypass … ; "manual" is never shown.
+	ring := []string{"plan", "auto", "bypass"}
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "bypass", // bypass-enabled launch: 5-ring bound
+	}, ring, 0)
+	fake.advance = func(idx int) int {
+		if idx+1 >= len(ring) {
+			return len(ring) - 1 // stuck at the top
+		}
+		return idx + 1
+	}
+	withControl(t, conv)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if !errors.Is(err, ErrPermissionModeIndeterminate) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want ErrPermissionModeIndeterminate", mode, err)
+	}
+	if mode != "bypass" {
+		t.Errorf("final mode = %q, want the last observed posture bypass", mode)
+	}
+	if !wrapper.MorePermissive(mode, "plan") {
+		t.Errorf("wrapper.MorePermissive(%q, plan) = false; the scenario no longer models a silent escalation", mode)
+	}
+}
+
+// --- ring length ---------------------------------------------------------
+
+// The ring is 5 long — and bypass is on it — whenever the session was launched
+// bypass-enabled, or launched with a flag that merely UNLOCKS the bypass rung
+// without selecting it, resolved through wrapper.EffectiveLaunchRung /
+// BypassReachableFlags rather than by re-parsing argv here. Options.PermissionMode
+// alone is NOT enough: argsWithHarnessPermissionMode suppresses injection when
+// argv already carries the flag, so the argv-carried cases below have
+// Options.PermissionMode == "" and a bypass-enabled session. Returning
+// ErrPermissionModeUnreachable for them is the exact regression this path exists
+// to prevent.
+func TestSetPermissionMode_RingLengthTable(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		mode         string
+		args         []string
+		wantRing     int
+		wantBypassOK bool
+	}{
+		{"options-permission-mode-bypass", "bypass", nil, 5, true},
+		{"argv-separated", "", []string{"--permission-mode", "bypassPermissions"}, 5, true},
+		{"argv-joined", "", []string{"--permission-mode=bypassPermissions"}, 5, true},
+		{"argv-skip-permissions-flag", "", []string{wrapper.SkipPermissionsFlag}, 5, true},
+		{"argv-trailing-flag-unknown", "", []string{"--permission-mode"}, 5, true},
+		// Only the bare flag: claude 2.1.270 refuses --allow-dangerously-skip-permissions=<bool>
+		// ("error: unknown option"), so a joined spelling never launches a session to ring.
+		{"argv-allow-skip-permissions-flag", "plan", []string{"--allow-dangerously-skip-permissions"}, 5, true},
+		{"plain-non-bypass-launch", "plan", nil, 4, false},
+		// A dontAsk launch is a DEFINITE non-bypass posture: claudeRung maps the
+		// native spelling onto the manual rung, so it takes the 4-ring branch and
+		// SetPermissionMode("bypass") fast-fails without a keystroke. Before the
+		// mapping landed it resolved to "" and fell into the "unknown, assume the
+		// 5-ring, bypass legal" branch — which is wrong, because a dontAsk launch
+		// carries no bypass-enabling flag.
+		{"options-permission-mode-dont-ask", "dontAsk", nil, 4, false},
+		{"argv-separated-dont-ask", "", []string{"--permission-mode", "dontAsk"}, 4, false},
+		{"argv-joined-dont-ask", "", []string{"--permission-mode=dontAsk"}, 4, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conv, fake := newPermModeConv(t, Options{
+				Harness:        chatClaudeCode,
+				PermissionMode: tc.mode,
+				Args:           tc.args,
+			}, claudeRing5, 0)
+			withControl(t, conv)
+
+			ringLen, bypassOK := conv.cycleRing()
+			if ringLen != tc.wantRing || bypassOK != tc.wantBypassOK {
+				t.Errorf("cycleRing() = (%d, %v), want (%d, %v)", ringLen, bypassOK, tc.wantRing, tc.wantBypassOK)
+			}
+
+			mode, err := conv.SetPermissionMode(testCtx(t), "bypass")
+			if tc.wantBypassOK {
+				if errors.Is(err, ErrPermissionModeUnreachable) {
+					t.Fatalf("SetPermissionMode(bypass) = (%q, %v); a bypass-enabled launch must not be rejected as unreachable", mode, err)
+				}
+				if err != nil {
+					t.Fatalf("SetPermissionMode(bypass) = (%q, %v), want success", mode, err)
+				}
+				if mode != "bypass" {
+					t.Errorf("final mode = %q, want bypass", mode)
+				}
+				return
+			}
+			if !errors.Is(err, ErrPermissionModeUnreachable) {
+				t.Fatalf("SetPermissionMode(bypass) = (%q, %v), want ErrPermissionModeUnreachable", mode, err)
+			}
+			if st, _ := fake.counts(); st != 0 {
+				t.Errorf("wrote %d keystrokes before the fast-fail, want 0", st)
+			}
+		})
+	}
+}
+
+// --- target gates --------------------------------------------------------
+
+// The launch-only spellings and the cross-axis rungs all funnel through the one
+// unreachable path; harnesses with no cycle at all are unsupported.
+func TestSetPermissionMode_TargetGates(t *testing.T) {
+	for _, tc := range []struct {
+		harness string
+		target  string
+		want    error
+	}{
+		// claude: "dontAsk" is a launch-only native spelling; it maps to the
+		// "manual" rung but is not itself on the ring.
+		{chatClaudeCode, "dontAsk", ErrPermissionModeUnreachable},
+		{chatClaudeCode, "", ErrPermissionModeUnreachable},
+		{chatClaudeCode, "acceptEdits", ErrPermissionModeUnreachable},
+		// codex: the permissions/sandbox axis is a LAUNCH knob with no in-TUI
+		// cycle, and every canonical rung other than "plan" is off-axis.
+		{"codex", "read-only", ErrPermissionModeUnreachable},
+		{"codex", "workspace-write", ErrPermissionModeUnreachable},
+		{"codex", "danger-full-access", ErrPermissionModeUnreachable},
+		{"codex", "manual", ErrPermissionModeUnreachable},
+		{"codex", "ask", ErrPermissionModeUnreachable},
+		{"codex", "auto", ErrPermissionModeUnreachable},
+		{"codex", "bypass", ErrPermissionModeUnreachable},
+		// harnesses with no permission-mode cycle at all.
+		{"opencode", "plan", ErrPermissionModeUnsupported},
+		{"pi", "plan", ErrPermissionModeUnsupported},
+		{"generic", "plan", ErrPermissionModeUnsupported},
+	} {
+		t.Run(tc.harness+"/"+tc.target, func(t *testing.T) {
+			conv, fake := newPermModeConv(t, Options{Harness: tc.harness}, nil, 0)
+			withControl(t, conv)
+
+			mode, err := conv.SetPermissionMode(testCtx(t), tc.target)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("SetPermissionMode(%q) = (%q, %v), want %v", tc.target, mode, err, tc.want)
+			}
+			if st, plans := fake.counts(); st != 0 || plans != 0 {
+				t.Errorf("wrote %d Shift+Tab / %d /plan before the gate, want 0/0", st, plans)
+			}
+		})
+	}
+}
+
+// permissionModeCapabilities is the driver's only harness switch; freeze the
+// target sets it hands out.
+func TestPermissionModeCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		harness string
+		want    []string
+		wantOK  bool
+	}{
+		{"claude", wrapper.PermissionRungs(), true},
+		{"claude-code", wrapper.PermissionRungs(), true},
+		{"  Claude-Code  ", wrapper.PermissionRungs(), true},
+		{"codex", []string{"plan", "default"}, true},
+		{"opencode", nil, false},
+		{"pi", nil, false},
+		{"generic", nil, false},
+		{"", nil, false},
+	} {
+		got, ok := permissionModeCapabilities(tc.harness)
+		if ok != tc.wantOK || strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("permissionModeCapabilities(%q) = (%v, %v), want (%v, %v)", tc.harness, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+// --- round trip ----------------------------------------------------------
+
+// From ANY starting posture to EVERY reachable target, over both claude ring
+// lengths and codex's 2-cycle: the switch lands and PermissionMode agrees.
+func TestSetPermissionMode_RoundTrip(t *testing.T) {
+	for _, rc := range []struct {
+		name    string
+		harness string
+		ring    []string
+		opts    Options
+		targets []string
+	}{
+		{"claude-4-ring", chatClaudeCode, claudeRing4, Options{Harness: chatClaudeCode, PermissionMode: "plan"}, claudeRing4},
+		{"claude-5-ring", chatClaudeCode, claudeRing5, Options{Harness: chatClaudeCode, PermissionMode: "bypass"}, claudeRing5},
+		{"codex-2-cycle", "codex", []string{codexCollabDefault, codexCollabPlan}, Options{Harness: "codex"}, []string{codexCollabDefault, codexCollabPlan}},
+	} {
+		for start := range rc.ring {
+			for _, target := range rc.targets {
+				t.Run(rc.name+"/"+rc.ring[start]+"→"+target, func(t *testing.T) {
+					conv, _ := newPermModeConv(t, rc.opts, rc.ring, start)
+					withControl(t, conv)
+
+					mode, err := conv.SetPermissionMode(testCtx(t), target)
+					if err != nil {
+						t.Fatalf("SetPermissionMode(%q) from %q = (%q, %v)", target, rc.ring[start], mode, err)
+					}
+					if mode != target {
+						t.Errorf("returned mode = %q, want %q", mode, target)
+					}
+					if live, ok := conv.PermissionMode(); !ok || live != target {
+						t.Errorf("PermissionMode() = (%q, %v) after the switch, want (%q, true)", live, ok, target)
+					}
+				})
+			}
+		}
+	}
+}
+
+// --- codex /plan ---------------------------------------------------------
+
+// codex refuses "/plan" while a task is in progress — MCP-server boot counts,
+// with the composer already painted. The driver retries, and the banner must
+// NOT deadlock readyForInput: classifying it in codex.DetectInput would make
+// every screen carrying it read as not-ready.
+func TestSetPermissionMode_CodexPlanRefusalThenClears(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	const refusals = 2
+	seen := 0
+	fake.onPlan = func(f *permModeFake) bool {
+		seen++
+		if seen <= refusals {
+			paint(f.sc, codexPlanRefusalScreen())
+			// The refusal screen must stay READY — otherwise the send path
+			// would deadlock behind a banner that never clears on its own.
+			if !readyForInput("codex", f.sc.Snapshot().Text) {
+				t.Errorf("codex refusal banner made readyForInput false; that would deadlock the send path")
+			}
+			return false
+		}
+		f.mu.Lock()
+		f.idx = 1 // plan
+		f.mu.Unlock()
+		return true
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
+	if err != nil {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want success after the refusals clear", mode, err)
+	}
+	if mode != codexCollabPlan {
+		t.Errorf("final mode = %q, want plan", mode)
+	}
+	if _, plans := fake.counts(); plans != refusals+1 {
+		t.Errorf("submitted /plan %d times, want %d (retry per refusal)", plans, refusals+1)
+	}
+}
+
+// A refusal that never clears exhausts the retry ATTEMPTS and surfaces as
+// ErrCodexPlanRefusedBusy — distinct from a plain switch failure, because the
+// remedy is "wait for the task to finish", not "try a different mode".
+//
+// This pins the attempt bound FROM ABOVE ("never more than
+// codexPlanRetryAttempts"); TestSetPermissionMode_CodexPlanRefusalNearBound pins
+// it from below. Under the old wall-clock bound the count here was a variable
+// 2–3 and the assertion had to be a loose `plans < 2`; that looseness was the
+// same root cause as the sibling test's flake, so the exact count is the point.
+func TestSetPermissionMode_CodexPlanRefusedBusy(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	fake.onPlan = func(f *permModeFake) bool {
+		paint(f.sc, codexPlanRefusalScreen())
+		return false
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
+	if !errors.Is(err, ErrCodexPlanRefusedBusy) {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want ErrCodexPlanRefusedBusy", mode, err)
+	}
+	if mode == codexCollabPlan {
+		t.Errorf("final mode = plan although codex refused every /plan")
+	}
+	if _, plans := fake.counts(); plans != codexPlanRetryAttempts {
+		t.Errorf("submitted /plan %d times, want exactly the %d-attempt bound", plans, codexPlanRetryAttempts)
+	}
+}
+
+// The boundary from the other side: a refusal window one attempt short of the
+// bound still resolves. This is the "refusal window longer than the old 200ms
+// budget" case expressed in STEPS rather than milliseconds — the exact property
+// the wall-clock bound could not provide — and it is what catches an
+// `n+2 >= attempts` off-by-one that the refuse-forever test above cannot see.
+func TestSetPermissionMode_CodexPlanRefusalNearBound(t *testing.T) {
+	// Deliberately NOT derived from codexPlanRetryAttempts: a self-referential
+	// count would silently go vacuous if the constant were lowered, so state it
+	// and guard it instead.
+	const refusals = 4 // one short of codexPlanRetryAttempts; keep in sync
+	if refusals+1 > codexPlanRetryAttempts {
+		t.Fatalf("test is vacuous: %d refusals exceed the %d-attempt bound", refusals, codexPlanRetryAttempts)
+	}
+
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	seen := 0
+	fake.onPlan = func(f *permModeFake) bool {
+		seen++
+		if seen <= refusals {
+			paint(f.sc, codexPlanRefusalScreen())
+			return false
+		}
+		f.mu.Lock()
+		f.idx = 1 // plan
+		f.mu.Unlock()
+		return true
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
+	if err != nil {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want success on the last attempt", mode, err)
+	}
+	if mode != codexCollabPlan {
+		t.Errorf("final mode = %q, want plan", mode)
+	}
+	// Compared against refusals+1, not the constant, so raising the constant
+	// leaves this meaningful rather than trivially true.
+	if _, plans := fake.counts(); plans != refusals+1 {
+		t.Errorf("submitted /plan %d times, want %d (retry per refusal)", plans, refusals+1)
+	}
+}
+
+// The caller's ctx is the ONLY wall clock once the bound counts attempts, so a
+// ctx that ends the drive mid-refusal must not erase ErrCodexPlanRefusedBusy —
+// the one error whose documented remedy is "wait for the task to finish".
+//
+// Clock-free by construction, in two steps. `refused` is set at the END of the
+// previous iteration and the fake's write runs on the DRIVER's goroutine, so
+// cancelling during the second submission guarantees refused == true before the
+// next awaitPostureChange runs. And that call aborts on its FIRST pass because
+// the poll loop tests ctx in the body, ahead of the budget (see closedNow) — as
+// a select arm it merely raced the ticker, and losing that flip enough times let
+// the deadline report a quiet "no change" that resumed the loop for a third
+// submission. This test was itself flaky until that was fixed.
+func TestSetPermissionMode_CodexPlanRefusalCtxAbortKeepsSentinel(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seen := 0
+	fake.onPlan = func(f *permModeFake) bool {
+		seen++
+		paint(f.sc, codexPlanRefusalScreen())
+		if seen == 2 {
+			cancel()
+		}
+		return false
+	}
+
+	mode, err := conv.SetPermissionMode(ctx, codexCollabPlan)
+	if !errors.Is(err, ErrCodexPlanRefusedBusy) {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want the refusal sentinel wrapped around the ctx error", mode, err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("errors.Is(err, context.Canceled) = false for %v; a deliberate cancellation must stay visible", err)
+	}
+	if mode == codexCollabPlan {
+		t.Errorf("final mode = plan although codex refused every /plan")
+	}
+	if _, plans := fake.counts(); plans != 2 {
+		t.Errorf("submitted /plan %d times, want 2 (cancelled during the second)", plans)
+	}
+}
+
+// Leaving plan mode goes back through the shared Shift+Tab cycle, not /plan.
+func TestSetPermissionMode_CodexLeavePlanCycles(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 1) // start: plan
+	withControl(t, conv)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabDefault)
+	if err != nil {
+		t.Fatalf("SetPermissionMode(default) = (%q, %v), want success", mode, err)
+	}
+	if mode != codexCollabDefault {
+		t.Errorf("final mode = %q, want default", mode)
+	}
+	st, plans := fake.counts()
+	if st != 1 {
+		t.Errorf("wrote %d Shift+Tab presses, want 1", st)
+	}
+	if plans != 0 {
+		t.Errorf("submitted /plan %d times while LEAVING plan mode, want 0", plans)
+	}
+}
+
+// --- turn in flight ------------------------------------------------------
+
+// The passive read works mid-turn (claude keeps the footer painted while it
+// works — see claudecode/busy_test.go:16) but the SWITCH fast-fails, exactly as
+// Send does.
+func TestSetPermissionMode_TurnInFlight(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 3)
+	withControl(t, conv)
+
+	// A busy claude frame: spinner + "esc to interrupt" footer, with the mode
+	// marker still painted alongside.
+	paint(conv.screen, []string{
+		"Claude Code",
+		"",
+		"✶ Cerebrating… (3s · ↓ 1.2k tokens)",
+		"",
+		"❯ ",
+		"  ⏵⏵ esc to interrupt",
+		claudeFooters["auto"],
+	})
+
+	if mode, ok := conv.PermissionMode(); !ok || mode != "auto" {
+		t.Errorf("PermissionMode() mid-turn = (%q, %v), want (auto, true) — the footer is painted during a turn", mode, ok)
+	}
+
+	conv.mu.Lock()
+	conv.currentTurn = &Turn{ID: "t1", State: TurnStatePending}
+	conv.mu.Unlock()
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
+	if !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want ErrTurnInFlight", mode, err)
+	}
+	if st, _ := fake.counts(); st != 0 {
+		t.Errorf("wrote %d keystrokes during an in-flight turn, want 0", st)
+	}
+}
+
+// The codex variant documents (and pins) the WEAKER gate: c.currentTurn is
+// cleared by maybeIdleComplete, which consults turns.BusyDetector — implemented
+// by claudecode and pi ONLY. codex therefore has no busy signal at all, so the
+// check still fires when a turn IS registered, but harness-internal work (MCP
+// boot) is invisible to it. That is why /plan-refusal detection, not
+// ErrTurnInFlight, is the load-bearing guard on codex.
+func TestSetPermissionMode_CodexTurnInFlightIsCourtesyOnly(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: "codex"},
+		[]string{codexCollabDefault, codexCollabPlan}, 0)
+	withControl(t, conv)
+
+	if _, ok := conv.adapter.(turns.BusyDetector); ok {
+		t.Fatal("codex now implements turns.BusyDetector; the weaker-gate rationale in " +
+			"SetPermissionMode's doc comment must be revisited")
+	}
+
+	conv.mu.Lock()
+	conv.currentTurn = &Turn{ID: "t1", State: TurnStatePending}
+	conv.mu.Unlock()
+
+	mode, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan)
+	if !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("SetPermissionMode = (%q, %v), want ErrTurnInFlight for a REGISTERED turn", mode, err)
+	}
+
+	// …but with no turn registered — the state codex sits in while its MCP
+	// servers boot, because nothing clears or sets currentTurn from the screen
+	// — the gate lets the switch straight through.
+	conv.mu.Lock()
+	conv.currentTurn = nil
+	conv.mu.Unlock()
+	if _, err := conv.SetPermissionMode(testCtx(t), codexCollabPlan); err != nil {
+		t.Fatalf("SetPermissionMode with no registered turn = %v, want success", err)
+	}
+	if _, plans := fake.counts(); plans == 0 {
+		t.Error("no /plan submitted; the courtesy gate should not have blocked this")
+	}
+}
+
+// --- readiness split -----------------------------------------------------
+
+// The soft logged-out screens PASS readiness — readyForInput wins first, "a real
+// composer (even with a stale banner scrolled above) is never auth-gated"
+// (ready.go:76-79) — so the switch proceeds on them. Only the real onboarding
+// WALL (the theme picker) yields ErrAuthRequired.
+func TestSetPermissionMode_ReadinessSplit(t *testing.T) {
+	for _, tc := range []struct {
+		corpus   string
+		wantMode string
+		wantOK   bool
+		wantErr  error
+	}{
+		{"not-logged-in-churned", "manual", true, nil},
+		{"not-logged-in-brewed", "manual", true, nil},
+		{"theme-picker", "", false, ErrAuthRequired},
+	} {
+		t.Run(tc.corpus, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(authCorpusRoot, "claude-code", tc.corpus, "screen.txt"))
+			if err != nil {
+				t.Fatalf("read corpus screen: %v", err)
+			}
+			conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 0)
+			paint(conv.screen, strings.Split(strings.TrimRight(string(raw), "\n"), "\n"))
+			withControl(t, conv)
+
+			mode, ok := conv.PermissionMode()
+			if mode != tc.wantMode || ok != tc.wantOK {
+				t.Errorf("PermissionMode() = (%q, %v), want (%q, %v)", mode, ok, tc.wantMode, tc.wantOK)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, err = conv.SetPermissionMode(ctx, "plan")
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("SetPermissionMode = %v, want %v", err, tc.wantErr)
+				}
+				if st, _ := fake.counts(); st != 0 {
+					t.Errorf("wrote %d keystrokes into an onboarding wall, want 0", st)
+				}
+				return
+			}
+			// The soft-banner screens are ready, so the driver PROCEEDS: it
+			// presses (the fake then repaints its own ring) rather than
+			// short-circuiting on the stale banner.
+			if errors.Is(err, ErrAuthRequired) {
+				t.Fatalf("SetPermissionMode returned ErrAuthRequired on a screen that passes readiness")
+			}
+			if st, _ := fake.counts(); st == 0 {
+				t.Error("wrote no keystrokes; the switch should have proceeded past the stale banner")
+			}
+		})
+	}
+}
+
+// --- the repaint budget is a real bound ----------------------------------
+
+// permModeBoundTimeout sizes the two bound tests below. It is deliberately NOT
+// the suite's 40ms default: under -race a single poll body (a 120×40
+// ScreenSnapshot plus the detector) is already >50% of 40ms, so any "small
+// multiple of the budget" assertion at that scale would be either meaningless or
+// CI-flaky — exactly the class of test this ticket exists to remove. At 250ms
+// the poll interval is 62.5ms (permModePollInterval's quarter rule) and
+// scheduler noise is a small fraction of the bound.
+const permModeBoundTimeout = 250 * time.Millisecond
+
+// A screen that never changes must make awaitPostureChange return AT the budget,
+// not a random multiple of it. The deadline arm alone does not guarantee that:
+// select picks uniformly among ready cases, so once the poll body outlasts the
+// tick, deadline.C loses a coin flip on every pass and the wait becomes a
+// geometric random variable.
+//
+// This is deliberately a BOUND assertion rather than an equality — the point is
+// that the overrun is capped by one poll body, not that the timing is exact.
+func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
+	// At a budget comfortably larger than one poll body the deadline arm alone
+	// still wins, so this case is a GUARD (it passes with or without the expiry
+	// check) — it pins the contract at the scale real callers run at.
+	t.Run("budget", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0) // start: plan, and nothing ever repaints it
+
+		start := time.Now()
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
+		elapsed := time.Since(start)
+
+		if err != nil {
+			t.Fatalf("awaitPostureChange = (%+v, %v); an elapsed budget with no change is not an error", observed, err)
+		}
+		if observed != claudePosture["plan"] {
+			t.Errorf("observed = %+v, want the unchanged posture plan", observed)
+		}
+		if elapsed >= 2*permModeBoundTimeout {
+			t.Errorf("awaitPostureChange took %v against a %v budget; the budget is not bounding the wait",
+				elapsed, permModeBoundTimeout)
+		}
+	})
+
+	// The DEGENERATE regime — a budget smaller than one poll body — is where the
+	// expiry check is load-bearing, and it is reachable deterministically: 1µs is
+	// orders of magnitude under one 120×40 ScreenSnapshot plus detector run, so
+	// the check at the END of the first body is already past it and the call
+	// returns without entering the select at all.
+	//
+	// Honest about what this does and does not pin. It exercises the expiry
+	// branch, whose return is by design IDENTICAL to the deadline arm's, so the
+	// two are not distinguishable from the outside; and without the check the
+	// select would still terminate (the deadline arm merely loses a coin flip to
+	// the ticker on each pass, which is the overrun, not a hang). What it pins is
+	// that a budget under one poll body still yields one poll and one return.
+	t.Run("budget-smaller-than-one-poll", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: time.Microsecond,
+		}, claudeRing4, 0) // start: plan
+
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
+		if err != nil {
+			t.Fatalf("awaitPostureChange = (%+v, %v); an elapsed budget with no change is not an error", observed, err)
+		}
+		if observed != claudePosture["plan"] {
+			t.Errorf("observed = %+v, want the unchanged posture plan", observed)
+		}
+	})
+
+	// Aborts are decided in the body AHEAD of the budget, so a closed
+	// conversation is reported as ErrClosed rather than as a quiet "budget
+	// elapsed, no change". Clock-free: the check runs on the first pass.
+	t.Run("closed", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0) // start: plan, so the posture-change check never wins
+		close(conv.closed)
+
+		observed, err := conv.awaitPostureChange(testCtx(t), claudePosture["plan"])
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("awaitPostureChange on a closed conversation = (%+v, %v), want ErrClosed", observed, err)
+		}
+	})
+}
+
+// pendingInputRequest is a plausible unsurfaced request for the pressGate cases:
+// a policy/handler is notionally mid-resolve, and nothing ever clears it.
+func pendingInputRequest() *turns.InputRequest {
+	return &turns.InputRequest{
+		ID:     "req-1",
+		Kind:   "trust_prompt",
+		Prompt: "Do you trust the files in this folder?",
+		Options: []turns.InputOption{
+			{ID: "1", Label: "Yes, proceed"},
+			{ID: "2", Label: "No, exit"},
+		},
+	}
+}
+
+// pressGate's pending-but-NOT-surfaced arm: a policy that never finishes
+// resolving must be reported as blocked at the budget rather than waited on for
+// a random multiple of it. Both cases here cover select arms that had no
+// coverage at all — the existing dialog test resolves synchronously inside the
+// fake's write, so the gate never reaches its select with a request pending.
+func TestPressGate_PendingNeverClears(t *testing.T) {
+	t.Run("bound", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0)
+
+		conv.mu.Lock()
+		conv.currentInput = pendingInputRequest()
+		conv.inputSurfaced = false
+		conv.mu.Unlock()
+
+		start := time.Now()
+		err := conv.pressGate(testCtx(t), "plan")
+		elapsed := time.Since(start)
+
+		var blocked *PermissionModeBlockedError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("pressGate = %v, want *PermissionModeBlockedError once the budget elapses", err)
+		}
+		if blocked.Request.ID != "req-1" {
+			t.Errorf("blocked.Request.ID = %q, want the pending request req-1", blocked.Request.ID)
+		}
+		if blocked.Observed != "plan" {
+			t.Errorf("blocked.Observed = %q, want the posture passed in", blocked.Observed)
+		}
+		if elapsed >= 2*permModeBoundTimeout {
+			t.Errorf("pressGate took %v against a %v budget; the budget is not bounding the wait",
+				elapsed, permModeBoundTimeout)
+		}
+	})
+
+	// The SURFACED variant never waits at all: a modal the client must answer is
+	// up, the ring is unreachable through it, and Shift+Tab must never be typed
+	// into it. Clock-free, and the arm had no coverage either.
+	t.Run("surfaced", func(t *testing.T) {
+		conv, _ := newPermModeConv(t, Options{
+			Harness:               chatClaudeCode,
+			permModeRenderTimeout: permModeBoundTimeout,
+		}, claudeRing4, 0)
+
+		conv.mu.Lock()
+		conv.currentInput = pendingInputRequest()
+		conv.inputSurfaced = true
+		conv.mu.Unlock()
+
+		start := time.Now()
+		err := conv.pressGate(testCtx(t), "plan")
+		elapsed := time.Since(start)
+
+		var blocked *PermissionModeBlockedError
+		if !errors.As(err, &blocked) {
+			t.Fatalf("pressGate = %v, want *PermissionModeBlockedError for a surfaced request", err)
+		}
+		if blocked.Request.ID != "req-1" {
+			t.Errorf("blocked.Request.ID = %q, want the pending request req-1", blocked.Request.ID)
+		}
+		if elapsed >= permModeBoundTimeout {
+			t.Errorf("pressGate waited %v on a SURFACED request; it must not wait for a modal the client owns", elapsed)
+		}
+	})
+
+	// The two ABORT conditions. Both are decided in the loop body ahead of the
+	// budget, so both are clock-free on the first pass, and neither may be
+	// reported as blocked-by-input: the drive ended, it was not gated.
+	for _, tc := range []struct {
+		name  string
+		setup func(conv *Conversation, ctx context.Context) context.Context
+		want  error
+	}{
+		{"closed", func(conv *Conversation, ctx context.Context) context.Context {
+			close(conv.closed)
+			return ctx
+		}, ErrClosed},
+		{"ctx", func(_ *Conversation, ctx context.Context) context.Context {
+			ctx, cancel := context.WithCancel(ctx)
+			cancel()
+			return ctx
+		}, context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conv, _ := newPermModeConv(t, Options{
+				Harness:               chatClaudeCode,
+				permModeRenderTimeout: permModeBoundTimeout,
+			}, claudeRing4, 0)
+
+			conv.mu.Lock()
+			conv.currentInput = pendingInputRequest()
+			conv.inputSurfaced = false
+			conv.mu.Unlock()
+
+			err := conv.pressGate(tc.setup(conv, testCtx(t)), "plan")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("pressGate = %v, want %v", err, tc.want)
+			}
+			var blocked *PermissionModeBlockedError
+			if errors.As(err, &blocked) {
+				t.Errorf("pressGate reported %v as blocked-by-input; the drive ended, it was not gated", err)
+			}
+		})
+	}
+}
+
+// --- helpers -------------------------------------------------------------
+
+func TestArgsContainFlag(t *testing.T) {
+	args := []string{"--model", "opus", "--permission-mode=bypassPermissions"}
+	if !argsContainFlag(args, "--permission-mode") {
+		t.Error("joined --permission-mode=… not detected")
+	}
+	if !argsContainFlag([]string{wrapper.SkipPermissionsFlag}, wrapper.BypassEnablingFlags(chatClaudeCode)...) {
+		t.Error("skip-permissions flag not detected")
+	}
+	if argsContainFlag(args, "--dangerously-skip-permissions") {
+		t.Error("false positive for an absent flag")
+	}
+}
+
+func TestPermModePollInterval(t *testing.T) {
+	if got := permModePollInterval(10 * time.Second); got != pickerPollInterval {
+		t.Errorf("permModePollInterval(10s) = %v, want %v", got, pickerPollInterval)
+	}
+	if got := permModePollInterval(40 * time.Millisecond); got != 10*time.Millisecond {
+		t.Errorf("permModePollInterval(40ms) = %v, want 10ms", got)
+	}
+}
+
+// --- dontAsk: an off-ring start must be CYCLED off, never accepted ---------
+
+// claudeRingFromDontAsk models a session launched --permission-mode dontAsk.
+// Position 0 is the off-ring launch posture; 1..4 are the real 4-ring. The
+// advance below is what makes it "off-ring": one press enters the ring, and no
+// press ever returns to 0 — dontAsk is a launch-only spelling that claude's
+// cycle function does not contain.
+var claudeRingFromDontAsk = []string{"dontAsk", "plan", "manual", "ask", "auto"}
+
+// enterRingThenCycle is claudeRingFromDontAsk's advance: index 0 → 1, and
+// thereafter a plain cycle within 1..len-1.
+func enterRingThenCycle(idx int) int {
+	if idx == 0 {
+		return 1
+	}
+	return 1 + (idx % 4)
+}
+
+// THE REGRESSION TEST. A dontAsk session asked for "manual" must actually
+// press: before the posture reader existed the driver saw start.Rung == target,
+// returned ("manual", nil) with ZERO keystrokes, and left the session
+// auto-DENYING everything not pre-approved — so a caller whose InputPolicy has a
+// KindApproval entry received no requests at all and an unattended turn stalled
+// to its deadline. On the pre-fix code this fails with shiftTabs == 0.
+func TestSetPermissionMode_DontAskStartCyclesToManual(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, claudeRingFromDontAsk, 0)
+	fake.advance = enterRingThenCycle
+	withControl(t, conv)
+
+	// The starting posture is the manual RUNG under a different native spelling.
+	// That is exactly the reading the old rung-only comparison accepted.
+	if start, ok := conv.permissionPosture(); !ok || start != claudePosture["dontAsk"] {
+		t.Fatalf("start posture = (%+v, %v), want %+v", start, ok, claudePosture["dontAsk"])
+	}
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if err != nil {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want success", mode, err)
+	}
+	if mode != "manual" {
+		t.Errorf("final mode = %q, want manual", mode)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Fatal("wrote 0 Shift+Tab presses: the dontAsk start was accepted as already-manual (the PUPPET-514 bug)")
+	}
+	// And the session is now in the ON-RING spelling, which is what the caller
+	// actually asked for: per-tool approvals rather than automatic denial.
+	if p, ok := conv.permissionPosture(); !ok || p != claudePosture["manual"] {
+		t.Errorf("final posture = (%+v, %v), want %+v", p, ok, claudePosture["manual"])
+	}
+}
+
+// The guard against OVER-correcting the fix: an on-ring reading that already
+// satisfies the target must still return with zero keystrokes. "accept edits"
+// is a second spelling of the ask rung exactly as "don't ask" is of manual —
+// the difference is ring membership, and nothing else.
+func TestSetPermissionMode_OnRingStartWritesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		ring   []string
+		target string
+	}{
+		{"manual-mode-footer/manual", claudeRing4, "manual"},
+		{"accept-edits-footer/ask", claudeRing4, "ask"},
+		{"plan-footer/plan", claudeRing4, "plan"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			startIdx := 0
+			for i, m := range tc.ring {
+				if m == tc.target {
+					startIdx = i
+				}
+			}
+			conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, tc.ring, startIdx)
+			withControl(t, conv)
+
+			mode, err := conv.SetPermissionMode(testCtx(t), tc.target)
+			if err != nil {
+				t.Fatalf("SetPermissionMode(%q) = (%q, %v), want success", tc.target, mode, err)
+			}
+			if mode != tc.target {
+				t.Errorf("final mode = %q, want %q", mode, tc.target)
+			}
+			if st, _ := fake.counts(); st != 0 {
+				t.Errorf("wrote %d Shift+Tab presses for an already-satisfied on-ring target, want 0", st)
+			}
+		})
+	}
+}
+
+// Shift+Tab inert in dontAsk — the empirical unknown the design refuses to bet
+// on. The drive must exhaust its bound and fail LOUDLY, naming the native
+// spelling so the message is a diagnosis rather than the paradox "manual not
+// observed" from a session whose rung never left manual.
+//
+// It must NOT be ErrPermissionModeIndeterminate: the restore matcher is
+// rung-only, so it matches at the loop top and the session is provably no more
+// permissive than it started.
+func TestSetPermissionMode_StuckInDontAsk(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, claudeRingFromDontAsk, 0)
+	fake.advance = func(int) int { return 0 } // the press does nothing at all
+	withControl(t, conv)
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if !errors.Is(err, ErrPermissionModeSwitchFailed) {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want ErrPermissionModeSwitchFailed", mode, err)
+	}
+	if errors.Is(err, ErrPermissionModeIndeterminate) {
+		t.Fatalf("got ErrPermissionModeIndeterminate: the session never left the manual rung, so it is not indeterminate (%v)", err)
+	}
+	if mode != "manual" {
+		t.Errorf("final mode = %q, want the unchanged manual rung", mode)
+	}
+	if !strings.Contains(err.Error(), "dontAsk") {
+		t.Errorf("error %q does not name the observed native spelling; the message reads as a paradox without it", err)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Error("wrote 0 Shift+Tab presses; the drive must try before it gives up")
+	}
+}
+
+// A drive that LEAVES a dontAsk start and then fails restores the RUNG, not the
+// launch posture — nothing Shift+Tab can do returns to dontAsk. The restore
+// matcher is rung-only precisely so this matches at the loop top instead of
+// burning a second full bound on an unreachable target.
+func TestSetPermissionMode_RestoreFromDontAskStart(t *testing.T) {
+	// A ring whose "plan" position can never be painted: the fake leaves
+	// dontAsk on the first press and then oscillates between manual and ask.
+	conv, fake := newPermModeConv(t, Options{
+		Harness:        chatClaudeCode,
+		PermissionMode: "dontAsk",
+	}, []string{"dontAsk", "manual", "ask"}, 0)
+	fake.advance = func(idx int) int {
+		if idx == 0 {
+			return 1
+		}
+		return 1 + (idx % 2)
+	}
+	withControl(t, conv)
+
+	ringLen, _ := conv.cycleRing()
+	bound := 2 * ringLen
+
+	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
+	if !errors.Is(err, ErrPermissionModeSwitchFailed) {
+		t.Fatalf("SetPermissionMode(plan) = (%q, %v), want ErrPermissionModeSwitchFailed", mode, err)
+	}
+	if mode != "manual" {
+		t.Errorf("restored mode = %q, want the starting manual RUNG (dontAsk itself is unreachable)", mode)
+	}
+	if !strings.Contains(err.Error(), `restored "manual"`) {
+		t.Errorf("error %q does not report the restored rung", err)
+	}
+	// The restore must not burn a second full bound: it matches immediately,
+	// because the rung never left manual after the first press.
+	if st, _ := fake.counts(); st > 2*bound {
+		t.Errorf("wrote %d presses against a 2×%d ceiling; the restore path is re-driving an unreachable posture", st, bound)
+	}
+}
+
+// An unreadable screen can never satisfy a match. The zero posture has Rung ""
+// and OnRing false, and no target is ever "" — so the early return must not
+// fire and the drive must proceed to press.
+func TestSetPermissionMode_UnreadableScreenNeverSatisfies(t *testing.T) {
+	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 1) // manual
+	withControl(t, conv)
+
+	// Repaint a composer with NO footer: readyForInput still passes, but the
+	// posture is unreadable.
+	paint(conv.screen, []string{"Claude Code", "", "❯ ", ""})
+	if p, ok := conv.permissionPosture(); ok || p != (turns.PermissionPosture{}) {
+		t.Fatalf("permissionPosture on a footerless screen = (%+v, %v), want the zero posture, false", p, ok)
+	}
+	if matchTarget("manual")(turns.PermissionPosture{}) {
+		t.Error("matchTarget(manual) accepted the zero posture")
+	}
+	if matchRung("manual")(turns.PermissionPosture{}) {
+		t.Error("matchRung(manual) accepted the zero posture")
+	}
+
+	// The drive itself: the fake repaints a real footer on the first press, so
+	// the call succeeds — the point is that it PRESSED rather than short-cutting
+	// on an unreadable screen that happened to be the target rung underneath.
+	mode, err := conv.SetPermissionMode(testCtx(t), "manual")
+	if err != nil {
+		t.Fatalf("SetPermissionMode(manual) = (%q, %v), want success", mode, err)
+	}
+	if st, _ := fake.counts(); st == 0 {
+		t.Error("wrote 0 Shift+Tab presses from an unreadable screen; an unreadable read must never satisfy a target")
+	}
+}
+
+// --- the fallback shim ----------------------------------------------------
+
+// codex implements turns.PermissionModeDetector and deliberately NOT
+// turns.PermissionPostureDetector, so every codex path in this file runs
+// through permissionPosture's fallback. That is what makes the whole codex
+// suite above a fallback-equivalence assertion; pinning it here stops a future
+// adapter change from silently moving those tests onto a different code path.
+func TestPermissionPosture_FallbackShim(t *testing.T) {
+	codex, err := resolveAdapter("codex")
+	if err != nil {
+		t.Fatalf("resolveAdapter(codex): %v", err)
+	}
+	if _, ok := codex.(turns.PermissionPostureDetector); ok {
+		t.Error("the codex adapter now implements turns.PermissionPostureDetector; the codex tests no longer exercise the fallback")
+	}
+	claude, err := resolveAdapter(chatClaudeCode)
+	if err != nil {
+		t.Fatalf("resolveAdapter(claude-code): %v", err)
+	}
+	if _, ok := claude.(turns.PermissionPostureDetector); !ok {
+		t.Fatal("the claude-code adapter must implement turns.PermissionPostureDetector")
+	}
+
+	// Through the shim, a posture reduces to the rung plus "readable", so every
+	// comparison in the driver degrades exactly to the rung comparison it
+	// replaced — including matchTarget, which must keep accepting any readable
+	// rung on an adapter that cannot answer the ring question.
+	for _, tc := range []struct {
+		harness string
+		lines   []string
+		want    turns.PermissionPosture
+		wantOK  bool
+	}{
+		{"codex", codexModeScreen(codexCollabPlan), turns.PermissionPosture{Rung: codexCollabPlan, OnRing: true}, true},
+		{"codex", codexModeScreen(codexCollabDefault), turns.PermissionPosture{Rung: codexCollabDefault, OnRing: true}, true},
+		{"pi", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+		{"opencode", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+		{"generic", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
+	} {
+		t.Run(tc.harness+"/"+tc.want.Rung, func(t *testing.T) {
+			conv, _ := newPermModeConv(t, Options{Harness: tc.harness}, nil, 0)
+			paint(conv.screen, tc.lines)
+			got, ok := conv.permissionPosture()
+			if got != tc.want || ok != tc.wantOK {
+				t.Errorf("permissionPosture() = (%+v, %v), want (%+v, %v)", got, ok, tc.want, tc.wantOK)
+			}
+			if tc.wantOK && !matchTarget(tc.want.Rung)(got) {
+				t.Errorf("matchTarget(%q) rejected the shim's reading %+v; the fallback must not change codex behaviour", tc.want.Rung, got)
+			}
+		})
+	}
+}

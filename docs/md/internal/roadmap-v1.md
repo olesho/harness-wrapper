@@ -28,9 +28,9 @@ not just the three currently supported.
 
 Per-adapter workflow: (1) identify the turn-complete signal; (2) session-ID surfacing; (3)
 cost/quota/retry/error patterns; (4) transcript JSONL location + schema; (5) implement
-`pkg/turns/harness/<name>/`, `pkg/wrapper/internal/harness/<name>/`, and `pkg/transcript/<name>/` (if
+`pkg/turns/harness/<name>/`, `internal/wrapcore/harness/<name>/` (registered by `pkg/wrapper`), and `pkg/transcript/<name>/` (if
 applicable); (6) record [corpus](testing/corpus.md) scenarios (canonical + adversarial); (7) wire into
-`chat.resolveAdapter` and `harness-chatd`; (8) add a [`versions.json`](versions-drift.md) entry.
+`pkg/chat`'s built-in registrations (`chatcore.RegisterAdapter`) and `harness-chatd`; (8) add a [`versions.json`](versions-drift.md) entry.
 
 **Ordering:** opencode first (stress-tests the onboarding workflow), then cursor / qwen-code / aider
 (parallelizable), then others as community PRs land. Community adapters are accepted with a

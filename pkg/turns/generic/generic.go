@@ -10,9 +10,9 @@
 package generic
 
 import (
+	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
-	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // Adapter is the generic, screen-agnostic turn detector.

@@ -6,7 +6,7 @@
 //   - End-of-turn screen marker: NOT yet identified. The adapter embeds
 //     generic.Adapter so turn-complete signals still flow through the
 //     wrapper.StatusWaitingForInput path (driven by the per-harness
-//     prompt patterns in pkg/wrapper/internal/harness/opencode/). Once a
+//     prompt patterns in internal/wrapcore/harness/opencode/). Once a
 //     recording exists under test/corpus/opencode/, replace the
 //     OnScreen-derived fingerprint here, mirroring codex's Token-usage
 //     footer match or claude-code's "✻ <verb> for Ns" line.

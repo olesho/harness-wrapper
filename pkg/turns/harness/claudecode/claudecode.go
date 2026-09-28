@@ -985,3 +985,50 @@ func (a *Adapter) ReadTranscript(harnessSessionID, workingDir string) ([]transcr
 	}
 	return transcript.TurnsFromEvents(evs), nil
 }
+
+// ReadyForInput reports whether claude's composer will take a message
+// (turns.ReadinessDetector): its "❯" prompt is painted and no blocking dialog
+// is — not even one still painting, or one this build cannot read.
+//
+// Every dialog state but DetectNone blocks, not just the answerable one. A
+// dialog renders its own "❯" selector, so folding DetectUnparseable or
+// DetectPending into "no dialog" would call the dialog READY — which is how
+// claude 2.1.251's unnumbered folder-trust dialog got a prompt typed into it
+// and submitted onto the highlighted "No, exit", quitting the CLI at startup.
+//
+// The "Claude Code" startup banner is deliberately not required: it scrolls out
+// on any reply long enough to fill the viewport, and requiring it made a settled
+// post-turn screen read as not ready (claude 2.1.247; test/corpus/claude-code/
+// settled-after-turn). Whether the harness has finished is the BusyDetector's
+// question, which the chat layer asks after this one.
+func (a *Adapter) ReadyForInput(text string) bool {
+	if _, det := DetectInputDetail(text); det != DetectNone {
+		return false
+	}
+	return strings.Contains(text, "❯")
+}
+
+// DialogState reports DetectInputDetail's reading of the screen
+// (turns.DialogDetector).
+func (a *Adapter) DialogState(text string) turns.DialogState {
+	_, det := DetectInputDetail(text)
+	switch det {
+	case DetectPending:
+		return turns.DialogPending
+	case DetectUnparseable:
+		return turns.DialogUnparseable
+	case DetectOK:
+		return turns.DialogReadable
+	default:
+		return turns.DialogNone
+	}
+}
+
+// DialogAnchors returns the package's DialogAnchors (turns.DialogAnchorer).
+func (a *Adapter) DialogAnchors() []string { return DialogAnchors() }
+
+// ReadDialog is DetectInput (turns.DialogReader).
+func (a *Adapter) ReadDialog(text string) (*turns.InputRequest, bool) { return DetectInput(text) }
+
+// DialogAnchorPresent is AnchorPresent (turns.DialogReader).
+func (a *Adapter) DialogAnchorPresent(text string) bool { return AnchorPresent(text) }
