@@ -28,6 +28,27 @@ package is its normative form, contract version `harness-adapter/1.0`.
 A profile registers its adapter under its harness's name in `init`; a runtime links the harnesses it
 offers through one file of blank imports and finds them with `contract.Lookup`.
 
+## harness-wrapper's Harness Adapter
+
+`pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
+It is the shared part, and names no harness:
+
+- **Sessions.** The states, one outstanding `Send`, the admission gate (a usage, auth or billing
+  error closes it; a usage wall with a known reset opens it again then, and nothing is retried),
+  an `Interrupt` that names its input and is ordered after an outstanding send, `Answer`, and
+  `Close` with `stopped` and `drained`. An uncertain send keeps the Session busy until its turn ends.
+- **Observe and Ack.** One cursor over the live events and the record, in the order learned. A
+  record chunk may span batches: its reset, rescan and faults go with its first item, its
+  checkpoint with its last, and the reader moves past it only once that batch is acknowledged.
+- **Submission markers**, one per input under `layout.scratch/markers`, synced before the harness
+  gets the input. `OpenRecord` and `Recover` rest on them: only an intact store's missing marker
+  proves an input never ran.
+
+A profile (`adapter.Profile`) supplies what is its harness's own: the Descriptor, `Provision`, a
+`Transport` to the running harness (submit, interrupt, answer, stop, and its events) and a
+`Reader` of its record (chunks of record-origin observations, commit, and the evidence for
+`Recover`). It registers with `adapter.Register` under its harness's name.
+
 ## Running the kit
 
 ```go

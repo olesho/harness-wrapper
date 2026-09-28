@@ -38,6 +38,7 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/contract` | The Harness Adapter Interface: the types, `Adapter` / `Session` / `Record`, the registry and the generated JSON Schema; standard library only | [Harness Adapter Interface](contract.md) |
 | `pkg/contract/conformance` | The interface's conformance kit: a fake Agent Adapter and scenarios in P11's prompt language | [Running the kit](contract.md#running-the-kit) |
 | `pkg/contract/fakeadapter` | An in-process harness's adapter: the kit's reference, and a stand-in for a runtime's tests | [Harness Adapter Interface](contract.md) |
+| `pkg/adapter` | hw's Harness Adapter: sessions, the observe/ack cursor, submission markers and record access over a per-harness profile | [Harness Adapter](contract.md#harness-wrappers-harness-adapter) |
 
 ## Internal packages
 

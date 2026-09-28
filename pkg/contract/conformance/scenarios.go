@@ -463,26 +463,53 @@ func observeSize(c *check) {
 	if tooLarge == nil {
 		c.stop("observe.too-large", "no batch_too_large for a reply over the bound")
 	}
-	if tooLarge.RequiredBytes <= contract.MinObserveBytes {
-		c.fail("observe.too-large", "required_bytes %d does not exceed the bound", tooLarge.RequiredBytes)
-	}
-	b, err := s.Observe(ctx, time.Second, min(max(tooLarge.RequiredBytes, contract.MinObserveBytes), contract.MaxObserveBytes))
-	if err != nil {
-		c.stop("observe.too-large", "Observe with the required bound: %v", err)
-	}
-	found := false
-	for _, o := range b.Items {
-		if o.Kind == contract.KindAssistantText && o.InputID == in {
-			found = true
-			var d contract.AssistantTextData
-			_ = o.Decode(&d)
-			if len(d.Text) > contract.MaxObservationText || !o.Truncated {
-				c.fail("observe.truncated", "a %d-byte text, truncated=%v: want it cut to %d and marked", len(d.Text), o.Truncated, contract.MaxObservationText)
+	// Each refusal names a bound that delivers the item it refused. The
+	// reply's turn_ended, whose text is the same reply cut to its bound, may
+	// come first: follow the refusals until the reply itself arrives.
+	for found := false; !found; {
+		if tooLarge.RequiredBytes <= contract.MinObserveBytes {
+			c.fail("observe.too-large", "required_bytes %d does not exceed the bound", tooLarge.RequiredBytes)
+		}
+		b, err := s.Observe(ctx, time.Second, min(max(tooLarge.RequiredBytes, contract.MinObserveBytes), contract.MaxObserveBytes))
+		if err != nil {
+			c.stop("observe.too-large", "Observe with the required bound: %v", err)
+		}
+		if len(b.Items) == 0 {
+			c.stop("observe.too-large", "the required bound delivered nothing")
+		}
+		for _, o := range b.Items {
+			if o.Kind == contract.KindAssistantText && o.InputID == in {
+				found = true
+				var d contract.AssistantTextData
+				_ = o.Decode(&d)
+				if len(d.Text) > contract.MaxObservationText || !o.Truncated {
+					c.fail("observe.truncated", "a %d-byte text, truncated=%v: want it cut to %d and marked", len(d.Text), o.Truncated, contract.MaxObservationText)
+				}
 			}
 		}
-	}
-	if !found {
-		c.fail("observe.too-large", "the reply was not in the batch the required bound allowed")
+		if b.NeedsAck() {
+			_ = s.Ack(b.BatchID)
+		}
+		for !found {
+			b, err = s.Observe(ctx, 200*time.Millisecond, contract.MinObserveBytes)
+			if asErr(err, &tooLarge) && tooLarge.Code == contract.CodeBatchTooLarge {
+				break
+			}
+			if err != nil {
+				c.stop("observe.too-large", "Observe: %v", err)
+			}
+			for _, o := range b.Items {
+				if o.Kind == contract.KindAssistantText && o.InputID == in {
+					c.stop("observe.too-large", "a 100 KiB reply fit a %d-byte bound", contract.MinObserveBytes)
+				}
+			}
+			if !b.NeedsAck() && time.Now().After(deadline) {
+				c.stop("observe.too-large", "the reply was never delivered")
+			}
+			if b.NeedsAck() {
+				_ = s.Ack(b.BatchID)
+			}
+		}
 	}
 }
 
