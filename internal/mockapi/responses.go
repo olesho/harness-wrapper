@@ -109,9 +109,16 @@ func (s *Server) serveResponses(w http.ResponseWriter, raw []byte) {
 	var b responsesBody
 	_ = json.Unmarshal(raw, &b)
 	scenario, toolResult := routeResponses(b)
+	var input []string
+	for _, raw := range b.Input {
+		var it responsesItem
+		if json.Unmarshal(raw, &it) == nil {
+			input = append(input, responsesText(it.Content))
+		}
+	}
 	s.mu.Lock()
 	s.n++
-	s.requests = append(s.requests, Request{N: s.n, Scenario: scenario, System: b.Instructions, Stream: b.Stream, Model: b.Model})
+	s.requests = append(s.requests, Request{N: s.n, Scenario: scenario, System: b.Instructions, Input: strings.Join(input, "\n"), Stream: b.Stream, Model: b.Model})
 	s.mu.Unlock()
 
 	words := strings.Fields(scenario)

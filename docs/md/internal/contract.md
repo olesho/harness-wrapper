@@ -94,6 +94,44 @@ checks, against a real claude driving `internal/mockapi` — a Go port of agentd
 API — when `HW_REAL_CLAUDE` names the pinned binary. The `harness-adapter` workflow runs them on
 Linux with the pinned claude it downloads and verifies.
 
+## The Codex profile
+
+`pkg/adapter/codex` registers `codex`. Its harness distribution, under `harness_root`, is the pinned
+codex (`bin/codex`): the native binary from its npm package's vendor directory, never the node shim,
+whose death would leave the native process holding the thread.
+
+- **Provision** renders `CODEX_HOME` in the config root: `config.toml` — the model and effort, no
+  approvals and `danger-full-access` (the runtime's isolation is the sandbox), a credential store in
+  memory only, no plugins, apps or analytics, and an MCP server per connector — `AGENTS.md` with the
+  persona and where the memory directory is, the skills and the memory's files; and the workspace's
+  `AGENTS.md`. The credential kinds are `openai_api_key`, which the transport hands codex over the
+  protocol (`account/login/start`), and `codex_access_token`, which codex reads from
+  `CODEX_ACCESS_TOKEN`.
+- **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
+  of its own. codex chooses a thread's id, so a fresh Session opens without one (no
+  `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex
+  never wrote the thread's rollout. An input is a `turn/start` whose `clientUserMessageId` is its native
+  id; the response is the receipt, and the rollout records the id with the input. codex folds an input
+  sent during a turn into that turn, so the transport, like the Session, keeps one turn in flight. A
+  turn ends with `turn/completed`: `completed`, `interrupted`, or `failed`, classed by its
+  `codexErrorInfo`; `error` notifications with `willRetry` are its retries, and
+  `account/rateLimits/updated` its usage, whose full window says when a usage wall lifts. codex refuses
+  to interrupt a turn it has not made active, so an interrupt asked before `turn/started` goes once it
+  comes; the turn's end, never `turn/interrupt`'s answer, settles it.
+- **Record:** the thread's rollout under `CODEX_HOME/sessions`, followed from the checkpoint once codex
+  writes it with the first turn (`pkg/transcript/codex`). A turn begins at `task_started` and belongs to
+  the input whose client id its user message carries — `user_message` in codex 0.144,
+  `item_completed`'s `UserMessage` in 0.157. Replies become `assistant_text`, tool calls `tool_use` and
+  `tool_result`, and the turn's end a record-origin `turn_ended`: interrupted at `turn_aborted`,
+  errored at a `task_complete` with an error (0.157), completed at one with a reply. A `task_complete`
+  with neither — codex 0.144's failed turn — proves no outcome.
+- **Recover** finds the input's user message by the marker's native id, then its turn's end: without an
+  end that proves an outcome, `unknown`.
+
+`TestCodexConforms` runs the conformance kit against a real codex driving `internal/mockapi`'s
+Responses API when `HW_REAL_CODEX` names the pinned binary; the `harness-adapter` workflow runs it on
+Linux with the pinned codex it downloads and verifies.
+
 ## Running the kit
 
 ```go

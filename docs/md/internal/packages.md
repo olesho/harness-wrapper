@@ -41,6 +41,7 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/contract/fakeadapter` | An in-process harness's adapter: the kit's reference, and a stand-in for a runtime's tests | [Harness Adapter Interface](contract.md) |
 | `pkg/adapter` | hw's Harness Adapter: sessions, the observe/ack cursor, submission markers and record access over a per-harness profile | [Harness Adapter](contract.md#harness-wrappers-harness-adapter) |
 | `pkg/adapter/claudecode` | The Claude Code profile: stream-json transport, `Provision`, the transcript and hook spool as the record | [Claude Code profile](contract.md#the-claude-code-profile) |
+| `pkg/adapter/codex` | The Codex profile: app-server transport, `Provision`, the thread's rollout as the record | [Codex profile](contract.md#the-codex-profile) |
 
 ## Internal packages
 
@@ -49,7 +50,8 @@ Where everything lives, what depends on what, and which page documents it.
 | `internal/wrapcore` | `pkg/wrapper` without any classifier patterns; `harness/*` holds each harness's patterns, `detector` their matcher | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
 | `internal/chatcore` | `pkg/chat` without any screen adapter: a harness is whatever adapter is registered under its name | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
 | `internal/harnesscore` | `pkg/harness` without `Run` and `RunTurn`: the profile registry, hook specs, the hook handler and its spool, the settings.json merge. The per-harness hook profiles build on it, so they link no chat | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [Harness profiles & runs](harness.md) |
-| `internal/mockapi` | A Go port of agentd's P11 mock Messages API, for driving a real claude through scripted scenarios | [Claude Code profile](contract.md#the-claude-code-profile) |
+| `internal/mockapi` | A mock of a harness's model API — the Messages API, a Go port of agentd's P11 mock, and the Responses API — for driving a real claude or codex through scripted scenarios | [Claude Code profile](contract.md#the-claude-code-profile) · [Codex profile](contract.md#the-codex-profile) |
+| `internal/procgroup` | Starts a harness in a process group of its own, signals the group, and tells when it is empty | [Harness Adapter](contract.md#harness-wrappers-harness-adapter) |
 | `internal/facadegen` | Writes `pkg/chat`'s, `pkg/wrapper`'s and `pkg/harness`'s forwarding declarations from their cores (`go generate`) | — |
 | `internal/env` | The environment core: provisioners, containments, `Workspace`, `Compose`, lifecycle, retention | [Execution environments](env.md) · [ADR-003](decisions/adr-003-env-visibility.md) |
 | `internal/env/daytona`, `internal/env/openshell` | The shipped provisioner / containment drivers | [Two orthogonal axes](env.md#two-orthogonal-axes) |
@@ -80,6 +82,7 @@ pkg/wrapper  →  internal/wrapcore · internal/wrapcore/harness/*          (the
 pkg/harness  →  internal/harnesscore · pkg/chat · pkg/wrapper
 pkg/harness/*  →  internal/harnesscore · pkg/transcript/*                (a hook profile links no chat)
 pkg/adapter/claudecode  →  pkg/adapter · internal/harnesscore · pkg/harness/claude · pkg/transcript/claudecode
+pkg/adapter/codex       →  pkg/adapter · pkg/transcript/codex
 pkg/turns  →  pkg/transcript          (for the reader capability's return type)
 pkg/env    →  internal/env · pkg/turnproto
 ```

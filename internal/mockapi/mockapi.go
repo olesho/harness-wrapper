@@ -58,6 +58,9 @@ type Request struct {
 	// System is the request's system prompt, joined: the Responses API's
 	// instructions.
 	System string
+	// Input is the text of every input item of a Responses request, joined:
+	// where codex puts its AGENTS.md.
+	Input  string
 	Stream bool
 	Model  string
 }
