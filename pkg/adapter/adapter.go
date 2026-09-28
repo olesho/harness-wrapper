@@ -275,3 +275,17 @@ func checkVersion(v string) error {
 	}
 	return nil
 }
+
+// TransportOf is the transport of a Session this adapter opened: for a
+// profile's own tests and tools, which may need to reach the harness behind
+// the interface — to crash it, say. nil for any other Session, or before Open
+// started one.
+func TransportOf(s contract.Session) Transport {
+	ss, ok := s.(*session)
+	if !ok {
+		return nil
+	}
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return ss.t
+}

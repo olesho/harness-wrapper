@@ -49,6 +49,41 @@ A profile (`adapter.Profile`) supplies what is its harness's own: the Descriptor
 `Reader` of its record (chunks of record-origin observations, commit, and the evidence for
 `Recover`). It registers with `adapter.Register` under its harness's name.
 
+## The Claude Code profile
+
+`pkg/adapter/claudecode` registers `claude-code`. Its harness distribution, under `harness_root`, is
+the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code-hook`
+(`bin/claude-code-hook`).
+
+- **Provision** renders what agentd rendered before it (`TestProvisionMatchesAgentdProfile` holds the
+  two side by side): `settings.json` with the hooks, `.claude.json` with onboarding, bypass and
+  workspace trust answered, the persona, skills, memory, `mcp.json` and the workspace's `CLAUDE.md`,
+  and `open_config` with claude's arguments and environment. Each hook runs the helper, which writes
+  what it reports to the spool in `layout.scratch/spool`.
+- **Transport:** stream-json, one claude process per Session in a process group of its own. An input
+  is a user message whose uuid is the input's native id, a fresh UUID kept in its submission marker;
+  claude's `command_lifecycle` receipt returns `Send`, and its transcript keeps the uuid as the prompt
+  entry's. A turn ends with claude's `result`: by `is_error` and `terminal_reason`. `cancelled` needs
+  claude's word that the message never started — claude says `cancelled` after the result of a turn it
+  interrupted or failed, too. A failed turn is classed by the synthetic message's tag, the HTTP status
+  and, for a 429, whether the account refused it: a usage wall (`You've hit your … limit · resets …`)
+  closes the gate until its reset; the server's 429 (`not your usage limit`) is an `api` error.
+- **Record:** the session transcript, followed from the checkpoint, and the hook spool. Checkpoint
+  format 1 is the transcript follower's checkpoint — the one agentd stored — so stored checkpoints
+  resume where they stood (`TestNodeDBCheckpoint`). Entries become `user_input`, `assistant_text`,
+  `tool_use`, `tool_result` and `api_error`, keyed by the entry's uuid (and block) or the tool use id,
+  with `entry` set to the entry's uuid. A turn's end is in the record as its final assistant entry
+  (`stop_reason: end_turn`), a synthetic API-error entry or an interrupt entry, each a record-origin
+  `turn_ended`. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop;
+  a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
+- **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
+  `unknown`.
+
+`TestClaudeConforms` runs the conformance kit, and `TestClaudeObservations` the profile's own
+checks, against a real claude driving `internal/mockapi` — a Go port of agentd's P11 mock Messages
+API — when `HW_REAL_CLAUDE` names the pinned binary. The `harness-adapter` workflow runs them on
+Linux with the pinned claude it downloads and verifies.
+
 ## Running the kit
 
 ```go

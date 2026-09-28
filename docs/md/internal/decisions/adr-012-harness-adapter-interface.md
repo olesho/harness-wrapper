@@ -35,9 +35,9 @@ The migration plan is
    live at `pkg/contract` in this module and follow its releases. The contract imports only the
    standard library, so importing it links nothing else of hw. A conformance kit, a fake Agent
    Adapter plus scenarios, is a separate package beside it.
-2. **One Harness Adapter, with a profile per harness.** The shared part holds what the interface
-   needs and no harness has to repeat:
-   - sessions over the chat core;
+2. **One Harness Adapter, with a profile per harness** (`pkg/adapter`). The shared part holds what
+   the interface needs and no harness has to repeat:
+   - sessions over a profile's transport;
    - one observe/ack cursor with stable, kind-prefixed identities and a versioned checkpoint;
    - submission markers, and record access with `recover`;
    - interrupts that name their input;
@@ -46,6 +46,12 @@ The migration plan is
    A profile holds what differs between harnesses: the Descriptor, `Provision`, the transport, the
    record reader, credential injection, hooks and quirks. Each profile registers under its harness's
    name, so a runtime's harness list picks harnesses one at a time.
+
+   A profile's transport speaks its harness's protocol itself. The Claude Code profile drives
+   stream-json directly rather than through `pkg/chat`'s Conversation: the interface wants a native
+   id per input, `cancelled` only on positive evidence, and retries reported one by one, which the
+   Conversation keeps to itself, and exposing them would widen `pkg/chat`'s API. The profile shares
+   hw's transcript follower, its hook handler and spool, and its reset-time parser.
 3. **Rendering a harness's configuration is in scope.** `Provision` turns a harness-neutral agent
    definition into the harness's files, argv and environment. It is pure: hw renders, and the caller
    writes.
@@ -59,7 +65,9 @@ The migration plan is
    dialog re-reading, and interstitial dismissal.
 
    `pkg/chat` and `pkg/wrapper` stay as they are: the same API — every exported identifier is an
-   alias of, or forwards to, the core's — and every built-in harness, which they register.
+   alias of, or forwards to, the core's — and every built-in harness, which they register. So does
+   `pkg/harness`, over `internal/harnesscore`: the core is everything but `Run` and `RunTurn`, which
+   drive a harness through `pkg/chat`, so a harness's hook profile links no chat.
 6. **stream-json stays the Claude transport.** The TUI + hooks + transcript hybrid
    (`probes/tui-hybrid`) is not a shipped transport: an interrupt before the first token leaves it no
    trace, and it cannot see API retries.
@@ -88,7 +96,8 @@ The migration plan is
 - The cores are internal: hw's own packages import them; callers outside the module keep `pkg/chat`
   and `pkg/wrapper`. A test compares the `pkg/chat` API with its golden file.
 - Code that must link one harness at a time imports the cores. A new exported identifier in a core
-  reaches its facade when the facade is regenerated (`go generate` in `pkg/chat` and `pkg/wrapper`).
+  reaches its facade when the facade is regenerated (`go generate` in `pkg/chat`, `pkg/wrapper` and
+  `pkg/harness`).
 - A harness-specific reading in the chat core is an optional capability of its screen adapter.
   Harness names remain only where they select wire-level behaviour, such as submit keys and
   permission-mode flags.

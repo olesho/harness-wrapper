@@ -1,0 +1,47 @@
+# The Harness Adapter's profiles against their pinned harness binaries: the
+# conformance kit (pkg/contract/conformance) and each profile's own checks,
+# with a real harness process driving the in-process mock model API
+# (internal/mockapi). No account and no network beyond the binary's download,
+# which is verified against the checksum pinned here.
+#
+# Moving claude-code's pin in pkg/versions fails this job until CLAUDE_VERSION
+# and CLAUDE_SHA256 move with it (the release manifest,
+# https://downloads.claude.ai/claude-code-releases/<version>/manifest.json,
+# lists each platform's checksum).
+name: harness-adapter
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  claude-code:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CLAUDE_VERSION: "2.1.283"
+      CLAUDE_SHA256: "1859583ce32920595c61ef868bee52e1b1594f7486db209935e01f1e5e804ae2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch the pinned claude
+        run: |
+          set -euo pipefail
+          pinned=$(jq -r '."claude-code".pinned' pkg/versions/versions.json)
+          if [ "$pinned" != "$CLAUDE_VERSION" ]; then
+            echo "::error::pkg/versions pins claude-code $pinned; move CLAUDE_VERSION and CLAUDE_SHA256 with it"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/harness"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/harness/claude" \
+            "https://downloads.claude.ai/claude-code-releases/$CLAUDE_VERSION/linux-x64/claude"
+          echo "$CLAUDE_SHA256  $RUNNER_TEMP/harness/claude" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/harness/claude"
+
+      - name: The Claude Code profile against the pinned claude
+        run: |
+          HW_REAL_CLAUDE="$RUNNER_TEMP/harness/claude" \
+            go test -count=1 -race -timeout 15m -run 'TestClaude' -v ./pkg/adapter/claudecode/
