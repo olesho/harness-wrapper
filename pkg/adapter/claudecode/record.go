@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
@@ -317,32 +316,9 @@ func boundInput(raw json.RawMessage) (json.RawMessage, bool) {
 	return b, true
 }
 
-// LegacyHookFacts makes the record report each Stop and SessionEnd hook's
-// firing as an observation of KindLegacyHook, which is not the contract's: a
-// transitional source for a host that must go on publishing the advisory facts
-// it published before this profile (agentd's hook.stop and hook.session_end),
-// set by that host before it uses the adapter. Off, as it is by default, those
-// hooks' files report nothing.
-var LegacyHookFacts atomic.Bool
-
-// KindLegacyHook is LegacyHookFacts' observation: one per Stop or SessionEnd
-// hook spool file, keyed by the file's digest, with LegacyHookData.
-const KindLegacyHook contract.Kind = "x_legacy_hook"
-
-// LegacyHookData is KindLegacyHook's payload.
-type LegacyHookData struct {
-	// Hook is stop or session_end.
-	Hook string `json:"hook"`
-	// File and Digest are the spool file's name and its receipt's digest
-	// ("sha256:<hex>").
-	File   string `json:"file"`
-	Digest string `json:"digest"`
-}
-
 // spoolItems are the observations one hook spool file reports, by the hook it
 // was written under (its name's prefix). Other files — session markers, the
-// prompt, Stop's and SessionEnd's copy of the transcript — report nothing,
-// unless LegacyHookFacts asks for Stop's and SessionEnd's.
+// prompt, Stop's and SessionEnd's copy of the transcript — report nothing.
 func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 	name := sb.Receipt.Name
 	digest := strings.TrimPrefix(sb.Receipt.Digest, "sha256:")
@@ -394,17 +370,6 @@ func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 		}
 	}
 	switch {
-	case LegacyHookFacts.Load() && (strings.HasPrefix(name, "stop-") || strings.HasPrefix(name, "session-end-")):
-		hook := "stop"
-		if strings.HasPrefix(name, "session-end-") {
-			hook = "session_end"
-		}
-		at := time.Now()
-		if len(sb.Events) > 0 && !sb.Events[0].Event.Timestamp.IsZero() {
-			at = sb.Events[0].Event.Timestamp
-		}
-		out = append(out, contract.NewObservation(KindLegacyHook, digest, contract.OriginRecord, at,
-			LegacyHookData{Hook: hook, File: name, Digest: sb.Receipt.Digest}))
 	case strings.HasPrefix(name, harnesscore.HookArgPreToolUse+"-"):
 		tool(contract.KindToolStarted, false, false)
 	case strings.HasPrefix(name, harnesscore.HookArgPostToolUseFailure+"-"):
