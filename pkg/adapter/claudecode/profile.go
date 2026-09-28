@@ -12,7 +12,6 @@ package claudecode
 
 import (
 	"path/filepath"
-	"runtime/debug"
 
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -52,7 +51,7 @@ func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
 		Contract: contract.Version,
-		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: "harness-wrapper " + moduleVersion()},
+		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible,
@@ -71,26 +70,4 @@ func (Profile) Describe() contract.Descriptor {
 		},
 		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
 	}
-}
-
-// moduleVersion is harness-wrapper's version in this binary: its module's
-// version as a dependency, "(devel)" in its own builds.
-func moduleVersion() string {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "(unknown)"
-	}
-	const mod = "github.com/olesho/harness-wrapper"
-	if bi.Main.Path == mod {
-		return bi.Main.Version
-	}
-	for _, d := range bi.Deps {
-		if d.Path == mod {
-			if d.Replace != nil && d.Replace.Version != "" {
-				return d.Replace.Version
-			}
-			return d.Version
-		}
-	}
-	return "(unknown)"
 }

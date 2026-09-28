@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -317,4 +318,27 @@ func HostEnv() []string {
 		}
 	}
 	return env
+}
+
+// Name is the adapter as a Descriptor names it: harness-wrapper and its
+// release in this binary (its module's version as a dependency, "(devel)" in
+// its own builds).
+func Name() string {
+	const mod = "github.com/olesho/harness-wrapper"
+	version := "(unknown)"
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if bi.Main.Path == mod {
+			version = bi.Main.Version
+		}
+		for _, d := range bi.Deps {
+			if d.Path != mod {
+				continue
+			}
+			version = d.Version
+			if d.Replace != nil && d.Replace.Version != "" {
+				version = d.Replace.Version
+			}
+		}
+	}
+	return "harness-wrapper " + version
 }

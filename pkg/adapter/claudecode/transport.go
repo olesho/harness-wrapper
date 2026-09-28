@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/internal/procgroup"
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -243,7 +244,7 @@ func readToken(file string) (string, error) {
 func (t *transport) start(bin string, args []string, dir string, env []string) error {
 	cmd := exec.Command(bin, args...)
 	cmd.Dir, cmd.Env = dir, env
-	setProcessGroup(cmd)
+	procgroup.Set(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -545,7 +546,7 @@ func (t *transport) wait() {
 	var code int
 	sig := ""
 	if ps := t.cmd.ProcessState; ps != nil {
-		code, sig = ps.ExitCode(), exitSignal(ps)
+		code, sig = ps.ExitCode(), procgroup.ExitSignal(ps)
 	}
 	if sig == "" && code >= 0 {
 		c := code
@@ -699,14 +700,14 @@ func (t *transport) Stop(ctx context.Context, grace time.Duration) bool {
 		t.until(ctx, t.exited, min(time.Until(deadline), quitWait))
 	}
 	if !t.gone() {
-		signalGroup(t.cmd, false)
+		procgroup.Signal(t.cmd, false)
 		t.untilGone(ctx, deadline)
 	}
 	if !t.gone() {
 		t.mu.Lock()
 		t.killed = true
 		t.mu.Unlock()
-		signalGroup(t.cmd, true)
+		procgroup.Signal(t.cmd, true)
 		t.untilGone(ctx, time.Time{})
 	}
 	return t.gone()
@@ -717,7 +718,7 @@ func (t *transport) kill() {
 	t.mu.Lock()
 	t.killed = true
 	t.mu.Unlock()
-	signalGroup(t.cmd, true)
+	procgroup.Signal(t.cmd, true)
 }
 
 // gone reports whether claude and every process left in its group ended.
@@ -727,7 +728,7 @@ func (t *transport) gone() bool {
 	default:
 		return false
 	}
-	return groupEmpty(t.cmd)
+	return procgroup.Empty(t.cmd)
 }
 
 func (t *transport) until(ctx context.Context, ch <-chan struct{}, d time.Duration) {
