@@ -2,10 +2,14 @@ package claudecode
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
+	tclaude "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 )
 
 // A failed turn is classed by what claude wrote: its tag, the HTTP status and,
@@ -59,5 +63,38 @@ func TestRateLimit(t *testing.T) {
 	}
 	if _, _, ok := rateLimit(json.RawMessage(`{"resetsAt":1}`)); ok {
 		t.Error("a report without a status is not one")
+	}
+}
+
+// A reopen resumes the session's transcript; one claude never wrote starts
+// under its id, as a fresh open does.
+func TestSessionArgs(t *testing.T) {
+	dir := t.TempDir()
+	ws, cfgDir := filepath.Join(dir, "workspace"), filepath.Join(dir, "config")
+	if err := os.MkdirAll(ws, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := openConfig{WorkingDir: ws, Env: []string{"CLAUDE_CONFIG_DIR=" + cfgDir}}
+	id := "0b0f5f43-6a50-4b62-9d44-2f3a2c6f0f1e"
+	fresh, resume := []string{"--session-id", id}, []string{"--resume", id}
+	if got := sessionArgs(contract.OpenFresh, id, cfg); !reflect.DeepEqual(got, fresh) {
+		t.Errorf("fresh: %q", got)
+	}
+	if got := sessionArgs(contract.OpenReopen, id, cfg); !reflect.DeepEqual(got, fresh) {
+		t.Errorf("a reopen without a transcript: %q, want %q", got, fresh)
+	}
+	real, err := filepath.EvalSymlinks(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(cfgDir, "projects", tclaude.EncodedCWD(real), id+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionArgs(contract.OpenReopen, id, cfg); !reflect.DeepEqual(got, resume) {
+		t.Errorf("a reopen of a transcript: %q, want %q", got, resume)
 	}
 }

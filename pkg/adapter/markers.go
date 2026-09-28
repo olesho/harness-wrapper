@@ -128,6 +128,37 @@ func (m *Markers) Write(mk Marker) error {
 	return nil
 }
 
+// Withdraw removes the marker of an input its harness never got. Send withdraws
+// it when the transport refused the input before anything reached the harness,
+// so the input id is free to be sent again and Recover finds it never
+// submitted. Withdrawing a marker that is not there changes nothing.
+func (m *Markers) Withdraw(inputID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.intact(); err != nil {
+		return err
+	}
+	path := filepath.Join(m.dir, fileName(inputID))
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("adapter: marker: %w", err)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("adapter: marker: %w", err)
+	}
+	if err := syncDir(m.dir); err != nil {
+		return fmt.Errorf("adapter: marker: %w", err)
+	}
+	var mk Marker
+	if json.Unmarshal(data, &mk) == nil && mk.Native != "" {
+		delete(m.byNative, mk.Native)
+	}
+	return nil
+}
+
 // Lookup reads the marker of inputID. found is false only when the intact
 // store has none; an unreadable or corrupt store or marker is an error.
 func (m *Markers) Lookup(inputID string) (mk Marker, found bool, err error) {

@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,25 @@ func TestMarkers(t *testing.T) {
 	other, _ := OpenMarkers(scratch)
 	if got, ok := other.ByNative("n-1"); !ok || got.InputID != ".." {
 		t.Errorf("ByNative = %+v %v", got, ok)
+	}
+	// A withdrawn marker is gone for good: by input, by native id, and to
+	// another process's store; withdrawing it again changes nothing.
+	if err := m.Write(Marker{InputID: "in-4", Native: "n-4", SessionID: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := m.Withdraw("in-4"); err != nil {
+			t.Fatalf("Withdraw: %v", err)
+		}
+	}
+	if _, ok, err := m.Lookup("in-4"); err != nil || ok {
+		t.Errorf("Lookup of a withdrawn marker = %v %v, want absent", ok, err)
+	}
+	if _, ok := m.ByNative("n-4"); ok {
+		t.Error("ByNative finds a withdrawn marker")
+	}
+	if _, ok := other.ByNative("n-4"); ok {
+		t.Error("another store finds a withdrawn marker")
 	}
 	if err := os.Remove(filepath.Join(scratch, markersDir, storeFile)); err != nil {
 		t.Fatal(err)
@@ -137,6 +157,60 @@ func TestChunkSpansBatches(t *testing.T) {
 	}
 	if err := c.ack(got[1].BatchID); contract.CodeOf(err) != contract.CodeUnexpected {
 		t.Errorf("acking an older batch: %v, want unexpected", err)
+	}
+}
+
+// refusingTransport refuses its first refuse inputs before anything reaches
+// its harness, and takes the rest.
+type refusingTransport struct {
+	refuse    int
+	submitted []string
+}
+
+func (r *refusingTransport) SessionID() string { return "s" }
+
+func (r *refusingTransport) Submit(_ context.Context, s Submission) error {
+	if r.refuse > 0 {
+		r.refuse--
+		return fmt.Errorf("%w: not now", ErrNotSubmitted)
+	}
+	r.submitted = append(r.submitted, s.InputID)
+	return nil
+}
+
+func (r *refusingTransport) Interrupt(context.Context) error                       { return nil }
+func (r *refusingTransport) Answer(context.Context, string, contract.Choice) error { return nil }
+func (r *refusingTransport) Stop(context.Context, time.Duration) bool              { return true }
+
+// A Submit that reached nothing withdraws the input's marker: the Host may
+// send the input again under its id, and Recover finds it never submitted.
+func TestNotSubmittedFreesTheInputID(t *testing.T) {
+	ctx := context.Background()
+	m, err := OpenMarkers(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := &refusingTransport{refuse: 1}
+	s := newSession(&harnessAdapter{p: newFakeProfile(), desc: newFakeProfile().Describe()}, contract.OpenRequest{})
+	s.phase, s.t, s.markers, s.sessionID = contract.PhaseIdle, tr, m, "s"
+	if _, err := s.Send(ctx, contract.Text("in-1", "hello")); contract.CertaintyOf(err) != contract.NotSubmitted {
+		t.Fatalf("a refused send: %v, want not_submitted", err)
+	}
+	if _, ok, err := m.Lookup("in-1"); err != nil || ok {
+		t.Errorf("the marker of an input never submitted: %v %v, want none", ok, err)
+	}
+	if got, err := newRecord(&stubReader{}, m, "s").Recover(ctx, "in-1"); err != nil || got.Outcome != contract.RecoveredNotFound {
+		t.Errorf("Recover of an input never submitted = %+v %v, want not_found", got, err)
+	}
+	res, err := s.Send(ctx, contract.Text("in-1", "hello"))
+	if err != nil || res.Receipt != contract.ReceiptSubmitted || res.TurnID != TurnID("in-1") {
+		t.Fatalf("the input sent again under its id: %+v %v", res, err)
+	}
+	if _, ok, err := m.Lookup("in-1"); err != nil || !ok {
+		t.Errorf("no marker for the submitted input: %v %v", ok, err)
+	}
+	if len(tr.submitted) != 1 || tr.submitted[0] != "in-1" {
+		t.Errorf("the harness got %v", tr.submitted)
 	}
 }
 

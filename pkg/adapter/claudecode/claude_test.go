@@ -272,3 +272,39 @@ func mustMarkers(t *testing.T, l contract.Layout) *adapter.Markers {
 	}
 	return m
 }
+
+// A reopen of a session claude never wrote a transcript for opens it under its
+// id and runs its turns; the reopen after that resumes the transcript.
+func TestReopenWithoutTranscript(t *testing.T) {
+	bin := realClaude(t)
+	mock := mockapi.Start()
+	defer mock.Close()
+	ag := newLiveAgent(t, distribution(t, bin), mock)
+	a := adapter.New(Profile{})
+	ctx := context.Background()
+	id := "5e1ad6a8-8f4e-4b43-9a4f-0c7a1d2b3c4d"
+	for i, input := range []string{"in-first", "in-second"} {
+		s, err := a.NewSession(contract.OpenRequest{Mode: contract.OpenReopen, SessionID: id, OpenConfig: ag.result.OpenConfig, Layout: ag.layout, Credential: ag.cred})
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened, err := s.Open(ctx)
+		if err != nil {
+			t.Fatalf("reopen %d: %v", i, err)
+		}
+		if opened.SessionID != id {
+			t.Errorf("reopen %d opened %s, want %s", i, opened.SessionID, id)
+		}
+		p := startPump(t, s)
+		if _, err := s.Send(ctx, contract.Text(input, "PING "+input)); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		var d contract.TurnEndedData
+		_ = p.kind(t, contract.KindTurnEnded, contract.OriginLive, input).Decode(&d)
+		if d.Outcome != contract.TurnCompleted || d.Text != "PONG "+input {
+			t.Errorf("reopen %d: turn_ended %+v", i, d)
+		}
+		_, _ = s.Close(ctx, contract.ClosePark, 5*time.Second)
+		p.halt()
+	}
+}

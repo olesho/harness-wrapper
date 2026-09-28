@@ -461,11 +461,18 @@ func (s *session) Send(ctx context.Context, in contract.Input) (contract.SendRes
 	}
 	var ce *contract.Error
 	if errors.Is(err, ErrNotSubmitted) || errors.As(err, &ce) && ce.Certainty == contract.NotSubmitted {
+		// Nothing reached the harness: the marker is withdrawn, so the input
+		// id is free for the Host to send again and no record says it may
+		// have run. A marker that stays keeps the id taken.
+		freed := markers.Withdraw(in.InputID) == nil
 		s.mu.Lock()
 		if s.current == t {
 			s.current = nil
 		}
 		delete(s.byNative, native)
+		if freed {
+			delete(s.turns, in.InputID)
+		}
 		s.mu.Unlock()
 		code := contract.CodeInternal
 		if ce != nil {

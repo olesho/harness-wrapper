@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"strconv"
@@ -19,6 +20,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
+	tclaude "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 )
 
 // The stream-json transport: claude runs as
@@ -176,11 +178,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err := os.MkdirAll(cfg.Spool, 0o700); err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "spool: %v", err)
 	}
-	session := []string{"--session-id", id}
-	if req.Mode == contract.OpenReopen {
-		session = []string{"--resume", id}
-	}
-	args := append(append(session, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"), cfg.Args...)
+	args := append(append(sessionArgs(req.Mode, id, cfg), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"), cfg.Args...)
 
 	t := &transport{
 		id: id, report: req.Report,
@@ -210,6 +208,19 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		return nil, openFailed(contract.OpenConfigInvalid, "claude did not answer its initialize request: %v: %s", err, lastLine(stderr))
 	}
 	return t, nil
+}
+
+// sessionArgs name the session claude runs: a fresh one under its id, or the
+// one it resumes. A reopened session claude never wrote a transcript for — the
+// launch that opened it ended before its first entry — has nothing to resume,
+// and starts under its id as a fresh one would.
+func sessionArgs(mode contract.OpenMode, id string, cfg openConfig) []string {
+	if mode == contract.OpenReopen {
+		if _, err := tclaude.Locate(id, cfg.WorkingDir, cfg.Env); !errors.Is(err, fs.ErrNotExist) {
+			return []string{"--resume", id}
+		}
+	}
+	return []string{"--session-id", id}
 }
 
 // readToken reads a credential file: one line, no control characters.

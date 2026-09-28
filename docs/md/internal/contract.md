@@ -42,7 +42,8 @@ It is the shared part, and names no harness:
   checkpoint with its last, and the reader moves past it only once that batch is acknowledged.
 - **Submission markers**, one per input under `layout.scratch/markers`, synced before the harness
   gets the input. `OpenRecord` and `Recover` rest on them: only an intact store's missing marker
-  proves an input never ran.
+  proves an input never ran. A send the transport refused before anything reached the harness
+  withdraws its marker: the input id is free to be sent again, and `Recover` says `not_found`.
 
 A harness process's environment is its `open_config`'s, its credential, and what `adapter.HostEnv`
 takes from the Host: `PATH`, `LANG`, `LC_*`, `TZ`, and the variables `HW_HARNESS_ENV` names — a
@@ -66,7 +67,10 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   and `open_config` with claude's arguments and environment. Each hook runs the helper, which writes
   what it reports to the spool: the scratch root itself, beside the markers' directory, so a spool a
   host kept before this profile, at the root it now names scratch, is read where it is.
-- **Transport:** stream-json, one claude process per Session in a process group of its own. An input
+- **Transport:** stream-json, one claude process per Session in a process group of its own. A fresh
+  Session starts under its id (`--session-id`); a reopen resumes its transcript (`--resume`), or,
+  when claude never wrote one — the launch that opened the Session ended before its first entry —
+  starts under its id as a fresh one would. An input
   is a user message whose uuid is the input's native id, a fresh UUID kept in its submission marker;
   claude's `command_lifecycle` receipt returns `Send`, and its transcript keeps the uuid as the prompt
   entry's. A turn ends with claude's `result`: by `is_error` and `terminal_reason`. `cancelled` needs
