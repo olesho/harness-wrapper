@@ -35,10 +35,13 @@ harness-wrapper owns:
 - **Reading the harness** — vt100 screen emulation, per-harness turn adapters, and read-only parsers
   for each harness's own transcript.
 - **Driving the harness** — the `Conversation` API with control, interactive input for blocking
-  dialogs, and a pluggable metadata `Store`; one-shot turns and the frozen `turnproto` contract.
+  dialogs, and a pluggable metadata `Store`; one-shot turns and the frozen `turnproto` contract; and
+  the Harness Adapter Interface, through which a runtime that makes agents durable drives any harness
+  without naming it.
 - **Launch policy** — per-harness capability profiles (session ids, resume, hooks), the canonical
-  permission rungs translated into native flags, and opt-in Landlock containment around the harness
-  and everything it starts.
+  permission rungs translated into native flags, rendering a harness's own configuration — its
+  files, flags and environment — from a harness-neutral agent definition, and opt-in Landlock
+  containment around the harness and everything it starts.
 - **Keeping honest about upstream** — discovery of installed binaries, pinned verified versions, the
   recorded corpus and the drift pipeline.
 
