@@ -44,6 +44,11 @@ It is the shared part, and names no harness:
   gets the input. `OpenRecord` and `Recover` rest on them: only an intact store's missing marker
   proves an input never ran.
 
+A harness process's environment is its `open_config`'s, its credential, and what `adapter.HostEnv`
+takes from the Host: `PATH`, `LANG`, `LC_*`, `TZ`, and the variables `HW_HARNESS_ENV` names — a
+Supervisor's harness-neutral way to pass a setting `Provision` could not render, such as a test's
+model API. Never a credential.
+
 A profile (`adapter.Profile`) supplies what is its harness's own: the Descriptor, `Provision`, a
 `Transport` to the running harness (submit, interrupt, answer, stop, and its events) and a
 `Reader` of its record (chunks of record-origin observations, commit, and the evidence for

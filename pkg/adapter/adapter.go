@@ -26,7 +26,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -288,4 +290,31 @@ func TransportOf(s contract.Session) Transport {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	return ss.t
+}
+
+// HarnessEnvVar names the Host environment variable that lists, comma
+// separated, the variables of the Host's own environment a harness takes (see
+// HostEnv).
+const HarnessEnvVar = "HW_HARNESS_ENV"
+
+// HostEnv is the part of the Host's environment a harness process takes:
+// PATH, LANG, LC_* and TZ, and the variables HW_HARNESS_ENV names. It is how a
+// Supervisor gives every harness a setting Provision could not render — a
+// test's model API, say — without knowing the harness. It must never carry a
+// credential: a credential reaches the harness from its staged file.
+func HostEnv() []string {
+	pass := map[string]bool{"PATH": true, "LANG": true, "TZ": true}
+	for _, name := range strings.Split(os.Getenv(HarnessEnvVar), ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			pass[name] = true
+		}
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if pass[k] || strings.HasPrefix(k, "LC_") {
+			env = append(env, kv)
+		}
+	}
+	return env
 }

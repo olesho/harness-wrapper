@@ -52,10 +52,6 @@ const (
 	stderrTail = 4 << 10
 )
 
-// passthrough are the variables claude takes from the Host's environment;
-// the rest of its environment is open_config's and the credential.
-var passthrough = map[string]bool{"PATH": true, "LANG": true, "TZ": true}
-
 type transport struct {
 	id     string
 	report func(adapter.Event)
@@ -161,14 +157,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if _, err := os.Stat(cfg.Binary); err != nil {
 		return nil, openFailed(contract.OpenBinaryNotFound, "%v", err)
 	}
-	env := make([]string, 0, len(cfg.Env)+8)
-	for _, kv := range os.Environ() {
-		k, _, _ := strings.Cut(kv, "=")
-		if passthrough[k] || strings.HasPrefix(k, "LC_") {
-			env = append(env, kv)
-		}
-	}
-	env = append(env, cfg.Env...)
+	env := append(adapter.HostEnv(), cfg.Env...)
 	if req.Mode == contract.OpenReopen {
 		// Arms the hook helper's guard against a leftover hook of another
 		// session.

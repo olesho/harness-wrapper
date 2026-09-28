@@ -194,3 +194,24 @@ func TestTurnIDIsAnID(t *testing.T) {
 		}
 	}
 }
+
+// A harness takes PATH, LANG, LC_* and TZ from its Host, and the variables
+// HW_HARNESS_ENV names — nothing else.
+func TestHostEnv(t *testing.T) {
+	t.Setenv("PATH", "/bin")
+	t.Setenv("LC_ALL", "C")
+	t.Setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:1")
+	t.Setenv("SECRET_THING", "x")
+	t.Setenv(HarnessEnvVar, "ANTHROPIC_BASE_URL, ")
+	got := map[string]string{}
+	for _, kv := range HostEnv() {
+		k, v, _ := strings.Cut(kv, "=")
+		got[k] = v
+	}
+	if got["PATH"] != "/bin" || got["LC_ALL"] != "C" || got["ANTHROPIC_BASE_URL"] != "http://127.0.0.1:1" {
+		t.Errorf("HostEnv = %v", got)
+	}
+	if _, ok := got["SECRET_THING"]; ok {
+		t.Error("a variable HW_HARNESS_ENV does not name passed through")
+	}
+}
