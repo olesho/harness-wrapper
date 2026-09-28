@@ -103,7 +103,7 @@ Supported harness names: codex, claude.
 
 ## Module: main (`docs/gen`)
 
-The static-site generator for the documentation. It renders the canonical markdown under docs/md into themed HTML with syntax-highlighted code and inlined, theme-aware SVG diagrams, and can serve the built site locally for preview. It is a nested Go module so its rendering dependencies stay out of the main module's graph.
+_(summary pending — run the veracity-docs skill)_
 
 > Chroma syntax-highlight CSS generation.
 
@@ -274,21 +274,11 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() (restore func())`
-DisableSupervisionForTest makes every launch see a host that delegates no
-cgroup, until the returned function runs. Tests only.
+#### `func DisableSupervisionForTest() func()`
+DisableSupervisionForTest does nothing here.
 
-#### `func OpenPTYPair() (master, slave int, err error)`
-OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
-O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
-than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
-Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
-pty.Open — and the caller wraps the master in an *os.File only after the
-spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
-
-It runs on an ordinary thread: Landlock fixes a file's rights when the file
-is opened, so a master opened on the restricted thread would deny the
-wrapper's later resize calls.
+#### `func OpenPTYPair() (int, int, error)`
+OpenPTYPair reports ErrUnsupported.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -302,9 +292,7 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent returns the directory beneath which managed state lives:
-$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
-~/.local/state/harness-wrapper/contain.
+StateParent reports ErrUnsupported.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -369,13 +357,11 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(persistent bool) (*State, error)`
-NewState allocates new managed state. Persistent state survives its
-launches until Remove; ephemeral state is deleted by the launch that
-created it once that launch's cgroup is empty.
+#### `func NewState(bool) (*State, error)`
+NewState reports ErrUnsupported.
 
-#### `func OpenState(id string) (*State, error)`
-OpenState opens existing managed state by id.
+#### `func OpenState(string) (*State, error)`
+OpenState reports ErrUnsupported.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -383,6 +369,32 @@ TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
 #### `type TestProfile`
 TestProfile describes a profile the module's tests register for a stand-in
 harness: any executable, plus the listed read/execute trees.
+
+## Module: delivery (`internal/delivery`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package delivery is the bounded, ordered event delivery behind the wrapper's
+and chat's OnEvent callbacks (ADR-008): one worker hands each event to the
+callback in the order it was pushed, and a producer that finds the queue full
+waits for room rather than dropping the event.
+
+### Exported Types & Functions
+
+#### `type Limits`
+Limits bounds what a queue holds at once: events, and their payload bytes.
+A zero field takes its default.
+
+#### `type Queue`
+Queue delivers pushed values to one callback, in push order, from one
+worker goroutine. The zero value is not usable; construct with New.
+
+#### `func New[T any](limits Limits, size func(T) int64, deliver func(T)) *Queue[T]`
+New starts a queue that hands each value to deliver, in order. size reports
+a value's payload bytes.
+
+#### `type Stats`
+Stats is a queue's pressure, for diagnostics.
 
 ## Module: env (`internal/env`)
 
@@ -810,6 +822,19 @@ missing, since the dump itself is what the test cares about.
 Cleanup removes the binary BuildOnce produced. Call it from a package's
 TestMain after m.Run(); it is a no-op if nothing was built.
 
+#### `func ClearComposerKeys(lines int) string`
+ClearComposerKeys returns the keys chat writes to empty a claude-code
+composer holding lines lines: Ctrl-E, then Ctrl-K twice per line, then
+Ctrl-U twice per line and once more. It mirrors the claudecode adapter's
+ClearComposerSequence, which TestClearKeysMatchFakeharness pins it to.
+
+#### `func ComposerLine(text string) string`
+ComposerLine returns a Paint line for a composer holding text.
+
+#### `func InterruptMarkerLine() string`
+InterruptMarkerLine returns the interrupt marker line as claude paints it,
+for a Paint frame.
+
 #### `func PromptRef() string`
 PromptRef returns the placeholder a scenario embeds in a reply body to have
 the captured prompt substituted at paint time.
@@ -850,8 +875,17 @@ Script is the timeline the fake replays. It crosses the process boundary as
 JSON, so every field is exported and JSON-tagged.
 
 #### `type Step`
-Step is exactly one of: paint a Frame, WaitInput for typed bytes, Hold at the
-prompt until the wrapper stops the process, or Exit.
+Step is exactly one of: paint a Frame, WaitInput for typed bytes, append to
+the Transcript, Hold at the prompt until the wrapper stops the process, or
+Exit.
+
+#### `type Transcript`
+Transcript appends records to the session transcript, where a real
+claude-code writes it: <CLAUDE_CONFIG_DIR, else $HOME/.claude>/projects/
+<encoded realpath of the cwd>/<id>.jsonl. <id> is the session the launch
+names — its --session-id, else its --resume — and Script.SessionID for a
+launch that names none. It is how a scenario gives the chat layer the
+harness's own record of a turn, e.g. a tagged API-error line.
 
 #### `type WaitInput`
 WaitInput blocks replay until the bytes the wrapper has typed match
@@ -934,6 +968,31 @@ Scope is a set of Landlock IPC scopes (LANDLOCK_SCOPE_*).
 #### `func Scopes() Scope`
 Scopes returns the IPC scopes every ruleset sets: abstract UNIX sockets and
 signals outside the domain are always out of reach.
+
+## Module: resettime (`internal/resettime`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package resettime reads the reset time out of a harness's usage-limit wall
+("You've hit your session limit · resets 6:40pm (Europe/Warsaw)"). It is
+shared by the wrapper's session-limit matcher and the chat layer's turn
+relabels, so a wall reports the same reset time through every surface.
+
+### Exported Types & Functions
+
+#### `func Parse(text string, now time.Time) (time.Time, bool)`
+Parse scans text for a "resets HH:MM(am|pm) (TZ)" hint and
+returns the next future absolute time at which the limit is expected
+to reset. The TZ portion is optional; when present and recognized as
+an IANA location, the returned time carries that location. When
+absent (or unrecognized), the time resolves in `now`'s location.
+
+"Future" is computed relative to `now`: if the parsed clock-time has
+already passed today, the returned time rolls to tomorrow. This
+matches how the banners are typically rendered — Claude Code prints
+the *next* reset, not a past one.
+
+Returns the zero time and false when no parseable hint was found.
 
 ## Module: main (`internal/screenbench/cmd/screenbench`)
 
@@ -1109,6 +1168,23 @@ A directory qualifies as a scenario iff it contains meta.json.
 #### `func Load(dir string) (*Scenario, error)`
 Load loads a single scenario directory.
 
+## Module: sessionid (`internal/sessionid`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package sessionid mints and checks the session ids a harness accepts for a
+fresh session at launch. Claude Code and pi both take a UUID
+(--session-id <uuid>), and both name the session's transcript after it.
+
+### Exported Types & Functions
+
+#### `func IsUUID(s string) bool`
+IsUUID reports whether s is a UUID in canonical form.
+
+#### `func NewUUID() string`
+NewUUID returns a random UUID (version 4, RFC 9562 variant) in canonical
+lower-case form.
+
 ## Module: cfd (`internal/testsupport/cfd`)
 
 _(summary pending — run the veracity-docs skill)_
@@ -1229,7 +1305,12 @@ it does NOT create a new store record — the record already exists.
 #### `type ConversationEvent`
 ConversationEvent is a discriminated event observed on
 Conversation.Events(). Inspect Type to learn which payload is set: Turn
-for EventTurn, Input for EventInputRequest / EventInputResolved.
+for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+EventExited, RateLimit for EventRateLimit.
+
+#### `type DeliveryState`
+DeliveryState is the event queue's pressure, for diagnostics: a consumer
+that stops taking events shows here before anything else notices.
 
 #### `type DiscoverModelsOptions`
 DiscoverModelsOptions configures DiscoverModels. It mirrors the chat/oneshot
@@ -1243,6 +1324,9 @@ DispositionKind is how a policy disposes of a matched InputRequest.
 
 #### `type EventType`
 EventType discriminates the variants of a ConversationEvent.
+
+#### `type ExitInfo`
+ExitInfo is how the harness process ended.
 
 #### `type HistorySource`
 HistorySource identifies where a History result came from.
@@ -1280,6 +1364,9 @@ PermissionModeBlockedError it carries the client-facing chat.InputRequest
 looked when the driver gave up, so a failed run is diagnosable from the error
 alone rather than from a 43-minute silence.
 
+#### `type InterruptResult`
+InterruptResult is what Interrupt did.
+
 #### `type Options`
 Options configures a single Conversation.
 
@@ -1293,6 +1380,17 @@ cannot perform.
 
 Observed is the last posture read before the driver stopped pressing; it is
 also returned as SetPermissionMode's string result.
+
+#### `type RateLimit`
+RateLimit is the harness's report of the account's usage limit, as it stood
+when the harness last reported it. Each field is the harness's own figure;
+a zero field means the report did not include it.
+
+#### `type RateLimitStatus`
+RateLimitStatus is where the account stands against its usage limit.
+
+#### `type RateLimitWindow`
+RateLimitWindow is one usage window's standing.
 
 #### `type ReopenOptions`
 ReopenOptions configures Reopen. It is the Options knobs that make sense when
@@ -1345,6 +1443,12 @@ older harness-wrapper, which knows nothing of this record, therefore sees a
 session with no harness session id and refuses to resume it
 (ErrNoHarnessSession) instead of resuming it unrestricted — even when its
 decoder drops this field. Read the id through Session.HarnessID.
+
+#### `type State`
+State is a conversation's live state, read in one call (ADR-008).
+
+#### `type Transport`
+Transport selects how a Conversation talks to its harness (Options.Transport).
 
 #### `type Turn`
 Turn is one message in the conversation.
@@ -1681,13 +1785,36 @@ an additive change, not a breaking re-migration of the Profile shape.
 
 ### Exported Types & Functions
 
+#### `func AckSpool(spoolDir string, receipts ...SpoolReceipt) error`
+AckSpool deletes the spool files the receipts name, once the consumer has
+durably committed their events, and fsyncs the directory so that the
+deletions survive a crash. It deletes a file only while it is still exactly
+the one ReadSpool read. A receipt whose name is not a plain spool file name,
+or whose file changed or was replaced since, is refused — wrapped in
+ErrSpoolReceipt — and deletes nothing, so contents nobody committed are
+never lost: ReadSpool returns the changed file again under a new receipt.
+
+A receipt whose file is already gone counts as acknowledged, so repeating
+an acknowledgement, say after a crash, is safe; the directory is fsynced
+even then, which makes an earlier unsynced deletion durable. Until AckSpool
+returns nil, a crash can leave any of its files in place to be read again,
+and the consumer recognises them by receipt. The error joins every refusal
+and failure; the other receipts are still acknowledged.
+
 #### `func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error)`
 DrainSpool reads every COMPLETED spool file (`.json`, never the in-flight
 `.tmp`), returning all parsed events and removing each file it successfully
-consumed so a later drain does not re-emit them. The orchestrator calls it
-(after the harness exits — the grace-window drain) and may call it
-periodically; the consumer additionally dedups by Event.ID(), so a file left
-behind by a delete failure is absorbed rather than duplicated.
+consumed so a later drain does not re-emit them. Run calls it after the
+harness exits (the grace-window drain), then removes the per-run spool; the
+consumer additionally dedups by Event.ID(), so a file left behind by a delete
+failure is absorbed rather than duplicated.
+
+DrainSpool is destructive and not transactional: it deletes each file as
+soon as it has parsed it, before the caller has done anything with the
+events, so a crash in between loses them. That suits a consumer that lives
+and dies with the run. One that must not lose events — agentd, whose
+supervisor outlives its harness — reads with ReadSpool and acknowledges
+with AckSpool after its own durable commit, and never calls DrainSpool.
 
 A missing spool dir is not an error (no hooks fired). A single unreadable /
 unparseable file is skipped (left in place) and collected into err, but does
@@ -1827,6 +1954,49 @@ SettingsHookCmd is a single command hook within a matcher group.
 #### `type SettingsHookMatcher`
 SettingsHookMatcher is one matcher group in a settings.json hook event.
 
+#### `type SpoolBatch`
+SpoolBatch is the events one spool file holds, with the receipt that
+acknowledges it.
+
+#### `type SpoolContents`
+SpoolContents is what one ReadSpool call found.
+
+#### `func ReadSpool(spoolDir string) (SpoolContents, error)`
+ReadSpool reads the completed spool files (`.json`, never an in-flight
+`.tmp`) without consuming them. Each batch carries a receipt, and its file
+stays in the spool until AckSpool is handed that receipt. A consumer commits
+a batch's events durably first and acknowledges it second, so a crash at any
+point loses nothing: ReadSpool returns every file not yet acknowledged again,
+under the same receipt, for the consumer to recognise as committed (or to
+dedup by Event.ID()).
+
+The spool is written by the hook subprocess, which may run as a less trusted
+user than the reader, so ReadSpool trusts nothing in it. It refuses a spool
+dir that is itself a symlink and confines every lookup to the directory. It
+reads only regular, singly linked files of at most MaxSpoolFileBytes, and it
+never follows a symlink or blocks on a FIFO. A file it cannot read as events
+— any other kind of file, an oversize or hard-linked one, an unsafe name, or
+contents that do not parse — is moved into SpoolQuarantineDir, or deleted
+once that holds MaxSpoolQuarantine files, and reported in Quarantined. It
+is never lost silently, and it cannot block the files behind it.
+
+One call handles a bounded amount of the spool and sets More when it leaves
+files for the next call. A spool has one consumer: ReadSpool takes no lock,
+so two concurrent readers would each return the same files. A missing spool
+dir is not an error (no hook fired). A file that cannot be read for any
+other reason stays where it is and is named in the error; the batches
+returned alongside an error are still valid.
+
+#### `type SpoolQuarantine`
+SpoolQuarantine reports a file ReadSpool took out of the spool without
+returning its events, because it could not trust or parse it.
+
+#### `type SpoolReceipt`
+SpoolReceipt identifies one spool file exactly as ReadSpool read it. A
+consumer hands it back to AckSpool once it has durably committed the file's
+events. It is comparable, so the consumer can record it in its own journal
+and recognise the file when a crash makes ReadSpool return it again.
+
 #### `type TurnConfig`
 TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
 
@@ -1962,6 +2132,28 @@ authoritative monotonic Seq from arrival order (stream lines carry no native
 per-line timestamp, so arrival order is the order).
 
 - `ParseStreamLine(line string) []transcript.ParsedEvent`
+
+#### `ToolHookProvider`
+
+> ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+harness can report every tool call through its hooks: one event when a tool
+starts, one when it finishes or fails. Its entries are not in HookSpec,
+because they run a hook subprocess on every tool call; a consumer that wants
+per-tool events — one reading the spool with ReadSpool — adds them to the
+spec it ensures:
+
+	spec := *hp.HookSpec()
+	if th, ok := hp.(ToolHookProvider); ok {
+		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+	}
+
+Each fired entry spools one event (transcript.SourceHook) in a spool file
+named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+file as well as by the event. The authority filter never admits these
+events to Run's OnEvent.
+
+- `ToolHookEntries() []HookEntry`
 
 ## Module: all (`pkg/harness/all`)
 
@@ -2407,8 +2599,40 @@ part predictably instead of silently diverging on the wire.
 #### `type AssistantMessage`
 AssistantMessage represents an assistant message in the transcript.
 
+#### `type Batch`
+A Batch is what one Poll read: the events of the complete records after
+From, the records the decoder could not read, and the Checkpoint that covers
+them all. Committing a batch means storing its Events, its Errors and its
+Checkpoint in one transaction; nothing moves until the caller then Acks it.
+A batch with Checkpoint == From read nothing.
+
+#### `type BlockEvent`
+A BlockEvent is one event a Decoder read from a record, and the index of
+the content block it came from: its position in the record's content array,
+0 for a record with a single body.
+
+#### `type Checkpoint`
+A Checkpoint is how far a Follower has read one transcript, and enough
+about the bytes it read to tell, when it next looks, whether the file still
+extends them. The caller persists it in the same transaction as the events
+and source errors of the batch that proposed it. It is comparable, and its
+JSON form is stable.
+
+The prefix and boundary are what the follower checks: the file's first
+bytes, and the bytes just before Offset, each up to 4 KiB. Together with the
+size and inode they catch rotation, truncation and a truncate-and-regrow
+across a restart. They are not proof against rewriting in place: a change
+that keeps both windows and the size intact goes unseen.
+
 #### `type ContentBlock`
 ContentBlock represents a block within an assistant message.
+
+#### `type Decoder`
+A Decoder turns one complete record of a harness transcript — a line,
+without its newline — into its events, each with the index of the content
+block it came from. It returns an error for a record it cannot read; the
+follower reports it as a SourceError. Decoders set every field of the event
+except Seq and NativeID, which the follower assigns.
 
 #### `type Event`
 Event is the canonical, harness-agnostic representation of a single moment in
@@ -2425,6 +2649,57 @@ EventEnvelope is the durable, routable unit the orchestrator emits to the
 consumer and the event store persists. loom routes/stores by
 (RunID, HarnessSessionID) and dedups by (RunID, HarnessSessionID, Event.ID()).
 
+#### `type FollowedEvent`
+A FollowedEvent is one event of a Batch, and where in the file it came from.
+
+Event.NativeID holds the event's follower identity, so Event.ID() returns
+it. The identity is the most native one the record offers, qualified by the
+event's kind (Type) so that no two kinds ever share one:
+
+	v1:<kind>:tool:<tool-use id>                     tool_use / tool_result with a tool-use id
+	v1:<kind>:line:<record uuid>:<block>             any other event from a record with a uuid
+	v1:<kind>:gen:<generation>:<offset>:<block>      an event from a record with neither
+
+The first two are the harness's own ids, so they are the same across
+batches, restarts and resets: a file read again after a reset re-emits the
+identities already stored, and the caller's dedup drops them. The last is
+only as stable as the generation — a reset starts a new one — because a
+record with no id of its own is known only by where it sits.
+
+An identity can also repeat within one generation: claude writes a
+session's earlier entries again, verbatim, when the session resumes. The
+caller keeps one event per identity, and a repeat is a no-op — never an
+error that fails the batch's transaction, which would then fail forever.
+
+These are not the NativeIDs Read gives, which number text by its position
+in the whole file; Read keeps those for its existing callers.
+
+#### `type Follower`
+A Follower reads a transcript as the harness appends to it, a batch of
+complete records at a time, without moving on until the caller says the
+batch is stored:
+
+	b, err := f.Poll()     // the records after the acknowledged checkpoint
+	...                    // store b.Events, b.Errors and b.Checkpoint in one transaction
+	err = f.Ack(b)         // then move past them
+
+Until Ack, every Poll reads from the same place and gives the same events
+the same identities, so a transaction that fails is simply retried, and a
+process that dies before committing resumes from the checkpoint it last
+stored and sees the batch again. Partial trailing bytes — a record the
+harness is still writing — wait for their newline.
+
+Usage is not accounted here: a sum over batches would count an API call once
+per content block. A Follower is for one goroutine.
+
+#### `func NewFollower(path, sessionID string, from Checkpoint, decode Decoder) (*Follower, error)`
+NewFollower follows the transcript at path for sessionID, from the
+checkpoint the caller last committed, or from the start of the file given
+the zero Checkpoint. decode reads the harness's records.
+
+The file need not exist yet: a harness creates its transcript when it
+writes the first record, and Poll reports fs.ErrNotExist until then.
+
 #### `type Line`
 Line represents a single line in a Claude Code or Cursor JSONL transcript.
 Claude Code uses "type" to distinguish user/assistant messages; Cursor uses
@@ -2438,6 +2713,12 @@ Uses bufio.Reader to handle arbitrarily long lines. Malformed lines skipped.
 ParseFromFileAtLine reads and parses a transcript file starting from a
 specific line. startLine is 0-indexed. Malformed lines are skipped.
 
+#### `func ParseLine(record []byte) (Line, error)`
+ParseLine parses one transcript record the way ParseFromBytes parses each
+line, but returns the error for a malformed record instead of skipping it —
+for a caller, such as a Follower's decoder, that must report what it could
+not read.
+
 #### `type ParsedEvent`
 ParsedEvent is what a per-harness parser returns: an Event tagged with the
 native session it belongs to. A single hook payload / export / file can yield
@@ -2448,6 +2729,26 @@ Harness to produce an EventEnvelope.
 #### `func UnmarshalParsedEvents(data []byte) ([]ParsedEvent, error)`
 UnmarshalParsedEvents parses the durable form produced by MarshalParsedEvents,
 restoring all fields (so Source/NativeID survive the round-trip).
+
+#### `type ResetError`
+ResetError is the error Poll returns when the transcript no longer extends
+its checkpoint. It matches ErrTranscriptReset.
+
+A harness appends to its transcript, so a reset is a source-integrity fault
+— the file was rotated, truncated, or rewritten — and the caller records it
+as one, keeping Previous (and a copy of the file, if it wants the evidence)
+rather than trusting that the log only grows. The follower has already moved
+to a new generation at offset 0: the next Poll reads the file from its start,
+and the batch it returns carries the new generation's Checkpoint.
+
+#### `type ResetReason`
+A ResetReason says what a follower found in place of the bytes its
+checkpoint covers.
+
+#### `type SourceError`
+A SourceError is a complete record the decoder could not read. The batch
+that carries it moves the checkpoint past the record, so the caller records
+it with the batch's events: nothing is skipped silently.
 
 #### `type ToolInput`
 ToolInput represents the input to various tools. Used to extract file paths
@@ -2544,7 +2845,9 @@ Claude Code JSONL → canonical transcript.Event parser.
 Ported from github.com/entireio/cli (MIT, (c) 2026 Entire Inc.) via loomcli's
 internal/sessions/transcript/claude. See ../ORIGIN.md. Local adaptations:
 each Event is tagged Source=file, and a dedup-stable NativeID is set (the
-wrapper dedups events by NativeID; loom's Event had neither field).
+wrapper dedups events by NativeID; loom's Event had neither field). The
+per-line parse also reports the content block each event came from, and why
+a line it could not read was unreadable, for the Follower.
 
 ### Exported Types & Functions
 
@@ -2559,6 +2862,31 @@ Events parses a Claude Code JSONL transcript and returns the canonical
 event stream (one event per content block, tool-aware). Malformed lines are
 skipped. This is the file-source counterpart equivalent to loomcli's
 claude.Events, so the wrapper can replace loom's per-harness parser.
+
+#### `func Follow(sessionID, workingDir string, env []string, from transcript.Checkpoint) (*transcript.Follower, error)`
+Follow returns a Follower for the transcript of Claude Code session
+sessionID, launched in workingDir with env (see Locate), resuming from the
+checkpoint the caller last committed — the zero Checkpoint starts at the
+beginning of the file.
+
+The transcript need not exist yet: claude creates it with its first entry,
+and until then the follower waits where claude will write it, Poll reporting
+fs.ErrNotExist. Each entry becomes the events Read gives for it; an entry
+that is not JSON, or a user or assistant entry whose message cannot be read,
+becomes a SourceError instead.
+
+#### `func Locate(sessionID, workingDir string, env []string) (string, error)`
+Locate returns the path of the transcript Claude Code keeps for session
+sessionID when launched in workingDir with env, by the rules the launch
+adapter reads it by (pkg/turns/harness/claudecode): under
+$CLAUDE_CONFIG_DIR/projects when env sets it — the last occurrence, trimmed,
+resolved against workingDir when relative, since claude takes it verbatim
+from its own cwd — and under ~/.claude/projects otherwise; in the directory
+named for the realpath of workingDir, or for workingDir as given.
+
+env is the harness's launch environment; nil means it inherited this
+process's, as exec treats a nil Env. A transcript that does not exist is an
+error wrapping fs.ErrNotExist.
 
 #### `func UsageFromJSONL(data []byte) (*transcript.Usage, error)`
 UsageFromJSONL sums per-API-call token usage across a Claude Code session's
@@ -2642,7 +2970,7 @@ New constructs a Codex transcript Reader.
 
 ## Module: pi (`pkg/transcript/pi`)
 
-Reads pi's JSONL agent sessions, locating a session by working-directory slug with a directory-walk fallback and confirming the match against the in-file id header before parsing its typed content blocks.
+_(summary pending — run the veracity-docs skill)_
 
 > Package pi reads pi coding-agent session transcripts
 (@earendil-works/pi-coding-agent, binary "pi" —
@@ -2770,6 +3098,11 @@ into a single <-chan Event stream.
 #### `type Event`
 Event is one observation about the conversation flow.
 
+#### `func StatusEvents(adapter Adapter, ev wrapper.SessionEvent) []Event`
+StatusEvents maps one wrapper session event to the adapter's turn events,
+with the structured fields the adapter contract does not see — time, HTTP
+code, retry hint — filled from the session event.
+
 #### `type InputOption`
 InputOption is one selectable choice in an InputRequest.
 
@@ -2779,6 +3112,10 @@ that must be answered out-of-band — the normal Send message flow cannot
 satisfy it. Adapters produce it from a screen snapshot; the chat layer
 either auto-answers it from a configured policy or surfaces it to the
 client, then writes the chosen option's Keys back into the PTY.
+
+#### `type InterruptOutcome`
+InterruptOutcome is what the screen says a harness did with the turn in
+flight, as Interrupter.InterruptOutcome reads it.
 
 #### `type Kind`
 Kind is the categorical type of a turn event.
@@ -2828,6 +3165,13 @@ stop AND Close() is called.
 Pass nil for scr to skip screen-derived signals (e.g. when using an
 adapter that only consumes wrapper.Status).
 
+#### `func WatchScreen(scr *screen.Screen, adapter Adapter) *Watcher`
+WatchScreen is Watch without the wrapper's status stream: it pumps
+screen-derived events only, and its Events channel closes after Close. A
+caller that takes the wrapper's events through wrapper.Config.OnEvent —
+which, unlike Session.Events, drops none — maps them with StatusEvents
+itself, as the chat layer does.
+
 ### Interfaces (Boundaries)
 
 #### `Adapter`
@@ -2847,15 +3191,15 @@ mutex; the Watcher does not serialize calls.
 - `OnWrapperStatus(status wrapper.Status, reason string) []Event`
 
 #### `BusyDetector`
-Optional adapter capability reporting from the rendered screen whether the harness is still working on the current turn versus idle at the prompt.
 
 > BusyDetector is an optional capability adapters may implement to report, from
 the rendered screen, whether the harness is still working on the current turn
-(mid-generation or running a tool) versus sitting idle at the prompt. The
-chat layer's idle-completion fallback consults it so it never declares a turn
-complete while the harness is still busy — the harness's input prompt is
-often painted even while it works, so prompt-readiness alone is not enough to
-distinguish "done" from "thinking". Adapters that can't tell report false.
+(mid-generation, running a tool, or backing off before a retry) versus sitting
+idle at the prompt. The chat layer's idle-completion fallback consults it so it
+never declares a turn complete while the harness is still busy, and Send waits
+on it so nothing is typed into a working harness — the harness's input prompt
+is often painted even while it works, so prompt-readiness alone is not enough
+to distinguish "done" from "thinking". Adapters that can't tell report false.
 
 - `Busy(snap screen.Snapshot) bool`
 
@@ -2875,6 +3219,19 @@ value as "unset" (leaving the $HOME default in place) and must apply
 last-occurrence-wins for duplicate keys, matching exec semantics.
 
 - `ConfigureFromEnv(env []string)`
+
+#### `Interrupter`
+
+> Interrupter is an optional capability adapters implement when the harness can
+stop a turn in flight from the keyboard, and the screen says what it did.
+The chat layer's Conversation.Interrupt writes InterruptSequence and reads
+InterruptOutcome; an interrupt made at the terminal is read the same way
+(ADR-007).
+
+- `ClearComposerSequence(composer string) []byte`
+- `ComposerText(snap screen.Snapshot) (text string, ok bool)`
+- `InterruptOutcome(prompt string, snap screen.Snapshot) (outcome InterruptOutcome, partial string)`
+- `InterruptSequence() []byte`
 
 #### `MessageExtractor`
 Optional adapter capability that recovers the assistant's reply text from the rendered screen, stripped of TUI chrome.
@@ -2932,20 +3289,38 @@ before escalating to a signal.
 - `QuitSequence() []byte`
 
 #### `RawSessionIDExtractor`
-Optional adapter capability surfacing the harness's session ID from a single raw PTY output line rather than the rendered screen.
 
 > RawSessionIDExtractor is an optional capability adapters may implement to
 surface the harness's own session ID from a single RAW PTY output line,
 rather than from the rendered screen. Some harnesses (Claude Code) only print
 their session UUID — e.g. the "claude --resume <uuid>" hint — to the normal
 screen as the TUI tears down on exit, where it never lands in the vt100
-snapshot a SessionIDExtractor would scrape. The chat layer feeds every raw
-line of the harness's output (via the wrapper's durable line tap) to this
-extractor; once a non-empty ID is returned it is persisted and no longer
-queried. Lines carry raw ANSI/control bytes, so implementations must tolerate
+snapshot a SessionIDExtractor would scrape. While the id is unknown, the chat
+layer feeds every raw line of the harness's output (via the wrapper's
+durable line tap) to this extractor; once a non-empty ID is returned it is
+persisted and no longer queried. An id assigned at launch (SessionAssigner)
+or resumed is known from the start, and the tap is not wired. Lines carry raw ANSI/control bytes, so implementations must tolerate
 non-matching/polluted lines by returning ("", false).
 
 - `ExtractSessionIDFromLine(line string) (string, bool)`
+
+#### `SessionAssigner`
+
+> SessionAssigner is an optional capability adapters implement when the harness
+accepts a caller-chosen id for a FRESH session at launch — claude-code and pi
+both take --session-id <uuid> and name the session's transcript after it.
+
+The chat layer assigns an id on every fresh Open with such an adapter, so the
+id is known from the moment the harness starts. Without one it is learned
+only from what the harness prints — claude's "claude --resume <uuid>" exit
+hint, which recent releases print rarely if at all — and every reading that
+needs it (the transcript verdicts, History) is off until then, which for a
+live conversation is its whole life. Mirrors meta-harness's
+SessionInitializer (src/turns/types.ts), which mints the id the same way.
+
+- `NewSessionID() string`
+- `SessionIDArgs(id string) []string`
+- `ValidSessionID(id string) error`
 
 #### `SessionControlFlags`
 Declares the session-control arguments the chat layer reserves, so a caller-supplied argument that would collide with resume handling is rejected rather than silently overridden.
@@ -3077,24 +3452,35 @@ _(summary pending — run the veracity-docs skill)_
 Claude Code CLI (claude / @anthropic-ai/claude-code).
 
 Detection signals first observed on 2.1.141. The pin in versions.json is
-2.1.270, verified LIVE against that binary on 2026-09-14 by pkg/harness's
+2.1.283, verified LIVE against that binary on 2026-09-26 by pkg/harness's
 TestRunTurn_RealClaude{Dogfood,DogfoodKeepAlive,LargePromptIntact} and
 TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog, and by pkg/chat's
-TestTrustDialogLive. A turn completes only if thinkingRE matches a settled
-2.1.270 end-of-turn summary and Busy() gates the in-flight frames, so those
-runs cover END-OF-TURN DETECTION, reply extraction, the multi-turn keep-alive
-path, a large prompt arriving intact, and the folder-trust dialog, both
-reported in a directory claude has not trusted and answered.
+TestTrustDialogLive, TestKeepAliveLive and TestSessionAssignedLive; the
+stream-json transport (ADR-009) passed TestStreamLive, TestInterruptLive and
+TestStreamAccountLive there too, and the hook surfaces passed pkg/harness's
+TestToolHooksLive (ADR-010) and TestSubagentHooksLive (ADR-011). A turn
+completes only if thinkingRE matches a settled 2.1.283 end-of-turn summary
+and Busy() gates the in-flight frames, so those runs cover END-OF-TURN
+DETECTION, reply extraction, the multi-turn keep-alive path, a large prompt
+arriving intact, and the folder-trust dialog, both reported in a directory
+claude has not trusted and answered.
 
-The four scripted claude scenarios under test/corpus/claude-code/ —
-settled-after-turn, multi-turn, tool-call and interrupted-mid-reply — are
-recorded at 2.1.270 from a directory claude had never trusted
-(meta.json.binary_version is the recorded proof), so interruptMarker and the
-tool-call rendering are verified at the pin by replay. The permission-mode
-footers in permmode.go are still anchored at 2.1.217. The recordings are
-frozen renderings the adapter must keep handling: once the pin moves on they
-trail it, and replaying them cannot confirm the newer release; only the live
-tests above can.
+The recordings trail the pin, deliberately. The four scripted claude
+scenarios under test/corpus/claude-code/ — settled-after-turn, multi-turn,
+tool-call and interrupted-mid-reply — are recorded at 2.1.270 from a
+directory claude had never trusted (meta.json.binary_version is the recorded
+proof), the interrupt-* recordings at 2.1.280, the two trust-dialog
+recordings at 2.1.261, and the claude-code-stream sessions at 2.1.281; so the
+tool-call rendering is verified by replay at 2.1.270 and interruptMarker by
+the 2.1.280 interrupt-* recordings (ADR-007). The permission-mode footers in
+permmode.go are anchored at 2.1.217 and were re-confirmed by hand on 2.1.281.
+Nothing was re-baked for 2.1.281: the one fix its live runs needed, the
+composer placeholder in ComposerText, is a shape 2.1.270 already painted.
+Nothing was re-baked for 2.1.282 or 2.1.283 either: every live test above
+passed on them unchanged, and replay cannot confirm 2.1.283. The recordings
+are frozen renderings the adapter must keep handling: replaying them cannot
+confirm a newer release, so what verifies the pin is the live tests above
+and nothing else.
 
 The signals:
 
@@ -3105,12 +3491,12 @@ The signals:
     on screen, the turn just completed.
 
   - User interrupt: a "⎿  Interrupted · What should Claude do
-    instead?" line appears. The turn ended in a recoverable error
-    state. Re-confirmed verbatim on 2.1.270. What changed at 2.1.24x
-    is which KEY produces it — Esc interrupts, Ctrl-C clears the
-    composer and paints nothing — which matters to the recorder, not
-    to this adapter; see the interrupt step in
-    internal/screenbench/cmd/screenbench-record/script.go.
+    instead?" line appears below the stopped reply. Re-confirmed
+    verbatim on 2.1.280. It is read per turn, by InterruptOutcome
+    (interrupt.go, ADR-007), never by its presence on screen: an earlier
+    turn's marker stays painted above the next turn. OnScreen emits no
+    event for it. Esc interrupts; Ctrl-C clears the composer and paints
+    nothing.
 
 This adapter embeds generic.Adapter so wrapper-level status events
 (blocked_by_cost, retry_later, failed) keep flowing through.
@@ -3289,7 +3675,7 @@ New constructs an OpenCode adapter.
 
 ## Module: pi (`pkg/turns/harness/pi`)
 
-The pi turn adapter. It has no confirmed on-screen end-of-turn marker, so completion falls back to the busy-aware idle path driven by the working spinner and the idle status line, alongside a readiness check, a graceful quit sequence, resume arguments and transcript reading.
+_(summary pending — run the veracity-docs skill)_
 
 > Package pi provides a turn-detection adapter for the pi coding agent
 (@earendil-works/pi-coding-agent, binary "pi" —
@@ -3316,12 +3702,11 @@ the interactive-screen signals still await a recorded corpus):
     codex's Token-usage footer match or claude-code's "✻ <verb> for Ns" line
     (and, with it, a BusyDetector + MessageExtractor).
 
-  - Session ID extraction (interactive path): NOT implemented. pi surfaces
-    its session id via the "/session" command and the JSON header line of
-    `pi --mode json` (parsed by the headless pkg/harness/pi profile), but no
-    UUID is scraped from the interactive TUI, so History() falls back to the
-    in-memory Store mid-session until an id is known. A future option is to
-    inject a generated id with pi's "--session-id <uuid>" flag at launch.
+  - Session ID: assigned, not extracted. pi surfaces its session id only via
+    the "/session" command and the JSON header line of `pi --mode json`
+    (parsed by the headless pkg/harness/pi profile), never on the interactive
+    TUI, so the adapter implements turns.SessionAssigner instead: the chat
+    layer mints a UUID and launches pi with "--session-id <uuid>".
 
 Markers may shift across upstream versions; the golden-recording tests under
 test/corpus/pi/ will be the early-warning signal when they're added.
@@ -3348,7 +3733,7 @@ New constructs a pi adapter.
 
 ## Module: versions (`pkg/versions`)
 
-The read API for the embedded version pins that bind each harness adapter to the upstream release it was last verified against. Embedding keeps lookups working under trimmed builds and from any working directory, and an equivalent file can also be read from an external path for drift comparison.
+_(summary pending — run the veracity-docs skill)_
 
 > Package versions reads the repo-root versions.json file that pins
 each supported harness CLI to a specific upstream package version.
@@ -3356,15 +3741,17 @@ each supported harness CLI to a specific upstream package version.
 versions.json is the single source of truth that ties an adapter's
 code (regex fingerprints, classifier patterns, transcript schema
 assumptions) to a specific upstream release. The version-sentry CLI
-reads it to compare against npm registry latest; corpus tests read
-it to verify that recordings under test/corpus/ were made against
-the same version the adapter targets.
+reads it to compare against npm registry latest, and the env-gated
+conformance tests compare it against the binary actually installed.
+Nothing compares it to test/corpus/: a recording's
+meta.json.binary_version is free to trail the pin, and routinely does
+— see docs/md/internal/versions-drift.md.
 
 Schema:
 
 	{
-	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.142.5", "verified_at": "2026-07-05"},
-	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.201", "verified_at": "2026-07-05"},
+	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
+	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
 	}
@@ -3477,6 +3864,14 @@ axis is in argv, argsContainAnyFlag short-circuits the second pass and the
 argv arm reads back the value that was injected. Formally,
 EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
 == EffectiveLaunchRung(h, args, mode).
+
+#### `func HarnessArgs(cfg Config) ([]string, error)`
+HarnessArgs validates cfg exactly as Start does and returns the argv Start
+would launch the harness with: cfg.Args with the Effort, Model and
+PermissionMode flags injected. It starts nothing. It is for a caller that
+runs the harness itself over another transport — pkg/chat's claude-code
+stream-json driver — and must honour the same knobs the same way. The I/O
+fields are not needed: Stdout defaults to io.Discard here.
 
 #### `func IsBypassPermissionMode(mode string) bool`
 IsBypassPermissionMode reports whether mode resolves to claude-code's
@@ -3635,6 +4030,10 @@ LoginStatus runs the harness's own status command, contained, in
 cfg.StateDir, and reports whether the harness is signed in there. It starts
 no login, so cfg.Output is unused.
 
+#### `type QueueLimits`
+QueueLimits bounds an OnEvent queue: the events it holds at once, and their
+payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+
 #### `type Result`
 Result describes the outcome of a Run.
 
@@ -3676,8 +4075,9 @@ flows through Wait with a nil error.
 SessionEvent is a state transition observed by a Session. Events are
 delivered on Session.Events() in order. Mid-run classifications
 (waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
-Status events. The final event is always Terminated, after which the
-channel is closed.
+Status events — under Config.KeepAliveOnClassification the terminal ones
+too, with Terminated false. The final event is always Terminated, after
+which the channel is closed.
 
 #### `type Snapshot`
 Snapshot is the most recent state observation for a Session. Snapshot
@@ -3704,7 +4104,7 @@ polls is fine; the wrapper de-duplicates emitted events.
 
 ## Module: detector (`pkg/wrapper/internal/detector`)
 
-Generic pattern primitives for harness classifiers: case-insensitive substring sets, trailing-prompt suffix matching, and parsers for retry-after hints and limit reset times. It is deliberately stateless — real classifiers compose these primitives with the wrapper's idle and quiet windows.
+_(summary pending — run the veracity-docs skill)_
 
 > Package detector provides generic pattern primitives for harness
 classifiers. Patterns are matched against the recent harness output
@@ -3726,20 +4126,6 @@ MatchPromptSuffix returns the first pattern in patterns that the
 trailing non-empty line of haystack ends with (case-insensitive),
 or "" if none match. Trailing whitespace on the last line is
 ignored so prompts ending with a space ("Continue? ") still match.
-
-#### `func ParseResetTime(text string, now time.Time) (time.Time, bool)`
-ParseResetTime scans text for a "resets HH:MM(am|pm) (TZ)" hint and
-returns the next future absolute time at which the limit is expected
-to reset. The TZ portion is optional; when present and recognized as
-an IANA location, the returned time carries that location. When
-absent (or unrecognized), the time resolves in `now`'s location.
-
-"Future" is computed relative to `now`: if the parsed clock-time has
-already passed today, the returned time rolls to tomorrow. This
-matches how the banners are typically rendered — Claude Code prints
-the *next* reset, not a past one.
-
-Returns the zero time and false when no parseable hint was found.
 
 #### `func ParseRetryAfter(msg string) time.Duration`
 ParseRetryAfter scans an API-error message for a numeric retry hint
@@ -3778,7 +4164,7 @@ code and a fixed clock in tests.
 
 ## Module: claude (`pkg/wrapper/internal/harness/claude`)
 
-Classifier patterns for the Claude Code CLI harness, including conservative API-error and session-limit matchers over ANSI-stripped output.
+_(summary pending — run the veracity-docs skill)_
 
 > Package claude holds the classifier patterns for the Claude Code CLI
 harness. Patterns are intentionally conservative: false positives
@@ -3977,3 +4363,18 @@ Modes:
 This binary has no external dependencies on a particular consumer.
 It's a standalone fake harness invoked as a subprocess by tests
 under pkg/wrapper.
+
+## Module: main (`test/mcpprobe`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> mcpprobe is a stdio MCP server for the real-harness conformance runs. It
+serves one tool, "probe", whose result carries the nonce the server was
+started with and the outcome of reading the file named by -forbidden. A
+contained harness starts it inside its own domain, so that read shows the
+domain's denial from an MCP server's side.
+
+	mcpprobe -nonce WORD -forbidden PATH
+
+It speaks newline-delimited JSON-RPC 2.0 on stdin and stdout: initialize,
+ping, tools/list and tools/call. Notifications are read and ignored.

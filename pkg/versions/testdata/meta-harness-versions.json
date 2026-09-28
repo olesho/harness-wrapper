@@ -8,8 +8,8 @@
   "claude-code": {
     "package": "@anthropic-ai/claude-code",
     "binary": "claude",
-    "pinned": "2.1.270",
-    "verified_at": "2026-09-14"
+    "pinned": "2.1.283",
+    "verified_at": "2026-09-26"
   },
   "opencode": {
     "package": "opencode-ai",

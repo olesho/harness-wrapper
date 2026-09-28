@@ -181,13 +181,20 @@ What differs from ABI 9:
 
 ## Harness profiles
 
-Profiles are versioned manifests (`internal/contain/profiles/*.json`) checked against the versions
-harness-wrapper pins:
+Profiles are versioned manifests (`internal/contain/profiles/*.json`) checked against the version
+each manifest names in its own `harness_version`. That version is pinned **independently of
+`pkg/versions/versions.json`**: nothing ties the two, so the profile can legitimately trail the pin,
+and as of 2026-09-26 the claude-code profile does (2.1.270 against a 2.1.283 pin). A contained launch
+of a binary the profile does not name is refused outright, never silently downgraded.
 
 | Harness | Identified by | Grants beyond the baseline | State root |
 |---|---|---|---|
 | claude-code 2.1.270 | the SHA-256 of its Bun-compiled ELF (release checksums per platform); a node-started layout is refused | the executable file; `/etc/claude-code` when present | `CLAUDE_CONFIG_DIR=$HOME/.claude` |
 | codex 0.144.5 | `bin/codex.js` in an `@openai/codex` package root at that version, with the matching vendored platform package | the exact package root and the `node` its shebang resolves to; `/etc/codex` when present | `CODEX_HOME`, beside TMPDIR |
+
+The claude-code profile trails the pin: `versions.json` pins 2.1.283, but the profile still carries
+2.1.270's checksums, so once the profile is activated a contained 2.1.283 binary is refused at the
+`executable` stage until the profile is re-cut from that release's manifest.
 
 A contained **codex runs only at the bypass rung** (`--permission-mode bypass` / `danger-full-access`,
 or `--dangerously-bypass-approvals-and-sandbox`): codex's bubblewrap sandbox needs user namespaces and
