@@ -3,9 +3,9 @@
 // adapter through the interface and check it keeps the contract.
 //
 // A scenario speaks the prompt language of agentd's P11 mock Messages API
-// (PING, SLOW, STALL, TOOL, ERR, BIG, ASK; see fakeadapter), so it runs the
-// same against the fake adapter as against a real harness that talks to that
-// mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
+// (PING, SLOW, STALL, TOOL, ERR, BIG, ASK, and LIMIT for a usage wall; see
+// fakeadapter), so it runs the same against the fake adapter as against a real
+// harness that talks to such a mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
 // and every rule has a deliberately broken adapter that fails it.
 //
 //	func TestConformance(t *testing.T) {

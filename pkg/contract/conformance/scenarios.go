@@ -315,7 +315,7 @@ func apiError(c *check) {
 func usageLimit(c *check) {
 	a := c.newAgent()
 	s, h := c.openSession(a)
-	in := c.send(s, "ERR 429 99")
+	in := c.send(s, "LIMIT")
 	end, ok := h.turnEnded(in)
 	if !ok || end.Outcome != contract.TurnErrored || end.Error == nil || end.Error.Class != contract.ErrorUsageLimit {
 		c.stop("gate.blocked", "turn_ended %+v, want errored with class usage_limit", end)

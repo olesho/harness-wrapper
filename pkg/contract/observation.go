@@ -11,13 +11,16 @@ import (
 //
 // ID is "<kind>:<key>": unique within the Session, and stable — the same fact
 // has the same id in every batch, process and adapter version. Keys by kind:
-// turn_started and turn_ended, the input id; user_input and api_error, the
-// record entry's id; assistant_text, the message id and block index; tool_*,
-// the tool use id; subagent_*, the subagent id; prompt_*, the prompt id;
-// text_delta, the message id and index; retrying, the input id and attempt;
-// rate_limit, blocked, unblocked and session_exited, an id of the harness
-// process instance and a counter. The Supervisor stores an observation under
-// (agent, session, id): the same id in another Session is another fact.
+// turn_started and turn_ended, the input id; user_input and assistant_text,
+// the record entry's id and block index (for a record without entry ids,
+// assistant_text's message id and block index); api_error, the record entry's
+// id; tool_*, the tool use id; subagent_*, the subagent id; prompt_*, the
+// prompt id; text_delta, the message id and index; retrying, the input id and
+// attempt; rate_limit, blocked, unblocked and session_exited, an id of the
+// harness process instance and a counter. A record entry with no id of its
+// own is keyed by its place in the record. The Supervisor stores an
+// observation under (agent, session, id): the same id in another Session is
+// another fact.
 type Observation struct {
 	ID      string    `json:"id"`
 	Kind    Kind      `json:"kind"`
@@ -25,6 +28,10 @@ type Observation struct {
 	Time    time.Time `json:"time"`
 	TurnID  string    `json:"turn_id,omitempty"`
 	InputID string    `json:"input_id,omitempty"`
+	// Entry is the id of the harness's record entry that holds a record-origin
+	// fact, where the record gives its entries ids. It says where the fact
+	// is; ID alone is its identity.
+	Entry string `json:"entry,omitempty"`
 	// Data is the kind's payload (the *Data types below).
 	Data json.RawMessage `json:"data"`
 	// Truncated: a text field was cut at MaxObservationText.
@@ -213,6 +220,8 @@ type ToolFinishedData struct {
 type APIErrorData struct {
 	Class      ErrorClass `json:"class"`
 	HTTPStatus int        `json:"http_status,omitempty"`
+	// Message is the error as the harness rendered it, when it did.
+	Message string `json:"message,omitempty"`
 }
 
 // TextDeltaData is text_delta's payload.

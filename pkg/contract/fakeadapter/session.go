@@ -434,6 +434,8 @@ func (s *session) run(t *turn) {
 			}
 		}
 		reply("RECOVERED")
+	case "LIMIT":
+		s.fail(t, limitStatus)
 	case "BIG":
 		reply(strings.Repeat("x", atoi(arg, 64)<<10))
 	case "ASK":
@@ -502,16 +504,23 @@ func (s *session) stopped(t *turn, msg, text string) {
 	s.end(t, contract.TurnInterrupted, text, nil, contract.InterruptStopped)
 }
 
+// limitStatus is the status fail takes for a usage wall: a 429 the account's
+// limit refused, not one the server's load did.
+const limitStatus = -429
+
 // fail ends a turn whose model call failed for good, and closes the gate on a
 // wall that prevents the next input.
 func (s *session) fail(t *turn, code int) {
-	class, block := contract.ErrorOverloaded, contract.BlockReason("")
-	if s.adapter.breaks("block-on-overloaded") {
-		block = contract.BlockUsageLimited
-	}
+	class, block := contract.ErrorAPI, contract.BlockReason("")
 	var resume *time.Time
 	switch code {
-	case 429:
+	case 529:
+		class = contract.ErrorOverloaded
+		if s.adapter.breaks("block-on-overloaded") {
+			block = contract.BlockUsageLimited
+		}
+	case limitStatus:
+		code = 429
 		class, block = contract.ErrorUsageLimit, contract.BlockUsageLimited
 		at := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 		resume = &at

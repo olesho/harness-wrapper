@@ -45,7 +45,9 @@ func TestConformance(t *testing.T) {
 ```
 
 The scenarios speak the prompt language of agentd's P11 mock Messages API — `PING`, `SLOW`,
-`STALL`, `TOOL`, `ERR <code> <k>`, `BIG`, `ASK` — so a real harness runs them against that mock.
+`STALL`, `TOOL`, `ERR <code> <k>`, `BIG`, `ASK`, and `LIMIT` for a usage wall (a 429 the account's
+limit refused, which a harness does not retry; `ERR 429 <k>` is the server's load, which it does) —
+so a real harness runs them against such a mock.
 Each check names its rule (`[interrupt.other-turn] …`), and `TestBrokenAdaptersFail` breaks each rule
 in the fake adapter (`fakeadapter.Options.Break`) and requires the kit to fail exactly that rule.
 A scenario a harness cannot run is named in `Fixture.Skip`, with the reason.

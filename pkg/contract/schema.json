@@ -7,6 +7,9 @@
         },
         "http_status": {
           "type": "integer"
+        },
+        "message": {
+          "type": "string"
         }
       },
       "required": [
@@ -588,6 +591,9 @@
     "Observation": {
       "properties": {
         "data": {},
+        "entry": {
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },

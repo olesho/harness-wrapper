@@ -12,8 +12,11 @@
 //	TOOL <command> a tool call running <command>, then "TOOL DONE"
 //	ERR <code> <k> the model call fails with <code> <k> times, retried up to
 //	               MaxRetries times: "RECOVERED" once it passes, else the turn
-//	               errors (429: usage_limit, 401: auth, 402: billing, else
-//	               overloaded); a usage, auth or billing error blocks the Session
+//	               errors (529: overloaded, 401: auth, 402: billing, else api);
+//	               an auth or billing error blocks the Session
+//	LIMIT          the account's usage limit refuses the model call: the turn
+//	               errors (usage_limit, resuming in an hour), and the Session
+//	               blocks until then
 //	BIG <kib>      reply with <kib> KiB of text
 //	ASK            raise a prompt (yes/no); on its answer, "ANSWERED <choice>"
 //	CRASH          the harness process dies mid-turn
