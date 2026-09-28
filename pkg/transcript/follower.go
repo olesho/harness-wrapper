@@ -115,6 +115,9 @@ type Decoder func(record []byte) ([]BlockEvent, error)
 type BlockEvent struct {
 	Block int
 	Event Event
+	// Meta is whatever the decoder attaches to the event, for its own
+	// caller; the follower carries it to the FollowedEvent untouched.
+	Meta any
 }
 
 // A FollowedEvent is one event of a Batch, and where in the file it came from.
@@ -144,6 +147,7 @@ type FollowedEvent struct {
 	Event  Event
 	Offset int64 // byte offset of the record in the file
 	Block  int   // index of the content block within the record
+	Meta   any   // the decoder's BlockEvent.Meta
 }
 
 // A SourceError is a complete record the decoder could not read. The batch
@@ -325,7 +329,7 @@ func (f *Follower) Poll() (Batch, error) {
 			e.Seq = next.NextSeq
 			e.NativeID = followerID(e, be.Block, from.Generation, at)
 			next.NextSeq++
-			b.Events = append(b.Events, FollowedEvent{Event: e, Offset: at, Block: be.Block})
+			b.Events = append(b.Events, FollowedEvent{Event: e, Offset: at, Block: be.Block, Meta: be.Meta})
 		}
 	}
 
