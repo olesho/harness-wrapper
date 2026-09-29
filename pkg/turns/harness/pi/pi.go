@@ -18,7 +18,7 @@
 //   - End-of-turn screen marker: NOT yet identified. The adapter embeds
 //     generic.Adapter so turn-complete signals still flow through the
 //     wrapper.StatusWaitingForInput path (driven by the per-harness prompt
-//     patterns in pkg/wrapper/internal/harness/pi/). Once a recording exists
+//     patterns in internal/wrapcore/harness/pi/). Once a recording exists
 //     under test/corpus/pi/, add an OnScreen-derived fingerprint here, mirroring
 //     codex's Token-usage footer match or claude-code's "✻ <verb> for Ns" line
 //     (and, with it, a BusyDetector + MessageExtractor).
@@ -163,3 +163,9 @@ var statusLineRE = regexp.MustCompile(`\d+(?:\.\d+)?%/\d+[kK]`)
 func PromptReady(text string) bool {
 	return !busy(text) && statusLineRE.MatchString(text)
 }
+
+// ReadyForInput is PromptReady (turns.ReadinessDetector). pi's startup is
+// noisy and network-touching — model resolution, an optional fd/ripgrep
+// download, an "Update Available" banner — and its composer is painted before
+// it listens, so a message typed then is dropped.
+func (a *Adapter) ReadyForInput(text string) bool { return PromptReady(text) }

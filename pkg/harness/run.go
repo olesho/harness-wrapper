@@ -344,7 +344,7 @@ func hookEnv(base []string, spoolDir, cwd string, yield *YieldControl, harnessSe
 	out = append(out, base...)
 	out = append(out, EnvSpool+"="+spoolDir, EnvHookCwd+"="+cwd, EnvHome+"="+home)
 	if yield != nil {
-		out = append(out, EnvYieldFile+"="+yield.path)
+		out = append(out, EnvYieldFile+"="+yield.FilePath())
 	}
 	if harnessSessionID != "" {
 		out = append(out, EnvHarnessSessionID+"="+harnessSessionID)

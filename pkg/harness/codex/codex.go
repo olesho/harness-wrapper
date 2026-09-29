@@ -22,7 +22,7 @@ package codex
 import (
 	"strings"
 
-	"github.com/olesho/harness-wrapper/pkg/harness"
+	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
 )
 
 // Profile is the Codex CLI harness profile.

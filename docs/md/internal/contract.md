@@ -1,0 +1,157 @@
+# Harness Adapter Interface
+
+`pkg/contract` is the Go interface a runtime uses to drive a harness without naming it: describe it,
+render its configuration, open and reopen its sessions, send, interrupt, answer, observe with
+acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
+The specification is
+[Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
+package is its normative form, contract version `harness-adapter/1.0`.
+
+## The packages
+
+| Package | What it is |
+|---|---|
+| `pkg/contract` | The types, the `Adapter` / `Session` / `Record` interfaces, errors, bounds, the registry (`Register`, `Lookup`) and the generated JSON Schema (`schema.json`, embedded as `contract.Schema`). Standard library only, so importing it links nothing else of hw (`TestStandardLibraryOnly`). |
+| `pkg/contract/conformance` | The conformance kit: a fake Agent Adapter — a Supervisor that applies what `Provision` renders, and a Host that observes, commits and acknowledges — plus scenarios. |
+| `pkg/contract/fakeadapter` | An adapter for a harness that lives in the process: the kit's reference, and a stand-in for a runtime's own tests. |
+
+## Two callers
+
+- The **Supervisor** calls `Describe` and `Provision`. `Provision` is pure: it turns a harness-neutral
+  `AgentSpec` into files, an opaque `open_config` and the paths archives include and skip. The
+  Supervisor writes the files — beneath their roots, never through a symlink, with modes no wider
+  than `0644` (`ProvisionResult.Validate`, `conformance.Apply`).
+- The **Host** opens Sessions (`NewSession`, then `Open`) and record handles (`OpenRecord`), feeds a
+  Session one input at a time, and acknowledges each batch of observations only after the
+  Supervisor has committed it.
+
+A profile registers its adapter under its harness's name in `init`; a runtime links the harnesses it
+offers through one file of blank imports and finds them with `contract.Lookup`.
+
+## harness-wrapper's Harness Adapter
+
+`pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
+It is the shared part, and names no harness:
+
+- **Sessions.** The states, one outstanding `Send`, the admission gate (a usage, auth or billing
+  error closes it; a usage wall with a known reset opens it again then, and nothing is retried),
+  an `Interrupt` that names its input and is ordered after an outstanding send, `Answer`, and
+  `Close` with `stopped` and `drained`. An uncertain send keeps the Session busy until its turn ends.
+- **Observe and Ack.** One cursor over the live events and the record, in the order learned. A
+  record chunk may span batches: its reset, rescan and faults go with its first item, its
+  checkpoint with its last, and the reader moves past it only once that batch is acknowledged.
+- **Submission markers**, one per input under `layout.scratch/markers`, synced before the harness
+  gets the input. `OpenRecord` and `Recover` rest on them: only an intact store's missing marker
+  proves an input never ran. A send the transport refused before anything reached the harness
+  withdraws its marker: the input id is free to be sent again, and `Recover` says `not_found`.
+
+A harness process's environment is its `open_config`'s, its credential, and what `adapter.HostEnv`
+takes from the Host: `PATH`, `LANG`, `LC_*`, `TZ`, and the variables `HW_HARNESS_ENV` names — a
+Supervisor's harness-neutral way to pass a setting `Provision` could not render, such as a test's
+model API. Never a credential.
+
+A profile (`adapter.Profile`) supplies what is its harness's own: the Descriptor, `Provision`, a
+`Transport` to the running harness (submit, interrupt, answer, stop, and its events) and a
+`Reader` of its record (chunks of record-origin observations, commit, and the evidence for
+`Recover`). It registers with `adapter.Register` under its harness's name.
+
+## The Claude Code profile
+
+`pkg/adapter/claudecode` registers `claude-code`. Its harness distribution, under `harness_root`, is
+the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code-hook`
+(`bin/claude-code-hook`).
+
+- **Provision** renders what agentd rendered before it (`TestProvisionMatchesAgentdProfile` holds the
+  two side by side): `settings.json` with the hooks, `.claude.json` with onboarding, bypass and
+  workspace trust answered, the persona, skills, memory, `mcp.json` and the workspace's `CLAUDE.md`,
+  and `open_config` with claude's arguments and environment. Each hook runs the helper, which writes
+  what it reports to the spool: the scratch root itself, beside the markers' directory, so a spool a
+  host kept before this profile, at the root it now names scratch, is read where it is.
+- **Transport:** stream-json, one claude process per Session in a process group of its own. A fresh
+  Session starts under its id (`--session-id`); a reopen resumes its transcript (`--resume`), or,
+  when claude never wrote one — the launch that opened the Session ended before its first entry —
+  starts under its id as a fresh one would. An input
+  is a user message whose uuid is the input's native id, a fresh UUID kept in its submission marker;
+  claude's `command_lifecycle` receipt returns `Send`, and its transcript keeps the uuid as the prompt
+  entry's. A turn ends with claude's `result`: by `is_error` and `terminal_reason`. `cancelled` needs
+  claude's word that the message never started — claude says `cancelled` after the result of a turn it
+  interrupted or failed, too. A failed turn is classed by the synthetic message's tag, the HTTP status
+  and, for a 429, whether the account refused it: a usage wall (`You've hit your … limit · resets …`)
+  closes the gate until its reset; the server's 429 (`not your usage limit`) is an `api` error.
+- **Record:** the session transcript, followed from the checkpoint, and the hook spool. Checkpoint
+  format 1 is the transcript follower's checkpoint — the one agentd stored — so stored checkpoints
+  resume where they stood (`TestNodeDBCheckpoint`). Entries become `user_input`, `assistant_text`,
+  `tool_use`, `tool_result` and `api_error`, keyed by the entry's uuid (and block) or the tool use id,
+  with `entry` set to the entry's uuid. A turn's end is in the record as its final assistant entry
+  (`stop_reason: end_turn`), a synthetic API-error entry or an interrupt entry, each a record-origin
+  `turn_ended`. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop;
+  a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
+- **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
+  `unknown`.
+
+`TestClaudeConforms` runs the conformance kit, and `TestClaudeObservations` the profile's own
+checks, against a real claude driving `internal/mockapi` — a Go port of agentd's P11 mock Messages
+API — when `HW_REAL_CLAUDE` names the pinned binary. The `harness-adapter` workflow runs them on
+Linux with the pinned claude it downloads and verifies.
+
+## The Codex profile
+
+`pkg/adapter/codex` registers `codex`. Its harness distribution, under `harness_root`, is the pinned
+codex (`bin/codex`): the native binary from its npm package's vendor directory, never the node shim,
+whose death would leave the native process holding the thread.
+
+- **Provision** renders `CODEX_HOME` in the config root: `config.toml` — the model and effort, no
+  approvals and `danger-full-access` (the runtime's isolation is the sandbox), a credential store in
+  memory only, no plugins, apps or analytics, and an MCP server per connector — `AGENTS.md` with the
+  persona and where the memory directory is, the skills and the memory's files; and the workspace's
+  `AGENTS.md`. The credential kinds are `openai_api_key`, which the transport hands codex over the
+  protocol (`account/login/start`), and `codex_access_token`, which codex reads from
+  `CODEX_ACCESS_TOKEN`.
+- **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
+  of its own. codex chooses a thread's id, so a fresh Session opens without one (no
+  `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex
+  never wrote the thread's rollout. An input is a `turn/start` whose `clientUserMessageId` is its native
+  id; the response is the receipt, and the rollout records the id with the input. codex folds an input
+  sent during a turn into that turn, so the transport, like the Session, keeps one turn in flight. A
+  turn ends with `turn/completed`: `completed`, `interrupted`, or `failed`, classed by its
+  `codexErrorInfo`; `error` notifications with `willRetry` are its retries, and
+  `account/rateLimits/updated` its usage, whose full window says when a usage wall lifts. codex refuses
+  to interrupt a turn it has not made active, so an interrupt asked before `turn/started` goes once it
+  comes; the turn's end, never `turn/interrupt`'s answer, settles it.
+- **Record:** the thread's rollout under `CODEX_HOME/sessions`, followed from the checkpoint once codex
+  writes it with the first turn (`pkg/transcript/codex`). A turn begins at `task_started` and belongs to
+  the input whose client id its user message carries — `user_message` in codex 0.144,
+  `item_completed`'s `UserMessage` in 0.157. Replies become `assistant_text`, tool calls `tool_use` and
+  `tool_result`, and the turn's end a record-origin `turn_ended`: interrupted at `turn_aborted`,
+  errored at a `task_complete` with an error (0.157), completed at one with a reply. A `task_complete`
+  with neither — codex 0.144's failed turn — proves no outcome.
+- **Recover** finds the input's user message by the marker's native id, then its turn's end: without an
+  end that proves an outcome, `unknown`.
+
+`TestCodexConforms` runs the conformance kit against a real codex driving `internal/mockapi`'s
+Responses API when `HW_REAL_CODEX` names the pinned binary; the `harness-adapter` workflow runs it on
+Linux with the pinned codex it downloads and verifies.
+
+## Running the kit
+
+```go
+func TestConformance(t *testing.T) {
+	conformance.Run(conformance.Testing(t), conformance.Fixture{
+		Adapter:     myAdapter,
+		HarnessRoot: root,
+		Spec:        contract.AgentSpec{PermissionPosture: contract.PostureBypass},
+		Credential:  stageCredential, // nil for a harness that needs none
+		Provisioned: pointAtMockAPI,  // e.g. ANTHROPIC_BASE_URL for P11's mockapi.py
+		Kill:        killHarness,     // crash the harness process without Close
+		HideBinary:  hideBinary,      // optional
+	})
+}
+```
+
+The scenarios speak the prompt language of agentd's P11 mock Messages API — `PING`, `SLOW`,
+`STALL`, `TOOL`, `ERR <code> <k>`, `BIG`, `ASK`, and `LIMIT` for a usage wall (a 429 the account's
+limit refused, which a harness does not retry; `ERR 429 <k>` is the server's load, which it does) —
+so a real harness runs them against such a mock.
+Each check names its rule (`[interrupt.other-turn] …`), and `TestBrokenAdaptersFail` breaks each rule
+in the fake adapter (`fakeadapter.Options.Break`) and requires the kit to fail exactly that rule.
+A scenario a harness cannot run is named in `Fixture.Skip`, with the reason.

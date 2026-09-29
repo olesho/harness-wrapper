@@ -6,6 +6,10 @@
 // Production deployments that need durability should plug in an
 // alternate Store (e.g. SQLite or Postgres-backed) implementing the
 // same chat.Store interface.
+//
+// It is written against the chat core (internal/chatcore), whose types
+// pkg/chat's are, so a Store serves either without linking pkg/chat's
+// built-in harness adapters.
 package memstore
 
 import (
@@ -14,7 +18,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/olesho/harness-wrapper/pkg/chat"
+	chat "github.com/olesho/harness-wrapper/internal/chatcore"
 )
 
 // Store is the in-memory implementation of chat.Store.

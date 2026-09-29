@@ -377,3 +377,24 @@ func inputID(req *turns.InputRequest) string {
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:8])
 }
+
+// ReadyForInput reports whether codex's idle composer is up with no startup
+// interstitial over it (turns.ReadinessDetector). An interstitial — the update
+// notice, the model-migration screen — paints its own "›" highlight, which
+// PromptReady alone would read as a ready composer.
+func (a *Adapter) ReadyForInput(text string) bool {
+	if _, blocking := DetectInput(text); blocking {
+		return false
+	}
+	return PromptReady(text)
+}
+
+// DismissKeys is AutoDismissKeys, except that the update notice is the
+// caller's to answer unless updates says it is an interstitial too
+// (turns.InterstitialDismisser).
+func (a *Adapter) DismissKeys(req *turns.InputRequest, updates bool) ([]byte, bool) {
+	if req != nil && req.Kind == KindUpdateNotice && !updates {
+		return nil, false
+	}
+	return AutoDismissKeys(req)
+}

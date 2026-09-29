@@ -1,0 +1,83 @@
+# The Harness Adapter's profiles against their pinned harness binaries: the
+# conformance kit (pkg/contract/conformance) and each profile's own checks,
+# with a real harness process driving the in-process mock model API
+# (internal/mockapi). No account and no network beyond the binary's download,
+# which is verified against the checksum pinned here.
+#
+# Moving claude-code's pin in pkg/versions fails this job until CLAUDE_VERSION
+# and CLAUDE_SHA256 move with it (the release manifest,
+# https://downloads.claude.ai/claude-code-releases/<version>/manifest.json,
+# lists each platform's checksum). Moving codex's fails the codex job until
+# CODEX_VERSION and CODEX_SHA256, the checksum of the npm package
+# @openai/codex@<version>-linux-x64, move with it.
+name: harness-adapter
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  claude-code:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CLAUDE_VERSION: "2.1.283"
+      CLAUDE_SHA256: "1859583ce32920595c61ef868bee52e1b1594f7486db209935e01f1e5e804ae2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch the pinned claude
+        run: |
+          set -euo pipefail
+          pinned=$(jq -r '."claude-code".pinned' pkg/versions/versions.json)
+          if [ "$pinned" != "$CLAUDE_VERSION" ]; then
+            echo "::error::pkg/versions pins claude-code $pinned; move CLAUDE_VERSION and CLAUDE_SHA256 with it"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/harness"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/harness/claude" \
+            "https://downloads.claude.ai/claude-code-releases/$CLAUDE_VERSION/linux-x64/claude"
+          echo "$CLAUDE_SHA256  $RUNNER_TEMP/harness/claude" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/harness/claude"
+
+      - name: The Claude Code profile against the pinned claude
+        run: |
+          HW_REAL_CLAUDE="$RUNNER_TEMP/harness/claude" \
+            go test -count=1 -race -timeout 15m -run 'TestClaude' -v ./pkg/adapter/claudecode/
+
+  codex:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CODEX_VERSION: "0.144.5"
+      CODEX_SHA256: "7fa2e1763a7e6cf47e013b57e95997440c36ec0c95255a4328616b30005c4876"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Fetch the pinned codex
+        run: |
+          set -euo pipefail
+          pinned=$(jq -r '.codex.pinned' pkg/versions/versions.json)
+          if [ "$pinned" != "$CODEX_VERSION" ]; then
+            echo "::error::pkg/versions pins codex $pinned; move CODEX_VERSION and CODEX_SHA256 with it"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/harness"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/codex.tgz" \
+            "https://registry.npmjs.org/@openai/codex/-/codex-$CODEX_VERSION-linux-x64.tgz"
+          echo "$CODEX_SHA256  $RUNNER_TEMP/codex.tgz" | sha256sum -c -
+          # The native binary, never the package's node shim.
+          tar -xzf "$RUNNER_TEMP/codex.tgz" -C "$RUNNER_TEMP/harness" --strip-components=4 \
+            package/vendor/x86_64-unknown-linux-musl/bin/codex
+          "$RUNNER_TEMP/harness/codex" --version
+
+      - name: The Codex profile against the pinned codex
+        run: |
+          HW_REAL_CODEX="$RUNNER_TEMP/harness/codex" \
+            go test -count=1 -race -timeout 15m -run 'TestCodex' -v ./pkg/adapter/codex/

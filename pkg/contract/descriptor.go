@@ -1,0 +1,171 @@
+package contract
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
+
+// Descriptor is what an adapter offers: Describe's result, and the entry a
+// Runtime's descriptor lists for it verbatim.
+type Descriptor struct {
+	// Contract is the contract version the adapter implements.
+	Contract string `json:"contract"`
+	// Harness names the harness and the adapter.
+	Harness HarnessInfo `json:"harness"`
+	// Capabilities are the optional behaviours the adapter provides.
+	Capabilities []Capability `json:"capabilities"`
+	// CheckpointFormat is the checkpoint format the adapter writes. It reads
+	// every earlier format of its lineage.
+	CheckpointFormat int `json:"checkpoint_format"`
+	// CredentialKinds are the credential kinds Open accepts.
+	CredentialKinds []string `json:"credential_kinds"`
+	// Spec names every Agent Spec field the harness honours, with the values
+	// it accepts. A field or value absent is unsupported, and Provision
+	// refuses a spec that uses it with CodeUnsupported.
+	Spec SpecSupport `json:"spec"`
+	// Limits bounds what the adapter takes.
+	Limits Limits `json:"limits"`
+}
+
+// HarnessInfo names a harness, its version and its adapter.
+type HarnessInfo struct {
+	// Name is the harness's registered name, like claude-code.
+	Name string `json:"name"`
+	// Version is the harness version the adapter is pinned to.
+	Version string `json:"version"`
+	// Adapter is the adapter and its release, like "harness-wrapper v0.20.0".
+	Adapter string `json:"adapter"`
+}
+
+// Has reports whether d declares capability c.
+func (d Descriptor) Has(c Capability) bool {
+	for _, have := range d.Capabilities {
+		if have == c {
+			return true
+		}
+	}
+	return false
+}
+
+// Capability is a named behaviour an adapter may offer. Each adds exactly
+// what its constant says; without it, the operations answer CodeUnsupported,
+// or the observations never appear. The set is closed in 1.0.
+type Capability string
+
+// Capabilities.
+const (
+	// CapResume: Open with mode reopen continues the Session.
+	CapResume Capability = "resume"
+	// CapAssignSessionID: Open may choose the session id.
+	CapAssignSessionID Capability = "assign_session_id"
+	// CapPrompts: prompt_raised and prompt_resolved observations, Answer, and
+	// the awaiting_answer phase.
+	CapPrompts Capability = "prompts"
+	// CapStreamingText: text_delta observations.
+	CapStreamingText Capability = "streaming_text"
+	// CapToolsObserved: tool_started and tool_finished observations.
+	CapToolsObserved Capability = "tools_observed"
+	// CapSubagents: subagent_started and subagent_stopped observations.
+	CapSubagents Capability = "subagents"
+	// CapRateLimits: rate_limit observations.
+	CapRateLimits Capability = "rate_limits"
+	// CapRetryVisible: retrying observations while the harness retries a
+	// model call.
+	CapRetryVisible Capability = "retry_visible"
+)
+
+// Values lists the set.
+func (Capability) Values() []string {
+	return []string{"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible"}
+}
+
+// SpecSupport is the part of the Agent Spec a harness honours.
+type SpecSupport struct {
+	// Models is the model ids the harness takes, or any.
+	Models Models `json:"models"`
+	// Efforts is the effort levels it takes.
+	Efforts []string `json:"efforts,omitempty"`
+	// Instructions is the instruction kinds it takes: persona, workspace.
+	Instructions []string `json:"instructions,omitempty"`
+	// Skills says it installs skills.
+	Skills bool `json:"skills,omitempty"`
+	// Memory says it keeps a memory directory and seeds its files.
+	Memory bool `json:"memory,omitempty"`
+	// Connectors is the connector transports it takes: stdio, http.
+	Connectors []string `json:"connectors,omitempty"`
+	// PermissionPostures is the postures it takes: bypass, gated.
+	PermissionPostures []string `json:"permission_postures,omitempty"`
+	// InputContent is the input content types Send takes; 1.0 has text only.
+	InputContent []string `json:"input_content,omitempty"`
+}
+
+// Models is either any model id, or a list of them. Its JSON form is the
+// string "any" or an array.
+type Models struct {
+	Any bool
+	IDs []string
+}
+
+// Allows reports whether model is one the harness takes. The empty model — the
+// harness's default — is always taken.
+func (m Models) Allows(model string) bool {
+	if model == "" || m.Any {
+		return true
+	}
+	for _, id := range m.IDs {
+		if id == model {
+			return true
+		}
+	}
+	return false
+}
+
+// MarshalJSON writes "any" or the list.
+func (m Models) MarshalJSON() ([]byte, error) {
+	if m.Any {
+		return []byte(`"any"`), nil
+	}
+	if m.IDs == nil {
+		return []byte(`[]`), nil
+	}
+	return json.Marshal(m.IDs)
+}
+
+// UnmarshalJSON reads "any" or a list.
+func (m *Models) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s != "any" {
+			return fmt.Errorf("models: %q, want \"any\" or a list", s)
+		}
+		*m = Models{Any: true}
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal(b, &ids); err != nil {
+		return fmt.Errorf("models: %w", err)
+	}
+	*m = Models{IDs: ids}
+	return nil
+}
+
+// Limits bounds what an adapter takes.
+type Limits struct {
+	// MaxInputBytes bounds one Send's content, at most MaxInputBytes.
+	MaxInputBytes int `json:"max_input_bytes"`
+}
+
+// Supports reports whether values holds v.
+func supports(values []string, v string) bool {
+	for _, have := range values {
+		if have == v {
+			return true
+		}
+	}
+	return false
+}

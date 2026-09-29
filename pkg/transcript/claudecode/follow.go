@@ -45,6 +45,10 @@ func Locate(sessionID, workingDir string, env []string) (string, error) {
 // that is not JSON, or a user or assistant entry whose message cannot be read,
 // becomes a SourceError instead.
 func Follow(sessionID, workingDir string, env []string, from transcript.Checkpoint) (*transcript.Follower, error) {
+	return follow(sessionID, workingDir, env, from, decodeRecord)
+}
+
+func follow(sessionID, workingDir string, env []string, from transcript.Checkpoint, decode transcript.Decoder) (*transcript.Follower, error) {
 	root, err := launchProjectsRoot(sessionID, workingDir, env)
 	if err != nil {
 		return nil, err
@@ -53,7 +57,7 @@ func Follow(sessionID, workingDir string, env []string, from transcript.Checkpoi
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	return transcript.NewFollower(path, sessionID, from, decodeRecord)
+	return transcript.NewFollower(path, sessionID, from, decode)
 }
 
 // launchProjectsRoot is the projects directory claude writes to when

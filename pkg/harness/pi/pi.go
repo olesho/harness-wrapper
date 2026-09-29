@@ -23,7 +23,7 @@ package pi
 import (
 	"encoding/json"
 
-	"github.com/olesho/harness-wrapper/pkg/harness"
+	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
 )
 
 // Profile is the pi coding-agent harness profile.

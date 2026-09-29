@@ -7,7 +7,7 @@ package claude
 import (
 	"path/filepath"
 
-	"github.com/olesho/harness-wrapper/pkg/harness"
+	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
 )
 
 // EnsureConfig installs loom's hooks into <worktree>/.claude/settings.json via

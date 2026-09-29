@@ -17,7 +17,7 @@ package opencode
 import (
 	"encoding/json"
 
-	"github.com/olesho/harness-wrapper/pkg/harness"
+	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
 )
 
 // Profile is the OpenCode CLI harness profile.

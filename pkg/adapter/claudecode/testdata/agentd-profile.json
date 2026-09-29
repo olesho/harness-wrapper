@@ -1,0 +1,165 @@
+{
+  "args": [
+    "--append-system-prompt-file",
+    "/w/profile/persona.md",
+    "--system-prompt-snapshot",
+    "off",
+    "--mcp-config",
+    "/w/profile/mcp.json",
+    "--strict-mcp-config"
+  ],
+  "env": [
+    "PATH=/usr/bin:/bin",
+    "LANG=C.UTF-8",
+    "HOME=/w/home",
+    "USER=home",
+    "CLAUDE_CONFIG_DIR=/w/profile",
+    "TERM=xterm-256color",
+    "AGENTD_AGENT_ID=agt_golden",
+    "AGENTD_LAUNCH_ID=lau_golden",
+    "HW_EVENT_SPOOL=/w/spool",
+    "HW_HOOK_CWD=/w/workspace",
+    "HW_HOME=/w/home",
+    "HW_HARNESS_CONFIG_DIR=/w/profile",
+    "HW_YIELD_FILE=/w/yield/yield",
+    "IS_SANDBOX=1",
+    "DISABLE_AUTOUPDATER=1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"
+  ],
+  "files": [
+    {
+      "Root": "config",
+      "Path": "settings.json",
+      "Mode": "-rw-------",
+      "Content": "{\n  \"autoMemoryDirectory\": \"/w/profile/memory\",\n  \"cleanupPeriodDays\": 3650,\n  \"hooks\": {\n    \"PostToolUse\": [\n      {\n        \"matcher\": \"Task\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''post-task'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      },\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''post-tool-use'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"PostToolUseFailure\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''post-tool-use-failure'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''pre-tool-use'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"SessionEnd\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''session-end'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"SessionStart\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''session-start'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"Stop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''stop'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"SubagentStart\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''subagent-start'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"SubagentStop\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''subagent-stop'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ],\n    \"UserPromptSubmit\": [\n      {\n        \"matcher\": \"\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"sh -c 'test -n \\\"$HW_EVENT_SPOOL\\\" || exit 0; exec '\\\\''/usr/local/lib/agentd/agentd-proxy'\\\\'' '\\\\''hooks'\\\\'' '\\\\''claude'\\\\'' '\\\\''user-prompt-submit'\\\\''' # harness-wrapper-hook:agentd\"\n          }\n        ]\n      }\n    ]\n  },\n  \"skipDangerousModePermissionPrompt\": true\n}\n"
+    },
+    {
+      "Root": "config",
+      "Path": ".claude.json",
+      "Mode": "-rw-------",
+      "Content": "{\n  \"bypassPermissionsModeAccepted\": true,\n  \"hasCompletedOnboarding\": true,\n  \"numStartups\": 1,\n  \"projects\": {\n    \"/w/workspace\": {\n      \"hasCompletedProjectOnboarding\": true,\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
+    },
+    {
+      "Root": "config",
+      "Path": "persona.md",
+      "Mode": "-rw-------",
+      "Content": "You are the golden agent.\n"
+    },
+    {
+      "Root": "config",
+      "Path": "skills/review/SKILL.md",
+      "Mode": "-rw-------",
+      "Content": "---\nname: review\ndescription: Review code.\n---\n# Review\n"
+    },
+    {
+      "Root": "config",
+      "Path": "skills/review/scripts/check.sh",
+      "Mode": "-rw-------",
+      "Content": "#!/bin/sh\necho ok\n"
+    },
+    {
+      "Root": "config",
+      "Path": "memory/notes.md",
+      "Mode": "-rw-------",
+      "Content": "remember\n"
+    },
+    {
+      "Root": "config",
+      "Path": "memory/topics/a.md",
+      "Mode": "-rw-------",
+      "Content": "a\n"
+    },
+    {
+      "Root": "config",
+      "Path": "mcp.json",
+      "Mode": "-rw-------",
+      "Content": "{\n  \"mcpServers\": {\n    \"docs\": {\n      \"type\": \"http\",\n      \"url\": \"https://docs.example/mcp\",\n      \"headers\": {\n        \"X-Team\": \"core\"\n      }\n    },\n    \"fleet\": {\n      \"type\": \"stdio\",\n      \"command\": \"/usr/bin/fleet\",\n      \"args\": [\n        \"serve\"\n      ],\n      \"env\": {\n        \"K\": \"V\"\n      }\n    }\n  }\n}"
+    },
+    {
+      "Root": "workspace",
+      "Path": "CLAUDE.md",
+      "Mode": "-rw-r--r--",
+      "Content": "# Workspace\n\nEach repository is checked out in its own directory:\n\n- `r/` — https://github.com/o/r.git (branch `main`)\n"
+    }
+  ],
+  "hw_injected_args": [
+    "--permission-mode",
+    "bypassPermissions",
+    "--model",
+    "claude-sonnet-5",
+    "--effort",
+    "high"
+  ],
+  "layout": {
+    "Home": "/w/home",
+    "Profile": "/w/profile",
+    "Workspace": "/w/workspace",
+    "Secrets": "/w/secrets",
+    "Spool": "/w/spool",
+    "Yield": "/w/yield"
+  },
+  "spec": {
+    "harness": "claude-code",
+    "model": "claude-sonnet-5",
+    "effort": "high",
+    "persona": "You are the golden agent.\n",
+    "repositories": [
+      {
+        "url": "https://user:pw@github.com/o/r.git",
+        "path": "r",
+        "ref_kind": "branch",
+        "ref": "main"
+      }
+    ],
+    "skills": [
+      {
+        "name": "review",
+        "files": [
+          {
+            "path": "SKILL.md",
+            "content": "---\nname: review\ndescription: Review code.\n---\n# Review\n"
+          },
+          {
+            "path": "scripts/check.sh",
+            "content": "#!/bin/sh\necho ok\n"
+          }
+        ]
+      }
+    ],
+    "memory": [
+      {
+        "path": "notes.md",
+        "content": "remember\n"
+      },
+      {
+        "path": "topics/a.md",
+        "content": "a\n"
+      }
+    ],
+    "connectors": [
+      {
+        "name": "fleet",
+        "mcp": {
+          "type": "stdio",
+          "command": "/usr/bin/fleet",
+          "args": [
+            "serve"
+          ],
+          "env": {
+            "K": "V"
+          }
+        }
+      },
+      {
+        "name": "docs",
+        "mcp": {
+          "type": "http",
+          "url": "https://docs.example/mcp",
+          "headers": {
+            "X-Team": "core"
+          }
+        }
+      }
+    ]
+  }
+}

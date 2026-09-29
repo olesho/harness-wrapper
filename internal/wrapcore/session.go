@@ -1,0 +1,1100 @@
+package wrapcore
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"runtime/debug"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"github.com/creack/pty"
+	"github.com/olesho/harness-wrapper/internal/delivery"
+	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
+)
+
+// Snapshot is the most recent state observation for a Session. Snapshot
+// is safe to read concurrently with the session running; it always
+// reflects a coherent point-in-time view.
+type Snapshot struct {
+	// Status is the wrapper's current classification. Mid-run, it may
+	// be empty (the session is producing output and has not been
+	// classified) or one of the actionable mid-run statuses
+	// (waiting_for_input; under Config.KeepAliveOnClassification any
+	// verdict, until the harness writes past its evidence). After Wait
+	// returns, Status is the terminal status from Result.
+	Status Status
+
+	// Reason mirrors the Reason field on the most recent classification.
+	Reason string
+
+	// ClassifiedAt is when Status was last set — or, under
+	// KeepAliveOnClassification, cleared. Zero before the first
+	// classification.
+	ClassifiedAt time.Time
+
+	// LastOutputAt is the time of the most recent byte received from
+	// the harness PTY. Zero if no output has been observed yet.
+	LastOutputAt time.Time
+}
+
+// SessionEvent is a state transition observed by a Session. Events are
+// delivered on Session.Events() in order. Mid-run classifications
+// (waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
+// Status events — under Config.KeepAliveOnClassification the terminal ones
+// too, with Terminated false. The final event is always Terminated, after
+// which the channel is closed.
+type SessionEvent struct {
+	At         time.Time
+	Status     Status
+	Reason     string
+	Terminated bool
+
+	// Class is the canonical harness-output error taxonomy for this event
+	// (ErrNone for non-error transitions). On the terminal event it equals
+	// Result.Class. Lets mid-run watchers observe the class per event.
+	Class ErrorClass
+
+	// HTTPCode is the upstream API status code when Status is
+	// StatusAPIError and the harness surfaced one. Zero otherwise.
+	HTTPCode int
+
+	// RetryAfter is the wait duration the harness suggested in its
+	// error message. Zero when no hint was parseable.
+	RetryAfter time.Duration
+
+	// ResumeAt is the absolute wall-clock time at which the harness
+	// expects to be usable again, parsed from session-limit banners
+	// (e.g. Claude Code's "resets 6:40pm (Europe/Warsaw)"). Zero when
+	// the banner did not include a parseable reset time, or when the
+	// event was not raised by a session-limit classification.
+	ResumeAt time.Time
+}
+
+// Session is a live handle to a supervised harness process. Construct
+// one with Start; retrieve the terminal outcome with Wait. Stop
+// requests a graceful shutdown without forcing the caller to track
+// context cancellation. Concurrent calls to Wait, Stop, Snapshot, and
+// Events are safe.
+type Session struct {
+	cfg       Config
+	cmd       *exec.Cmd
+	ptmx      *os.File
+	pid       int
+	startedAt time.Time
+
+	// proc and contained are set only for a contained session, which is not
+	// started through exec.Cmd (see startContainedSession); procState is its
+	// exit state, written before the wait result is delivered.
+	proc      *os.Process
+	contained *containedState
+	procState *os.ProcessState
+
+	classifier   Classifier
+	lastOutput   *atomic.Int64
+	recentOutput *recentOutputBuffer
+	termState    *terminalState
+
+	events       chan SessionEvent
+	onEvent      *delivery.Queue[SessionEvent] // nil without Config.OnEvent
+	stopOnce     sync.Once
+	stopRequest  chan struct{}
+	classifierCh chan classification
+	classifierOn chan struct{}
+
+	doneCh chan struct{}
+
+	fanout  *outputFanout
+	stdinMu sync.Mutex
+
+	// stoppingOutput is set when the supervisor ends the read of the PTY
+	// master itself (stopOutput, then closing it): whatever error ends the
+	// read after that — a contained session's reader reports the closed
+	// descriptor as Go's internal "use of closed file" — is the end of the
+	// output, not a failure to read it.
+	stoppingOutput atomic.Bool
+
+	// term signals the harness's process group and owns the escalation to
+	// SIGKILL through to the group being empty; see groupTerminator.
+	term *groupTerminator
+
+	writerMu   sync.Mutex
+	writerHeld bool
+
+	// failed closes on the first supervision failure (fail), which ends the
+	// run. finalErr, under mu, is that failure: what Wait returns.
+	failed   chan struct{}
+	failOnce sync.Once
+
+	mu       sync.Mutex
+	snap     Snapshot
+	result   Result
+	finalErr error
+	// finished, under mu, is set with result: what Wait returns is final, and
+	// a failure recorded later — a classifier pass still running when the
+	// supervisor finished — no longer changes it.
+	finished bool
+}
+
+// classification is the internal mid-run handoff between the classifier
+// goroutine and the supervisor.
+type classification struct {
+	status     Status
+	class      ErrorClass
+	reason     string
+	terminal   bool
+	httpCode   int
+	retryAfter time.Duration
+	resumeAt   time.Time
+
+	// Keep-alive mode only (Config.KeepAliveOnClassification). mark is the
+	// output offset the verdict's pass read through: the harness wrote nothing
+	// after the verdict while the output total still equals it. clear reports
+	// a pass over new output that found no verdict, which empties the status.
+	mark  int64
+	clear bool
+}
+
+// Wait blocks until the Session terminates and returns the final
+// Result. Calling Wait more than once is safe; every call returns the
+// same value. Errors are returned only when the wrapper itself failed
+// during supervision: reading the harness's output failed (ErrPTYRead), or
+// the Classifier panicked (ErrClassifierPanic). Harness-level outcomes are
+// reported via Result.Status with err == nil.
+//
+// A supervision failure while the harness runs ends the run: the wrapper
+// terminates the harness as Stop would, and the Result it returns with the
+// error has Status StatusUnknown — the wrapper stopped watching, so it has no
+// verdict — and a Reason naming the failure. A failure after the harness
+// exited on its own leaves the Result describing that exit.
+//
+// When the wrapper TERMINATED the run — context cancellation, Stop, or a
+// terminal classification — Wait returns only once the harness's process
+// group has been cleaned up, not merely when the harness itself exits: every
+// member still running when Config.WaitDelay has passed since the SIGTERM is
+// SIGKILLed, and Wait waits briefly for the group to empty. So a tool
+// subprocess that ignores SIGTERM costs up to WaitDelay, and is gone when Wait
+// returns. Two things are outside this promise: processes a harness left
+// running when it exited ON ITS OWN, and descendants that moved themselves out
+// of the group (setsid/setpgid), which need a caller-side backstop.
+//
+// Wait also returns only after the harness's output has been read to its end,
+// so the Result and RecentOutput account for everything it printed before it
+// exited. The end comes when nothing holds the terminal any more. A process
+// the harness left behind that keeps the terminal open gets outputDrainBudget,
+// after which the master is closed and reading stops at the next read; the
+// pty_closed trace event records whether the output was read to its end. On
+// Linux a leftover that holds the terminal without writing still keeps Wait
+// until it exits: the master is in blocking mode, and a close cannot interrupt
+// a read already waiting on it.
+func (s *Session) Wait() (Result, error) {
+	<-s.doneCh
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.result, s.finalErr
+}
+
+// Stop requests a graceful shutdown. The wrapper sends SIGTERM to the
+// harness's process group and escalates to SIGKILL after Config.WaitDelay
+// for whatever has not exited. Stop returns when the session has fully
+// terminated, process-group cleanup included (see Wait), or when ctx is
+// cancelled. The session's final
+// status will be Interrupted unless the harness happened to exit on
+// its own before the signal arrived.
+//
+// Stop is idempotent. The first call wins; subsequent calls block on
+// termination just like Wait.
+func (s *Session) Stop(ctx context.Context) error {
+	s.stopOnce.Do(func() { close(s.stopRequest) })
+	select {
+	case <-s.doneCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Snapshot returns a coherent point-in-time view of the session's
+// state. It never blocks.
+func (s *Session) Snapshot() Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := s.snap
+	if last := s.lastOutput.Load(); last > 0 {
+		snap.LastOutputAt = time.Unix(0, last)
+	}
+	return snap
+}
+
+// Events returns the channel of state transitions for this Session.
+// The channel is closed after the terminal event has been delivered.
+// Slow consumers have events dropped on the floor; events are
+// observability, not control flow.
+func (s *Session) Events() <-chan SessionEvent { return s.events }
+
+// PID returns the harness process ID, or 0 if the session never
+// successfully started.
+func (s *Session) PID() int { return s.pid }
+
+// RecentOutput returns a snapshot of the last ~64KB of harness PTY
+// output, ANSI escapes intact. This is the same buffer the built-in
+// classifier inspects on each poll. Safe to call concurrently with the
+// session running; the snapshot reflects bytes observed up to the call
+// time and may grow on subsequent calls.
+//
+// Useful for callers that want to run their own post-hoc classification
+// (e.g. matching harness-specific error fingerprints) over the same
+// bytes the wrapper saw, without maintaining a parallel ring buffer.
+func (s *Session) RecentOutput() string { return s.recentOutput.String() }
+
+// startSession is the constructor used by Start. cfg is assumed to
+// have been validated and defaulted.
+func startSession(ctx context.Context, cfg Config) (*Session, error) {
+	cfg.Trace.Emit(trace.Event{
+		At:   time.Now(),
+		Kind: "wrapper_started",
+		Fields: map[string]any{
+			"binary_path":   cfg.BinaryPath,
+			"args":          cfg.Args,
+			"working_dir":   cfg.WorkingDir,
+			"idle_quiet":    cfg.IdleQuiet.String(),
+			"idle_classify": cfg.IdleClassify.String(),
+			"wait_delay":    cfg.WaitDelay.String(),
+		},
+	})
+
+	// A contained launch takes its own path; an uncontained one never
+	// reaches it and is started exactly as below.
+	if cfg.Containment != nil {
+		return startContainedSession(ctx, cfg)
+	}
+
+	cmd := exec.CommandContext(ctx, cfg.BinaryPath, cfg.Args...)
+	cmd.Dir = cfg.WorkingDir
+	if cfg.Env != nil {
+		cmd.Env = cfg.Env
+	}
+	// Cancellation sends SIGTERM to the harness's whole process group. The
+	// escalation to SIGKILL is NOT armed here: it belongs to the supervisor,
+	// which runs it after reaping the leader (groupTerminator.finish), so a
+	// leader that exits on SIGTERM cannot take a TERM-ignoring child's
+	// escalation with it. cmd.WaitDelay still bounds the LEADER: exec SIGKILLs
+	// the harness process itself if it outlives the grace period.
+	term := &groupTerminator{cmd: cmd}
+	cmd.Cancel = func() error { return term.signal(syscall.SIGTERM) }
+	cmd.WaitDelay = cfg.WaitDelay
+
+	startedAt := time.Now()
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		if isBinaryNotFound(err) {
+			return nil, fmt.Errorf("%w: %v", ErrBinaryNotFound, err)
+		}
+		return nil, fmt.Errorf("%w: %v", ErrPTYAllocation, err)
+	}
+
+	pid := 0
+	if cmd.Process != nil {
+		pid = cmd.Process.Pid
+	}
+	// Resolve the process group now, while the leader cannot have been reaped.
+	term.mu.Lock()
+	term.resolveLocked()
+	term.mu.Unlock()
+	cfg.Trace.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   "pty_opened",
+		Fields: map[string]any{"pid": pid},
+	})
+
+	s := newSession(cfg, ptmx, pid, startedAt, term)
+	s.cmd = cmd
+	go s.supervise(ctx)
+	return s, nil
+}
+
+// newSession builds the Session both start paths share once the harness is
+// running under ptmx.
+func newSession(cfg Config, ptmx *os.File, pid int, startedAt time.Time, term *groupTerminator) *Session {
+	termState := setupTerminalIfTTY(cfg.Stdin, cfg.Stdout, ptmx, cfg.Trace)
+	var onEvent *delivery.Queue[SessionEvent]
+	if cfg.OnEvent != nil {
+		onEvent = delivery.New(delivery.Limits(cfg.EventQueue), sessionEventSize, cfg.OnEvent)
+	}
+	return &Session{
+		onEvent:      onEvent,
+		cfg:          cfg,
+		ptmx:         ptmx,
+		pid:          pid,
+		startedAt:    startedAt,
+		classifier:   resolveClassifier(cfg),
+		lastOutput:   &atomic.Int64{},
+		recentOutput: newRecentOutput(64 * 1024),
+		termState:    termState,
+		events:       make(chan SessionEvent, 16),
+		stopRequest:  make(chan struct{}),
+		classifierCh: make(chan classification, 1),
+		classifierOn: make(chan struct{}),
+		failed:       make(chan struct{}),
+		doneCh:       make(chan struct{}),
+		fanout:       newOutputFanout(cfg.Stdout),
+		term:         term,
+	}
+}
+
+// outputDrainBudget bounds how long the supervisor waits, once the harness has
+// exited, for the output goroutine to read the PTY to its end before it closes
+// the master. The end comes as soon as nothing holds the terminal's slave side
+// any more, which is at once for a harness whose process group is gone; the
+// budget only matters when a process the harness left behind still holds the
+// terminal open.
+const outputDrainBudget = time.Second
+
+// awaitOutputEnd waits up to budget for the output goroutine to finish on its
+// own — it does when its read of the PTY master reports the end of output — and
+// reports whether it did.
+func awaitOutputEnd(outDone <-chan struct{}, budget time.Duration) bool {
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-outDone:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// ptyOutputReader wraps the PTY master for the output copy goroutine. It is the
+// identity in production; tests substitute a slow reader to reproduce the race
+// between reading a harness's final output and closing the master.
+var ptyOutputReader = func(ptmx io.Reader) io.Reader { return ptmx }
+
+// supervise owns the session's lifecycle. It runs the IO copy
+// goroutines, dispatches the classifier, waits for the harness to
+// exit (or for Stop / classification / context cancel to force
+// termination), assembles the final Result, and closes the Events
+// channel.
+func (s *Session) supervise(ctx context.Context) {
+	defer close(s.doneCh)
+	defer close(s.events)
+	defer s.termState.cleanup()
+	defer s.fanout.closeAll()
+
+	go runSessionClassifier(ctx, s)
+
+	outDone := make(chan struct{})
+	go func() {
+		defer close(outDone)
+		// newLineSplitter is nil when no durable line tap is configured, and all
+		// lineSplitter methods are nil-safe, so the no-tap path is unchanged.
+		err := copyPTYOutput(ptyOutputReader(s.outputSource()), s.fanout, s.lastOutput, s.recentOutput, newLineSplitter(s.cfg.OnLine))
+		if !outputEnded(err) && !s.stoppingOutput.Load() {
+			s.fail(fmt.Errorf("%w: %w", ErrPTYRead, err))
+		}
+	}()
+
+	stdinDone := s.startStdinCopy()
+
+	waitCh := make(chan waitResult, 1)
+	if s.contained != nil {
+		s.waitContained(ctx, waitCh)
+	} else {
+		go func() {
+			waitCh <- waitResult{err: s.cmd.Wait(), endedAt: time.Now()}
+		}()
+	}
+
+	out := s.awaitTermination(waitCh)
+	// The leader is reaped. A requested termination is not over until its
+	// process group is: finish SIGKILLs what outlives the grace period and
+	// waits for the group to empty, and doneCh — what Wait and Stop block on —
+	// closes only after it. A contained session under cgroup supervision ends
+	// its whole cgroup instead, however the harness exited.
+	if s.contained != nil {
+		s.finishContained()
+	} else {
+		s.term.finish(s.cfg.WaitDelay)
+	}
+
+	close(s.classifierOn)
+	// Everything the harness wrote before exiting is still in the PTY. Read it
+	// to the end before closing the master: on Linux a process can exit with
+	// its last output unread, and closing the master discards it — the exit
+	// classifier then misses the very line that explains a fast failure. A
+	// contained session's read is woken first: closing its blocking master
+	// would not end a read that nothing else ends.
+	drained := awaitOutputEnd(outDone, outputDrainBudget)
+	s.stoppingOutput.Store(true)
+	s.stopOutput()
+	_ = s.ptmx.Close()
+	<-outDone
+	s.releaseOutput()
+
+	s.cfg.Trace.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   "pty_closed",
+		Fields: map[string]any{"pid": s.pid, "output_drained": drained},
+	})
+	if stdinDone != nil {
+		select {
+		case <-stdinDone:
+		default:
+		}
+	}
+
+	res := Result{
+		PID:       s.pid,
+		StartedAt: s.startedAt,
+		EndedAt:   out.endedAt,
+	}
+	if last := s.lastOutput.Load(); last > 0 {
+		res.LastOutputAt = time.Unix(0, last)
+	}
+
+	res.Status, res.ExitCode, res.Signal, res.Reason = classifyExit(s.processState(), out.waitErr, ctx.Err())
+
+	actionable := s.resolveActionable(&res, out)
+
+	s.cfg.Trace.Emit(trace.Event{
+		At:   time.Now(),
+		Kind: "harness_exited",
+		Fields: map[string]any{
+			"status":      string(res.Status),
+			"exit_code":   res.ExitCode,
+			"signal":      res.Signal,
+			"reason":      res.Reason,
+			"pid":         res.PID,
+			"started_at":  res.StartedAt,
+			"ended_at":    res.EndedAt,
+			"duration_ms": res.EndedAt.Sub(res.StartedAt).Milliseconds(),
+		},
+	})
+
+	s.mu.Lock()
+	s.result = res
+	s.finished = true
+	s.snap.Status = res.Status
+	s.snap.Reason = res.Reason
+	s.snap.ClassifiedAt = time.Now()
+	s.mu.Unlock()
+
+	final := SessionEvent{
+		At:         time.Now(),
+		Status:     res.Status,
+		Class:      res.Class,
+		Reason:     res.Reason,
+		Terminated: true,
+	}
+	if actionable != nil {
+		final.HTTPCode = actionable.httpCode
+		final.RetryAfter = actionable.retryAfter
+		final.ResumeAt = actionable.resumeAt
+	}
+	s.emitEvent(final)
+	if s.onEvent != nil {
+		// The last event never waits for room: a stalled OnEvent must not
+		// keep Wait and Stop from returning.
+		s.onEvent.PushLast(final)
+	}
+}
+
+// superviseOutcome captures how a supervised run terminated: the exit
+// error and time, an optional terminal classification, whether a Stop
+// was requested, and the last non-ErrNone class seen mid-run.
+type superviseOutcome struct {
+	waitErr           error
+	endedAt           time.Time
+	terminalClassDone *classification
+	stopRequested     bool
+	// failed reports that a supervision failure (fail) ended the run.
+	failed bool
+	// lastErrClass is the most recent non-ErrNone class observed during
+	// the run (terminal or not). It lets Result.Class inherit a mid-run
+	// error class — e.g. a non-terminal API error — when the harness then
+	// exits Failed without a terminal classification.
+	lastErrClass ErrorClass
+	// lastVerdict is the most recent verdict of a keep-alive run, nil before
+	// the first; its mark says whether the harness wrote anything after it.
+	lastVerdict *classification
+}
+
+// startStdinCopy pipes cfg.Stdin into the PTY. It returns nil when no
+// Stdin is configured, otherwise a channel closed when the copy is done.
+func (s *Session) startStdinCopy() chan struct{} {
+	if s.cfg.Stdin == nil {
+		return nil
+	}
+	stdinDone := make(chan struct{})
+	go func() {
+		defer close(stdinDone)
+		_, _ = io.Copy(s.ptmx, s.cfg.Stdin)
+		// PTYs don't propagate the underlying io.Reader's EOF to the
+		// slave automatically. For headless callers (Stdin is not
+		// an os.File TTY), send EOT (Ctrl+D, 0x04) twice: the first
+		// submits any pending unterminated line to the harness, the
+		// second is interpreted by the PTY's canonical-mode line
+		// discipline as end-of-file (at start of line, ^D returns
+		// 0 bytes from read()). Skip when Stdin is a real TTY so
+		// interactive sessions where the user keeps typing aren't
+		// corrupted.
+		if _, isTTYFile := s.cfg.Stdin.(*os.File); !isTTYFile {
+			_, _ = s.ptmx.Write([]byte{0x04, 0x04})
+		}
+	}()
+	return stdinDone
+}
+
+// awaitTermination blocks until the harness exits, a terminal
+// classification fires, a Stop is requested, or supervision fails,
+// returning how the run ended. Non-terminal classifications are recorded
+// as they arrive.
+func (s *Session) awaitTermination(waitCh chan waitResult) superviseOutcome {
+	var out superviseOutcome
+	for {
+		select {
+		case wr := <-waitCh:
+			out.waitErr = wr.err
+			out.endedAt = wr.endedAt
+			return out
+		case c := <-s.classifierCh:
+			if c.clear {
+				s.clearStatus()
+				continue
+			}
+			if c.class != ErrNone {
+				out.lastErrClass = c.class
+			}
+			if s.cfg.KeepAliveOnClassification {
+				// A caller that owns the harness's lifetime is told, never
+				// overruled: a terminal verdict is recorded like any other.
+				cc := c
+				out.lastVerdict = &cc
+				s.recordStatusChange(c, false)
+				continue
+			}
+			if !c.terminal {
+				s.recordStatusChange(c, false)
+				continue
+			}
+			cc := c
+			out.terminalClassDone = &cc
+			s.recordStatusChange(c, false)
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
+			return out
+		case <-s.stopRequest:
+			out.stopRequested = true
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
+			return out
+		case <-s.failed:
+			out.failed = true
+			out.endedAt, out.waitErr = s.terminateAndWait(waitCh)
+			return out
+		}
+	}
+}
+
+// resolveActionable finalizes res.Status/Reason/Class from the run
+// outcome and returns the actionable classification (if any) whose
+// structured fields flow into the terminal event.
+//
+// actionable is the mid-run terminal classification when one fired;
+// otherwise, for a plain failed exit that was not a stop request, a
+// final one-shot pass over recent output so fast-failing transport/API
+// errors — which exit before the idle classifier ever polls — still
+// upgrade StatusFailed into an actionable, retryable status.
+func (s *Session) resolveActionable(res *Result, out superviseOutcome) *classification {
+	if out.failed {
+		// The wrapper ended the run because it could no longer supervise it,
+		// so how the harness took the SIGTERM says nothing about the run.
+		res.Status = StatusUnknown
+		res.Reason = "supervision failed: " + s.failure().Error()
+		return nil
+	}
+	if s.cfg.KeepAliveOnClassification {
+		return s.resolveKeepAlive(res, out)
+	}
+	actionable := out.terminalClassDone
+	if actionable == nil && !out.stopRequested && res.Status == StatusFailed {
+		actionable = s.classifyOnExit(0)
+	}
+	if actionable != nil {
+		res.Status = actionable.status
+		res.Reason = actionable.reason
+	}
+	// Error class: prefer the actionable classification's class; otherwise,
+	// for a plain Failed exit, inherit the last meaningful class seen mid-run
+	// (e.g. a non-terminal API error). Clean/idle/interrupted stay ErrNone.
+	switch {
+	case actionable != nil && actionable.class != ErrNone:
+		res.Class = actionable.class
+	case res.Status == StatusFailed:
+		res.Class = out.lastErrClass
+	}
+	if out.stopRequested && out.terminalClassDone == nil {
+		res.Status = StatusInterrupted
+		if res.Reason == "" {
+			res.Reason = "stop requested"
+		}
+	}
+	return actionable
+}
+
+// resolveKeepAlive is resolveActionable for a keep-alive run. No verdict ended
+// the process, so Result.Status and Reason are the exit's: idle, failed or
+// interrupted, never a classification. A failed exit's Class says why when
+// the evidence does — the exit pass over what the harness wrote after its last
+// verdict, or else that verdict itself if the harness wrote nothing after it.
+// A verdict the harness has moved past does not explain how it ended. The
+// returned classification feeds the final event's structured fields.
+func (s *Session) resolveKeepAlive(res *Result, out superviseOutcome) *classification {
+	if out.stopRequested {
+		res.Status = StatusInterrupted
+		if res.Reason == "" {
+			res.Reason = "stop requested"
+		}
+		return nil
+	}
+	if res.Status != StatusFailed {
+		return nil
+	}
+	var mark int64
+	if out.lastVerdict != nil {
+		mark = out.lastVerdict.mark
+	}
+	explained := s.classifyOnExit(mark)
+	if explained == nil && out.lastVerdict != nil && s.recentOutput.Total() == mark {
+		explained = out.lastVerdict
+	}
+	if explained != nil {
+		res.Class = explained.class
+	}
+	return explained
+}
+
+// clearStatus empties the Snapshot's classification: the harness has written
+// past the evidence of its last verdict. Keep-alive mode only; no event marks
+// it, because the empty status already means "producing output, unclassified".
+func (s *Session) clearStatus() {
+	s.mu.Lock()
+	s.snap.Status = ""
+	s.snap.Reason = ""
+	s.snap.ClassifiedAt = time.Now()
+	s.mu.Unlock()
+}
+
+// recordStatusChange updates Snapshot and emits a non-terminal event.
+// It de-duplicates identical consecutive classifications so the
+// classifier can poll freely without flooding subscribers.
+func (s *Session) recordStatusChange(c classification, terminated bool) {
+	s.mu.Lock()
+	if s.snap.Status == c.status && s.snap.Reason == c.reason {
+		s.mu.Unlock()
+		return
+	}
+	s.snap.Status = c.status
+	s.snap.Reason = c.reason
+	s.snap.ClassifiedAt = time.Now()
+	s.mu.Unlock()
+	e := SessionEvent{
+		At:         time.Now(),
+		Status:     c.status,
+		Class:      c.class,
+		Reason:     c.reason,
+		Terminated: terminated,
+		HTTPCode:   c.httpCode,
+		RetryAfter: c.retryAfter,
+		ResumeAt:   c.resumeAt,
+	}
+	s.emitEvent(e)
+	if s.onEvent != nil {
+		// Waits for room, unless a Stop comes first: the supervisor records
+		// these, and a stalled OnEvent must not keep it from stopping.
+		_ = s.onEvent.Push(e, s.stopRequest)
+	}
+}
+
+// emitEvent delivers e on Events(), dropping it if the channel buffer is
+// full so a slow reader cannot stall the supervisor. OnEvent is fed
+// separately, without drops.
+func (s *Session) emitEvent(e SessionEvent) {
+	select {
+	case s.events <- e:
+	default:
+	}
+}
+
+// sessionEventSize is an event's payload bytes, for OnEvent's byte bound.
+func sessionEventSize(e SessionEvent) int64 {
+	return int64(len(e.Reason)) + 128
+}
+
+// terminateAndWait sends SIGTERM to the harness process group and waits for
+// the harness to exit, SIGKILLing the group if the harness itself outlives
+// WaitDelay. It returns once the LEADER is reaped; the rest of the group is
+// finished off by groupTerminator.finish, which the supervisor runs next.
+func (s *Session) terminateAndWait(waitCh <-chan waitResult) (time.Time, error) {
+	_ = s.term.signal(syscall.SIGTERM)
+	select {
+	case wr := <-waitCh:
+		return wr.endedAt, wr.err
+	case <-time.After(s.cfg.WaitDelay):
+		_ = s.term.signal(syscall.SIGKILL)
+		wr := <-waitCh
+		return wr.endedAt, wr.err
+	}
+}
+
+// runSessionClassifier polls the configured Classifier on a fixed
+// cadence, building a ClassifierInput from the live activity counters
+// and forwarding non-empty Classifications to the supervisor. It also
+// emits the original output_quiet / output_classify_threshold trace
+// events for parity with the original idle classifier. A Classifier that
+// panics ends the polling and, through fail, the run.
+func runSessionClassifier(ctx context.Context, s *Session) {
+	cfg := s.cfg
+	tick := max(cfg.IdleQuiet/3, 100*time.Millisecond)
+	ticker := time.NewTicker(tick)
+	defer ticker.Stop()
+
+	st := classifierState{lastSeen: -1, staleEnabled: cfg.StaleThreshold > 0}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.classifierOn:
+			return
+		case <-ticker.C:
+			var err error
+			if cfg.KeepAliveOnClassification {
+				err = st.onTickKeepAlive(ctx, s, cfg)
+			} else {
+				err = st.onTick(s, cfg)
+			}
+			if err != nil {
+				s.fail(err)
+				return
+			}
+		}
+	}
+}
+
+// classifierState carries the per-run bookkeeping the polling classifier
+// needs across ticks: the last-seen output timestamp, one-shot trace
+// emission latches, and whether a terminal classification has been
+// dispatched.
+type classifierState struct {
+	lastSeen        int64
+	quietEmitted    bool
+	classifyEmitted bool
+	staleEmitted    bool
+	dispatched      bool
+	staleEnabled    bool
+
+	// Keep-alive mode only. mark is the output offset the last verdict's pass
+	// read through; passedThrough is the one the last pass read through;
+	// quietPassed is set once a pass has run in the current quiet stretch.
+	mark          int64
+	passedThrough int64
+	quietPassed   bool
+}
+
+// onTick evaluates the activity counters once and, when the output has
+// settled, emits threshold traces and dispatches a classification. The
+// error is the Classifier's panic.
+func (st *classifierState) onTick(s *Session, cfg Config) error {
+	last := s.lastOutput.Load()
+	if last == 0 {
+		return nil
+	}
+	outputChanged := last != st.lastSeen
+	if outputChanged {
+		st.lastSeen = last
+		st.quietEmitted = false
+		st.classifyEmitted = false
+		st.staleEmitted = false
+		// Fall through so high-confidence classifiers
+		// (api_error) can fire even while output is still
+		// streaming. Cost/Retry/Prompt are gated on
+		// Quiet/Idle below, which won't be true here, so
+		// they stay silent until the output settles.
+	}
+	sinceLast := time.Since(time.Unix(0, last))
+	quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
+	idle := !outputChanged && sinceLast >= cfg.IdleClassify
+	stale := !outputChanged && st.staleEnabled && sinceLast >= cfg.StaleThreshold
+
+	st.emitThresholdTraces(s, cfg, sinceLast, quiet, idle, stale)
+
+	if st.dispatched {
+		return nil
+	}
+	return st.dispatchClassification(s, cfg, sinceLast, quiet, idle)
+}
+
+// onTickKeepAlive is onTick for Config.KeepAliveOnClassification. A pass runs
+// only when new output arrived or the output went quiet since the previous
+// pass; it reads only what was written after the last verdict, and it never
+// sets Idle, so the idle-gated phrase arms never run. Every result goes to the
+// supervisor in order — a verdict to record, or, for new output that yields
+// none, a clear — so the status always describes the latest evidence. The
+// error is the Classifier's panic.
+func (st *classifierState) onTickKeepAlive(ctx context.Context, s *Session, cfg Config) error {
+	last := s.lastOutput.Load()
+	if last == 0 {
+		return nil
+	}
+	outputChanged := last != st.lastSeen
+	if outputChanged {
+		st.lastSeen = last
+		st.quietEmitted = false
+		st.classifyEmitted = false
+		st.staleEmitted = false
+		st.quietPassed = false
+	}
+	sinceLast := time.Since(time.Unix(0, last))
+	quiet := !outputChanged && sinceLast >= cfg.IdleQuiet
+	stale := !outputChanged && st.staleEnabled && sinceLast >= cfg.StaleThreshold
+	st.emitThresholdTraces(s, cfg, sinceLast, quiet, false, stale)
+
+	newOutput := s.recentOutput.Total() != st.passedThrough
+	if !newOutput && (!quiet || st.quietPassed) {
+		return nil
+	}
+	text, through := s.recentOutput.TextFrom(st.mark)
+	st.passedThrough = through
+	if quiet {
+		st.quietPassed = true
+	}
+	c, err := s.classify(ClassifierInput{
+		RecentOutput:    text,
+		SinceLastOutput: sinceLast,
+		Quiet:           quiet,
+	})
+	if err != nil {
+		return err
+	}
+	if c.Status == "" {
+		if newOutput {
+			st.hand(ctx, s, classification{clear: true})
+		}
+		return nil
+	}
+	emitClassifierTrace(cfg, c)
+	st.mark = through
+	ic := toInternalClassification(c)
+	ic.mark = through
+	st.hand(ctx, s, ic)
+	return nil
+}
+
+// hand delivers a keep-alive pass's result to the supervisor. Unlike the
+// default mode's drop-when-busy send — whose classifier re-sends the same
+// verdict on the next tick — a keep-alive pass runs once per piece of evidence,
+// so its result waits for the supervisor instead of being lost.
+func (st *classifierState) hand(ctx context.Context, s *Session, c classification) {
+	select {
+	case s.classifierCh <- c:
+	case <-s.classifierOn:
+	case <-ctx.Done():
+	}
+}
+
+// emitThresholdTraces emits the output_quiet / output_classify_threshold /
+// harness_stale trace events (and the stale status change) at most once
+// per settle window.
+func (st *classifierState) emitThresholdTraces(s *Session, cfg Config, sinceLast time.Duration, quiet, idle, stale bool) {
+	if quiet && !st.quietEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "output_quiet",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.IdleQuiet.Milliseconds(),
+			},
+		})
+		st.quietEmitted = true
+	}
+	if idle && !st.classifyEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "output_classify_threshold",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.IdleClassify.Milliseconds(),
+			},
+		})
+		st.classifyEmitted = true
+	}
+	if stale && !st.staleEmitted {
+		cfg.Trace.Emit(trace.Event{
+			At:   time.Now(),
+			Kind: "harness_stale",
+			Fields: map[string]any{
+				"since_last_output_ms": sinceLast.Milliseconds(),
+				"threshold_ms":         cfg.StaleThreshold.Milliseconds(),
+			},
+		})
+		s.recordStatusChange(classification{
+			status:   StatusStale,
+			reason:   fmt.Sprintf("no output for %s", sinceLast.Round(time.Second)),
+			terminal: false,
+		}, false)
+		st.staleEmitted = true
+	}
+}
+
+// dispatchClassification runs the configured Classifier and forwards a
+// non-empty result to the supervisor, latching dispatched on a terminal
+// classification. The error is the Classifier's panic.
+func (st *classifierState) dispatchClassification(s *Session, cfg Config, sinceLast time.Duration, quiet, idle bool) error {
+	classification, err := s.classify(ClassifierInput{
+		RecentOutput:    s.recentOutput.String(),
+		SinceLastOutput: sinceLast,
+		Quiet:           quiet,
+		Idle:            idle,
+	})
+	if err != nil {
+		return err
+	}
+	if classification.Status == "" {
+		return nil
+	}
+
+	emitClassifierTrace(cfg, classification)
+	select {
+	case s.classifierCh <- toInternalClassification(classification):
+		if classification.Terminal {
+			st.dispatched = true
+		}
+	default:
+	}
+	return nil
+}
+
+// classifyOnExit runs a final one-shot classification over the harness's
+// recent output after a plain failed exit. A harness that fails fast — e.g.
+// prints "connection refused" and exits before the idle classifier polls —
+// never produces a mid-run classification, so without this pass its terminal
+// status stays StatusFailed and the retry layer can't act on it. Returns nil
+// when the output yields no actionable (or only a waiting-for-input)
+// classification. Uses the session's resolved classifier so a custom
+// cfg.Classifier is honored.
+//
+// In keep-alive mode the pass keeps the mid-run rules: it reads only what was
+// written from mark on — after the last verdict — and never sets Idle.
+//
+// A Classifier that panics here is recorded as the run's supervision failure
+// and yields nil: the harness has already exited, so the Result still
+// describes that exit.
+func (s *Session) classifyOnExit(mark int64) *classification {
+	in := ClassifierInput{RecentOutput: s.recentOutput.String(), Idle: true}
+	if s.cfg.KeepAliveOnClassification {
+		in.RecentOutput, _ = s.recentOutput.TextFrom(mark)
+		in.Idle = false
+	}
+	c, err := s.classify(in)
+	if err != nil {
+		s.fail(err)
+		return nil
+	}
+	if c.Status == "" || c.Status == StatusWaitingForInput {
+		return nil
+	}
+	ic := toInternalClassification(c)
+	return &ic
+}
+
+// classify runs the session's Classifier with a recover at its boundary. A
+// Classifier is code the supervisor does not own — the caller's, or a
+// built-in pattern set — and a panic on the classifier goroutine would end
+// the whole process, not just this run. The panic comes back as an error
+// wrapping ErrClassifierPanic, and a classifier_panic trace event carries its
+// stack.
+func (s *Session) classify(in ClassifierInput) (c Classification, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.cfg.Trace.Emit(trace.Event{
+				At:   time.Now(),
+				Kind: "classifier_panic",
+				Fields: map[string]any{
+					"panic": fmt.Sprint(r),
+					"stack": string(debug.Stack()),
+				},
+			})
+			err = fmt.Errorf("%w: %v", ErrClassifierPanic, r)
+		}
+	}()
+	return s.classifier.Classify(in), nil
+}
+
+// fail records err as the run's supervision failure — the error Wait returns
+// — unless one is recorded already or the run's outcome is final, and asks
+// the supervisor to end the run. Safe from any goroutine, any number of times.
+func (s *Session) fail(err error) {
+	s.mu.Lock()
+	if s.finalErr == nil && !s.finished {
+		s.finalErr = err
+	}
+	s.mu.Unlock()
+	s.failOnce.Do(func() { close(s.failed) })
+}
+
+// failure returns the recorded supervision failure, nil when there is none.
+func (s *Session) failure() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.finalErr
+}
+
+func toInternalClassification(c Classification) classification {
+	return classification{
+		status:     c.Status,
+		class:      c.Class,
+		reason:     c.Reason,
+		terminal:   c.Terminal,
+		httpCode:   c.HTTPCode,
+		retryAfter: c.RetryAfter,
+		resumeAt:   c.ResumeAt,
+	}
+}
+
+func emitClassifierTrace(cfg Config, c Classification) {
+	kind := "harness_classified"
+	switch c.Status {
+	case StatusBlockedByCost:
+		kind = "harness_blocked_by_cost"
+	case StatusRetryLater:
+		kind = "harness_retry_later"
+	case StatusWaitingForInput:
+		kind = "harness_waiting_for_input"
+	case StatusAPIError:
+		kind = "harness_api_error"
+	}
+	fields := map[string]any{
+		"status":   string(c.Status),
+		"reason":   c.Reason,
+		"terminal": c.Terminal,
+	}
+	if c.Terminal && cfg.KeepAliveOnClassification {
+		fields["enforced"] = false // reported to a caller that owns the lifetime
+	}
+	if c.HTTPCode != 0 {
+		fields["http_code"] = c.HTTPCode
+	}
+	if c.RetryAfter > 0 {
+		fields["retry_after_ms"] = c.RetryAfter.Milliseconds()
+	}
+	if !c.ResumeAt.IsZero() {
+		fields["resume_at"] = c.ResumeAt.Format(time.RFC3339)
+	}
+	cfg.Trace.Emit(trace.Event{
+		At:     time.Now(),
+		Kind:   kind,
+		Fields: fields,
+	})
+}

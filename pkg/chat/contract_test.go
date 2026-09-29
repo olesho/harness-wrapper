@@ -138,8 +138,15 @@ func TestContract_GoAPI(t *testing.T) {
 		fmt.Fprintf(&b, "%s = %q\n", e.name, e.err.Error())
 	}
 
-	assertGolden(t, "go_api.golden", b.String())
+	assertGolden(t, "go_api.golden", callerNames.Replace(b.String()))
 }
+
+// callerNames writes each type under the package a caller names it by.
+// pkg/chat's types are internal/chatcore's and pkg/wrapper's are
+// internal/wrapcore's — aliases, so identical types — and reflection reports
+// the defining package; the contract is pkg/chat's surface as its callers see
+// it, so a type moving between a facade and its core is no drift.
+var callerNames = strings.NewReplacer("chatcore.", "chat.", "wrapcore.", "wrapper.")
 
 // dumpType renders a type's exported fields (with json tags) and full exported
 // method set in a stable, sorted form.

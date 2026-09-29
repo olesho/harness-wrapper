@@ -249,6 +249,281 @@ Profile generates for those roots — an edited source, or one from a
 harness-wrapper that generates a different policy, describes no profile the
 wrapper can vouch for.
 
+## Module: chatcore (`internal/chatcore`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package chatcore is pkg/chat without any harness's screen adapter: the
+Conversation, its TUI and stream-json transports, the Store contract and the
+delivery of events. pkg/chat is this package plus the built-in adapters it
+registers (RegisterAdapter), and every exported identifier of pkg/chat is
+the identical one here.
+
+A harness is whatever adapter is registered under its name, and the
+harness-specific readings the conversation needs — whether a composer is
+ready, what a dialog says, which interstitials to dismiss — come from that
+adapter's optional capabilities (pkg/turns). So code that must link one
+harness at a time, such as the Harness Adapter's profiles, imports this
+package and registers only its harness's adapter; everything else keeps
+importing pkg/chat, whose documentation describes the behaviour.
+
+### Exported Types & Functions
+
+#### `func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error`
+DeleteContainmentState removes the private state of a stored contained
+conversation: it first ends whatever the conversation's last launch left in
+its recorded cgroup, then deletes the directory and marks the record, which
+can no longer be resumed. Deleting state a launch still uses is refused.
+
+#### `func DialogAnchors(harness string) []string`
+DialogAnchors returns the literal lines a BLOCKING dialog paints — a
+folder-trust prompt, a bypass-permissions confirmation. A screen showing one
+is about a dialog, not a login, which is the distinction a caller recording
+evidence needs in order to tell a real auth wall from a verdict taken over a
+modal. Nil for a harness with no known dialogs. The empty string returns
+every registered harness's anchors (turns.DialogAnchorer), for a caller that
+describes a screen without knowing which harness drew it.
+
+#### `func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)`
+DiscoverModels launches the harness on an ephemeral memstore-backed session,
+probes its `/model` picker read-only, and returns the models it lists. It is
+read-only: it never selects a model — after writing `/model` the picker is
+left open, but because the session is memstore-backed and Close'd immediately
+in the defer, no Escape/cleanup keystroke is required.
+
+It gates on readiness up front (so an unauthenticated CLI fast-fails with
+ErrAuthRequired rather than hanging to the render deadline), then writes
+`/model` and polls the rendered screen against models.ParseModelPicker until
+it yields a non-empty list or the render budget elapses.
+
+Error contract — three distinct outcomes:
+  - ErrPickerUnsupported: the harness has no parseable picker (not
+    claude-code/claude or codex).
+  - ErrAuthRequired: the CLI is logged out / not onboarded (fast-fail).
+  - ErrPickerTimeout: the picker never rendered within RenderTimeout.
+
+#### `func RegisterAdapter(name string, newAdapter func() turns.Adapter)`
+RegisterAdapter makes newAdapter the source of the adapter behind every
+conversation whose Options.Harness is name: each Open and Reopen gets a new
+one. Registering a name again replaces its factory.
+
+#### `type Conversation`
+Conversation owns one supervised harness process and serves the
+chat-style API on top of it.
+
+#### `func Open(ctx context.Context, opts Options) (*Conversation, error)`
+Open starts a fresh harness session, wires the screen + turn watcher, and
+returns a live Conversation. To resume a prior harness session instead, set
+Options.Resume (or use Reopen with a stored chat session id).
+
+#### `func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)`
+Reopen resumes a previously-stored chat session against its harness's own
+persisted session, re-attaching a fresh live Conversation. It looks up the
+stored record by SessionID, requires it to carry a harness session id, and
+launches the harness with the adapter's resume args spliced in. Unlike Open
+it does NOT create a new store record — the record already exists.
+
+#### `type ConversationEvent`
+ConversationEvent is a discriminated event observed on
+Conversation.Events(). Inspect Type to learn which payload is set: Turn
+for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+EventExited, RateLimit for EventRateLimit.
+
+#### `type DeliveryState`
+DeliveryState is the event queue's pressure, for diagnostics: a consumer
+that stops taking events shows here before anything else notices.
+
+#### `type DiscoverModelsOptions`
+DiscoverModelsOptions configures DiscoverModels. It mirrors the chat/oneshot
+launch surface (the fields Open needs), plus a picker render budget.
+
+#### `type Disposition`
+Disposition is the action a policy takes for a matched request kind.
+
+#### `type DispositionKind`
+DispositionKind is how a policy disposes of a matched InputRequest.
+
+#### `type EventType`
+EventType discriminates the variants of a ConversationEvent.
+
+#### `type ExitInfo`
+ExitInfo is how the harness process ended.
+
+#### `type HistorySource`
+HistorySource identifies where a History result came from.
+
+#### `type InputAnswer`
+InputAnswer is how a caller answers an InputRequest. Set OptionID (an
+option ID or Alias) for single-select menu/confirm/trust prompts; set Text
+for free-text ("text_input") prompts; set OptionIDs (each an option ID or
+Alias) to select one or more options on a MultiSelect request.
+
+OptionID and OptionIDs are mutually exclusive: setting both returns
+ErrConflictingAnswer. OptionIDs on a request whose MultiSelect is false
+returns ErrNotMultiSelect.
+
+#### `type InputOption`
+InputOption is one selectable choice in an InputRequest.
+
+#### `type InputPolicy`
+InputPolicy pre-configures how interactive prompts are resolved without a
+live client in the loop. It is JSON-serializable so it can be supplied at
+open time over a transport (harness-chatd). When a request matches no rule
+(or the matched disposition is "ask"), the request is surfaced on Events().
+
+#### `type InputRequest`
+InputRequest is the client-facing view of a blocking interactive prompt
+the harness is showing (e.g. Claude Code's folder-trust dialog). It mirrors
+turns.InputRequest but deliberately omits the per-option keystrokes: the
+client answers semantically by option ID or Alias and the chat layer owns
+the translation to keys.
+
+#### `type InputUnresolvedError`
+InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
+PermissionModeBlockedError it carries the client-facing chat.InputRequest
+(the value PendingInput returns and Answer accepts) plus the screen as it
+looked when the driver gave up, so a failed run is diagnosable from the error
+alone rather than from a 43-minute silence.
+
+#### `type InterruptResult`
+InterruptResult is what Interrupt did.
+
+#### `type Options`
+Options configures a single Conversation.
+
+#### `type PermissionModeBlockedError`
+PermissionModeBlockedError is the concrete error behind
+ErrPermissionModeBlockedByInput. It carries the client-facing
+chat.InputRequest (NOT the internal turns.InputRequest): exactly the value
+PendingInput returns and Answer accepts, so the documented
+resolve-then-retry recovery round-trips without a type conversion the caller
+cannot perform.
+
+Observed is the last posture read before the driver stopped pressing; it is
+also returned as SetPermissionMode's string result.
+
+#### `type RateLimit`
+RateLimit is the harness's report of the account's usage limit, as it stood
+when the harness last reported it. Each field is the harness's own figure;
+a zero field means the report did not include it.
+
+#### `type RateLimitStatus`
+RateLimitStatus is where the account stands against its usage limit.
+
+#### `type RateLimitWindow`
+RateLimitWindow is one usage window's standing.
+
+#### `type ReopenOptions`
+ReopenOptions configures Reopen. It is the Options knobs that make sense when
+re-attaching to an already-stored session: the harness, working dir, and
+resume id come from the stored record (looked up by SessionID), so they are
+intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"resume">).
+
+#### `type Role`
+Role identifies who produced a turn.
+
+#### `type ScreenAnchor`
+ScreenAnchor is one identified screen pattern: the regex this package
+matches with, and a stable id for it.
+
+The ids exist because a consumer that RECORDS which banner it saw needs a
+name for it, and copying the regexes out to invent one is how a consumer
+ends up tracking harness drift by hand. loom did exactly that: it mirrored
+these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
+of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
+with its copies unanchored where these are line-anchored.
+
+The id strings are a DOWNSTREAM CONTRACT. loom's
+docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
+triggers, so a rename silently breaks the trigger it belongs to. Add anchors
+freely; do not rename an existing id.
+
+#### `func AuthAnchors(harness string) []ScreenAnchor`
+AuthAnchors returns the screen anchors whose presence means the harness
+cannot produce output until a human authenticates — onboarding wizard first,
+then logged-out banner, which is authRequired's own precedence, so a caller
+recording the FIRST hit names the arm this package would have taken.
+
+A harness this package has no banner set for returns nil. The empty string
+returns every harness's anchors, for a caller that describes a screen
+without knowing which harness drew it.
+
+#### `type Session`
+Session is the chat-level session record. Distinct from
+wrapper.Session: this is the persistence/metadata view, owned by Store.
+
+#### `type SessionContainment`
+SessionContainment is the containment record of a contained conversation.
+It is persisted BEFORE the conversation's first launch, and every later
+launch — Reopen included — inherits it: a contained conversation can never
+continue uncontained or under a different policy.
+
+Downgrade guard: in a contained Session the legacy HarnessSessionID field
+stays empty for good, and the harness's own session id lives only here. An
+older harness-wrapper, which knows nothing of this record, therefore sees a
+session with no harness session id and refuses to resume it
+(ErrNoHarnessSession) instead of resuming it unrestricted — even when its
+decoder drops this field. Read the id through Session.HarnessID.
+
+#### `type State`
+State is a conversation's live state, read in one call (ADR-008).
+
+#### `type Transport`
+Transport selects how a Conversation talks to its harness (Options.Transport).
+
+#### `type Turn`
+Turn is one message in the conversation.
+
+#### `type TurnCode`
+TurnCode is the machine-readable half of a terminal Turn.Reason: a short,
+stable token a consumer switches on, with no prose attached.
+
+Reason is operator copy — it is worded for a human, it carries a trailing
+"(…)" detail on the usage wall, and rewording it is an ordinary editorial
+change. Consumers that matched on the reason therefore had to SUBSTRING it,
+which makes every such reword a silent behaviour change downstream. Code is
+what those consumers should read instead. Empty for every turn that is not
+one of the terminal walls below, including ordinary task failures.
+
+#### `type TurnState`
+TurnState is the lifecycle stage of a Turn.
+
+### Interfaces (Boundaries)
+
+#### `ContainmentStore`
+
+> ContainmentStore is the optional Store extension a store implements to
+declare that it persists contained conversations faithfully. chat.Open and
+Reopen refuse containment on a Store that does not implement it, rather than
+trust a record the store may silently drop. chat.Store itself gains no
+method: callers implement it.
+
+By implementing it a store commits that CreateSession, UpdateSession and
+GetSession round-trip Session.Containment intact, and that it never
+populates the legacy HarnessSessionID of a session that has one.
+
+- `StoresContainment()`
+
+#### `Store`
+
+> Store persists chat-level session metadata and turn records.
+
+Store does NOT store transcript bodies. Harnesses persist their own
+conversation logs (~/.codex/sessions/, ~/.claude/projects/); a future
+pkg/transcript layer reads them for History reconstruction. Store
+only holds the indexable metadata: who owns what, which chat session
+maps to which harness session, what turn IDs have been issued, when
+each turn started and finished.
+
+Implementations must be safe for concurrent use.
+
+- `AppendTurn(ctx context.Context, t *Turn) error`
+- `CreateSession(ctx context.Context, s *Session) error`
+- `GetSession(ctx context.Context, id string) (*Session, error)`
+- `ListTurns(ctx context.Context, sessionID string) ([]Turn, error)`
+- `UpdateSession(ctx context.Context, s *Session) error`
+- `UpdateTurn(ctx context.Context, t *Turn) error`
+
 ## Module: contain (`internal/contain`)
 
 _(summary pending — run the veracity-docs skill)_
@@ -274,11 +549,21 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() func()`
-DisableSupervisionForTest does nothing here.
+#### `func DisableSupervisionForTest() (restore func())`
+DisableSupervisionForTest makes every launch see a host that delegates no
+cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (int, int, error)`
-OpenPTYPair reports ErrUnsupported.
+#### `func OpenPTYPair() (master, slave int, err error)`
+OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
+O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
+than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
+Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
+pty.Open — and the caller wraps the master in an *os.File only after the
+spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
+
+It runs on an ordinary thread: Landlock fixes a file's rights when the file
+is opened, so a master opened on the restricted thread would deny the
+wrapper's later resize calls.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -292,7 +577,9 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent reports ErrUnsupported.
+StateParent returns the directory beneath which managed state lives:
+$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
+~/.local/state/harness-wrapper/contain.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -311,8 +598,9 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(Input) (*Launch, error)`
-Prepare reports ErrUnsupported: Landlock containment is Linux-only.
+#### `func Prepare(in Input) (l *Launch, err error)`
+Prepare turns in into a Launch, or refuses it before anything runs. On
+refusal it releases whatever it acquired, including ephemeral state.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -340,8 +628,10 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(Input) (*Preview, error)`
-PreviewLaunch reports ErrUnsupported.
+#### `func PreviewLaunch(in Input) (*Preview, error)`
+PreviewLaunch runs the checks Prepare runs, collecting every problem
+instead of stopping at the first, and allocates nothing: no state, no
+cgroup, no ruleset. Only an invalid request is an error.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -357,11 +647,13 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(bool) (*State, error)`
-NewState reports ErrUnsupported.
+#### `func NewState(persistent bool) (*State, error)`
+NewState allocates new managed state. Persistent state survives its
+launches until Remove; ephemeral state is deleted by the launch that
+created it once that launch's cgroup is empty.
 
-#### `func OpenState(string) (*State, error)`
-OpenState reports ErrUnsupported.
+#### `func OpenState(id string) (*State, error)`
+OpenState opens existing managed state by id.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -398,7 +690,7 @@ Stats is a queue's pressure, for diagnostics.
 
 ## Module: env (`internal/env`)
 
-The execution-environment core: a Provisioner axis for where the machine comes from, a Containment axis for what the agent may touch, the Workspace contract they meet at, the Compose combinator that joins them, and the lifecycle engine covering credential injection, redaction and retention. The model is batch request/response — exec, upload, download — with degenerate local and identity implementations shipped alongside the abstractions.
+_(summary pending — run the veracity-docs skill)_
 
 > Package env is a clean-room Go re-implementation of the meta-harness
 environment-layer core (design §3–§6): the two orthogonal axes — a
@@ -429,7 +721,7 @@ DetectContainerRuntime reports whether docker or podman is available on the
 system, returning the command name ("docker" or "podman"), or "" if neither
 is found.
 
-#### `func EnvPrefixedShell(env map[string]string, argv []string) string`
+#### `func EnvPrefixedShell(env map[string]string, argv []string) (string, error)`
 EnvPrefixedShell builds an in-guest `env K=V … <argv>` prefix as a shell-safe
 argv-string. Both the assignments' values and the command tokens are
 single-quoted. Keys are emitted in sorted order for determinism. Used by
@@ -437,6 +729,11 @@ containment layers whose exec transport has no dedicated env flag (design §3:
 openshell 0.0.53 exec has no --env). With no env, the plain quoted argv is
 returned — "env" with no assignments is a harmless no-op prefix, dropped when
 unused.
+
+Keys are written unquoted, so every key must be a portable name — a letter
+or underscore, then letters, digits and underscores — or the whole command
+is refused with ErrInvalidEnvName: a key such as "X;id #" would otherwise be
+shell syntax in the command it builds.
 
 #### `func ShQuote(arg string) string`
 ShQuote single-quotes one argument for POSIX sh.
@@ -779,6 +1076,18 @@ browser/curl CONNECT (field-tested, openshell 0.0.53). NB egress ALSO requires
 the guest image to ship a statable /init.krun (the proxy's ancestor-integrity
 check stats the libkrun PID-1 init); without it every lane is denied
 regardless of this policy.
+
+## Module: main (`internal/facadegen`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Command facadegen writes a facade package's declarations: one per exported
+top-level identifier of a core package — a type alias, a re-declared const or
+var, or a forwarding func. pkg/wrapper and pkg/chat are such facades over
+internal/wrapcore and internal/chatcore; each regenerates its file with
+go generate.
+
+	facadegen -core DIR -import PATH -alias NAME -pkg NAME [-skip a,b] -o FILE
 
 ## Module: fakeharness (`internal/fakeharness`)
 
@@ -1216,6 +1525,479 @@ O_CLOEXEC until StopOpeners; it returns how many started.
 #### `func StopOpeners() int64`
 StopOpeners stops the C openers and returns how many opens they made.
 
+## Module: wrapcore (`internal/wrapcore`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package wrapcore is pkg/wrapper without any harness's classifier patterns:
+the PTY supervisor, its normalized Status and ErrorClass vocabulary, launch
+policy and login. pkg/wrapper is this package plus the built-in pattern
+sets it registers (RegisterPatterns), and every exported identifier of
+pkg/wrapper is the identical one here.
+
+It exists so that code which must link one harness at a time — pkg/turns,
+the chat core, the Harness Adapter's profiles — can supervise a harness
+without linking every other harness's patterns. Such code imports this
+package; everything else keeps importing pkg/wrapper, whose documentation
+describes the behaviour.
+
+### Exported Types & Functions
+
+#### `func BypassEnablingFlags(harness string) []string`
+BypassEnablingFlags returns the harness argv flags that, when present at
+launch, leave the harness able to reach the bypass rung. Single source of
+truth for validatePermissionMode's contradiction check and pkg/chat's
+ring-length calculation.
+
+Only two such flags exist: claude's SkipPermissionsFlag and codex's
+--dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
+permission axis at all return nil.
+
+The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
+see BypassReachableFlags.
+
+#### `func BypassReachableFlags(harness string) []string`
+BypassReachableFlags returns the harness argv flags that, when present at
+launch, leave bypass REACHABLE on the harness's own permission ring —
+whether or not the launch is already unrestricted. This is the wider of the
+two sets and the split matters: BypassEnablingFlags answers "is this launch
+already unrestricted" and feeds validatePermissionMode's contradiction
+check, while this one answers "can this session get to bypass at all" and
+feeds pkg/chat's ring-length calculation.
+
+For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
+unlocks the rung without selecting it. Codex has no separate unlock flag, so
+the two sets coincide there. The returned slice is freshly allocated; callers
+may mutate it.
+
+#### `func EffectiveLaunchRung(harness string, args []string, mode string) string`
+EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
+given the caller's argv and the Config.PermissionMode knob — i.e. it replays
+argsWithHarnessPermissionMode's suppression rule rather than trusting the
+knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
+extracts the VALUE from both "--permission-mode=x" and the separated
+"--permission-mode x" form and normalizes native spellings (acceptEdits ->
+ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
+
+A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
+itself reported as a definite bypass: it suppresses injection AND leaves the
+harness unrestricted, so there is nothing unknown about the result.
+
+Returns "" when argv carries a permission flag whose value cannot be resolved
+(a trailing flag with no operand, an unrecognized spelling), when only
+codex's -a axis is set (which suppresses injection but leaves the sandbox at
+the harness default), and when neither argv nor mode says anything. "" means
+UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
+answer.
+
+Passing ALREADY-INJECTED args is safe — the function is idempotent over
+argsWithHarnessPermissionMode, because injection self-suppresses: once the
+axis is in argv, argsContainAnyFlag short-circuits the second pass and the
+argv arm reads back the value that was injected. Formally,
+EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
+== EffectiveLaunchRung(h, args, mode).
+
+#### `func HarnessArgs(cfg Config) ([]string, error)`
+HarnessArgs validates cfg exactly as Start does and returns the argv Start
+would launch the harness with: cfg.Args with the Effort, Model and
+PermissionMode flags injected. It starts nothing. It is for a caller that
+runs the harness itself over another transport — pkg/chat's claude-code
+stream-json driver — and must honour the same knobs the same way. The I/O
+fields are not needed: Stdout defaults to io.Discard here.
+
+#### `func IsBypassPermissionMode(mode string) bool`
+IsBypassPermissionMode reports whether mode resolves to claude-code's
+bypassPermissions directive — the canonical rung "bypass" and its
+claude-native spelling "bypassPermissions", and NOTHING else.
+
+Four call sites, all of which need exactly this question:
+ 1. cmd/harness-wrapper.applySandboxDefaults — compose (env half only).
+ 2. cmd/harness-wrapper.parseHarnessWrapperArgs — the --sandbox-defaults
+    exclusion check, which is deliberately harness-INDEPENDENT.
+ 3. pkg/wrapper.validateConfig — the contradictory-argv rejection.
+ 4. pkg/env.RunStructuredTurn — the host-side mirror of call site 2,
+    hoisted so a contradictory config never spends a container round-trip.
+
+codex's "danger-full-access" is deliberately NOT included even though it is
+codex's bypass-equivalent: call site 2 runs before the harness is known, so
+treating it as bypass would let `--sandbox-defaults --permission-mode
+danger-full-access codex --` slip past the exclusion check. codex's own
+bypass handling lives in isCodexBypassMode.
+
+#### `func MorePermissive(a, b string) bool`
+MorePermissive reports whether rung a is strictly more permissive than b,
+by index in PermissionRungs.
+
+Unknown rungs are never more permissive (fail closed): an empty string, a
+native spelling ("acceptEdits", "danger-full-access") or a typo yields false
+for a, so a caller asking "may I stay where I am?" never gets a yes it did
+not earn. Note b being unknown ALSO yields false, so the answer is false
+whenever either side is not a canonical rung.
+
+#### `func PermissionRungs() []string`
+PermissionRungs returns the canonical rungs, ordered least to most
+permissive — the same order the unexported consts are declared in.
+
+A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
+may sort, truncate or reverse the result without corrupting a later call.
+
+#### `func RegisterPatterns(p detector.Patterns, names ...string)`
+RegisterPatterns makes p the classifier patterns for each of names. A name
+is matched case-insensitively, with surrounding space ignored, as
+Config.Harness is. Registering a name again replaces its patterns.
+
+This package names no harness: pkg/wrapper registers every built-in pattern
+set, so a caller of pkg/wrapper classifies exactly as before, while a binary
+that links only this package carries no harness's patterns. A harness with
+no registered patterns gets the generic default classifier.
+
+#### `type Classification`
+Classification is a Classifier's verdict for a single ClassifierInput.
+
+#### `func ClassifyFinishedOutput(harness, output string) Classification`
+ClassifyFinishedOutput classifies the output of a harness that has ALREADY
+EXITED, applying the same classifier ClassifyOutput does and then a residual
+fallback for the signals the per-harness anchored matchers miss.
+
+It is the post-exit entry point. ClassifyOutput remains the plain one-shot:
+same classifier, no fallback, results unchanged for every caller. The split
+exists because the residual rows below are the broadest patterns in the
+library — `\bbilling\b`, `\bquota\b`, API-key variable names — and sharing
+them with the live polling dispatcher would let an agent that merely PRINTS
+such a word terminate its own quiet, healthy process. Post-exit there is no
+process left to terminate, so breadth costs a misclassification at worst.
+
+Order:
+ 1. The resolved classifier (custom override → per-harness adapter →
+    default), exactly as ClassifyOutput runs it.
+ 2. An actionable result is returned unchanged — including
+    StatusBinaryNotFound, which is a statement about the launch, not the
+    output.
+ 3. Only on ErrNone / ErrUnknown — "nothing actionable" — are the residual
+    rows consulted. A hit REPLACES the result rather than decorating it:
+    the rows are a different fingerprint of the same text, not a refinement
+    of a verdict the classifier did not reach.
+ 4. An ErrTransient result whose surrounding text names a timeout is
+    refined to ErrTimeout, which keeps a network timeout in its own class
+    (and its own backoff bucket downstream) instead of a generic 5xx.
+ 5. A rate-limited result with no wait hint gets one from a Retry-After
+    token anywhere in the output. The per-harness matchers only parse the
+    hint when it sits inside the message they anchored on; a CLI that
+    prints the header on its own line is the common case, and a caller
+    that has to scrape it itself is maintaining a harness-output pattern
+    outside the repository that owns them.
+
+Returns the classifier's own result when nothing matches, so a caller's
+exit-code fallback still applies.
+
+#### `func ClassifyOutput(harness, output string) Classification`
+ClassifyOutput runs the resolved per-harness classifier as a one-shot
+over a finished output blob (e.g. a log tail, or the recent-output buffer
+of an exited harness). Idle is forced on so the Cost/Retry/transport
+patterns are eligible; Quiet is left off so a trailing interactive prompt
+in a *dead* process's tail is not misreported as waiting_for_input.
+Returns the zero Classification when nothing matches.
+
+It is the post-hoc counterpart to the live polling the wrapper performs
+during a run — the single entry point external callers (e.g. loom's
+agenterr adapter) should use to classify captured output with the same
+patterns the wrapper applies internally.
+
+#### `type ClassifierFunc`
+ClassifierFunc adapts a function to the Classifier interface.
+
+#### `type ClassifierInput`
+ClassifierInput is the snapshot a Classifier inspects when deciding
+whether to escalate the wrapper's status. It is rebuilt each time
+the wrapper polls the classifier; classifiers are stateless.
+
+#### `type Config`
+Config configures a single Run.
+
+Fields with zero values get sensible defaults documented per-field.
+Construct Config using keyed struct literals; positional initialization
+is unsupported and will break across versions.
+
+#### `type Containment`
+Containment requests an optional Landlock boundary around the harness child
+on Linux: an extra, kernel-enforced layer outside whatever the harness's own
+sandbox and permission settings enforce, which keep their meanings. A nil
+*Containment (the default everywhere) means no containment, and the
+uncontained launch path is exactly the one used without this feature.
+
+See pkg/containment for the fields and docs/md/guide/permissions.md for what
+the boundary covers and what it does not.
+
+#### `type ErrorClass`
+ErrorClass is the canonical, lifecycle-free taxonomy of harness-output
+errors. It is the *mechanism* half of the classification contract: the
+wrapper assigns it from harness output; downstream consumers (loomcli,
+the SDK) map it to their own *policy*. It is deliberately distinct from
+Status, which mixes runtime lifecycle (idle, waiting_for_input, stale)
+with error states.
+
+ErrorClass is additive public API consumed by multiple repos: new values
+may be appended, but existing values and their String() forms are stable.
+
+#### `type Login`
+Login is a human-led sign-in in progress; see StartLogin.
+
+#### `func StartLogin(ctx context.Context, cfg LoginConfig) (*Login, error)`
+StartLogin starts the harness's own login command inside a contained
+launch whose login is kept in cfg.StateDir, for a person to complete:
+
+  - Prompt returns the sign-in page to open, and codex's one-time code.
+  - SubmitCode passes on the code claude's page shows after signing in.
+  - Wait reports whether the harness is signed in once the command has
+    ended. It runs the harness's own status command in the same StateDir to
+    decide.
+
+A login runs only the login and status commands its harness profile pins,
+so it works before the profile is activated for sessions. Neither command
+receives the harness's credential variables, and neither runs tools, so
+codex's bypass-rung requirement does not apply. Linux only, like every
+contained launch.
+
+#### `type LoginConfig`
+LoginConfig configures a human-led sign-in; see StartLogin.
+
+#### `type LoginPrompt`
+LoginPrompt is what the person signing in needs from the harness.
+
+#### `type LoginResult`
+LoginResult reports how a sign-in ended.
+
+#### `func LoginStatus(ctx context.Context, cfg LoginConfig) (LoginResult, error)`
+LoginStatus runs the harness's own status command, contained, in
+cfg.StateDir, and reports whether the harness is signed in there. It starts
+no login, so cfg.Output is unused.
+
+#### `type QueueLimits`
+QueueLimits bounds an OnEvent queue: the events it holds at once, and their
+payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+
+#### `type Result`
+Result describes the outcome of a Run.
+
+#### `func Run(ctx context.Context, cfg Config) (Result, error)`
+Run starts the configured harness under a pseudoterminal, supervises
+it until it exits or ctx is cancelled, and returns the normalized
+outcome. It is a blocking convenience wrapper around Start+Wait
+preserved for callers that don't need a live session handle.
+
+Errors are returned only when the wrapper itself fails to do its job
+(invalid configuration, missing binary, PTY allocation failure, IO
+errors on the master fd, a Classifier panic; see Session.Wait for the
+Result that comes with the last two). Harness-level outcomes — clean exit,
+non-zero exit, signal termination, idle classification — are always
+reported through the returned Result with a nil error.
+
+Context cancellation is handled by sending the harness a termination
+signal. The returned Result will have Status == StatusInterrupted;
+ctx.Err() is not propagated as the returned error.
+
+#### `type Session`
+Session is a live handle to a supervised harness process. Construct
+one with Start; retrieve the terminal outcome with Wait. Stop
+requests a graceful shutdown without forcing the caller to track
+context cancellation. Concurrent calls to Wait, Stop, Snapshot, and
+Events are safe.
+
+#### `func Start(ctx context.Context, cfg Config) (*Session, error)`
+Start launches the configured harness under a pseudoterminal and
+returns a live Session. Unlike Run, Start returns immediately; the
+caller observes lifecycle through Session.Events / Session.Snapshot
+and retrieves the final outcome via Session.Wait.
+
+Errors are returned only when the wrapper itself fails to start
+(invalid configuration, missing binary, PTY allocation failure).
+Once Start has returned a non-nil Session, every harness outcome
+flows through Wait with a nil error.
+
+#### `type SessionEvent`
+SessionEvent is a state transition observed by a Session. Events are
+delivered on Session.Events() in order. Mid-run classifications
+(waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
+Status events — under Config.KeepAliveOnClassification the terminal ones
+too, with Terminated false. The final event is always Terminated, after
+which the channel is closed.
+
+#### `type Snapshot`
+Snapshot is the most recent state observation for a Session. Snapshot
+is safe to read concurrently with the session running; it always
+reflects a coherent point-in-time view.
+
+#### `type Status`
+Status is the normalized run status returned by the wrapper.
+
+### Interfaces (Boundaries)
+
+#### `Classifier`
+
+> Classifier inspects recent harness output and reports actionable
+status classifications. Implementations must be safe for concurrent
+use.
+
+Classifiers are stateless: the wrapper rebuilds ClassifierInput on
+each poll. Returning the same Classification across consecutive
+polls is fine; the wrapper de-duplicates emitted events.
+
+- `Classify(input ClassifierInput) Classification`
+
+## Module: detector (`internal/wrapcore/detector`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package detector provides generic pattern primitives for harness
+classifiers. Patterns are matched against the recent harness output
+(typically the last ~64KB), with ANSI escapes already stripped.
+
+The package is intentionally minimal: it does not own state, it just
+runs string matches. Real classifiers compose these primitives with
+state from the wrapper (idle thresholds, quiet windows).
+
+### Exported Types & Functions
+
+#### `func MatchAny(haystack string, patterns []string) string`
+MatchAny returns the first pattern in patterns that appears as a
+substring of haystack, or "" if none match. Caller is expected to
+pre-lowercase haystack.
+
+#### `func MatchPromptSuffix(haystack string, patterns []string) string`
+MatchPromptSuffix returns the first pattern in patterns that the
+trailing non-empty line of haystack ends with (case-insensitive),
+or "" if none match. Trailing whitespace on the last line is
+ignored so prompts ending with a space ("Continue? ") still match.
+
+#### `func ParseRetryAfter(msg string) time.Duration`
+ParseRetryAfter scans an API-error message for a numeric retry hint
+and returns it as a time.Duration. Returns zero when no hint was
+found or when the unit could not be recognized.
+
+Recognized phrasings include "try again in 30 seconds", "retry after
+2 minutes", "try again in 5s". Non-numeric phrasings like "try again
+in a moment" return zero — better to surface "no hint" than guess.
+
+#### `type APIErrorHit`
+APIErrorHit is what an APIErrorMatcher returns when it recognizes an
+upstream API error in the harness's output.
+
+#### `type APIErrorMatcher`
+APIErrorMatcher inspects already-ANSI-stripped recent output and
+reports whether it contains a recognized upstream API error.
+
+#### `type Patterns`
+Patterns groups the per-harness fingerprints a classifier consults.
+All slices are matched as case-insensitive substrings against
+already-stripped, lower-cased recent output, except Prompt which is
+matched against the trailing line of the original (case-preserved)
+stripped output.
+
+#### `type SessionLimitHit`
+SessionLimitHit is what a SessionLimitMatcher returns when it
+recognizes a session-limit banner in the harness's output.
+
+#### `type SessionLimitMatcher`
+SessionLimitMatcher inspects already-ANSI-stripped recent output and
+reports whether it contains a recognized session-limit banner. The
+`now` parameter anchors relative time math (e.g. choosing today vs.
+tomorrow for a "resets 6:40pm" hint); pass time.Now() in production
+code and a fixed clock in tests.
+
+## Module: claude (`internal/wrapcore/harness/claude`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package claude holds the classifier patterns for the Claude Code CLI
+harness. Patterns are intentionally conservative: false positives
+here turn an active run into a stuck-looking one.
+
+### Exported Types & Functions
+
+#### `func MatchAPIError(stripped string) (detector.APIErrorHit, bool)`
+MatchAPIError implements detector.APIErrorMatcher for Claude Code.
+On match, returns the parsed HTTP code (zero for the transport-error
+variant) and the trailing message with any whitespace trimmed.
+
+If the line starts with digits that aren't a valid 3-digit HTTP code
+(e.g. "API Error: 9999 unrecognized"), the match is rejected — that
+shape is almost certainly noise rather than a real upstream error.
+
+#### `func MatchSessionLimit(stripped string, now time.Time) (detector.SessionLimitHit, bool)`
+MatchSessionLimit implements detector.SessionLimitMatcher for Claude
+Code. On match, returns the matched banner line and the absolute
+reset time parsed from it. ResumeAt is zero when the banner did not
+embed a parseable clock-time (in that case the caller still treats
+the run as blocked_by_cost, just without a scheduled wakeup).
+
+## Module: codex (`internal/wrapcore/harness/codex`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package codex holds the classifier patterns for the OpenAI Codex CLI
+harness.
+
+### Exported Types & Functions
+
+#### `func MatchAPIError(stripped string) (detector.APIErrorHit, bool)`
+MatchAPIError implements detector.APIErrorMatcher for Codex CLI.
+It checks the explicit retry-limit form first, then falls back to a
+phrase table. Codex's prefix glyph (■ in TUI, ERROR: in exec) is
+not required — matching on the inner phrase is sufficient and works
+across both display paths.
+
+## Module: cursor (`internal/wrapcore/harness/cursor`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package cursor holds the classifier patterns for the Cursor CLI harness.
+Patterns are intentionally conservative: false positives here turn an
+active run into a stuck-looking one.
+
+Coverage note: Cursor surfaces errors as free prose (often without an
+anchored "API Error: <code>" line like Claude's), and the wrapper checks
+the APIError matcher un-gated on every live poll. An un-anchored prose
+matcher would risk false-positive mid-run classifications, so this pack
+ships only the idle-gated Cost/Retry/Prompt fingerprints for now. A
+line-anchored APIError matcher that maps Cursor's auth (401) /
+model-not-found (404) prose to ErrAuth/ErrModelNotFound is a deliberate
+follow-up, to be validated against real Cursor output samples; until then
+loom's residual classifier covers those cases.
+
+## Module: opencode (`internal/wrapcore/harness/opencode`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package opencode holds the classifier patterns for the OpenCode CLI
+(opencode-ai, binary "opencode" — github.com/sst/opencode).
+
+OpenCode is provider-agnostic: a single session can be backed by
+Anthropic, OpenAI, Google, local models, and dozens of others, so the
+error text it surfaces varies by provider. There is no single
+bracketed/anchored API-error format to key on the way Claude Code
+has, so APIError is left nil here and the Cost/Retry
+string lists carry the conservative cross-provider fingerprints
+instead. Patterns should be tightened (and an APIError matcher added)
+once a recorded corpus under test/corpus/opencode/ exists.
+
+## Module: pi (`internal/wrapcore/harness/pi`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package pi holds the classifier patterns for the pi coding agent
+(@earendil-works/pi-coding-agent, binary "pi" —
+github.com/earendil-works/pi).
+
+pi is provider-agnostic: a single session can be backed by Anthropic,
+OpenAI, Google, local models, and others (its assistant messages carry
+the originating provider/model), so the error text it surfaces varies
+by provider. There is no single bracketed/anchored API-error format to
+key on the way Claude Code has, so APIError is left nil
+here and the Cost/Retry string lists carry the conservative
+cross-provider fingerprints instead. Patterns should be tightened (and
+an APIError matcher added) once a recorded corpus under
+test/corpus/pi/ exists.
+
 ## Module: chat (`pkg/chat`)
 
 _(summary pending — run the veracity-docs skill)_
@@ -1253,256 +2035,126 @@ Send specifically requires that the caller's goroutine has previously
 acquired control via AcquireControl; otherwise it returns
 ErrNoControl.
 
+The implementation lives in internal/chatcore, which names no harness; every
+exported identifier here is the identical one there. This package registers
+the built-in harness adapters — codex, claude-code, opencode, pi and generic —
+so Options.Harness resolves exactly the names it always has.
+
 ### Exported Types & Functions
 
 #### `func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error`
-DeleteContainmentState removes the private state of a stored contained
-conversation: it first ends whatever the conversation's last launch left in
-its recorded cgroup, then deletes the directory and marks the record, which
-can no longer be resumed. Deleting state a launch still uses is refused.
+DeleteContainmentState calls chatcore.DeleteContainmentState.
 
 #### `func DialogAnchors(harness string) []string`
-DialogAnchors returns the literal lines a BLOCKING dialog paints — a
-folder-trust prompt, a bypass-permissions confirmation. A screen showing one
-is about a dialog, not a login, which is the distinction a caller recording
-evidence needs in order to tell a real auth wall from a verdict taken over a
-modal. Nil for a harness with no known dialogs.
+DialogAnchors calls chatcore.DialogAnchors.
 
 #### `func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)`
-DiscoverModels launches the harness on an ephemeral memstore-backed session,
-probes its `/model` picker read-only, and returns the models it lists. It is
-read-only: it never selects a model — after writing `/model` the picker is
-left open, but because the session is memstore-backed and Close'd immediately
-in the defer, no Escape/cleanup keystroke is required.
+DiscoverModels calls chatcore.DiscoverModels.
 
-It gates on readiness up front (so an unauthenticated CLI fast-fails with
-ErrAuthRequired rather than hanging to the render deadline), then writes
-`/model` and polls the rendered screen against models.ParseModelPicker until
-it yields a non-empty list or the render budget elapses.
-
-Error contract — three distinct outcomes:
-  - ErrPickerUnsupported: the harness has no parseable picker (not
-    claude-code/claude or codex).
-  - ErrAuthRequired: the CLI is logged out / not onboarded (fast-fail).
-  - ErrPickerTimeout: the picker never rendered within RenderTimeout.
+#### `type ContainmentStore`
+ContainmentStore is chatcore.ContainmentStore.
 
 #### `type Conversation`
-Conversation owns one supervised harness process and serves the
-chat-style API on top of it.
+Conversation is chatcore.Conversation.
 
 #### `func Open(ctx context.Context, opts Options) (*Conversation, error)`
-Open starts a fresh harness session, wires the screen + turn watcher, and
-returns a live Conversation. To resume a prior harness session instead, set
-Options.Resume (or use Reopen with a stored chat session id).
+Open calls chatcore.Open.
 
 #### `func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)`
-Reopen resumes a previously-stored chat session against its harness's own
-persisted session, re-attaching a fresh live Conversation. It looks up the
-stored record by SessionID, requires it to carry a harness session id, and
-launches the harness with the adapter's resume args spliced in. Unlike Open
-it does NOT create a new store record — the record already exists.
+Reopen calls chatcore.Reopen.
 
 #### `type ConversationEvent`
-ConversationEvent is a discriminated event observed on
-Conversation.Events(). Inspect Type to learn which payload is set: Turn
-for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
-EventExited, RateLimit for EventRateLimit.
+ConversationEvent is chatcore.ConversationEvent.
 
 #### `type DeliveryState`
-DeliveryState is the event queue's pressure, for diagnostics: a consumer
-that stops taking events shows here before anything else notices.
+DeliveryState is chatcore.DeliveryState.
 
 #### `type DiscoverModelsOptions`
-DiscoverModelsOptions configures DiscoverModels. It mirrors the chat/oneshot
-launch surface (the fields Open needs), plus a picker render budget.
+DiscoverModelsOptions is chatcore.DiscoverModelsOptions.
 
 #### `type Disposition`
-Disposition is the action a policy takes for a matched request kind.
+Disposition is chatcore.Disposition.
 
 #### `type DispositionKind`
-DispositionKind is how a policy disposes of a matched InputRequest.
+DispositionKind is chatcore.DispositionKind.
 
 #### `type EventType`
-EventType discriminates the variants of a ConversationEvent.
+EventType is chatcore.EventType.
 
 #### `type ExitInfo`
-ExitInfo is how the harness process ended.
+ExitInfo is chatcore.ExitInfo.
 
 #### `type HistorySource`
-HistorySource identifies where a History result came from.
+HistorySource is chatcore.HistorySource.
 
 #### `type InputAnswer`
-InputAnswer is how a caller answers an InputRequest. Set OptionID (an
-option ID or Alias) for single-select menu/confirm/trust prompts; set Text
-for free-text ("text_input") prompts; set OptionIDs (each an option ID or
-Alias) to select one or more options on a MultiSelect request.
-
-OptionID and OptionIDs are mutually exclusive: setting both returns
-ErrConflictingAnswer. OptionIDs on a request whose MultiSelect is false
-returns ErrNotMultiSelect.
+InputAnswer is chatcore.InputAnswer.
 
 #### `type InputOption`
-InputOption is one selectable choice in an InputRequest.
+InputOption is chatcore.InputOption.
 
 #### `type InputPolicy`
-InputPolicy pre-configures how interactive prompts are resolved without a
-live client in the loop. It is JSON-serializable so it can be supplied at
-open time over a transport (harness-chatd). When a request matches no rule
-(or the matched disposition is "ask"), the request is surfaced on Events().
+InputPolicy is chatcore.InputPolicy.
 
 #### `type InputRequest`
-InputRequest is the client-facing view of a blocking interactive prompt
-the harness is showing (e.g. Claude Code's folder-trust dialog). It mirrors
-turns.InputRequest but deliberately omits the per-option keystrokes: the
-client answers semantically by option ID or Alias and the chat layer owns
-the translation to keys.
+InputRequest is chatcore.InputRequest.
 
 #### `type InputUnresolvedError`
-InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
-PermissionModeBlockedError it carries the client-facing chat.InputRequest
-(the value PendingInput returns and Answer accepts) plus the screen as it
-looked when the driver gave up, so a failed run is diagnosable from the error
-alone rather than from a 43-minute silence.
+InputUnresolvedError is chatcore.InputUnresolvedError.
 
 #### `type InterruptResult`
-InterruptResult is what Interrupt did.
+InterruptResult is chatcore.InterruptResult.
 
 #### `type Options`
-Options configures a single Conversation.
+Options is chatcore.Options.
 
 #### `type PermissionModeBlockedError`
-PermissionModeBlockedError is the concrete error behind
-ErrPermissionModeBlockedByInput. It carries the client-facing
-chat.InputRequest (NOT the internal turns.InputRequest): exactly the value
-PendingInput returns and Answer accepts, so the documented
-resolve-then-retry recovery round-trips without a type conversion the caller
-cannot perform.
-
-Observed is the last posture read before the driver stopped pressing; it is
-also returned as SetPermissionMode's string result.
+PermissionModeBlockedError is chatcore.PermissionModeBlockedError.
 
 #### `type RateLimit`
-RateLimit is the harness's report of the account's usage limit, as it stood
-when the harness last reported it. Each field is the harness's own figure;
-a zero field means the report did not include it.
+RateLimit is chatcore.RateLimit.
 
 #### `type RateLimitStatus`
-RateLimitStatus is where the account stands against its usage limit.
+RateLimitStatus is chatcore.RateLimitStatus.
 
 #### `type RateLimitWindow`
-RateLimitWindow is one usage window's standing.
+RateLimitWindow is chatcore.RateLimitWindow.
 
 #### `type ReopenOptions`
-ReopenOptions configures Reopen. It is the Options knobs that make sense when
-re-attaching to an already-stored session: the harness, working dir, and
-resume id come from the stored record (looked up by SessionID), so they are
-intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"resume">).
+ReopenOptions is chatcore.ReopenOptions.
 
 #### `type Role`
-Role identifies who produced a turn.
+Role is chatcore.Role.
 
 #### `type ScreenAnchor`
-ScreenAnchor is one identified screen pattern: the regex this package
-matches with, and a stable id for it.
-
-The ids exist because a consumer that RECORDS which banner it saw needs a
-name for it, and copying the regexes out to invent one is how a consumer
-ends up tracking harness drift by hand. loom did exactly that: it mirrored
-these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
-of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
-with its copies unanchored where these are line-anchored.
-
-The id strings are a DOWNSTREAM CONTRACT. loom's
-docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
-triggers, so a rename silently breaks the trigger it belongs to. Add anchors
-freely; do not rename an existing id.
+ScreenAnchor is chatcore.ScreenAnchor.
 
 #### `func AuthAnchors(harness string) []ScreenAnchor`
-AuthAnchors returns the screen anchors whose presence means the harness
-cannot produce output until a human authenticates — onboarding wizard first,
-then logged-out banner, which is authRequired's own precedence, so a caller
-recording the FIRST hit names the arm this package would have taken.
-
-A harness this package has no banner set for returns nil. The empty string
-returns every harness's anchors, for a caller that describes a screen
-without knowing which harness drew it.
+AuthAnchors calls chatcore.AuthAnchors.
 
 #### `type Session`
-Session is the chat-level session record. Distinct from
-wrapper.Session: this is the persistence/metadata view, owned by Store.
+Session is chatcore.Session.
 
 #### `type SessionContainment`
-SessionContainment is the containment record of a contained conversation.
-It is persisted BEFORE the conversation's first launch, and every later
-launch — Reopen included — inherits it: a contained conversation can never
-continue uncontained or under a different policy.
-
-Downgrade guard: in a contained Session the legacy HarnessSessionID field
-stays empty for good, and the harness's own session id lives only here. An
-older harness-wrapper, which knows nothing of this record, therefore sees a
-session with no harness session id and refuses to resume it
-(ErrNoHarnessSession) instead of resuming it unrestricted — even when its
-decoder drops this field. Read the id through Session.HarnessID.
+SessionContainment is chatcore.SessionContainment.
 
 #### `type State`
-State is a conversation's live state, read in one call (ADR-008).
+State is chatcore.State.
+
+#### `type Store`
+Store is chatcore.Store.
 
 #### `type Transport`
-Transport selects how a Conversation talks to its harness (Options.Transport).
+Transport is chatcore.Transport.
 
 #### `type Turn`
-Turn is one message in the conversation.
+Turn is chatcore.Turn.
 
 #### `type TurnCode`
-TurnCode is the machine-readable half of a terminal Turn.Reason: a short,
-stable token a consumer switches on, with no prose attached.
-
-Reason is operator copy — it is worded for a human, it carries a trailing
-"(…)" detail on the usage wall, and rewording it is an ordinary editorial
-change. Consumers that matched on the reason therefore had to SUBSTRING it,
-which makes every such reword a silent behaviour change downstream. Code is
-what those consumers should read instead. Empty for every turn that is not
-one of the terminal walls below, including ordinary task failures.
+TurnCode is chatcore.TurnCode.
 
 #### `type TurnState`
-TurnState is the lifecycle stage of a Turn.
-
-### Interfaces (Boundaries)
-
-#### `ContainmentStore`
-
-> ContainmentStore is the optional Store extension a store implements to
-declare that it persists contained conversations faithfully. chat.Open and
-Reopen refuse containment on a Store that does not implement it, rather than
-trust a record the store may silently drop. chat.Store itself gains no
-method: callers implement it.
-
-By implementing it a store commits that CreateSession, UpdateSession and
-GetSession round-trip Session.Containment intact, and that it never
-populates the legacy HarnessSessionID of a session that has one.
-
-- `StoresContainment()`
-
-#### `Store`
-Persists chat-level session metadata and turn records (not transcript bodies); create/get/update sessions and append/update/list turns, safe for concurrent use.
-
-> Store persists chat-level session metadata and turn records.
-
-Store does NOT store transcript bodies. Harnesses persist their own
-conversation logs (~/.codex/sessions/, ~/.claude/projects/); a future
-pkg/transcript layer reads them for History reconstruction. Store
-only holds the indexable metadata: who owns what, which chat session
-maps to which harness session, what turn IDs have been issued, when
-each turn started and finished.
-
-Implementations must be safe for concurrent use.
-
-- `AppendTurn(ctx context.Context, t *Turn) error`
-- `CreateSession(ctx context.Context, s *Session) error`
-- `GetSession(ctx context.Context, id string) (*Session, error)`
-- `ListTurns(ctx context.Context, sessionID string) ([]Turn, error)`
-- `UpdateSession(ctx context.Context, s *Session) error`
-- `UpdateTurn(ctx context.Context, t *Turn) error`
+TurnState is chatcore.TurnState.
 
 ## Module: memstore (`pkg/chat/memstore`)
 
@@ -1516,6 +2168,10 @@ and prototype use.
 Production deployments that need durability should plug in an
 alternate Store (e.g. SQLite or Postgres-backed) implementing the
 same chat.Store interface.
+
+It is written against the chat core (internal/chatcore), whose types
+pkg/chat's are, so a Store serves either without linking pkg/chat's
+built-in harness adapters.
 
 ### Exported Types & Functions
 
@@ -1592,6 +2248,497 @@ Supervision records how the session's process tree is supervised.
 
 #### `type TCP`
 TCP describes the network part of an applied policy.
+
+## Module: contract (`pkg/contract`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package contract is the Harness Adapter Interface: the Go interface a
+Harness Adapter implements and a runtime's Agent Adapter calls to drive a
+coding-agent harness without naming it (ADR-012).
+
+The interface is specified in "Harness Adapter Interface v1"
+(https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
+package is its normative form. Every type has a JSON form with the field
+names the specification uses, generated as JSON Schema (schema.json), for
+where a type crosses a process boundary or is journaled.
+
+Two callers use an Adapter:
+
+  - the Supervisor, before any agent process exists, calls Describe and
+    Provision — the pure rendering of a harness-neutral Agent Spec into the
+    harness's files, argv and environment, which the Supervisor writes;
+  - the Host, one per agent and inside the agent's isolation, opens Sessions
+    (NewSession, then Open … Close) and record handles (OpenRecord).
+
+An Adapter registers itself under its harness's name (Register), in its
+package's init; a runtime links the harnesses it offers through one file of
+blank imports, its harness list, and finds them with Lookup.
+
+This package imports only the standard library, so importing it links
+nothing else of harness-wrapper.
+
+### Exported Types & Functions
+
+#### `func CheckRelPath(p string) error`
+CheckRelPath refuses a path that is not relative, clean and slash-separated,
+with no empty, "." or ".." component: what a file beneath a root may be.
+
+#### `func CheckSpec(d Descriptor, s AgentSpec) error`
+CheckSpec refuses an Agent Spec that uses a field or value d does not
+support, with CodeUnsupported naming the field, or that is malformed, with
+CodeInvalidSpec. An adapter's Provision calls it first; it checks only what
+the Descriptor can say.
+
+#### `func Compatible(v string) bool`
+Compatible reports whether a caller of this package may use an adapter
+declaring contract version v: the majors match. The caller then sends it
+requests no newer than v's minor.
+
+#### `func Names() []string`
+Names lists every registered harness, sorted.
+
+#### `func ObservationID(kind Kind, key string) string`
+ObservationID is the id of kind's fact with key.
+
+#### `func ParseVersion(v string) (major, minor int, err error)`
+ParseVersion splits a contract version, harness-adapter/<major>.<minor>,
+into its parts.
+
+#### `func Register(name string, a Adapter)`
+Register makes a available under name, the harness's name. A harness
+profile calls it from its package's init, so a runtime links a harness by
+importing its profile — one line of its harness list — and finds it with
+Lookup, never through a switch over known harnesses. Registering a name
+twice panics.
+
+#### `func ValidID(s string) bool`
+ValidID reports whether s is an id: 1–128 characters of [A-Za-z0-9._:-].
+
+#### `type APIErrorData`
+APIErrorData is api_error's payload.
+
+#### `func Lookup(name string) (Adapter, bool)`
+Lookup returns the adapter registered under name.
+
+#### `type AgentSpec`
+AgentSpec is the harness-neutral definition of an agent. Provision refuses
+a field the harness's Descriptor does not name, with CodeUnsupported.
+
+#### `type AssistantTextData`
+AssistantTextData is assistant_text's payload.
+
+#### `type Batch`
+Batch is one Observe result. A batch with items, a checkpoint, a reset, a
+rescan or faults has a BatchID and must be acknowledged; an empty poll has
+none and needs no acknowledgement.
+
+#### `type Block`
+Block is a condition that refuses input.
+
+#### `type BlockReason`
+BlockReason is why a Session refuses input.
+
+#### `type Capability`
+Capability is a named behaviour an adapter may offer. Each adds exactly
+what its constant says; without it, the operations answer CodeUnsupported,
+or the observations never appear. The set is closed in 1.0.
+
+#### `type Certainty`
+Certainty is whether a failed Send may have reached the harness.
+
+#### `func CertaintyOf(err error) Certainty`
+CertaintyOf is whether a failed Send may have reached the harness: the
+*Error's certainty, and maybe_submitted for anything else — a lost result
+included.
+
+#### `type Checkpoint`
+Checkpoint is an adapter's position in its record. The Host may read
+Format; Data is opaque. At most MaxCheckpointBytes.
+
+#### `type Choice`
+Choice answers a prompt: exactly one of OptionID, OptionIDs and Text.
+
+#### `type CloseReason`
+CloseReason is why the Host closes a Session.
+
+#### `type CloseResult`
+CloseResult is what Close established.
+
+#### `type Code`
+Code is an error's class, the set closed in 1.0. Callers act on the code,
+its Reason and its Certainty, never on its message.
+
+#### `func CodeOf(err error) Code`
+CodeOf is err's code: its *Error's, or CodeInternal.
+
+#### `type Connector`
+Connector is one tool server. It has exactly one of Stdio or HTTP.
+
+#### `type ContentPart`
+ContentPart is one part of an input.
+
+#### `type CredentialFile`
+CredentialFile is a staged credential: its kind, and the file holding it.
+
+#### `type CredentialRef`
+CredentialRef names a credential's kind.
+
+#### `type Descriptor`
+Descriptor is what an adapter offers: Describe's result, and the entry a
+Runtime's descriptor lists for it verbatim.
+
+#### `type Error`
+Error is every error the interface returns.
+
+#### `func ErrAdapterMissing(name string) *Error`
+ErrAdapterMissing is the error for a harness no adapter is registered
+under: open_failed with reason adapter_missing.
+
+#### `func Errorf(code Code, format string, args ...any) *Error`
+Errorf is an *Error with a formatted message.
+
+#### `type ErrorClass`
+ErrorClass classifies a turn's or an API call's failure.
+
+#### `type ExitClass`
+ExitClass is how a harness process ended.
+
+#### `type Fault`
+Fault reports observations lost, cut or rejected.
+
+#### `type File`
+File is one rendered file. It has exactly one of Text and Bytes.
+
+#### `func TextFile(root Root, path, mode, text string) File`
+TextFile is a text file.
+
+#### `type HTTPConnector`
+HTTPConnector is a server at a URL.
+
+#### `type HarnessInfo`
+HarnessInfo names a harness, its version and its adapter.
+
+#### `type Input`
+Input is one input to Send.
+
+#### `func Text(inputID, text string) Input`
+Text is an input of one text part.
+
+#### `type Instructions`
+Instructions are an agent's standing instructions.
+
+#### `type InterruptOutcome`
+InterruptOutcome is what an interrupt did.
+
+#### `type InterruptRequest`
+InterruptRequest names the input whose turn to stop.
+
+#### `type Kind`
+Kind is an observation's kind. The set is closed in 1.0.
+
+#### `type Layout`
+Layout is an agent's roots. They are distinct, absolute and clean, exist
+before the Host starts, and are writable only by the agent's workload
+identity.
+
+#### `type Limits`
+Limits bounds what an adapter takes.
+
+#### `type Memory`
+Memory is an agent's memory directory, seeded with its files.
+
+#### `type MemoryFile`
+MemoryFile is one seeded memory file, at a relative slash path.
+
+#### `type Models`
+Models is either any model id, or a list of them. Its JSON form is the
+string "any" or an array.
+
+#### `type Observation`
+Observation is a fact an adapter reports.
+
+ID is "<kind>:<key>": unique within the Session, and stable — the same fact
+has the same id in every batch, process and adapter version. Keys by kind:
+turn_started and turn_ended, the input id; user_input and api_error, the
+record entry's id; assistant_text, the message id and block index; tool_*,
+the tool use id; subagent_*, the subagent id; prompt_*, the prompt id;
+text_delta, the message id and index; retrying, the input id and attempt;
+rate_limit, blocked, unblocked and session_exited, an id of the harness
+process instance and a counter. The Supervisor stores an observation under
+(agent, session, id): the same id in another Session is another fact.
+
+#### `func NewObservation(kind Kind, key string, origin Origin, at time.Time, data any) Observation`
+NewObservation is an observation of kind with key, carrying data.
+
+#### `type OpenFailure`
+OpenFailure is why Open failed.
+
+#### `type OpenMode`
+OpenMode is how Open starts a Session.
+
+#### `type OpenRequest`
+OpenRequest is what NewSession takes.
+
+#### `type OpenResult`
+OpenResult is what Open returns.
+
+#### `type Origin`
+Origin is where an observation came from.
+
+#### `type Phase`
+Phase is a Session's state.
+
+#### `type PromptInfo`
+PromptInfo is a prompt the harness raised, awaiting Answer.
+
+#### `type PromptOption`
+PromptOption is one option of a prompt.
+
+#### `type PromptResolvedData`
+PromptResolvedData is prompt_resolved's payload.
+
+#### `type ProvisionRequest`
+ProvisionRequest is what the Supervisor asks an adapter to render.
+
+#### `type ProvisionResult`
+ProvisionResult is what Provision rendered, for the Supervisor to apply.
+
+The Supervisor writes each file beneath its root without following a
+symlink at any component, owned by the agent's workload identity, with the
+file's mode, atomically: a temporary file in the same directory, fsync,
+rename, then fsync of the directory. It journals the result and keeps a
+manifest of the files it wrote; applying a later result replaces the files
+it names and removes those the previous manifest named that it does not.
+Files it did not write — the harness's own record — are never touched. A
+result is applied only while no Host runs for the agent, and completely
+before the next Open; after a crash it is applied again.
+
+#### `type RateLimitData`
+RateLimitData is rate_limit's payload.
+
+#### `type RateLimitWindow`
+RateLimitWindow is one usage window's standing.
+
+#### `type Receipt`
+Receipt is Send's answer: the input was handed to the harness.
+
+#### `type RecordRequest`
+RecordRequest is what OpenRecord takes.
+
+#### `type Recovered`
+Recovered is Recover's answer.
+
+#### `type RecoveredOutcome`
+RecoveredOutcome is what Recover found.
+
+#### `type Rescan`
+Rescan says why the record was read again from its start.
+
+#### `type Reset`
+Reset says why the record no longer continues a checkpoint.
+
+#### `type RetryInfo`
+RetryInfo is the retry a turn is in (capability retry_visible).
+
+#### `type RetryingData`
+RetryingData is retrying's payload.
+
+#### `type Root`
+Roots names a Layout's roots.
+
+#### `type RootPath`
+RootPath names a path beneath a root.
+
+#### `type SendResult`
+SendResult is Send's result, returned once the adapter has handed the input
+to the harness, and no earlier.
+
+#### `type SessionExitedData`
+SessionExitedData is session_exited's payload, read from the process's exit
+status, never from its last message.
+
+#### `type Skill`
+Skill is a skill directory: its files, one of which is SKILL.md at the top.
+
+#### `type SkillFile`
+SkillFile is one file of a skill, at a relative slash path.
+
+#### `type SpecSupport`
+SpecSupport is the part of the Agent Spec a harness honours.
+
+#### `type State`
+State is a Session's snapshot. It is observational: nothing may be
+authorized from it.
+
+#### `type StdioConnector`
+StdioConnector is a server the harness starts and speaks to on its pipes.
+
+#### `type SubagentData`
+SubagentData is subagent_started's and subagent_stopped's payload.
+
+#### `type TextData`
+TextData is user_input's payload.
+
+#### `type TextDeltaData`
+TextDeltaData is text_delta's payload.
+
+#### `type ToolFinishedData`
+ToolFinishedData is tool_finished's payload.
+
+#### `type ToolResultData`
+ToolResultData is tool_result's payload.
+
+#### `type ToolUseData`
+ToolUseData is tool_use's and tool_started's payload.
+
+#### `type TurnEndedData`
+TurnEndedData is turn_ended's payload.
+
+#### `type TurnError`
+TurnError is why a turn failed.
+
+#### `type TurnOutcome`
+TurnOutcome is how a turn ended.
+
+### Interfaces (Boundaries)
+
+#### `Adapter`
+
+> Adapter is one harness, exposed through the interface. Describe and
+Provision are pure and serve the Supervisor; NewSession and OpenRecord serve
+the Host.
+
+- `Describe() Descriptor`
+- `NewSession(OpenRequest) (Session, error)`
+- `OpenRecord(ctx context.Context, req RecordRequest) (Record, error)`
+- `Provision(ProvisionRequest) (ProvisionResult, error)`
+
+#### `Record`
+
+> Record is a read-only handle on one Session's durable record.
+
+- `Ack(batchID string) error`
+- `Close() error`
+- `Observe(ctx context.Context, wait time.Duration, maxBytes int) (Batch, error)`
+- `Recover(ctx context.Context, inputID string) (Recovered, error)`
+
+#### `Session`
+
+> Session is one harness conversation. Its methods are safe to call
+concurrently: State, Observe and Ack are never blocked by an outstanding
+Send, and Interrupt and Answer are ordered after its result.
+
+- `Ack(batchID string) error`
+- `Answer(ctx context.Context, promptID string, c Choice) error`
+- `Close(ctx context.Context, reason CloseReason, drain time.Duration) (CloseResult, error)`
+- `Interrupt(ctx context.Context, req InterruptRequest) (InterruptOutcome, error)`
+- `Observe(ctx context.Context, wait time.Duration, maxBytes int) (Batch, error)`
+- `Open(ctx context.Context) (OpenResult, error)`
+- `Send(ctx context.Context, in Input) (SendResult, error)`
+- `State() State`
+
+## Module: conformance (`pkg/contract/conformance`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package conformance is the Harness Adapter Interface's conformance kit: a
+fake Agent Adapter — Supervisor and Host both — and scenarios that drive an
+adapter through the interface and check it keeps the contract.
+
+A scenario speaks the prompt language of agentd's P11 mock Messages API
+(PING, SLOW, STALL, TOOL, ERR, BIG, ASK; see fakeadapter), so it runs the
+same against the fake adapter as against a real harness that talks to that
+mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
+and every rule has a deliberately broken adapter that fails it.
+
+	func TestConformance(t *testing.T) {
+	    conformance.Run(conformance.Testing(t), conformance.Fixture{...})
+	}
+
+### Exported Types & Functions
+
+#### `func Apply(l contract.Layout, r contract.ProvisionResult) error`
+Apply writes a ProvisionResult under a layout the way a Supervisor does:
+each file beneath its root, never through a symlink, with its mode. It
+validates the result first.
+
+#### `func Run(t T, f Fixture)`
+Run runs every scenario against the fixture, each as a subtest.
+
+#### `func Scenarios() []string`
+Scenarios lists the kit's scenarios, in the order Run runs them.
+
+#### `type Fixture`
+Fixture is the adapter under test and what the kit needs to drive it.
+
+#### `func Testing(t *testing.T) T`
+Testing adapts a *testing.T.
+
+### Interfaces (Boundaries)
+
+#### `T`
+
+> T is what the kit reports through: *testing.T, through Testing, or a
+recorder in the kit's own negative tests.
+
+- `Errorf(format string, args ...any)`
+- `Helper()`
+- `Logf(format string, args ...any)`
+- `Run(name string, f func(T)) bool`
+- `TempDir() string`
+
+## Module: fakeadapter (`pkg/contract/fakeadapter`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package fakeadapter is a Harness Adapter for a harness that exists only in
+this process: the reference the conformance kit is proved against, and a
+stand-in for a harness in a runtime's tests.
+
+Its harness runs one goroutine per Session and answers the prompt language
+of agentd's P11 mock Messages API, so a scenario reads the same against it
+as against a real harness talking to that mock:
+
+	PING <n>       reply "PONG <n>"
+	SLOW <n>       reply "slow" in <n> chunks, one per tick (default 40)
+	STALL <s>      nothing for <s> seconds (default 60), then "ok"
+	TOOL <command> a tool call running <command>, then "TOOL DONE"
+	ERR <code> <k> the model call fails with <code> <k> times, retried up to
+	               MaxRetries times: "RECOVERED" once it passes, else the turn
+	               errors (429: usage_limit, 401: auth, 402: billing, else
+	               overloaded); a usage, auth or billing error blocks the Session
+	BIG <kib>      reply with <kib> KiB of text
+	ASK            raise a prompt (yes/no); on its answer, "ANSWERED <choice>"
+	CRASH          the harness process dies mid-turn
+	anything else  reply "ok"
+
+It keeps its record — every record-origin observation, one JSON line each —
+and its submission markers under the layout's scratch root, so a record
+handle, or a Session reopened by another Adapter value, reads what an
+earlier one left, as it would after a crash.
+
+### Exported Types & Functions
+
+#### `func BinaryPath(harnessRoot string) string`
+BinaryPath is where Provision tells the fake harness's binary to be, under
+the harness root: Open refuses with binary_not_found when it is absent.
+
+#### `func Kill(s contract.Session)`
+Kill crashes a Session's harness — the process dies without Close — for a
+test's crash scenarios. It is a no-op for a Session not from this package.
+
+#### `func Register()`
+Register registers a fake Adapter under Name.
+
+#### `type Adapter`
+Adapter is the fake harness's adapter.
+
+#### `func New(opts Options) *Adapter`
+New returns an Adapter.
+
+#### `type Options`
+Options configure an Adapter.
 
 ## Module: discovery (`pkg/discovery`)
 
@@ -2906,7 +4053,7 @@ New constructs a Claude Code transcript Reader.
 
 ## Module: codex (`pkg/transcript/codex`)
 
-Reads Codex's rollout JSONL sessions from its date-partitioned sessions tree, parsing response-item envelopes into canonical transcript events and usage. It can also locate the most recent session for a working directory when no session id is known.
+_(summary pending — run the veracity-docs skill)_
 
 > Package codex reads Codex CLI session transcripts.
 
@@ -3095,6 +4242,11 @@ into a single <-chan Event stream.
 
 ### Exported Types & Functions
 
+#### `type DialogState`
+DialogState is what an adapter's DialogDetector sees on a screen. The states
+are distinct because "no dialog" and "a dialog whose choices cannot be read"
+look alike to a yes/no reading, and only the first ever clears on its own.
+
 #### `type Event`
 Event is one observation about the conversation flow.
 
@@ -3203,6 +4355,32 @@ to distinguish "done" from "thinking". Adapters that can't tell report false.
 
 - `Busy(snap screen.Snapshot) bool`
 
+#### `DialogAnchorer`
+
+> DialogAnchorer is an optional capability adapters implement to name the
+literal lines their harness's blocking dialogs paint, for a caller telling a
+modal from a login wall.
+
+- `DialogAnchors() []string`
+
+#### `DialogDetector`
+
+> DialogDetector is an optional capability adapters implement to tell the
+chat layer which DialogState a screen is in, so that a dialog nothing can
+answer fails a send quickly instead of waiting out its deadline.
+
+- `DialogState(text string) DialogState`
+
+#### `DialogReader`
+
+> DialogReader is an optional capability adapters implement when a dialog can
+be read again from any later screen. The chat layer uses it to confirm that
+an answer landed — the dialog left, or its highlight moved — instead of
+trusting the write.
+
+- `DialogAnchorPresent(text string) bool`
+- `ReadDialog(text string) (*InputRequest, bool)`
+
 #### `EnvConfigurable`
 
 > EnvConfigurable is an optional capability an adapter implements when its
@@ -3232,6 +4410,14 @@ InterruptOutcome; an interrupt made at the terminal is read the same way
 - `ComposerText(snap screen.Snapshot) (text string, ok bool)`
 - `InterruptOutcome(prompt string, snap screen.Snapshot) (outcome InterruptOutcome, partial string)`
 - `InterruptSequence() []byte`
+
+#### `InterstitialDismisser`
+
+> InterstitialDismisser is an optional capability adapters implement when
+their harness paints startup interstitials: screens that block input but
+carry no decision for the caller, which the chat layer clears itself.
+
+- `DismissKeys(req *InputRequest, updates bool) ([]byte, bool)`
 
 #### `MessageExtractor`
 Optional adapter capability that recovers the assistant's reply text from the rendered screen, stripped of TUI chrome.
@@ -3304,6 +4490,16 @@ non-matching/polluted lines by returning ("", false).
 
 - `ExtractSessionIDFromLine(line string) (string, bool)`
 
+#### `ReadinessDetector`
+
+> ReadinessDetector is an optional capability adapters implement when their
+harness paints its composer before it will take a message — during startup,
+behind a blocking dialog, or while a turn runs. The chat layer then types a
+message only once ReadyForInput holds, and completes a turn by idleness only
+at a ready prompt. An adapter without it is always ready.
+
+- `ReadyForInput(text string) bool`
+
 #### `SessionAssigner`
 
 > SessionAssigner is an optional capability adapters implement when the harness
@@ -3344,7 +4540,6 @@ ID is returned it is persisted and no longer queried.
 - `ExtractSessionID(snap screen.Snapshot) (string, bool)`
 
 #### `SessionIDLocator`
-Optional adapter capability recovering the harness session ID from on-disk state keyed on the working directory, as a fallback at turn completion.
 
 > SessionIDLocator is an optional capability adapters may implement to recover
 the harness session ID from on-disk state, keyed on the working directory,
@@ -3356,7 +4551,11 @@ screen, leaving the persisted session log's metadata as the only anchor.
 Because it touches disk it must stay version-independent and tolerate junk
 files by returning ("", false).
 
-- `LocateSessionID(workingDir string) (string, bool)`
+A directory holds every session anyone ran there, so a locator must name
+the session THIS launch started or none: the latest one in the directory
+may be an earlier conversation's, or a concurrent one's.
+
+- `LocateSessionID(workingDir string, launchedAt time.Time) (string, bool)`
 
 #### `SessionResumer`
 Supplies the argument fragment that resumes an existing harness session; an adapter that omits it declares the harness non-resumable.
@@ -3423,7 +4622,7 @@ session ID is known.
 
 ## Module: generic (`pkg/turns/generic`)
 
-Fallback turn-detection adapter that maps wrapper.Status transitions directly to turn events without reading screen contents; a safety net when no per-harness adapter exists.
+_(summary pending — run the veracity-docs skill)_
 
 > Package generic provides a fallback turn-detection adapter that maps
 wrapper.Status transitions directly to turn events without looking at
@@ -3626,7 +4825,7 @@ New constructs a Codex adapter.
 
 ## Module: opencode (`pkg/turns/harness/opencode`)
 
-Turn-detection adapter for the OpenCode CLI: screen markers and transcript reading not yet identified, so it embeds generic.Adapter until a corpus recording exists.
+_(summary pending — run the veracity-docs skill)_
 
 > Package opencode provides a turn-detection adapter for the OpenCode
 CLI (opencode-ai, binary "opencode" — github.com/sst/opencode).
@@ -3636,7 +4835,7 @@ Current state — v0.1, ahead of corpus recording:
   - End-of-turn screen marker: NOT yet identified. The adapter embeds
     generic.Adapter so turn-complete signals still flow through the
     wrapper.StatusWaitingForInput path (driven by the per-harness
-    prompt patterns in pkg/wrapper/internal/harness/opencode/). Once a
+    prompt patterns in internal/wrapcore/harness/opencode/). Once a
     recording exists under test/corpus/opencode/, replace the
     OnScreen-derived fingerprint here, mirroring codex's Token-usage
     footer match or claude-code's "✻ <verb> for Ns" line.
@@ -3697,7 +4896,7 @@ the interactive-screen signals still await a recorded corpus):
   - End-of-turn screen marker: NOT yet identified. The adapter embeds
     generic.Adapter so turn-complete signals still flow through the
     wrapper.StatusWaitingForInput path (driven by the per-harness prompt
-    patterns in pkg/wrapper/internal/harness/pi/). Once a recording exists
+    patterns in internal/wrapcore/harness/pi/). Once a recording exists
     under test/corpus/pi/, add an OnScreen-derived fingerprint here, mirroring
     codex's Token-usage footer match or claude-code's "✻ <verb> for Ns" line
     (and, with it, a BusyDetector + MessageExtractor).
@@ -3809,452 +5008,102 @@ only in headless mode (non-TTY stdin/stdout). Concurrent foreground
 Run calls produce undefined behavior because they would compete for
 terminal control.
 
+The implementation lives in internal/wrapcore, which names no harness; every
+exported identifier here is the identical one there. This package adds the
+built-in harnesses' classifier patterns, so callers of pkg/wrapper classify
+exactly as they always have.
+
 ### Exported Types & Functions
 
 #### `func BypassEnablingFlags(harness string) []string`
-BypassEnablingFlags returns the harness argv flags that, when present at
-launch, leave the harness able to reach the bypass rung. Single source of
-truth for validatePermissionMode's contradiction check and pkg/chat's
-ring-length calculation.
-
-Only two such flags exist: claude's SkipPermissionsFlag and codex's
---dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
-permission axis at all return nil.
-
-The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
-see BypassReachableFlags.
+BypassEnablingFlags calls wrapcore.BypassEnablingFlags.
 
 #### `func BypassReachableFlags(harness string) []string`
-BypassReachableFlags returns the harness argv flags that, when present at
-launch, leave bypass REACHABLE on the harness's own permission ring —
-whether or not the launch is already unrestricted. This is the wider of the
-two sets and the split matters: BypassEnablingFlags answers "is this launch
-already unrestricted" and feeds validatePermissionMode's contradiction
-check, while this one answers "can this session get to bypass at all" and
-feeds pkg/chat's ring-length calculation.
-
-For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
-unlocks the rung without selecting it. Codex has no separate unlock flag, so
-the two sets coincide there. The returned slice is freshly allocated; callers
-may mutate it.
+BypassReachableFlags calls wrapcore.BypassReachableFlags.
 
 #### `func EffectiveLaunchRung(harness string, args []string, mode string) string`
-EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
-given the caller's argv and the Config.PermissionMode knob — i.e. it replays
-argsWithHarnessPermissionMode's suppression rule rather than trusting the
-knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
-extracts the VALUE from both "--permission-mode=x" and the separated
-"--permission-mode x" form and normalizes native spellings (acceptEdits ->
-ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
-
-A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
-itself reported as a definite bypass: it suppresses injection AND leaves the
-harness unrestricted, so there is nothing unknown about the result.
-
-Returns "" when argv carries a permission flag whose value cannot be resolved
-(a trailing flag with no operand, an unrecognized spelling), when only
-codex's -a axis is set (which suppresses injection but leaves the sandbox at
-the harness default), and when neither argv nor mode says anything. "" means
-UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
-answer.
-
-Passing ALREADY-INJECTED args is safe — the function is idempotent over
-argsWithHarnessPermissionMode, because injection self-suppresses: once the
-axis is in argv, argsContainAnyFlag short-circuits the second pass and the
-argv arm reads back the value that was injected. Formally,
-EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
-== EffectiveLaunchRung(h, args, mode).
+EffectiveLaunchRung calls wrapcore.EffectiveLaunchRung.
 
 #### `func HarnessArgs(cfg Config) ([]string, error)`
-HarnessArgs validates cfg exactly as Start does and returns the argv Start
-would launch the harness with: cfg.Args with the Effort, Model and
-PermissionMode flags injected. It starts nothing. It is for a caller that
-runs the harness itself over another transport — pkg/chat's claude-code
-stream-json driver — and must honour the same knobs the same way. The I/O
-fields are not needed: Stdout defaults to io.Discard here.
+HarnessArgs calls wrapcore.HarnessArgs.
 
 #### `func IsBypassPermissionMode(mode string) bool`
-IsBypassPermissionMode reports whether mode resolves to claude-code's
-bypassPermissions directive — the canonical rung "bypass" and its
-claude-native spelling "bypassPermissions", and NOTHING else.
+IsBypassPermissionMode calls wrapcore.IsBypassPermissionMode.
 
-Four call sites, all of which need exactly this question:
- 1. cmd/harness-wrapper.applySandboxDefaults — compose (env half only).
- 2. cmd/harness-wrapper.parseHarnessWrapperArgs — the --sandbox-defaults
-    exclusion check, which is deliberately harness-INDEPENDENT.
- 3. pkg/wrapper.validateConfig — the contradictory-argv rejection.
- 4. pkg/env.RunStructuredTurn — the host-side mirror of call site 2,
-    hoisted so a contradictory config never spends a container round-trip.
-
-codex's "danger-full-access" is deliberately NOT included even though it is
-codex's bypass-equivalent: call site 2 runs before the harness is known, so
-treating it as bypass would let `--sandbox-defaults --permission-mode
-danger-full-access codex --` slip past the exclusion check. codex's own
-bypass handling lives in isCodexBypassMode.
-
-#### `func MorePermissive(a, b string) bool`
-MorePermissive reports whether rung a is strictly more permissive than b,
-by index in PermissionRungs.
-
-Unknown rungs are never more permissive (fail closed): an empty string, a
-native spelling ("acceptEdits", "danger-full-access") or a typo yields false
-for a, so a caller asking "may I stay where I am?" never gets a yes it did
-not earn. Note b being unknown ALSO yields false, so the answer is false
-whenever either side is not a canonical rung.
+#### `func MorePermissive(a string, b string) bool`
+MorePermissive calls wrapcore.MorePermissive.
 
 #### `func PermissionRungs() []string`
-PermissionRungs returns the canonical rungs, ordered least to most
-permissive — the same order the unexported consts are declared in.
-
-A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
-may sort, truncate or reverse the result without corrupting a later call.
+PermissionRungs calls wrapcore.PermissionRungs.
 
 #### `type Classification`
-Classification is a Classifier's verdict for a single ClassifierInput.
+Classification is wrapcore.Classification.
 
-#### `func ClassifyFinishedOutput(harness, output string) Classification`
-ClassifyFinishedOutput classifies the output of a harness that has ALREADY
-EXITED, applying the same classifier ClassifyOutput does and then a residual
-fallback for the signals the per-harness anchored matchers miss.
+#### `func ClassifyFinishedOutput(harness string, output string) Classification`
+ClassifyFinishedOutput calls wrapcore.ClassifyFinishedOutput.
 
-It is the post-exit entry point. ClassifyOutput remains the plain one-shot:
-same classifier, no fallback, results unchanged for every caller. The split
-exists because the residual rows below are the broadest patterns in the
-library — `\bbilling\b`, `\bquota\b`, API-key variable names — and sharing
-them with the live polling dispatcher would let an agent that merely PRINTS
-such a word terminate its own quiet, healthy process. Post-exit there is no
-process left to terminate, so breadth costs a misclassification at worst.
+#### `func ClassifyOutput(harness string, output string) Classification`
+ClassifyOutput calls wrapcore.ClassifyOutput.
 
-Order:
- 1. The resolved classifier (custom override → per-harness adapter →
-    default), exactly as ClassifyOutput runs it.
- 2. An actionable result is returned unchanged — including
-    StatusBinaryNotFound, which is a statement about the launch, not the
-    output.
- 3. Only on ErrNone / ErrUnknown — "nothing actionable" — are the residual
-    rows consulted. A hit REPLACES the result rather than decorating it:
-    the rows are a different fingerprint of the same text, not a refinement
-    of a verdict the classifier did not reach.
- 4. An ErrTransient result whose surrounding text names a timeout is
-    refined to ErrTimeout, which keeps a network timeout in its own class
-    (and its own backoff bucket downstream) instead of a generic 5xx.
- 5. A rate-limited result with no wait hint gets one from a Retry-After
-    token anywhere in the output. The per-harness matchers only parse the
-    hint when it sits inside the message they anchored on; a CLI that
-    prints the header on its own line is the common case, and a caller
-    that has to scrape it itself is maintaining a harness-output pattern
-    outside the repository that owns them.
-
-Returns the classifier's own result when nothing matches, so a caller's
-exit-code fallback still applies.
-
-#### `func ClassifyOutput(harness, output string) Classification`
-ClassifyOutput runs the resolved per-harness classifier as a one-shot
-over a finished output blob (e.g. a log tail, or the recent-output buffer
-of an exited harness). Idle is forced on so the Cost/Retry/transport
-patterns are eligible; Quiet is left off so a trailing interactive prompt
-in a *dead* process's tail is not misreported as waiting_for_input.
-Returns the zero Classification when nothing matches.
-
-It is the post-hoc counterpart to the live polling the wrapper performs
-during a run — the single entry point external callers (e.g. loom's
-agenterr adapter) should use to classify captured output with the same
-patterns the wrapper applies internally.
+#### `type Classifier`
+Classifier is wrapcore.Classifier.
 
 #### `type ClassifierFunc`
-ClassifierFunc adapts a function to the Classifier interface.
+ClassifierFunc is wrapcore.ClassifierFunc.
 
 #### `type ClassifierInput`
-ClassifierInput is the snapshot a Classifier inspects when deciding
-whether to escalate the wrapper's status. It is rebuilt each time
-the wrapper polls the classifier; classifiers are stateless.
+ClassifierInput is wrapcore.ClassifierInput.
 
 #### `type Config`
-Config configures a single Run.
-
-Fields with zero values get sensible defaults documented per-field.
-Construct Config using keyed struct literals; positional initialization
-is unsupported and will break across versions.
+Config is wrapcore.Config.
 
 #### `type Containment`
-Containment requests an optional Landlock boundary around the harness child
-on Linux: an extra, kernel-enforced layer outside whatever the harness's own
-sandbox and permission settings enforce, which keep their meanings. A nil
-*Containment (the default everywhere) means no containment, and the
-uncontained launch path is exactly the one used without this feature.
-
-See pkg/containment for the fields and docs/md/guide/permissions.md for what
-the boundary covers and what it does not.
+Containment is wrapcore.Containment.
 
 #### `type ErrorClass`
-ErrorClass is the canonical, lifecycle-free taxonomy of harness-output
-errors. It is the *mechanism* half of the classification contract: the
-wrapper assigns it from harness output; downstream consumers (loomcli,
-the SDK) map it to their own *policy*. It is deliberately distinct from
-Status, which mixes runtime lifecycle (idle, waiting_for_input, stale)
-with error states.
-
-ErrorClass is additive public API consumed by multiple repos: new values
-may be appended, but existing values and their String() forms are stable.
+ErrorClass is wrapcore.ErrorClass.
 
 #### `type Login`
-Login is a human-led sign-in in progress; see StartLogin.
+Login is wrapcore.Login.
 
 #### `func StartLogin(ctx context.Context, cfg LoginConfig) (*Login, error)`
-StartLogin starts the harness's own login command inside a contained
-launch whose login is kept in cfg.StateDir, for a person to complete:
-
-  - Prompt returns the sign-in page to open, and codex's one-time code.
-  - SubmitCode passes on the code claude's page shows after signing in.
-  - Wait reports whether the harness is signed in once the command has
-    ended. It runs the harness's own status command in the same StateDir to
-    decide.
-
-A login runs only the login and status commands its harness profile pins,
-so it works before the profile is activated for sessions. Neither command
-receives the harness's credential variables, and neither runs tools, so
-codex's bypass-rung requirement does not apply. Linux only, like every
-contained launch.
+StartLogin calls wrapcore.StartLogin.
 
 #### `type LoginConfig`
-LoginConfig configures a human-led sign-in; see StartLogin.
+LoginConfig is wrapcore.LoginConfig.
 
 #### `type LoginPrompt`
-LoginPrompt is what the person signing in needs from the harness.
+LoginPrompt is wrapcore.LoginPrompt.
 
 #### `type LoginResult`
-LoginResult reports how a sign-in ended.
+LoginResult is wrapcore.LoginResult.
 
 #### `func LoginStatus(ctx context.Context, cfg LoginConfig) (LoginResult, error)`
-LoginStatus runs the harness's own status command, contained, in
-cfg.StateDir, and reports whether the harness is signed in there. It starts
-no login, so cfg.Output is unused.
+LoginStatus calls wrapcore.LoginStatus.
 
 #### `type QueueLimits`
-QueueLimits bounds an OnEvent queue: the events it holds at once, and their
-payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+QueueLimits is wrapcore.QueueLimits.
 
 #### `type Result`
-Result describes the outcome of a Run.
+Result is wrapcore.Result.
 
 #### `func Run(ctx context.Context, cfg Config) (Result, error)`
-Run starts the configured harness under a pseudoterminal, supervises
-it until it exits or ctx is cancelled, and returns the normalized
-outcome. It is a blocking convenience wrapper around Start+Wait
-preserved for callers that don't need a live session handle.
-
-Errors are returned only when the wrapper itself fails to do its job
-(invalid configuration, missing binary, PTY allocation failure, IO
-errors on the master fd). Harness-level outcomes — clean exit,
-non-zero exit, signal termination, idle classification — are always
-reported through the returned Result with a nil error.
-
-Context cancellation is handled by sending the harness a termination
-signal. The returned Result will have Status == StatusInterrupted;
-ctx.Err() is not propagated as the returned error.
+Run calls wrapcore.Run.
 
 #### `type Session`
-Session is a live handle to a supervised harness process. Construct
-one with Start; retrieve the terminal outcome with Wait. Stop
-requests a graceful shutdown without forcing the caller to track
-context cancellation. Concurrent calls to Wait, Stop, Snapshot, and
-Events are safe.
+Session is wrapcore.Session.
 
 #### `func Start(ctx context.Context, cfg Config) (*Session, error)`
-Start launches the configured harness under a pseudoterminal and
-returns a live Session. Unlike Run, Start returns immediately; the
-caller observes lifecycle through Session.Events / Session.Snapshot
-and retrieves the final outcome via Session.Wait.
-
-Errors are returned only when the wrapper itself fails to start
-(invalid configuration, missing binary, PTY allocation failure).
-Once Start has returned a non-nil Session, every harness outcome
-flows through Wait with a nil error.
+Start calls wrapcore.Start.
 
 #### `type SessionEvent`
-SessionEvent is a state transition observed by a Session. Events are
-delivered on Session.Events() in order. Mid-run classifications
-(waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
-Status events — under Config.KeepAliveOnClassification the terminal ones
-too, with Terminated false. The final event is always Terminated, after
-which the channel is closed.
+SessionEvent is wrapcore.SessionEvent.
 
 #### `type Snapshot`
-Snapshot is the most recent state observation for a Session. Snapshot
-is safe to read concurrently with the session running; it always
-reflects a coherent point-in-time view.
+Snapshot is wrapcore.Snapshot.
 
 #### `type Status`
-Status is the normalized run status returned by the wrapper.
-
-### Interfaces (Boundaries)
-
-#### `Classifier`
-Inspects recent harness output and reports actionable status classifications; stateless (input rebuilt each poll) and safe for concurrent use.
-
-> Classifier inspects recent harness output and reports actionable
-status classifications. Implementations must be safe for concurrent
-use.
-
-Classifiers are stateless: the wrapper rebuilds ClassifierInput on
-each poll. Returning the same Classification across consecutive
-polls is fine; the wrapper de-duplicates emitted events.
-
-- `Classify(input ClassifierInput) Classification`
-
-## Module: detector (`pkg/wrapper/internal/detector`)
-
-_(summary pending — run the veracity-docs skill)_
-
-> Package detector provides generic pattern primitives for harness
-classifiers. Patterns are matched against the recent harness output
-(typically the last ~64KB), with ANSI escapes already stripped.
-
-The package is intentionally minimal: it does not own state, it just
-runs string matches. Real classifiers compose these primitives with
-state from the wrapper (idle thresholds, quiet windows).
-
-### Exported Types & Functions
-
-#### `func MatchAny(haystack string, patterns []string) string`
-MatchAny returns the first pattern in patterns that appears as a
-substring of haystack, or "" if none match. Caller is expected to
-pre-lowercase haystack.
-
-#### `func MatchPromptSuffix(haystack string, patterns []string) string`
-MatchPromptSuffix returns the first pattern in patterns that the
-trailing non-empty line of haystack ends with (case-insensitive),
-or "" if none match. Trailing whitespace on the last line is
-ignored so prompts ending with a space ("Continue? ") still match.
-
-#### `func ParseRetryAfter(msg string) time.Duration`
-ParseRetryAfter scans an API-error message for a numeric retry hint
-and returns it as a time.Duration. Returns zero when no hint was
-found or when the unit could not be recognized.
-
-Recognized phrasings include "try again in 30 seconds", "retry after
-2 minutes", "try again in 5s". Non-numeric phrasings like "try again
-in a moment" return zero — better to surface "no hint" than guess.
-
-#### `type APIErrorHit`
-APIErrorHit is what an APIErrorMatcher returns when it recognizes an
-upstream API error in the harness's output.
-
-#### `type APIErrorMatcher`
-APIErrorMatcher inspects already-ANSI-stripped recent output and
-reports whether it contains a recognized upstream API error.
-
-#### `type Patterns`
-Patterns groups the per-harness fingerprints a classifier consults.
-All slices are matched as case-insensitive substrings against
-already-stripped, lower-cased recent output, except Prompt which is
-matched against the trailing line of the original (case-preserved)
-stripped output.
-
-#### `type SessionLimitHit`
-SessionLimitHit is what a SessionLimitMatcher returns when it
-recognizes a session-limit banner in the harness's output.
-
-#### `type SessionLimitMatcher`
-SessionLimitMatcher inspects already-ANSI-stripped recent output and
-reports whether it contains a recognized session-limit banner. The
-`now` parameter anchors relative time math (e.g. choosing today vs.
-tomorrow for a "resets 6:40pm" hint); pass time.Now() in production
-code and a fixed clock in tests.
-
-## Module: claude (`pkg/wrapper/internal/harness/claude`)
-
-_(summary pending — run the veracity-docs skill)_
-
-> Package claude holds the classifier patterns for the Claude Code CLI
-harness. Patterns are intentionally conservative: false positives
-here turn an active run into a stuck-looking one.
-
-### Exported Types & Functions
-
-#### `func MatchAPIError(stripped string) (detector.APIErrorHit, bool)`
-MatchAPIError implements detector.APIErrorMatcher for Claude Code.
-On match, returns the parsed HTTP code (zero for the transport-error
-variant) and the trailing message with any whitespace trimmed.
-
-If the line starts with digits that aren't a valid 3-digit HTTP code
-(e.g. "API Error: 9999 unrecognized"), the match is rejected — that
-shape is almost certainly noise rather than a real upstream error.
-
-#### `func MatchSessionLimit(stripped string, now time.Time) (detector.SessionLimitHit, bool)`
-MatchSessionLimit implements detector.SessionLimitMatcher for Claude
-Code. On match, returns the matched banner line and the absolute
-reset time parsed from it. ResumeAt is zero when the banner did not
-embed a parseable clock-time (in that case the caller still treats
-the run as blocked_by_cost, just without a scheduled wakeup).
-
-## Module: codex (`pkg/wrapper/internal/harness/codex`)
-
-Classifier patterns for the OpenAI Codex CLI harness, including an API-error matcher keyed on inner phrases across both TUI and exec display paths.
-
-> Package codex holds the classifier patterns for the OpenAI Codex CLI
-harness.
-
-### Exported Types & Functions
-
-#### `func MatchAPIError(stripped string) (detector.APIErrorHit, bool)`
-MatchAPIError implements detector.APIErrorMatcher for Codex CLI.
-It checks the explicit retry-limit form first, then falls back to a
-phrase table. Codex's prefix glyph (■ in TUI, ERROR: in exec) is
-not required — matching on the inner phrase is sufficient and works
-across both display paths.
-
-## Module: cursor (`pkg/wrapper/internal/harness/cursor`)
-
-Classifier patterns for the Cursor CLI harness: conservative idle-gated Cost/Retry/Prompt fingerprints only (an anchored API-error matcher is a deliberate follow-up).
-
-> Package cursor holds the classifier patterns for the Cursor CLI harness.
-Patterns are intentionally conservative: false positives here turn an
-active run into a stuck-looking one.
-
-Coverage note: Cursor surfaces errors as free prose (often without an
-anchored "API Error: <code>" line like Claude's), and the wrapper checks
-the APIError matcher un-gated on every live poll. An un-anchored prose
-matcher would risk false-positive mid-run classifications, so this pack
-ships only the idle-gated Cost/Retry/Prompt fingerprints for now. A
-line-anchored APIError matcher that maps Cursor's auth (401) /
-model-not-found (404) prose to ErrAuth/ErrModelNotFound is a deliberate
-follow-up, to be validated against real Cursor output samples; until then
-loom's residual classifier covers those cases.
-
-## Module: opencode (`pkg/wrapper/internal/harness/opencode`)
-
-The classifier fingerprint set for the OpenCode CLI. Because OpenCode is provider-agnostic and surfaces no single anchored API-error format, it ships conservative cross-provider cost, retry and prompt patterns and leaves the API-error matcher unset until a recorded corpus exists.
-
-> Package opencode holds the classifier patterns for the OpenCode CLI
-(opencode-ai, binary "opencode" — github.com/sst/opencode).
-
-OpenCode is provider-agnostic: a single session can be backed by
-Anthropic, OpenAI, Google, local models, and dozens of others, so the
-error text it surfaces varies by provider. There is no single
-bracketed/anchored API-error format to key on the way Claude Code
-has, so APIError is left nil here and the Cost/Retry
-string lists carry the conservative cross-provider fingerprints
-instead. Patterns should be tightened (and an APIError matcher added)
-once a recorded corpus under test/corpus/opencode/ exists.
-
-## Module: pi (`pkg/wrapper/internal/harness/pi`)
-
-The classifier fingerprint set for the pi coding agent. Like OpenCode it is provider-agnostic, so it carries conservative cross-provider cost, retry and prompt patterns and no API-error matcher pending a recorded corpus.
-
-> Package pi holds the classifier patterns for the pi coding agent
-(@earendil-works/pi-coding-agent, binary "pi" —
-github.com/earendil-works/pi).
-
-pi is provider-agnostic: a single session can be backed by Anthropic,
-OpenAI, Google, local models, and others (its assistant messages carry
-the originating provider/model), so the error text it surfaces varies
-by provider. There is no single bracketed/anchored API-error format to
-key on the way Claude Code has, so APIError is left nil
-here and the Cost/Retry string lists carry the conservative
-cross-provider fingerprints instead. Patterns should be tightened (and
-an APIError matcher added) once a recorded corpus under
-test/corpus/pi/ exists.
+Status is wrapcore.Status.
 
 ## Module: trace (`pkg/wrapper/trace`)
 

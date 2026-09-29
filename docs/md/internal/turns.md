@@ -72,6 +72,11 @@ feature-detect with a type assertion):
 | `PermissionPostureDetector` | `PermissionPosture(snap) (turns.PermissionPosture, bool)` | Report the FULL posture — canonical `Rung`, the harness's own `Native` spelling of it, and `OnRing` (can the harness's cycle key produce that spelling?). Exists because several natives share one rung: claude paints both `⏸ manual mode on` and `⏵⏵ don't ask on` for `manual`, and only the first is reachable by Shift+Tab, so a driver comparing rungs alone reads a `dontAsk` session as already-manual and writes no keystroke. `Rung` carries `PermissionModeDetector`'s contract exactly; `Native` is DIAGNOSTIC and must never be compared against `wrapper.PermissionRungs()`. `false` means no readable signal, same as `PermissionModeDetector`. Implemented by **claude-code only** — codex has no alias collision on its collaboration axis, so `pkg/chat` reads it through a rung-only fallback that is byte-identical to the old behaviour. |
 | `SessionResumer` | `ResumeArgs(harnessSessionID) []string` | The argv fragment that resumes an existing harness session (e.g. `{"--resume", id}`). `chat.Open` returns `ErrResumeUnsupported` when `Options.Resume` is set and the adapter omits this. |
 | `SessionControlFlags` | `SessionControlFlags() []string` | The session-control flags chat reserves (e.g. `--resume`, `--fork-session`) and callers must not pass in `Options.Args`; a collision is `ErrInvalidOptions`. An adapter that omits it declares no reserved flags. |
+| `ReadinessDetector` | `ReadyForInput(text) bool` | Whether the composer will take a message now. The chat layer types a message only once it holds, and completes a turn by idleness only at a ready prompt; an adapter without it is always ready. claude-code (no dialog of any state up, and the `❯` prompt painted), codex (no interstitial, and the idle `›` prompt), pi (its idle status line). |
+| `DialogDetector` | `DialogState(text) turns.DialogState` | Which of `DialogNone`, `DialogPending`, `DialogUnparseable` or `DialogReadable` a screen is in. An unparseable dialog never clears on its own, so `Send` fails with `ErrUnrecognizedDialog` instead of waiting out its deadline. claude-code only. |
+| `DialogAnchorer` | `DialogAnchors() []string` | The literal lines the harness's blocking dialogs paint, behind `chat.DialogAnchors`. claude-code only. |
+| `DialogReader` | `ReadDialog(text) (*InputRequest, bool)`, `DialogAnchorPresent(text) bool` | Read a dialog again from a later screen, so the chat layer confirms an answer landed instead of trusting the write ([ADR-002](decisions/adr-002-interactive-input.md)). claude-code only; other harnesses keep the single write. |
+| `InterstitialDismisser` | `DismissKeys(req, updates) ([]byte, bool)` | Keys that clear a startup interstitial carrying no decision for the caller; `updates` says whether an update prompt counts as one (`Options.AutoSkipCodexUpdateNotice`). codex only. |
 
 `Busy()` is what keeps the chat layer from reporting `complete` mid-turn; only claude-code implements
 it today (its replies stream in multiple parts). See the [adapter matrix](../guide/adapters.md) for
@@ -174,5 +179,5 @@ makes restrictive rungs stall an unattended turn — see
 The full per-adapter workflow — find the turn-complete marker, session-id surfacing, cost/quota
 patterns, and transcript schema; implement adapter + classifier + reader; record
 [corpus](testing/corpus.md) scenarios (canonical **and** adversarial); wire into
-`chat.resolveAdapter` and `harness-chatd`; add a [`versions.json`](versions-drift.md) pin — is
+`pkg/chat`'s built-in registrations (`chatcore.RegisterAdapter`) and `harness-chatd`; add a [`versions.json`](versions-drift.md) pin — is
 sequenced as item 1 in the [Roadmap](roadmap-v1.md). opencode is next.

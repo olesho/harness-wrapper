@@ -8,7 +8,7 @@ import (
 )
 
 // horizontalSpace matches one space-like character that is NOT a line break.
-// Mirrors the repo-wide idiom (pkg/chat/ready.go, pkg/wrapper/internal/harness/
+// Mirrors the repo-wide idiom (pkg/chat/ready.go, internal/wrapcore/harness/
 // claude) and the `[^\S\r\n]*` runs already used by thinkingRE and bulletRE.
 //
 // It matters here more than it looks: Claude Code paints the footer with
