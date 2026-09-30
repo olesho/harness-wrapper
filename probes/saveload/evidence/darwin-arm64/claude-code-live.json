@@ -1,25 +1,25 @@
 {
   "harness": "claude-code",
   "mode": "live",
-  "when": "2026-09-30T08:05:55Z",
+  "when": "2026-09-30T08:47:37Z",
   "platform": "darwin/arm64",
   "versions": {
     "binary": "2.1.283 (Claude Code)",
     "binary_sha256": "d8cb1e5c79684cc12a8bfc813e3a2073406921b6245744b3009be3ab5651d21e",
     "pinned": "2.1.283",
     "adapter": "harness-wrapper (devel)",
-    "revision": "v0.24.0-3-g0f2ba59",
+    "revision": "v0.24.0-5-g92409c9",
     "contract": "harness-adapter/1.0",
     "checkpoint_format": 1
   },
   "launches": [
     {
       "when": "source: the fresh open",
-      "command": "$WORK/source/harness/bin/claude --session-id fa5a7e33-338f-4873-89c2-7192a2e0ed66 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/source/profile/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions --model haiku"
+      "command": "$WORK/source/harness/bin/claude --session-id 78d4e562-fb67-4d72-9aa0-ec0eba2bc881 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/source/profile/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions --model haiku"
     },
     {
       "when": "restored: the reopen",
-      "command": "$WORK/restored/history-roots/agent/dist/bin/claude --resume fa5a7e33-338f-4873-89c2-7192a2e0ed66 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/restored/history-roots/agent/cfg/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions --model haiku"
+      "command": "$WORK/restored/history-roots/agent/dist/bin/claude --resume 78d4e562-fb67-4d72-9aa0-ec0eba2bc881 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/restored/history-roots/agent/cfg/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions --model haiku"
     }
   ],
   "source": {
@@ -32,8 +32,8 @@
     },
     "workspace_resolved": "$WORK/source/workspace",
     "harness_root": "$WORK/source/harness",
-    "session_id": "fa5a7e33-338f-4873-89c2-7192a2e0ed66",
-    "record": "$WORK/source/profile/projects/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl",
+    "session_id": "78d4e562-fb67-4d72-9aa0-ec0eba2bc881",
+    "record": "$WORK/source/profile/projects/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl",
     "credential": "claude_oauth_token in $WORK/source/secrets/claude-oauth-token"
   },
   "restored": {
@@ -46,8 +46,8 @@
     },
     "workspace_resolved": "$WORK/restored/history-roots/agent/ws",
     "harness_root": "$WORK/restored/history-roots/agent/dist",
-    "session_id": "fa5a7e33-338f-4873-89c2-7192a2e0ed66",
-    "record": "$WORK/restored/history-roots/agent/cfg/projects/-WORK-restored-history-roots-agent-ws/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl",
+    "session_id": "78d4e562-fb67-4d72-9aa0-ec0eba2bc881",
+    "record": "$WORK/restored/history-roots/agent/cfg/projects/-WORK-restored-history-roots-agent-ws/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl",
     "credential": "claude_oauth_token in $WORK/restored/history-roots/agent/sec/claude-oauth-token"
   },
   "relocations": [
@@ -109,9 +109,9 @@
       "class": "other"
     },
     {
-      "path": "config/projects/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl",
+      "path": "config/projects/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl",
       "files": 1,
-      "bytes": 42215,
+      "bytes": 41943,
       "class": "history",
       "in": [
         "history-roots",
@@ -155,13 +155,13 @@
   "outside_the_roots": [
     {
       "root": "outside",
-      "path": "/tmp/claude-501/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66/",
+      "path": "/tmp/claude-501/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881/",
       "size": 0,
       "sha256": ""
     },
     {
       "root": "outside",
-      "path": "/tmp/claude-501/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66/tasks/",
+      "path": "/tmp/claude-501/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881/tasks/",
       "size": 0,
       "sha256": ""
     }
@@ -170,38 +170,38 @@
     {
       "variant": "history-roots",
       "note": "the adapter's history_roots (config/projects, config/memory) less its secret_paths, and the workspace's note",
-      "bytes": 48640,
+      "bytes": 48128,
       "entries": [
         {
           "root": "config",
           "path": "memory/notes.md",
           "size": 34,
-          "sha256": "d33b5cd5571b8cdca25586302bcb8fbcf9f4915ca8cd3c58439d65087734cee0"
+          "sha256": "6ae51d8728506ac53c3d8cb51fa58d6ff9e2db7ee886d36ab4450485f0eeeaf7"
         },
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl",
-          "size": 42215,
-          "sha256": "26152529e8f064aaf485a3ea4e33e3d8483436fc8db72304ec35fdb0ae606264"
+          "path": "projects/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl",
+          "size": 41943,
+          "sha256": "50478a4f0dfe4d93f9eb53a695cc14bec896cf76abfc7f542dc6b5ba96c4de86"
         },
         {
           "root": "workspace",
           "path": "saveload-note.txt",
           "size": 12,
-          "sha256": "be974c68bca7b7db58beb813fd5e53f743565f3f06d96b8eb06bc5d41a36dd34"
+          "sha256": "9355dab8af617f378b828f3071a5d8947f21f80c6e8a6f2e2612f44bdff3c5a6"
         }
       ]
     },
     {
       "variant": "transcript-only",
       "note": "the Session's transcript alone",
-      "bytes": 46080,
+      "bytes": 45568,
       "entries": [
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl",
-          "size": 42215,
-          "sha256": "26152529e8f064aaf485a3ea4e33e3d8483436fc8db72304ec35fdb0ae606264"
+          "path": "projects/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl",
+          "size": 41943,
+          "sha256": "50478a4f0dfe4d93f9eb53a695cc14bec896cf76abfc7f542dc6b5ba96c4de86"
         }
       ]
     }
@@ -212,7 +212,7 @@
       "title": "two source turns: a reply with nonce A, a tool result with nonce T",
       "required": true,
       "result": "pass",
-      "detail": "turn 1 completed, reply \"PONGaa3946efe75\"; turn 2 completed, 1 tool call(s), output \"ta99949235b\""
+      "detail": "turn 1 completed, reply \"PONGa276ae16d7c\"; turn 2 completed, 1 tool call(s), output \"t2009e9b821\""
     },
     {
       "id": "source.stopped",
@@ -233,35 +233,35 @@
       "title": "the source's roots are gone before the restore starts",
       "required": true,
       "result": "pass",
-      "detail": "the record's path: stat $WORK/source/profile/projects/-WORK-source-workspace/fa5a7e33-338f-4873-89c2-7192a2e0ed66.jsonl: no such file or directory; the kept copy: open $WORK/.gone-49c0296e47: permission denied"
+      "detail": "the record's path: stat $WORK/source/profile/projects/-WORK-source-workspace/78d4e562-fb67-4d72-9aa0-ec0eba2bc881.jsonl: no such file or directory; the kept copy: open $WORK/.gone-38ffc6ddce: permission denied"
     },
     {
       "id": "load.record-read",
       "title": "the adapter's record reader reaches the restored record's end, with nothing published",
       "required": true,
       "result": "pass",
-      "detail": "6 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 42215 of the restored 42215 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
+      "detail": "6 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 41943 of the restored 41943 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
     },
     {
       "id": "checkpoint.carried",
       "title": "the source's checkpoint, given to the restored record",
       "required": false,
       "result": "info",
-      "detail": "the source's checkpoint (offset 42215, inode 250713751) on the restored file: 1 reset(s) [replaced], then all 6 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
+      "detail": "the source's checkpoint (offset 41943, inode 250737232) on the restored file: 1 reset(s) [replaced], then all 6 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
     },
     {
       "id": "load.history",
       "title": "the live model recalls nonce A in the restored Session, without a tool",
       "required": true,
       "result": "pass",
-      "detail": "the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"PONGaa3946efe75\", after 0 tool call(s); the prompt names no nonce: true"
+      "detail": "the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"PONGa276ae16d7c\", after 0 tool call(s); the prompt names no nonce: true"
     },
     {
       "id": "load.same-session",
       "title": "the Session reopens under its saved native id",
       "required": true,
       "result": "pass",
-      "detail": "saved fa5a7e33-338f-4873-89c2-7192a2e0ed66, reopened fa5a7e33-338f-4873-89c2-7192a2e0ed66"
+      "detail": "saved 78d4e562-fb67-4d72-9aa0-ec0eba2bc881, reopened 78d4e562-fb67-4d72-9aa0-ec0eba2bc881"
     },
     {
       "id": "load.new-events-only",
@@ -275,7 +275,7 @@
       "title": "after a stop and a second reopen, what the restored Session added is kept, and only new record events follow",
       "required": true,
       "result": "pass",
-      "detail": "the reply to \"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" was \"ta99949235b\", after 0 tool call(s); reopened fa5a7e33-338f-4873-89c2-7192a2e0ed66 from the checkpoint at offset 52422; 10 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" \"Use the Bash tool to run exactly this command: pwd — then reply with the command's output and nothing else.\"]; resets 0, faults 0"
+      "detail": "the reply to \"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" was \"t2009e9b821\", after 0 tool call(s); reopened 78d4e562-fb67-4d72-9aa0-ec0eba2bc881 from the checkpoint at offset 52615; 10 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" \"Use the Bash tool to run exactly this command: pwd — then reply with the command's output and nothing else.\"]; resets 0, faults 0"
     },
     {
       "id": "load.new-cwd",
@@ -289,7 +289,7 @@
       "title": "the restored record is appended to, its saved bytes unchanged: relocation moves paths, not contents",
       "required": true,
       "result": "pass",
-      "detail": "the first 42215 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 1"
+      "detail": "the first 41943 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 1"
     },
     {
       "id": "load.memory",
@@ -303,7 +303,7 @@
       "title": "with no history restored, the harness alone refuses to resume the id",
       "required": true,
       "result": "pass",
-      "detail": "claude --resume: No conversation found with session ID: fa5a7e33-338f-4873-89c2-7192a2e0ed66"
+      "detail": "claude --resume: No conversation found with session ID: 78d4e562-fb67-4d72-9aa0-ec0eba2bc881"
     },
     {
       "id": "negative.empty-record",
@@ -317,7 +317,7 @@
       "title": "with no history restored, a reopen through the adapter fails or lacks the earlier context",
       "required": true,
       "result": "pass",
-      "detail": "the adapter opened a Session fa5a7e33-338f-4873-89c2-7192a2e0ed66 (the saved id: true) — a fresh conversation, not an error; the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"This is the first message you've sent me in this conversation, so there is no previous answer to reference.\"; err=\u003cnil\u003e"
+      "detail": "the adapter opened a Session 78d4e562-fb67-4d72-9aa0-ec0eba2bc881 (the saved id: true) — a fresh conversation, not an error; the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"This is the first message in the conversation, so I have not given a prior answer.\"; err=\u003cnil\u003e"
     },
     {
       "id": "source.untouched",
@@ -336,111 +336,111 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:05:56Z"
+          "time": "2026-09-30T08:47:38Z"
         },
         {
-          "id": "user_input:5f54bea5-75ea-499a-a04d-f2dd00d2372d:0",
+          "id": "user_input:bae416a3-511d-48e4-8a93-1ab6cd257a2b:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "source-1",
-          "time": "2026-09-30T08:05:56Z",
-          "text": "Reply with exactly PONGaa3946efe75 and nothing else."
+          "time": "2026-09-30T08:47:38Z",
+          "text": "Reply with exactly PONGa276ae16d7c and nothing else."
         },
         {
-          "id": "rate_limit:f3031d5dff14.1",
+          "id": "rate_limit:f9a0b45f0239.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:05:57Z"
+          "time": "2026-09-30T08:47:40Z"
         },
         {
           "id": "turn_ended:source-1",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:05:57Z",
-          "text": "PONGaa3946efe75"
+          "time": "2026-09-30T08:47:40Z",
+          "text": "PONGa276ae16d7c"
         },
         {
           "id": "turn_ended:source-1",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "source-1",
-          "time": "2026-09-30T08:05:57Z"
+          "time": "2026-09-30T08:47:40Z"
         },
         {
-          "id": "assistant_text:21e125c7-8bef-463a-bb9d-d5df7bbe3f68:0",
+          "id": "assistant_text:8f81049b-a6dc-40f9-a1a6-231d4806024a:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:05:57Z",
-          "text": "PONGaa3946efe75"
+          "time": "2026-09-30T08:47:40Z",
+          "text": "PONGa276ae16d7c"
         },
         {
           "id": "turn_started:source-2",
           "kind": "turn_started",
           "origin": "live",
           "input_id": "source-2",
-          "time": "2026-09-30T08:05:58Z"
+          "time": "2026-09-30T08:47:41Z"
         },
         {
-          "id": "user_input:e3b22856-55aa-4bc6-b825-408f2f33b330:0",
+          "id": "user_input:ddcab53b-2c9d-499c-867d-07526eff68f7:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:05:58Z",
-          "text": "Use the Bash tool to run exactly this command: echo ta99949235b | tee saveload-note.txt — then reply with the command'…"
+          "time": "2026-09-30T08:47:41Z",
+          "text": "Use the Bash tool to run exactly this command: echo t2009e9b821 | tee saveload-note.txt — then reply with the command'…"
         },
         {
-          "id": "tool_use:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_use:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_use",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:00Z",
-          "text": "Bash {\"command\":\"echo ta99949235b | tee saveload-note.txt\",\"description\":\"Run echo command with tee to output and save t…"
+          "time": "2026-09-30T08:47:43Z",
+          "text": "Bash {\"command\":\"echo t2009e9b821 | tee saveload-note.txt\",\"description\":\"Run echo command and tee to file\"}"
         },
         {
-          "id": "tool_result:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_result:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_result",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:00Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:43Z",
+          "text": "t2009e9b821"
         },
         {
-          "id": "tool_finished:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_finished:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_finished",
           "origin": "record",
-          "time": "2026-09-30T08:06:00Z",
+          "time": "2026-09-30T08:47:43Z",
           "text": "Bash"
         },
         {
-          "id": "tool_started:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_started:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:00Z",
-          "text": "Bash {\"command\":\"echo ta99949235b | tee saveload-note.txt\",\"description\":\"Run echo command with tee to output and save t…"
+          "time": "2026-09-30T08:47:43Z",
+          "text": "Bash {\"command\":\"echo t2009e9b821 | tee saveload-note.txt\",\"description\":\"Run echo command and tee to file\"}"
         },
         {
           "id": "turn_ended:source-2",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:01Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:44Z",
+          "text": "t2009e9b821"
         },
         {
           "id": "turn_ended:source-2",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:01Z"
+          "time": "2026-09-30T08:47:44Z"
         },
         {
-          "id": "assistant_text:bc0bc022-c29b-4208-bac2-665621d0e63e:0",
+          "id": "assistant_text:a91fa983-835d-4a57-8562-dc798a40a54a:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:01Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:44Z",
+          "text": "t2009e9b821"
         }
       ]
     },
@@ -448,46 +448,46 @@
       "name": "restored: read to the end before the reopen (not published)",
       "observations": [
         {
-          "id": "user_input:5f54bea5-75ea-499a-a04d-f2dd00d2372d:0",
+          "id": "user_input:bae416a3-511d-48e4-8a93-1ab6cd257a2b:0",
           "kind": "user_input",
           "origin": "record",
-          "time": "2026-09-30T08:05:56Z",
-          "text": "Reply with exactly PONGaa3946efe75 and nothing else."
+          "time": "2026-09-30T08:47:38Z",
+          "text": "Reply with exactly PONGa276ae16d7c and nothing else."
         },
         {
-          "id": "assistant_text:21e125c7-8bef-463a-bb9d-d5df7bbe3f68:0",
+          "id": "assistant_text:8f81049b-a6dc-40f9-a1a6-231d4806024a:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:05:57Z",
-          "text": "PONGaa3946efe75"
+          "time": "2026-09-30T08:47:40Z",
+          "text": "PONGa276ae16d7c"
         },
         {
-          "id": "user_input:e3b22856-55aa-4bc6-b825-408f2f33b330:0",
+          "id": "user_input:ddcab53b-2c9d-499c-867d-07526eff68f7:0",
           "kind": "user_input",
           "origin": "record",
-          "time": "2026-09-30T08:05:58Z",
-          "text": "Use the Bash tool to run exactly this command: echo ta99949235b | tee saveload-note.txt — then reply with the command'…"
+          "time": "2026-09-30T08:47:41Z",
+          "text": "Use the Bash tool to run exactly this command: echo t2009e9b821 | tee saveload-note.txt — then reply with the command'…"
         },
         {
-          "id": "tool_use:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_use:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_use",
           "origin": "record",
-          "time": "2026-09-30T08:06:00Z",
-          "text": "Bash {\"command\":\"echo ta99949235b | tee saveload-note.txt\",\"description\":\"Run echo command with tee to output and save t…"
+          "time": "2026-09-30T08:47:43Z",
+          "text": "Bash {\"command\":\"echo t2009e9b821 | tee saveload-note.txt\",\"description\":\"Run echo command and tee to file\"}"
         },
         {
-          "id": "tool_result:toolu_01C47ALjxBM6z7dNnwus5Xu6",
+          "id": "tool_result:toolu_017AebP4wcK7sgiAxKsS5ZCc",
           "kind": "tool_result",
           "origin": "record",
-          "time": "2026-09-30T08:06:00Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:43Z",
+          "text": "t2009e9b821"
         },
         {
-          "id": "assistant_text:bc0bc022-c29b-4208-bac2-665621d0e63e:0",
+          "id": "assistant_text:a91fa983-835d-4a57-8562-dc798a40a54a:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:01Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:44Z",
+          "text": "t2009e9b821"
         }
       ]
     },
@@ -499,44 +499,44 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:02Z"
+          "time": "2026-09-30T08:47:46Z"
         },
         {
-          "id": "user_input:b12f6db5-6a57-4201-9d4b-1dac6c3fd7c7:0",
+          "id": "user_input:41a8d857-61ba-452b-938b-0c936e11ca88:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:02Z",
+          "time": "2026-09-30T08:47:46Z",
           "text": "What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no…"
         },
         {
-          "id": "rate_limit:2d3534e2babf.1",
+          "id": "rate_limit:4d3db2a5ce4a.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:04Z"
+          "time": "2026-09-30T08:47:48Z"
         },
         {
           "id": "turn_ended:restored-history-roots-1",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:04Z",
-          "text": "PONGaa3946efe75"
+          "time": "2026-09-30T08:47:48Z",
+          "text": "PONGa276ae16d7c"
         },
         {
           "id": "turn_ended:restored-history-roots-1",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:04Z"
+          "time": "2026-09-30T08:47:48Z"
         },
         {
-          "id": "assistant_text:787efab7-ccae-4e5b-bb04-e612bd43bc93:0",
+          "id": "assistant_text:a38c30ea-aa42-43df-b681-9f68d9a9c674:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:04Z",
-          "text": "PONGaa3946efe75"
+          "time": "2026-09-30T08:47:48Z",
+          "text": "PONGa276ae16d7c"
         }
       ]
     },
@@ -548,88 +548,88 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:05Z"
+          "time": "2026-09-30T08:47:49Z"
         },
         {
-          "id": "user_input:50c12c87-a6b0-4acf-8557-05a8b688a065:0",
+          "id": "user_input:875de319-d868-42c9-b3d6-b37b9506fd6c:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:05Z",
+          "time": "2026-09-30T08:47:49Z",
           "text": "Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no …"
         },
         {
-          "id": "rate_limit:0843202c93fa.1",
+          "id": "rate_limit:ff1d1e0847a8.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:07Z"
+          "time": "2026-09-30T08:47:51Z"
         },
         {
           "id": "turn_ended:restored-history-roots-2",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:07Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:51Z",
+          "text": "t2009e9b821"
         },
         {
           "id": "turn_ended:restored-history-roots-2",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:07Z"
+          "time": "2026-09-30T08:47:51Z"
         },
         {
-          "id": "assistant_text:f49514c4-a712-4903-9f57-2f40fb44f21f:0",
+          "id": "assistant_text:4ab24ce4-adda-4c37-969e-f6b35f48a25a:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:07Z",
-          "text": "ta99949235b"
+          "time": "2026-09-30T08:47:51Z",
+          "text": "t2009e9b821"
         },
         {
           "id": "turn_started:restored-history-roots-3",
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:07Z"
+          "time": "2026-09-30T08:47:52Z"
         },
         {
-          "id": "user_input:c431b674-634f-41ae-875d-dc61cb9d90fa:0",
+          "id": "user_input:188373f0-9cc7-4831-a28d-57bd2ece6950:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:07Z",
+          "time": "2026-09-30T08:47:52Z",
           "text": "Use the Bash tool to run exactly this command: pwd — then reply with the command's output and nothing else."
         },
         {
-          "id": "tool_use:toolu_014wW3JAbZZzLLXr6vsBd3nd",
+          "id": "tool_use:toolu_01C1ycrMPwZMZbHjwHxa7Fpq",
           "kind": "tool_use",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:09Z",
+          "time": "2026-09-30T08:47:54Z",
           "text": "Bash {\"command\":\"pwd\",\"description\":\"Print working directory\"}"
         },
         {
-          "id": "tool_result:toolu_014wW3JAbZZzLLXr6vsBd3nd",
+          "id": "tool_result:toolu_01C1ycrMPwZMZbHjwHxa7Fpq",
           "kind": "tool_result",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:09Z",
+          "time": "2026-09-30T08:47:54Z",
           "text": "$WORK/restored/history-roots/agent/ws"
         },
         {
-          "id": "tool_finished:toolu_014wW3JAbZZzLLXr6vsBd3nd",
+          "id": "tool_finished:toolu_01C1ycrMPwZMZbHjwHxa7Fpq",
           "kind": "tool_finished",
           "origin": "record",
-          "time": "2026-09-30T08:06:09Z",
+          "time": "2026-09-30T08:47:54Z",
           "text": "Bash"
         },
         {
-          "id": "tool_started:toolu_014wW3JAbZZzLLXr6vsBd3nd",
+          "id": "tool_started:toolu_01C1ycrMPwZMZbHjwHxa7Fpq",
           "kind": "tool_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:09Z",
+          "time": "2026-09-30T08:47:54Z",
           "text": "Bash {\"command\":\"pwd\",\"description\":\"Print working directory\"}"
         },
         {
@@ -637,7 +637,7 @@
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:10Z",
+          "time": "2026-09-30T08:47:55Z",
           "text": "$WORK/restored/history-roots/agent/ws"
         },
         {
@@ -645,13 +645,13 @@
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:10Z"
+          "time": "2026-09-30T08:47:55Z"
         },
         {
-          "id": "assistant_text:71f947f1-a488-4654-8d8e-e69e09c1246a:0",
+          "id": "assistant_text:15a8fd17-45a6-4b42-b226-0907a4a43baf:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:10Z",
+          "time": "2026-09-30T08:47:55Z",
           "text": "$WORK/restored/history-roots/agent/ws"
         }
       ]

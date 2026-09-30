@@ -6,19 +6,19 @@
   "active_model_requests_after_set": 115,
   "active_turns_started_after_resume": 68,
   "active_model_requests_after_resume": 67,
-  "adapter_model_requests_before_any_input": 52,
+  "adapter_model_requests_before_any_input": 51,
   "adapter_phase_before_any_input": "idle",
-  "adapter_record_observations_before_any_input": 52,
+  "adapter_record_observations_before_any_input": 50,
   "adapter_input_turn_ended": false,
   "adapter_input_wait": "10s",
   "adapter_input_error": "no turn_ended of goal-2 within 10s",
   "adapter_input_observations": {
     "assistant_text (record)": 1,
-    "rate_limit (live)": 169,
+    "rate_limit (live)": 163,
     "turn_ended (record)": 1,
     "user_input (record)": 1
   },
-  "adapter_model_requests_with_the_input": 168,
+  "adapter_model_requests_with_the_input": 163,
   "adapter_phase_after": "busy",
-  "adapter_model_requests_in_all": 260
+  "adapter_model_requests_in_all": 253
 }
