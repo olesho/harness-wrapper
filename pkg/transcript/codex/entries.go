@@ -16,7 +16,8 @@ import (
 type Entry struct {
 	// Type is the line's type (session_meta, event_msg, response_item, …)
 	// and Kind its payload's (task_started, user_message, task_complete,
-	// turn_aborted, message, function_call, …).
+	// turn_aborted, message, function_call, …). A message codex wrote to
+	// itself to start a turn for the thread's goal has Kind KindGoalContext.
 	Type, Kind string
 	// TurnID is the turn the line belongs to, when it names one.
 	TurnID string
@@ -39,8 +40,17 @@ type Entry struct {
 }
 
 // EventEntry is the Type of the one event FollowRollout gives a line that
-// holds facts and no events: a turn's start or end.
+// holds facts and no events: a turn's start or end, or the message that
+// says codex started the turn itself.
 const EventEntry = "entry"
+
+// KindGoalContext is the Kind of the user-role message codex opens a turn
+// with when it starts one by itself, to go on working toward the thread's
+// goal. No input has such a message: a turn that holds one is codex's own.
+const KindGoalContext = "goal_context"
+
+// goalContextPrefix opens that message's text.
+const goalContextPrefix = `<codex_internal_context source="goal">`
 
 // Rollout is the path of a thread's rollout under codexHome, the CODEX_HOME
 // codex ran with: sessions/<YYYY>/<MM>/<DD>/rollout-<timestamp>-<thread>.jsonl.
@@ -80,7 +90,8 @@ func FollowRollout(path, threadID string, from transcript.Checkpoint) (*transcri
 // DecodeEntry decodes one rollout line into its events, each with the line's
 // *Entry as Meta: a user message sent with a client id, an assistant
 // message's text blocks, a tool call and its output, and one event of Type
-// EventEntry for a turn's start or end. Other lines have no events.
+// EventEntry for a turn's start or end, and for the message codex starts a
+// turn of its own with. Other lines have no events.
 func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 	var env Envelope
 	if err := json.Unmarshal(record, &env); err != nil {
@@ -142,14 +153,21 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 	case "response_item":
 		var item struct {
 			responseItem
-			ID string `json:"id"`
+			ID   string `json:"id"`
+			Meta struct {
+				TurnID string `json:"turn_id"`
+			} `json:"internal_chat_message_metadata_passthrough"`
 		}
 		if json.Unmarshal(env.Payload, &item) != nil {
 			return nil, nil
 		}
-		e.Kind = item.Type
+		e.Kind, e.TurnID = item.Type, item.Meta.TurnID
 		switch item.Type {
 		case "message":
+			if item.Role == transcript.RoleUser && len(item.Content) > 0 && strings.HasPrefix(item.Content[0].Text, goalContextPrefix) {
+				e.Kind = KindGoalContext
+				return []transcript.BlockEvent{one(0, transcript.Event{Type: EventEntry})}, nil
+			}
 			if item.Role != transcript.RoleAssistant {
 				return nil, nil
 			}

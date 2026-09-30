@@ -45,7 +45,11 @@ func init() { adapter.Register(Name, Profile{}) }
 var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 
 // Describe describes the profile. The harness version is hw's pin: the codex
-// the profile was verified against. codex chooses a thread's id itself.
+// the profile was verified against. codex chooses a thread's id itself. A
+// thread with an active goal makes codex start turns by itself. The profile
+// loads the threads that codex saved, and no other's: a version joins Load's
+// sources once a thread it saved has passed the kit's load scenarios at the
+// pin, its name and its goal with it.
 func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
@@ -53,7 +57,9 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
+			contract.CapSessionLoad, contract.CapAutonomousTurns,
 		},
+		Load:             &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialAPIKey, CredentialAccessToken},
 		Spec: contract.SpecSupport{

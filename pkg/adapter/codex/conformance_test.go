@@ -39,7 +39,12 @@ func realCodex(t *testing.T) string {
 // codex binary.
 func distribution(t *testing.T, codexBin string) string {
 	t.Helper()
-	root := t.TempDir()
+	return distributionAt(t, codexBin, t.TempDir())
+}
+
+// distributionAt lays the distribution out under root.
+func distributionAt(t *testing.T, codexBin, root string) string {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -75,15 +80,24 @@ stream_idle_timeout_ms = 120000
 	}
 }
 
-// The Codex profile passes the conformance kit against the pinned codex and
-// the mock Responses API: every scenario, with a real codex app-server, its
-// rollout and its retries.
-func TestCodexConforms(t *testing.T) {
-	bin := realCodex(t)
-	mock := mockapi.Start()
-	defer mock.Close()
-	root := distribution(t, bin)
-	conformance.Run(conformance.Testing(t), conformance.Fixture{
+// heard is the last request the mock answered for a turn of the kit's: the
+// conversation codex sent the model.
+func heard(mock *mockapi.Server) func(conformance.T, contract.Session) string {
+	return func(conformance.T, contract.Session) string {
+		reqs := mock.Requests()
+		for i := len(reqs) - 1; i >= 0; i-- {
+			if strings.HasPrefix(reqs[i].Scenario, "PING") {
+				return string(reqs[i].Body)
+			}
+		}
+		return ""
+	}
+}
+
+// kitFixture is the conformance kit's fixture for the profile: the pinned
+// codex in the distribution at root, driving the mock.
+func kitFixture(root string, mock *mockapi.Server) conformance.Fixture {
+	return conformance.Fixture{
 		Adapter:     adapter.New(Profile{}),
 		HarnessRoot: root,
 		Spec: contract.AgentSpec{
@@ -115,8 +129,21 @@ func TestCodexConforms(t *testing.T) {
 			}
 			return func() { _ = os.Rename(BinaryPath(root)+".hidden", BinaryPath(root)) }
 		},
+		Heard:   heard(mock),
 		Timeout: 90 * time.Second,
-	})
+	}
+}
+
+// The Codex profile passes the conformance kit against the pinned codex and
+// the mock Responses API: every scenario, with a real codex app-server, its
+// rollout and its retries.
+func TestCodexConforms(t *testing.T) {
+	bin := realCodex(t)
+	mock := mockapi.Start()
+	mock.KeepBodies = true
+	defer mock.Close()
+	root := distribution(t, bin)
+	conformance.Run(conformance.Testing(t), kitFixture(root, mock))
 	var persona, workspace bool
 	for _, r := range mock.Requests() {
 		persona = persona || strings.Contains(r.Input, "PERSONA-MARKER")
