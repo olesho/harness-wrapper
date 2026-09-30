@@ -273,3 +273,50 @@ func TestProvisionRefuses(t *testing.T) {
 		}
 	}
 }
+
+// A request that loads a saved Session names the one move claude's history
+// needs: the project directory the source's workspace named, to the one the
+// new workspace names. Nothing moves when both name the same.
+func TestProvisionRelocatesALoadedSession(t *testing.T) {
+	g := loadGolden(t)
+	req := goldenRequest(t, g)
+	a := adapter.New(Profile{})
+	d := a.Describe()
+	if !d.Has(contract.CapSessionLoad) || !d.Loads(adapter.ArchiveFormat, d.Harness.Version) {
+		t.Fatalf("the profile does not load its own version's Sessions: %+v", d.Load)
+	}
+	src := req.Layout
+	src.Workspace = "/srv/agents/old.one/work_space"
+	req.Load = &contract.LoadSource{Format: adapter.ArchiveFormat, Harness: d.Harness, Layout: src, Workspace: "/private" + src.Workspace}
+	res, err := a.Provision(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []contract.Relocation{{
+		From: contract.RootPath{Root: contract.RootConfig, Path: "projects/-private-srv-agents-old-one-work-space"},
+		To:   contract.RootPath{Root: contract.RootConfig, Path: "projects/" + strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(req.Layout.Workspace)},
+	}}
+	if !reflect.DeepEqual(res.HistoryRelocations, want) {
+		t.Errorf("history_relocations = %+v, want %+v", res.HistoryRelocations, want)
+	}
+	moved := contract.Relocate(res.HistoryRelocations, contract.RootPath{Root: contract.RootConfig, Path: "projects/-private-srv-agents-old-one-work-space/s/subagents/agent-1.jsonl"})
+	if moved.Path != want[0].To.Path+"/s/subagents/agent-1.jsonl" {
+		t.Errorf("a subagent's transcript moves to %s", moved)
+	}
+	if kept := contract.Relocate(res.HistoryRelocations, contract.RootPath{Root: contract.RootConfig, Path: "memory/notes.md"}); kept.Path != "memory/notes.md" {
+		t.Errorf("memory moves to %s", kept)
+	}
+
+	req.Load.Workspace = req.Layout.Workspace
+	if res, err = a.Provision(req); err != nil || len(res.HistoryRelocations) != 0 {
+		t.Errorf("the same workspace: %+v %v, want no relocation", res.HistoryRelocations, err)
+	}
+	req.Load.Harness.Version = "0.0.1"
+	if _, err = a.Provision(req); contract.CodeOf(err) != contract.CodeUnsupported {
+		t.Errorf("a Session another claude saved: %v, want unsupported", err)
+	}
+	req.Load = nil
+	if res, err = a.Provision(req); err != nil || len(res.HistoryRelocations) != 0 {
+		t.Errorf("no load: %+v %v, want no relocation", res.HistoryRelocations, err)
+	}
+}

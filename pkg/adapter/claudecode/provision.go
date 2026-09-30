@@ -10,6 +10,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 	"github.com/olesho/harness-wrapper/pkg/harness/claude"
+	tclaude "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 )
 
 // Limits on what one spec renders.
@@ -80,10 +81,34 @@ func hookSpec() *harnesscore.HookSpec {
 	return &harnesscore.HookSpec{ConfigPath: base.ConfigPath, Owner: hookOwner, Events: events}
 }
 
+// projectsDir is where claude keeps its transcripts, beneath the config root:
+// one directory per working directory, named for it (tclaude.EncodedCWD).
+const projectsDir = "projects"
+
+// relocations are where a saved Session's history goes in a new environment.
+// claude names a working directory's transcripts for its resolved path, so the
+// one directory the source's workspace named moves to the one the new
+// workspace names — a subagent's transcript, beneath it, with it — and nothing
+// inside is rewritten. Memory keeps its place.
+func relocations(load *contract.LoadSource, l contract.Layout) []contract.Relocation {
+	if load == nil {
+		return nil
+	}
+	from, to := tclaude.EncodedCWD(load.Workspace), tclaude.EncodedCWD(l.Workspace)
+	if from == to {
+		return nil
+	}
+	return []contract.Relocation{{
+		From: contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, from)},
+		To:   contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, to)},
+	}}
+}
+
 // Provision renders claude's configuration for the spec: settings.json with the
 // hooks, .claude.json with onboarding, bypass and workspace trust answered,
 // the persona, skills, memory, mcp.json and the workspace's CLAUDE.md, and
-// open_config with claude's arguments and environment.
+// open_config with claude's arguments and environment. For a request that
+// loads a saved Session it names the history's one relocation.
 func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
 	spec, l := req.Spec, req.Layout
 	invalid := func(field, format string, args ...any) error {
@@ -193,10 +218,11 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		Files:      files,
 		OpenConfig: oc,
 		HistoryRoots: []contract.RootPath{
-			{Root: contract.RootConfig, Path: "projects"},
+			{Root: contract.RootConfig, Path: projectsDir},
 			{Root: contract.RootConfig, Path: memoryDir},
 		},
-		SecretPaths: []contract.RootPath{{Root: contract.RootConfig, Path: ".credentials.json"}},
+		SecretPaths:        []contract.RootPath{{Root: contract.RootConfig, Path: ".credentials.json"}},
+		HistoryRelocations: relocations(req.Load, l),
 	}, nil
 }
 

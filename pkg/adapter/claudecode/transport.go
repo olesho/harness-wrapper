@@ -179,6 +179,13 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err := os.MkdirAll(cfg.Spool, 0o700); err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "spool: %v", err)
 	}
+	if req.Loaded {
+		// A loaded Session is its transcript: with none where claude looks,
+		// claude would start a conversation of its own under the same id.
+		if _, err := tclaude.Locate(id, cfg.WorkingDir, cfg.Env); err != nil {
+			return nil, openFailed(contract.OpenSessionNotFound, "the loaded session's transcript is not where claude looks: %v", err)
+		}
+	}
 	args := append(append(sessionArgs(req.Mode, id, cfg), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"), cfg.Args...)
 
 	t := &transport{

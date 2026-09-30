@@ -46,7 +46,9 @@ func init() { adapter.Register(Name, Profile{}) }
 var efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
 // Describe describes the profile. The harness version is hw's pin: the claude
-// the profile was verified against.
+// the profile was verified against. It loads the Sessions that claude saved,
+// and no other's: a version joins Load's sources once a Session it saved has
+// passed the kit's load scenarios at the pin (testdata/load).
 func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
@@ -55,7 +57,9 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible,
+			contract.CapSessionLoad,
 		},
+		Load:             &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialKind},
 		Spec: contract.SpecSupport{
