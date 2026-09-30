@@ -10,6 +10,9 @@
 //	SLOW <n>        reply "slow<i> " in <n> chunks, Server.ChunkDelay apart (default 40)
 //	STALL <s>       send message_start, then only pings for <s> seconds (default 60)
 //	TOOL <command>  a Bash tool_use running <command>; after its result, "TOOL DONE: <output>"
+//	AGENT <prompt>  an Agent tool_use running a general-purpose subagent on <prompt>, in the
+//	                foreground; the subagent's own request routes on <prompt>, and after its
+//	                result, "TOOL DONE: <output>"
 //	ERR <code> <k>  answer HTTP <code> the first <k> times this text is seen
 //	                (529 overloaded_error, 429 rate_limit_error, else api_error),
 //	                then "RECOVERED"
@@ -44,6 +47,10 @@ type Server struct {
 	// on the Responses API, the attempt after that many failures of an ERR
 	// 529 scenario answers overloaded. Set it to codex's stream_max_retries.
 	RetryBudget int
+	// KeepBodies keeps each request's body (Request.Body), for a test that
+	// reads what the harness sent the model: the conversation a resumed
+	// session carries, say. Set it before the first request.
+	KeepBodies bool
 
 	mu       sync.Mutex
 	seen     map[string]int
@@ -63,6 +70,12 @@ type Request struct {
 	Input  string
 	Stream bool
 	Model  string
+	// Auth is the credential the request came with: its Authorization
+	// header, or its x-api-key.
+	Auth string
+	// Body is the request as the harness sent it, when Server.KeepBodies is
+	// set.
+	Body []byte
 }
 
 // Start starts a mock on a loopback port.
@@ -124,7 +137,7 @@ func textOf(raw json.RawMessage) string {
 	return strings.Join(out, "\n")
 }
 
-var keywords = map[string]bool{"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "ERR": true, "BIG": true, "LIMIT": true}
+var keywords = map[string]bool{"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "ERR": true, "BIG": true, "LIMIT": true}
 
 // route finds the scenario in the last user message: its keyword line, or
 // else the result of the tool a scenario ran.
@@ -176,8 +189,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	auth := r.Header.Get("Authorization")
+	if auth == "" {
+		auth = r.Header.Get("x-api-key")
+	}
 	if strings.HasSuffix(r.URL.Path, "/responses") {
-		s.serveResponses(w, raw)
+		s.serveResponses(w, raw, auth)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/v1/messages") || strings.Contains(r.URL.Path, "count_tokens") {
@@ -189,11 +206,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(raw, &b)
 	scenario, toolResult := route(b)
 	system := textOf(b.System)
-	s.mu.Lock()
-	s.n++
-	s.requests = append(s.requests, Request{N: s.n, Scenario: scenario, System: system, Stream: b.Stream, Model: b.Model})
-	n := s.n
-	s.mu.Unlock()
+	n := s.record(Request{Scenario: scenario, System: system, Stream: b.Stream, Model: b.Model, Auth: auth}, raw)
 
 	words := strings.Fields(scenario)
 	arg := func(i, def int) int {
@@ -258,7 +271,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.reply(w, b, reply{text: "after stall", stall: time.Duration(arg(1, 60)) * time.Second})
 	case words[0] == "TOOL":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
-		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]string{"command": cmd, "description": "mock"}}})
+		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]any{"command": cmd, "description": "mock"}}})
+	case words[0] == "AGENT":
+		prompt := strings.TrimSpace(strings.TrimPrefix(scenario, "AGENT"))
+		s.reply(w, b, reply{tool: &tool{name: "Agent", input: map[string]any{
+			"description": "mock", "prompt": prompt, "subagent_type": "general-purpose", "run_in_background": false,
+		}}})
 	case words[0] == "BIG":
 		kib := arg(1, 512)
 		chunk := strings.Repeat("capacity ", 7282)[:64<<10]
@@ -272,6 +290,20 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// record keeps a request the mock is about to answer, with its body when
+// KeepBodies is set, and returns its number.
+func (s *Server) record(r Request, body []byte) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.n++
+	r.N = s.n
+	if s.KeepBodies {
+		r.Body = body
+	}
+	s.requests = append(s.requests, r)
+	return r.N
+}
+
 func (s *Server) fail(w http.ResponseWriter, n, code int, typ, msg string) {
 	payload, _ := json.Marshal(map[string]any{"type": "error", "error": map[string]string{"type": typ, "message": msg}})
 	w.Header().Set("content-type", "application/json")
@@ -283,7 +315,7 @@ func (s *Server) fail(w http.ResponseWriter, n, code int, typ, msg string) {
 
 type tool struct {
 	name  string
-	input map[string]string
+	input map[string]any
 }
 
 type reply struct {
