@@ -106,8 +106,9 @@ So:
   `config/sessions/YYYY/MM/DD/rollout-<time>-<thread>.jsonl`.
 - **`session_index.jsonl` carries the thread's name**, one JSON line per thread.
 - **`goals_1.sqlite` and `goals_1.sqlite-wal` together carry the goal.** codex
-  exits leaving the goal's row in the write-ahead log, so the database file
-  alone restores no goal, and says nothing about it. The `-shm` is not needed.
+  can exit with the goal's row still in the write-ahead log — in these runs it
+  did — and the database file alone then restores no goal, and says nothing
+  about it. The `-shm` is not needed.
 - The rollout does log a goal's update, as a `thread_goal_updated` event, but
   codex does not rebuild the goal from it.
 - `state_5.sqlite*`, `logs_2.sqlite*`, `memories_1.sqlite*`, `installation_id`,
@@ -204,27 +205,32 @@ mock, which answers at once and never completes a goal
 | | Turns codex started by itself | Model requests |
 |---|---|---|
 | Goal paused, thread resumed and left alone | 0 | 0 |
-| Goal set active | 116 | 115 |
+| Goal set active | 117 | 116 |
 | Thread resumed in a new process, goal active, nothing sent | 68 | 67 |
-| Reopened through the adapter, before any input | not seen by the adapter: the Session is `idle` | 51 |
+| Reopened through the adapter, before any input | 53, each reported as codex's own | |
 
-Then one input was sent through the adapter. The record reported it whole —
-`user_input`, `assistant_text` and a record-origin `turn_ended` — but no live
-`turn_ended` came in ten seconds, and the Session stayed `busy` while codex
-made 163 more requests that carried the prompt.
+Then one input was sent through the adapter, among those turns. It stopped the
+turn codex was on and was answered by a turn of its own: `completed`, with
+`PONG two`.
+
+This part was run with the adapter of `harness-adapter/1.1`, whose Codex
+transport follows the turns codex starts
+([ADR-013](../../docs/md/internal/decisions/adr-013-session-load-and-own-turns.md);
+what it rests on is in [probes/codexturns](../codexturns/FINDINGS.md)). The
+rest of this document stands as it was probed.
 
 Two things follow, neither of them made by Save or Load:
 
 - codex works on an active goal as soon as its thread is resumed, with no
   input. `goals` is a stable feature, on by default, and hw's rendered
   `config.toml` does not turn it off.
-- hw's Codex transport binds a turn to the input it sent. It has no place for
-  a turn codex started, and an input that lands among such turns never ends
-  for it.
+- A turn codex starts is a turn with no input. The adapter reports it as the
+  harness's own, and an input preempts it: the one that runs is interrupted,
+  and the input's turn is the input's alone.
 
 A Load restores a goal's row as it was saved. A Session saved with an active
-goal would therefore start working the moment it is reopened, as it does today
-after any park.
+goal therefore goes back to work the moment it is reopened, as it does after
+any park.
 
 ## What this changes in Step 2
 
@@ -237,17 +243,18 @@ after any park.
 3. **The seed is also the guard against a fresh conversation.** A Load fails
    when the record handle reads an empty record, before any open. After Open
    it compares the Session id with the saved one, which catches Codex. For
-   Claude Code the id is the same either way, so only the seed tells. A strict
-   reopen in hw 1.1 — fail with `session_not_found` instead of starting
-   fresh — would make the adapter refuse as the harness does.
+   Claude Code the id is the same either way, so only the seed tells. A reopen
+   with `loaded`, in interface 1.1, fails with `session_not_found` instead of
+   starting fresh: the adapter refuses as the harness does.
 4. **Codex's history grows by three files**: `session_index.jsonl`,
-   `goals_1.sqlite` and `goals_1.sqlite-wal`. Omitting the `-wal` loses the
-   goal without an error, so a Load has to read the name and the goal back
-   (`thread/read`, `thread/goal/get`) to keep the promise of no silent loss.
-   The interface has no operation for that today.
-5. **An active goal needs a decision before Codex goals are kept at all**:
-   teach hw's transport the turns codex starts, or render `goals = false` and
-   keep no goal, or have a Save refuse or pause an active one.
+   `goals_1.sqlite` and `goals_1.sqlite-wal`. Omitting the `-wal` can lose the
+   goal without an error, so the adapter reads the name and the goal back
+   (`thread/read`, `thread/goal/get`) when it opens a loaded thread, and
+   refuses one that lost either.
+5. **An active goal is saved as it is.** hw's transport follows the turns
+   codex starts for it, so a thread loaded with an active goal takes it up
+   again when it is reopened, and an input sent meanwhile gets a turn of its
+   own.
 6. **What is not saved, and need not be**: hw's submission markers, claude's
    `/tmp` task output, codex's other stores.
 

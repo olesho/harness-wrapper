@@ -1,6 +1,7 @@
 package saveload
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -45,20 +46,14 @@ type activeGoal struct {
 	// alone.
 	ResumedTurns    int `json:"active_turns_started_after_resume"`
 	ResumedRequests int `json:"active_model_requests_after_resume"`
-	// Adapter: the same thread reopened through the Harness Adapter.
-	AdapterIdleRequests     int    `json:"adapter_model_requests_before_any_input"`
-	AdapterIdlePhase        string `json:"adapter_phase_before_any_input"`
-	AdapterIdleObservations int    `json:"adapter_record_observations_before_any_input"`
-	AdapterInputEnded       bool   `json:"adapter_input_turn_ended"`
-	AdapterInputWait        string `json:"adapter_input_wait"`
-	AdapterInputError       string `json:"adapter_input_error,omitempty"`
-	// AdapterInputSeen: the observations the adapter delivered for the input,
-	// by kind and origin; AdapterInputRequests: the model requests that
-	// carried its prompt.
-	AdapterInputSeen     map[string]int `json:"adapter_input_observations"`
-	AdapterInputRequests int            `json:"adapter_model_requests_with_the_input"`
-	AdapterPhaseAfter    string         `json:"adapter_phase_after"`
-	AdapterRequests      int            `json:"adapter_model_requests_in_all"`
+	// Adapter: the same thread reopened through the Harness Adapter, which
+	// reports the turns codex starts for the goal as codex's own.
+	AdapterOwnTurns int `json:"adapter_own_turns_before_any_input"`
+	// AdapterInput*: one input sent while codex works on the goal. It stops
+	// codex's turn and is answered by a turn of its own.
+	AdapterInputOutcome string `json:"adapter_input_outcome"`
+	AdapterInputReply   string `json:"adapter_input_reply"`
+	AdapterInputError   string `json:"adapter_input_error,omitempty"`
 }
 
 // TestCodexActiveGoal is beside the gate: it shows why the probe saves a
@@ -66,8 +61,9 @@ type activeGoal struct {
 // works on an active goal by itself — it starts a turn when the goal is set,
 // and again when the thread is resumed — and the mock, which answers every
 // request at once and never completes the goal, makes it do so without end.
-// The Harness Adapter's Codex transport knows the turns it started; here it is
-// given a thread that starts its own.
+// The Harness Adapter's Codex transport follows those turns: it reports each
+// as codex's own, and an input sent among them is answered by a turn of its
+// own (probes/codexturns has what that rests on).
 func TestCodexActiveGoal(t *testing.T) {
 	p := start(t, codexCLI{}, modeMock)
 	const window = 2 * time.Second
@@ -114,42 +110,38 @@ func TestCodexActiveGoal(t *testing.T) {
 	b.close()
 	env.quiet(10 * time.Second)
 
-	// Through the adapter: a reopen from the record's end, no input, then one.
+	// Through the adapter: a reopen from the record's end, left alone for a
+	// moment, then one input. The Session is closed as soon as the input's
+	// turn ends: against this mock codex would go on for ever.
 	read, err := env.readRecord(id, cp)
 	fatalIf(t, err, "reading the record")
-	n = p.requestCount()
 	s2, err := env.open(contract.OpenReopen, id, read.CP)
 	fatalIf(t, err, "the reopen")
 	time.Sleep(window)
-	got.AdapterIdleRequests = p.requestCount() - n
-	got.AdapterIdlePhase = string(s2.s.State().Phase)
-	got.AdapterIdleObservations = len(recordOf(s2.snapshot()))
-	p.wait = 10 * time.Second
-	got.AdapterInputWait = p.wait.String()
-	const prompt = "PING two"
-	if _, err := s2.turn(prompt); err != nil {
-		got.AdapterInputError = p.rep.cleanErr(err)
-	} else {
-		got.AdapterInputEnded = true
-	}
-	got.AdapterPhaseAfter = string(s2.s.State().Phase)
-	got.AdapterInputSeen = map[string]int{}
 	for _, o := range s2.snapshot() {
-		if o.InputID != "" {
-			got.AdapterInputSeen[string(o.Kind)+" ("+string(o.Origin)+")"]++
+		if o.Kind == contract.KindTurnStarted && o.InputID == "" && o.TurnID != "" {
+			got.AdapterOwnTurns++
 		}
 	}
-	for _, r := range p.requests(n) {
-		if conv, err := p.h.Conversation(r.Body); err == nil {
-			for _, it := range conv {
-				if it.Role == "user" && it.Text == prompt {
-					got.AdapterInputRequests++
-					break
-				}
-			}
+	const input, prompt = "goal-input", "PING two"
+	p.wait = 30 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), contract.SendDeadline)
+	_, err = s2.s.Send(ctx, contract.Text(input, prompt))
+	cancel()
+	if err == nil {
+		var end contract.Observation
+		end, err = s2.await("turn_ended of "+input, func(o contract.Observation) bool {
+			return o.Kind == contract.KindTurnEnded && o.Origin == contract.OriginLive && o.InputID == input
+		})
+		var d contract.TurnEndedData
+		if err == nil {
+			err = end.Decode(&d)
 		}
+		got.AdapterInputOutcome, got.AdapterInputReply = string(d.Outcome), d.Text
 	}
-	got.AdapterRequests = p.requestCount() - n
+	if err != nil {
+		got.AdapterInputError = p.rep.cleanErr(err)
+	}
 	res, _, _ := s2.close()
 	if left := env.quiet(10 * time.Second); !res.Stopped || len(left) > 0 {
 		t.Errorf("codex did not stop: %+v, %d processes left", res, len(left))
@@ -166,5 +158,12 @@ func TestCodexActiveGoal(t *testing.T) {
 	}
 	if got.SetTurns == 0 || got.ResumedTurns == 0 {
 		t.Errorf("an active goal started %d turn(s) when set and %d when resumed: codex no longer works on a goal by itself, and FINDINGS.md is out of date", got.SetTurns, got.ResumedTurns)
+	}
+	if got.AdapterOwnTurns == 0 {
+		t.Errorf("the adapter reported none of the turns codex started for its goal")
+	}
+	if got.AdapterInputOutcome != string(contract.TurnCompleted) || got.AdapterInputReply != "PONG two" {
+		t.Errorf("an input sent while codex works on its goal: outcome %q, reply %q, error %q; want completed with PONG two",
+			got.AdapterInputOutcome, got.AdapterInputReply, got.AdapterInputError)
 	}
 }
