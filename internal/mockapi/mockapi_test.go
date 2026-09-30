@@ -77,8 +77,69 @@ func TestScenarios(t *testing.T) {
 	if resp.StatusCode != 429 || resp.Header.Get("anthropic-ratelimit-unified-status") != "rejected" {
 		t.Errorf("LIMIT: %d %q", resp.StatusCode, resp.Header.Get("anthropic-ratelimit-unified-status"))
 	}
+	// AGENT hands its prompt to a subagent, in the foreground.
+	resp = post(t, s, "AGENT PING 9", false)
+	var msg struct {
+		Content []struct {
+			Type  string         `json:"type"`
+			Name  string         `json:"name"`
+			Input map[string]any `json:"input"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&msg); err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if len(msg.Content) != 1 || msg.Content[0].Name != "Agent" || msg.Content[0].Input["prompt"] != "PING 9" || msg.Content[0].Input["run_in_background"] != false {
+		t.Errorf("AGENT: %+v", msg.Content)
+	}
 	reqs := s.Requests()
 	if len(reqs) == 0 || reqs[0].Scenario != "PING 7" || reqs[0].System != "PERSONA" {
 		t.Errorf("requests: %+v", reqs)
+	}
+}
+
+// A request is kept with the credential it came with, and with its body only
+// when the server is asked to keep bodies: on both APIs.
+func TestRequestsKeepTheCredentialAndTheBody(t *testing.T) {
+	send := func(s *Server, path, header, value, body string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, s.URL()+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(header, value)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	const (
+		messages  = `{"model":"m","messages":[{"role":"user","content":"PING 1"}]}`
+		responses = `{"model":"m","stream":true,"input":[{"type":"message","role":"user","content":"PING 2"}]}`
+	)
+
+	plain := Start()
+	defer plain.Close()
+	send(plain, "/v1/messages", "x-api-key", "key-a", messages)
+	if r := plain.Requests(); len(r) != 1 || r[0].Auth != "key-a" || r[0].Body != nil {
+		t.Errorf("without KeepBodies: %+v, want the credential and no body", r)
+	}
+
+	keep := Start()
+	defer keep.Close()
+	keep.KeepBodies = true
+	send(keep, "/v1/messages", "Authorization", "Bearer tok-b", messages)
+	send(keep, "/v1/responses", "Authorization", "Bearer tok-c", responses)
+	r := keep.Requests()
+	if len(r) != 2 {
+		t.Fatalf("requests: %+v", r)
+	}
+	if r[0].Auth != "Bearer tok-b" || string(r[0].Body) != messages {
+		t.Errorf("messages request: auth %q body %q", r[0].Auth, r[0].Body)
+	}
+	if r[1].Auth != "Bearer tok-c" || string(r[1].Body) != responses || r[1].Scenario != "PING 2" {
+		t.Errorf("responses request: auth %q body %q scenario %q", r[1].Auth, r[1].Body, r[1].Scenario)
 	}
 }

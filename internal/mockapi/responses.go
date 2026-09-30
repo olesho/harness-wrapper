@@ -105,7 +105,7 @@ func routeResponses(b responsesBody) (scenario string, toolResult *string) {
 	return "", nil
 }
 
-func (s *Server) serveResponses(w http.ResponseWriter, raw []byte) {
+func (s *Server) serveResponses(w http.ResponseWriter, raw []byte, auth string) {
 	var b responsesBody
 	_ = json.Unmarshal(raw, &b)
 	scenario, toolResult := routeResponses(b)
@@ -116,10 +116,7 @@ func (s *Server) serveResponses(w http.ResponseWriter, raw []byte) {
 			input = append(input, responsesText(it.Content))
 		}
 	}
-	s.mu.Lock()
-	s.n++
-	s.requests = append(s.requests, Request{N: s.n, Scenario: scenario, System: b.Instructions, Input: strings.Join(input, "\n"), Stream: b.Stream, Model: b.Model})
-	s.mu.Unlock()
+	s.record(Request{Scenario: scenario, System: b.Instructions, Input: strings.Join(input, "\n"), Stream: b.Stream, Model: b.Model, Auth: auth}, raw)
 
 	words := strings.Fields(scenario)
 	arg := func(i, def int) int {
