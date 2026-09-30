@@ -3,10 +3,15 @@
 // adapter through the interface and check it keeps the contract.
 //
 // A scenario speaks the prompt language of agentd's P11 mock Messages API
-// (PING, SLOW, STALL, TOOL, ERR, BIG, ASK, and LIMIT for a usage wall; see
-// fakeadapter), so it runs the same against the fake adapter as against a real
-// harness that talks to such a mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
+// (PING, SLOW, STALL, TOOL, ERR, BIG, ASK, LIMIT for a usage wall, and MKGOAL
+// and GOAL for work the harness does by itself; see fakeadapter), so it runs
+// the same against the fake adapter as against a real harness that talks to
+// such a mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
 // and every rule has a deliberately broken adapter that fails it.
+//
+// The kit plays the Supervisor's part too where a scenario needs one: Apply
+// writes a Provision result, and Save and Restore move a Session's history
+// from one agent's roots to another's, as an archive does.
 //
 //	func TestConformance(t *testing.T) {
 //	    conformance.Run(conformance.Testing(t), conformance.Fixture{...})
@@ -65,8 +70,16 @@ type Fixture struct {
 	// HideBinary makes the harness binary unavailable until restore is
 	// called; nil skips the scenario that needs it.
 	HideBinary func(t T) (restore func())
+	// Heard is what the Session's harness last sent its model, as text: the
+	// conversation it carries. A real harness's fixture reads it off the mock
+	// model API's last request; nil skips the checks that a loaded Session
+	// remembers.
+	Heard func(t T, s contract.Session) string
 	// Timeout bounds each wait; 20s when zero.
 	Timeout time.Duration
+	// Quiet is how long a harness that rests is watched for a turn it must
+	// not start; 1500ms when zero.
+	Quiet time.Duration
 	// Skip names scenarios the harness cannot run, with the reason.
 	Skip map[string]string
 }
@@ -76,6 +89,13 @@ func (f Fixture) timeout() time.Duration {
 		return f.Timeout
 	}
 	return 20 * time.Second
+}
+
+func (f Fixture) quiet() time.Duration {
+	if f.Quiet > 0 {
+		return f.Quiet
+	}
+	return 1500 * time.Millisecond
 }
 
 // scenario is one named scenario.
@@ -102,7 +122,7 @@ func Run(t T, f Fixture) {
 				t.Logf("skipped: %s", why)
 				return
 			}
-			c := &check{t: t, f: f, desc: f.Adapter.Describe()}
+			c := &check{t: t, f: f, desc: f.Adapter.Describe(), sent: map[string]bool{}}
 			defer c.cleanup()
 			func() {
 				defer func() {
@@ -125,6 +145,12 @@ type check struct {
 	f        Fixture
 	desc     contract.Descriptor
 	cleanups []func()
+	// sent is every input the scenario sent: a turn of none of them is one
+	// the harness started itself.
+	sent map[string]bool
+	// base, when set, is where the scenario's one agent has its roots; its
+	// agents each take a temporary directory otherwise.
+	base string
 }
 
 func (c *check) cleanup() {
@@ -156,13 +182,27 @@ func (c *check) has(cap contract.Capability) bool { return c.desc.Has(cap) }
 
 // agent is one agent's roots, provisioned.
 type agent struct {
+	base   string // the directory its roots are in
 	layout contract.Layout
 	result contract.ProvisionResult
 	cred   *contract.CredentialFile
 }
 
-func (c *check) newAgent() *agent {
-	base := c.t.TempDir()
+// roots makes an agent's roots, empty, with its credential staged. Their
+// paths are resolved, as a Supervisor's are: Provision is pure and cannot
+// resolve them, and a harness may name what it keeps for the resolved path of
+// its working directory.
+func (c *check) roots() *agent {
+	base := c.base
+	if base == "" {
+		base = c.t.TempDir()
+	} else if err := os.MkdirAll(base, 0o700); err != nil {
+		c.stop("setup", "layout: %v", err)
+	}
+	base, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		c.stop("setup", "layout: %v", err)
+	}
 	l := contract.Layout{
 		Home: filepath.Join(base, "home"), Config: filepath.Join(base, "config"),
 		Workspace: filepath.Join(base, "workspace"), Secrets: filepath.Join(base, "secrets"),
@@ -173,22 +213,42 @@ func (c *check) newAgent() *agent {
 			c.stop("setup", "layout: %v", err)
 		}
 	}
-	a := &agent{layout: l}
-	spec := c.f.Spec
+	a := &agent{base: base, layout: l}
 	if c.f.Credential != nil {
 		a.cred = c.f.Credential(c.t, l)
-		if a.cred != nil {
-			spec.Credential = &contract.CredentialRef{Kind: a.cred.Kind}
-		}
 	}
-	res, err := c.f.Adapter.Provision(contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: c.f.HarnessRoot, Layout: l, Spec: spec})
+	return a
+}
+
+// request is the Provision request for a's roots; load names a Session to
+// load into them.
+func (c *check) request(a *agent, load *contract.LoadSource) contract.ProvisionRequest {
+	spec := c.f.Spec
+	if a.cred != nil {
+		spec.Credential = &contract.CredentialRef{Kind: a.cred.Kind}
+	}
+	return contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: c.f.HarnessRoot, Layout: a.layout, Spec: spec, Load: load}
+}
+
+// provision renders a's configuration, adjusted as the fixture wants it.
+func (c *check) provision(a *agent, load *contract.LoadSource) (contract.ProvisionResult, error) {
+	res, err := c.f.Adapter.Provision(c.request(a, load))
+	if err != nil {
+		return contract.ProvisionResult{}, err
+	}
+	if c.f.Provisioned != nil {
+		c.f.Provisioned(c.t, a.layout, &res)
+	}
+	return res, nil
+}
+
+func (c *check) newAgent() *agent {
+	a := c.roots()
+	res, err := c.provision(a, nil)
 	if err != nil {
 		c.stop("provision.valid", "Provision: %v", err)
 	}
-	if c.f.Provisioned != nil {
-		c.f.Provisioned(c.t, l, &res)
-	}
-	if err := Apply(l, res); err != nil {
+	if err := Apply(a.layout, res); err != nil {
 		c.stop("provision.valid", "applying the result: %v", err)
 	}
 	a.result = res
@@ -453,6 +513,7 @@ func (c *check) openWatch(s contract.Session, rule string) (contract.Session, *h
 // send submits text and requires the receipt.
 func (c *check) send(s contract.Session, text string) string {
 	in := newInputID()
+	c.sent[in] = true
 	ctx, cancel := c.ctx()
 	defer cancel()
 	res, err := s.Send(ctx, contract.Text(in, text))

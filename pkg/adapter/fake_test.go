@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +25,10 @@ import (
 // record — one JSON line per entry — under the scratch root, which its Reader
 // reads back the way a real profile reads its harness's transcript: entries
 // with ids of their own, inputs by their native ids, turn ends as evidence.
+//
+// It keeps a Session's record in a directory named for the workspace, so a
+// Session is loaded into another environment by one relocation; and, given a
+// goal (MKGOAL), it starts turns of its own, as a SelfStarter.
 type fakeProfile struct {
 	tick time.Duration
 
@@ -46,7 +52,9 @@ func (p *fakeProfile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: fakeName, Version: "1.0.0", Adapter: "harness-wrapper adapter test"},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapRetryVisible, contract.CapRateLimits,
+			contract.CapSessionLoad, contract.CapAutonomousTurns,
 		},
+		Load:             &contract.LoadSupport{Formats: []int{2}, Sources: []string{"1.0.0"}},
 		CheckpointFormat: fakeCheckpoint1,
 		Spec: contract.SpecSupport{
 			Models:             contract.Models{Any: true},
@@ -66,15 +74,28 @@ func fakeBinary(root string) string { return filepath.Join(root, "bin", "fake") 
 
 func (p *fakeProfile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
 	cfg, _ := json.Marshal(fakeConfig{Binary: fakeBinary(req.HarnessRoot)})
-	return contract.ProvisionResult{
+	res := contract.ProvisionResult{
 		Files:        []contract.File{contract.TextFile(contract.RootConfig, "persona.md", "0600", req.Spec.Instructions.Persona)},
 		OpenConfig:   cfg,
 		HistoryRoots: []contract.RootPath{{Root: contract.RootScratch, Path: "fake"}},
-	}, nil
+	}
+	if l := req.Load; l != nil && l.Workspace != req.Layout.Workspace {
+		res.HistoryRelocations = []contract.Relocation{{
+			From: contract.RootPath{Root: contract.RootScratch, Path: "fake/" + fakeKey(l.Workspace)},
+			To:   contract.RootPath{Root: contract.RootScratch, Path: "fake/" + fakeKey(req.Layout.Workspace)},
+		}}
+	}
+	return res, nil
+}
+
+// fakeKey names the directory a workspace's Sessions are kept in.
+func fakeKey(workspace string) string {
+	sum := sha256.Sum256([]byte(workspace))
+	return "w" + hex.EncodeToString(sum[:8])
 }
 
 func fakeDir(l contract.Layout, session string) string {
-	return filepath.Join(l.Scratch, "fake", session)
+	return filepath.Join(l.Scratch, "fake", fakeKey(l.Workspace), session)
 }
 
 func (p *fakeProfile) Start(ctx context.Context, req Start) (Transport, error) {
@@ -107,6 +128,8 @@ func (p *fakeProfile) Start(ctx context.Context, req Start) (Transport, error) {
 	p.mu.Lock()
 	p.procs[id] = t
 	p.mu.Unlock()
+	// A harness with a goal goes back to work as it starts.
+	go t.work()
 	return t, nil
 }
 
@@ -137,8 +160,13 @@ type fakeTransport struct {
 
 	mu   sync.Mutex
 	turn *fakeTurn
-	gone bool
-	dead chan struct{}
+	// rest: a turn did not complete, and the harness starts none of its own
+	// until an input's turn does.
+	rest bool
+	// heard is the conversation the model was last given.
+	heard []string
+	gone  bool
+	dead  chan struct{}
 }
 
 type fakeTurn struct {
@@ -146,15 +174,48 @@ type fakeTurn struct {
 	interrupt chan struct{}
 	once      sync.Once
 	done      chan struct{}
+	// own: the harness started the turn itself; preempted: an input stopped
+	// it, and that input's turn follows.
+	own, preempted bool
+}
+
+// fakeGoal is what the harness works on by itself while it is active.
+type fakeGoal struct {
+	Objective string `json:"objective"`
+	Active    bool   `json:"active"`
+	// Turns counts the turns started for it; Seq names every turn the
+	// harness ever started itself in the Session.
+	Turns int `json:"turns"`
+	Seq   int `json:"seq"`
+}
+
+func (t *fakeTransport) goal() *fakeGoal {
+	b, err := os.ReadFile(filepath.Join(t.dir, "goal.json"))
+	if err != nil {
+		return nil
+	}
+	var g fakeGoal
+	if json.Unmarshal(b, &g) != nil {
+		return nil
+	}
+	return &g
+}
+
+func (t *fakeTransport) setGoal(g fakeGoal) {
+	b, _ := json.Marshal(g)
+	_ = os.WriteFile(filepath.Join(t.dir, "goal.json"), b, 0o600)
 }
 
 func (t *fakeTransport) SessionID() string { return t.id }
 
 // entry is one line of the fake's record.
 type fakeEntry struct {
-	ID       string              `json:"id"`
-	Type     string              `json:"type"`
-	Native   string              `json:"native,omitempty"`
+	ID     string `json:"id"`
+	Type   string `json:"type"`
+	Native string `json:"native,omitempty"`
+	// Auto is the native id of the turn the entry is of, one the harness
+	// started itself.
+	Auto     string              `json:"auto,omitempty"`
 	Text     string              `json:"text,omitempty"`
 	Message  string              `json:"message,omitempty"`
 	Outcome  string              `json:"outcome,omitempty"`
@@ -197,6 +258,23 @@ func (t *fakeTransport) Submit(ctx context.Context, s Submission) error {
 		t.mu.Unlock()
 		return &contract.Error{Code: contract.CodeExited, Certainty: contract.NotSubmitted, Message: "the harness exited"}
 	}
+	// A turn of the harness's own yields to the input.
+	for t.turn != nil && t.turn.own {
+		own := t.turn
+		own.preempted = true
+		t.mu.Unlock()
+		own.once.Do(func() { close(own.interrupt) })
+		select {
+		case <-own.done:
+		case <-ctx.Done():
+			return fmt.Errorf("%w: the harness's own turn did not stop: %v", ErrNotSubmitted, ctx.Err())
+		}
+		t.mu.Lock()
+	}
+	if t.gone {
+		t.mu.Unlock()
+		return &contract.Error{Code: contract.CodeExited, Certainty: contract.NotSubmitted, Message: "the harness exited"}
+	}
 	if t.turn != nil {
 		t.mu.Unlock()
 		return &contract.Error{Code: contract.CodeBusy, Certainty: contract.NotSubmitted, Message: "a turn runs"}
@@ -213,10 +291,107 @@ func (t *fakeTransport) Interrupt(context.Context) error {
 	t.mu.Lock()
 	ft := t.turn
 	t.mu.Unlock()
-	if ft != nil {
+	if ft != nil && !ft.own {
 		ft.once.Do(func() { close(ft.interrupt) })
 	}
 	return nil
+}
+
+// InterruptTurn stops the turn native, which the harness started itself.
+func (t *fakeTransport) InterruptTurn(_ context.Context, native string) error {
+	t.mu.Lock()
+	ft := t.turn
+	t.mu.Unlock()
+	if ft != nil && ft.own && ft.native == native {
+		ft.once.Do(func() { close(ft.interrupt) })
+	}
+	return nil
+}
+
+// work starts a turn of the harness's own when its goal is active and nothing
+// else runs.
+func (t *fakeTransport) work() {
+	t.mu.Lock()
+	if t.gone || t.turn != nil || t.rest {
+		t.mu.Unlock()
+		return
+	}
+	g := t.goal()
+	if g == nil || !g.Active {
+		t.mu.Unlock()
+		return
+	}
+	g.Turns++
+	g.Seq++
+	t.setGoal(*g)
+	ft := &fakeTurn{native: "g" + strconv.Itoa(g.Seq), own: true, interrupt: make(chan struct{}), done: make(chan struct{})}
+	t.turn = ft
+	t.mu.Unlock()
+	go t.runOwn(ft, *g)
+}
+
+// runOwn is the harness working on its goal for one turn: GOAL <n> <k> works
+// k ticks in each of its first n turns, and completes in the next.
+func (t *fakeTransport) runOwn(ft *fakeTurn, g fakeGoal) {
+	defer close(ft.done)
+	t.report(Event{Kind: Started, Auto: ft.native})
+	end := func(outcome contract.TurnOutcome, reply string) {
+		t.write(fakeEntry{Type: "end", Auto: ft.native, Outcome: string(outcome), Text: reply})
+		t.mu.Lock()
+		if t.gone {
+			t.mu.Unlock()
+			return
+		}
+		t.turn = nil
+		t.rest = outcome != contract.TurnCompleted && !ft.preempted
+		t.mu.Unlock()
+		t.report(Event{Kind: Ended, Auto: ft.native, Outcome: outcome, Text: reply})
+		if outcome == contract.TurnCompleted {
+			t.work()
+		}
+	}
+	words := strings.Fields(g.Objective)
+	n, k := 1, 1
+	if len(words) > 1 {
+		n, _ = strconv.Atoi(words[1])
+	}
+	if len(words) > 2 {
+		k, _ = strconv.Atoi(words[2])
+	}
+	text := "TOOL DONE"
+	if g.Turns <= n {
+		for i := 0; i < k; i++ {
+			switch t.wait(ft, t.p.tick) {
+			case "dead":
+				return
+			case "interrupt":
+				end(contract.TurnInterrupted, "")
+				return
+			}
+		}
+		text = "goal step " + strconv.Itoa(g.Turns)
+	} else {
+		g.Active = false
+		t.setGoal(g)
+	}
+	t.write(fakeEntry{Type: "assistant", Auto: ft.native, Message: "m-" + ft.native, Text: text})
+	end(contract.TurnCompleted, text)
+}
+
+// hear gives the model the conversation: every prompt and reply the record
+// holds.
+func (t *fakeTransport) hear() {
+	r := &fakeReader{path: filepath.Join(t.dir, "record.jsonl")}
+	lines, _, _ := r.lines(0)
+	var heard []string
+	for _, l := range lines {
+		if l.e.Type == "user" || l.e.Type == "assistant" {
+			heard = append(heard, l.e.Text)
+		}
+	}
+	t.mu.Lock()
+	t.heard = heard
+	t.mu.Unlock()
 }
 
 func (t *fakeTransport) Answer(context.Context, string, contract.Choice) error {
@@ -276,6 +451,7 @@ func (t *fakeTransport) run(ft *fakeTurn, text string) {
 		arg = strings.Join(words[1:], " ")
 	}
 	t.report(Event{Kind: Started, Native: ft.native})
+	t.hear()
 	msg := "m-" + ft.native
 	end := func(outcome contract.TurnOutcome, reply string, terr *contract.TurnError) {
 		t.write(fakeEntry{Type: "end", Native: ft.native, Outcome: string(outcome), Text: reply, Error: terr})
@@ -285,8 +461,13 @@ func (t *fakeTransport) run(ft *fakeTurn, text string) {
 			return
 		}
 		t.turn = nil
+		// The harness takes its own work up once an input's turn completes.
+		t.rest = outcome != contract.TurnCompleted
 		t.mu.Unlock()
 		t.report(Event{Kind: Ended, Native: ft.native, Outcome: outcome, Text: reply, Error: terr})
+		if outcome == contract.TurnCompleted {
+			t.work()
+		}
 	}
 	reply := func(s string) {
 		t.write(fakeEntry{Type: "assistant", Native: ft.native, Message: msg, Text: s})
@@ -359,6 +540,13 @@ func (t *fakeTransport) run(ft *fakeTurn, text string) {
 		end(contract.TurnErrored, "", &contract.TurnError{Class: contract.ErrorUsageLimit, HTTPStatus: 429})
 	case "BIG":
 		reply(strings.Repeat("x", n(64)<<10))
+	case "MKGOAL":
+		g := fakeGoal{Objective: arg, Active: true}
+		if old := t.goal(); old != nil {
+			g.Seq = old.Seq
+		}
+		t.setGoal(g)
+		reply("TOOL DONE")
 	default:
 		reply("ok")
 	}
@@ -399,8 +587,12 @@ func (r *fakeReader) rebuild() error {
 	return nil
 }
 
-// follow moves current past e, and returns the input e belongs to.
+// follow moves current past e, and returns the input e belongs to: none for
+// an entry of a turn the harness started itself.
 func (r *fakeReader) follow(e fakeEntry) string {
+	if e.Auto != "" {
+		return ""
+	}
 	if e.Type == "user" {
 		r.current = ""
 		if mk, ok := r.markers.ByNative(e.Native); ok {
@@ -480,7 +672,10 @@ func (r *fakeReader) Read(_ context.Context, max int) (Chunk, error) {
 func fakeItems(e fakeEntry, in string) []contract.Observation {
 	stamp := func(o contract.Observation) contract.Observation {
 		o.Entry = e.ID
-		if in != "" {
+		switch {
+		case e.Auto != "":
+			o.TurnID = AutoTurnID(e.Auto)
+		case in != "":
 			o.InputID, o.TurnID = in, TurnID(in)
 		}
 		return o
@@ -496,11 +691,15 @@ func fakeItems(e fakeEntry, in string) []contract.Observation {
 	case "api_error":
 		return []contract.Observation{stamp(contract.NewObservation(contract.KindAPIError, e.ID, contract.OriginRecord, e.Received, contract.APIErrorData{Class: contract.ErrorClass(e.Class), HTTPStatus: e.Status}))}
 	case "end":
-		if in == "" {
+		key := in
+		if e.Auto != "" {
+			key = AutoTurnID(e.Auto)
+		}
+		if key == "" {
 			return nil
 		}
 		text, _ := Truncate(e.Text)
-		return []contract.Observation{stamp(contract.NewObservation(contract.KindTurnEnded, in, contract.OriginRecord, e.Received, contract.TurnEndedData{Outcome: contract.TurnOutcome(e.Outcome), Text: text, Error: e.Error}))}
+		return []contract.Observation{stamp(contract.NewObservation(contract.KindTurnEnded, key, contract.OriginRecord, e.Received, contract.TurnEndedData{Outcome: contract.TurnOutcome(e.Outcome), Text: text, Error: e.Error}))}
 	}
 	return nil
 }
@@ -535,6 +734,7 @@ func (r *fakeReader) Recover(_ context.Context, m Marker) (contract.Recovered, e
 	found := false
 	for _, l := range lines {
 		switch {
+		case l.e.Auto != "":
 		case l.e.Type == "user" && l.e.Native == m.Native:
 			found = true
 		case l.e.Type == "user" && found:

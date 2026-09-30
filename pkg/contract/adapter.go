@@ -14,7 +14,8 @@ type Adapter interface {
 	// Provision renders the harness's files, argv and environment from a
 	// harness-neutral Agent Spec. It is pure: the same request always gives
 	// the same result, and it performs no I/O. The Supervisor writes the
-	// result (see ProvisionResult).
+	// result (see ProvisionResult). A request that loads a saved Session
+	// (ProvisionRequest.Load) is also told where that Session's history goes.
 	Provision(ProvisionRequest) (ProvisionResult, error)
 	// NewSession returns a Session handle in state unopened, without any I/O.
 	// The handle exists before opening starts, so an open can be watched and
@@ -34,10 +35,12 @@ type Session interface {
 	// idle, blocked or exited. Cancelling ctx abandons the open; the Host then
 	// calls Close.
 	Open(ctx context.Context) (OpenResult, error)
-	// Send submits one input. An error is an *Error carrying a Certainty.
+	// Send submits one input. An error is an *Error carrying a Certainty. A
+	// turn the harness started itself (capability autonomous_turns) is
+	// stopped first: the input's turn is the input's alone.
 	Send(ctx context.Context, in Input) (SendResult, error)
-	// Interrupt stops the named input's turn, only if it is still the current
-	// one.
+	// Interrupt stops the named turn — an input's, or one the harness
+	// started itself — only if it is still the current one.
 	Interrupt(ctx context.Context, req InterruptRequest) (InterruptOutcome, error)
 	// Answer resolves a prompt the harness raised (capability prompts).
 	Answer(ctx context.Context, promptID string, c Choice) error
@@ -58,7 +61,10 @@ type Session interface {
 // Record is a read-only handle on one Session's durable record.
 type Record interface {
 	// Observe delivers only record-origin items, from the checkpoint to the
-	// record's current end; then an empty batch with EndOfRecord set.
+	// record's current end; then an empty batch with EndOfRecord set. Read
+	// so with no checkpoint, a loaded Session's record gives the checkpoint
+	// its new history starts from; a record that reads empty is not where
+	// the harness looks.
 	Observe(ctx context.Context, wait time.Duration, maxBytes int) (Batch, error)
 	// Ack acknowledges a batch the Supervisor has committed.
 	Ack(batchID string) error

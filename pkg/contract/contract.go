@@ -8,6 +8,12 @@
 // names the specification uses, generated as JSON Schema (schema.json), for
 // where a type crosses a process boundary or is journaled.
 //
+// Minor 1 adds, each behind a capability: a saved Session loaded into a fresh
+// environment (session_load: ProvisionRequest.Load, history_relocations and
+// OpenRequest.Loaded), and the turns a harness starts with no input
+// (autonomous_turns: turn_started and turn_ended naming a turn and no input,
+// and an interrupt that names a turn).
+//
 // Two callers use an Adapter:
 //
 //   - the Supervisor, before any agent process exists, calls Describe and
@@ -31,7 +37,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.0"
+const Version = "harness-adapter/1.1"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -39,7 +45,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 0
+	Minor = 1
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

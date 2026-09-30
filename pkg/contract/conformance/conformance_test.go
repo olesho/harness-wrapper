@@ -48,7 +48,9 @@ func fakeFixture(t *testing.T, breaks string) Fixture {
 			}
 			return func() { _ = os.Rename(bin+".hidden", bin) }
 		},
+		Heard:   func(_ T, s contract.Session) string { return strings.Join(fakeadapter.Heard(s), "\n") },
 		Timeout: 10 * time.Second,
+		Quiet:   300 * time.Millisecond,
 	}
 }
 
@@ -110,6 +112,17 @@ var broken = map[string]struct{ rule, scenario string }{
 	"prompt-pending-maybe":    {"prompt.pending", "prompts"},
 	"idle-too-late":           {"interrupt.no-turn", "interrupt"},
 	"send-after-close":        {"close.send-after", "close-drain"},
+	"load-starts-fresh":       {"load.strict", "load-missing"},
+	"load-keeps-path":         {"load.record", "load"},
+	"load-any-source":         {"load.unsupported", "load-refused"},
+	"load-forgets":            {"load.history", "load"},
+	"load-drops-goal":         {"load.own-work", "load-autonomous"},
+	"auto-unreported":         {"auto.reported", "autonomous"},
+	"auto-send-busy":          {"auto.send", "autonomous"},
+	"auto-input-id":           {"auto.ids", "autonomous"},
+	"auto-interrupt-ignored":  {"auto.interrupt", "autonomous"},
+	"auto-restarts":           {"auto.rests", "autonomous"},
+	"auto-no-record-end":      {"auto.record", "autonomous"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule
@@ -133,7 +146,7 @@ func TestBrokenAdaptersFail(t *testing.T) {
 				ran = true
 				Run(r, Fixture{
 					Adapter: f.Adapter, HarnessRoot: f.HarnessRoot, Spec: f.Spec, Credential: f.Credential, Kill: f.Kill,
-					HideBinary: f.HideBinary, Timeout: 3 * time.Second, Skip: skipAllBut(want.scenario),
+					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: 3 * time.Second, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
 				})
 			}
 			if !ran {
@@ -157,4 +170,43 @@ func skipAllBut(name string) map[string]string {
 		}
 	}
 	return skip
+}
+
+// A saved Session kept as files loads as one saved a moment ago does: what
+// RecordSavedSession makes, written and read back, passes LoadSaved — and
+// fails it against an adapter that forgets.
+func TestSavedSessionLoads(t *testing.T) {
+	f := fakeFixture(t, "")
+	r := &recorder{t: t}
+	saved, ok := RecordSavedSession(r, f, filepath.Join(t.TempDir(), "source"), nil)
+	if !ok || len(r.failures) > 0 {
+		t.Fatalf("RecordSavedSession: %v", r.failures)
+	}
+	dir := t.TempDir()
+	if err := WriteSavedSession(dir, saved); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadSavedSession(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.SessionID != saved.SessionID || len(read.Files) != len(saved.Files) || len(read.Files) == 0 || read.Source != saved.Source {
+		t.Fatalf("read back %+v with %d files, wrote %+v with %d", read.Source, len(read.Files), saved.Source, len(saved.Files))
+	}
+	for i, file := range read.Files {
+		if w := saved.Files[i]; file.At != w.At || file.Mode != w.Mode || string(file.Content) != string(w.Content) {
+			t.Errorf("file %d read back as %s %v, wrote %s %v", i, file.At, file.Mode, w.At, w.Mode)
+		}
+	}
+	LoadSaved(Testing(t), f, read)
+
+	forgets := fakeFixture(t, "load-forgets")
+	forgets.Timeout = 3 * time.Second
+	LoadSaved(r, forgets, read)
+	for _, msg := range r.failures {
+		if strings.HasPrefix(msg, "[load.history]") {
+			return
+		}
+	}
+	t.Errorf("an adapter that forgets the saved conversation: no [load.history] failure; got %q", r.failures)
 }

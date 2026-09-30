@@ -24,6 +24,17 @@ func TurnID(inputID string) string {
 	return "t_" + hex.EncodeToString(sum[:16])
 }
 
+// AutoTurnID is the turn id of a turn the harness started with no input, from
+// the harness's own id for it: the same in the live Session and in every read
+// of its record, and never an input's turn id.
+func AutoTurnID(native string) string {
+	if len(native) <= 126 && contract.ValidID(native) {
+		return "a_" + native
+	}
+	sum := sha256.Sum256([]byte(native))
+	return "a_" + hex.EncodeToString(sum[:16])
+}
+
 // Truncate cuts a text field to contract.MaxObservationText, at a rune
 // boundary, and reports whether it cut.
 func Truncate(s string) (string, bool) {
@@ -42,16 +53,20 @@ type session struct {
 	req contract.OpenRequest
 	cur *cursor
 
-	mu         sync.Mutex
-	phase      contract.Phase
-	t          Transport
-	markers    *Markers
-	sessionID  string
-	instance   string
-	counter    int
-	turns      map[string]*turn // by input id
-	byNative   map[string]*turn
-	current    *turn // the turn the harness is on, nil when none
+	mu        sync.Mutex
+	phase     contract.Phase
+	t         Transport
+	markers   *Markers
+	sessionID string
+	instance  string
+	counter   int
+	turns     map[string]*turn // by input id
+	byNative  map[string]*turn
+	current   *turn // the input's turn the harness is on, nil when none
+	// auto is the turn the harness started itself and is on, nil when none;
+	// autos holds such turns by native id.
+	auto       *autoTurn
+	autos      map[string]*autoTurn
 	sending    bool
 	sendDone   chan struct{}
 	gate       *contract.Block
@@ -77,7 +92,15 @@ type turn struct {
 	interrupt               *interruptOp
 }
 
-// interruptOp is an input's one interrupt: repeats join it, and its outcome,
+// autoTurn is a turn the harness started with no input.
+type autoTurn struct {
+	native, turnID string
+	started, ended bool
+	endCh          chan struct{}
+	interrupt      *interruptOp
+}
+
+// interruptOp is a turn's one interrupt: repeats join it, and its outcome,
 // once established, is every repeat's answer.
 type interruptOp struct {
 	done    chan struct{}
@@ -90,6 +113,7 @@ func newSession(a *harnessAdapter, req contract.OpenRequest) *session {
 		phase:    contract.PhaseUnopened,
 		instance: randomHex(6),
 		turns:    map[string]*turn{}, byNative: map[string]*turn{},
+		autos:    map[string]*autoTurn{},
 		answered: map[string]contract.Choice{},
 		exited:   make(chan struct{}),
 		opened:   make(chan struct{}),
@@ -138,10 +162,19 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	}
 	t, err := s.a.p.Start(octx, Start{
 		Mode: s.req.Mode, SessionID: s.req.SessionID, OpenConfig: s.req.OpenConfig,
-		Layout: s.req.Layout, Credential: s.req.Credential, Report: s.report,
+		Layout: s.req.Layout, Credential: s.req.Credential, Loaded: s.req.Loaded, Report: s.report,
 	})
 	if err != nil {
 		return fail(err)
+	}
+	if s.req.Loaded && t.SessionID() != s.req.SessionID {
+		// A loaded Session continues under its saved id, or not at all.
+		got := t.SessionID()
+		t.Stop(context.Background(), 0)
+		return fail(&contract.Error{
+			Code: contract.CodeOpenFailed, Reason: contract.OpenSessionNotFound,
+			Message: fmt.Sprintf("the harness opened session %q, not the loaded %q", got, s.req.SessionID),
+		})
 	}
 	s.mu.Lock()
 	s.t, s.markers, s.sessionID = t, m, t.SessionID()
@@ -165,6 +198,10 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	}
 	if s.phase == contract.PhaseStarting {
 		s.phase = contract.PhaseIdle
+		if s.auto != nil {
+			// The harness took its own work up as it started.
+			s.phase = contract.PhaseBusy
+		}
 	}
 	st := s.stateLocked()
 	id := s.sessionID
@@ -196,6 +233,12 @@ func (s *session) report(ev Event) {
 	}
 	var obs []contract.Observation
 	s.mu.Lock()
+	if ev.Auto != "" {
+		obs = s.autoLocked(ev)
+		s.mu.Unlock()
+		s.cur.push(obs...)
+		return
+	}
 	t := s.byNative[ev.Native]
 	if t == nil && ev.Native == "" {
 		t = s.current
@@ -267,6 +310,87 @@ func (s *session) report(ev Event) {
 	s.cur.push(obs...)
 }
 
+// autoLocked takes an event of a turn the harness started itself: its
+// turn_started and turn_ended name the turn and no input, and while it runs
+// the Session is busy.
+func (s *session) autoLocked(ev Event) []contract.Observation {
+	if !s.has(contract.CapAutonomousTurns) || ev.Kind != Started && ev.Kind != Ended {
+		return nil
+	}
+	at := s.autos[ev.Auto]
+	if at == nil {
+		if len(s.autos) >= 64 { // the ended ones no interrupt will name again
+			for native, old := range s.autos {
+				if old.ended {
+					delete(s.autos, native)
+				}
+			}
+		}
+		at = &autoTurn{native: ev.Auto, turnID: AutoTurnID(ev.Auto), endCh: make(chan struct{})}
+		s.autos[ev.Auto] = at
+	}
+	observe := func(kind contract.Kind, data any) contract.Observation {
+		o := contract.NewObservation(kind, at.turnID, contract.OriginLive, ev.Time, data)
+		o.TurnID = at.turnID
+		return o
+	}
+	if at.ended || ev.Kind == Started && at.started {
+		return nil
+	}
+	var obs []contract.Observation
+	if !at.started {
+		at.started = true
+		obs = append(obs, observe(contract.KindTurnStarted, struct{}{}))
+	}
+	if ev.Kind == Started {
+		s.auto = at
+		if s.phase == contract.PhaseIdle {
+			s.phase = contract.PhaseBusy
+		}
+		return obs
+	}
+	at.ended = true
+	data := contract.TurnEndedData{Outcome: ev.Outcome, Error: ev.Error}
+	text, cut := Truncate(ev.Text)
+	data.Text = text
+	o := observe(contract.KindTurnEnded, data)
+	o.Truncated = cut
+	obs = append(obs, o)
+	close(at.endCh)
+	if op := at.interrupt; op != nil && op.outcome == "" {
+		op.outcome = interruptOutcome(ev.Outcome)
+		close(op.done)
+	}
+	if s.auto == at {
+		s.auto = nil
+	}
+	s.retry = nil
+	if s.phase == contract.PhaseExited || s.current != nil {
+		// An input is on its way in, or on the harness: its own turn's end
+		// says what the Session is next.
+		return obs
+	}
+	if b := s.blockFor(ev.Error); b != nil {
+		s.gate = b
+		s.phase = contract.PhaseBlocked
+		obs = append(obs, s.liveObs(contract.KindBlocked, s.liveKeyLocked(), nil, ev.Time, *b))
+		if b.Reason == contract.BlockUsageLimited && b.ResumeAt != nil {
+			s.armGateLocked(*b.ResumeAt)
+		}
+		return obs
+	}
+	s.restLocked()
+	return obs
+}
+
+// restLocked makes a busy Session idle once no turn runs, an input's or the
+// harness's own.
+func (s *session) restLocked() {
+	if s.phase == contract.PhaseBusy && s.current == nil && s.auto == nil {
+		s.phase = contract.PhaseIdle
+	}
+}
+
 // endLocked ends t: its turn_ended, the outcome an interrupt of it
 // establishes, and the admission gate when its error prevents the next input.
 func (s *session) endLocked(t *turn, ev Event) []contract.Observation {
@@ -309,9 +433,10 @@ func (s *session) endLocked(t *turn, ev Event) []contract.Observation {
 		}
 		return obs
 	}
-	if s.phase == contract.PhaseBusy || s.phase == contract.PhaseAwaitingAnswer {
-		s.phase = contract.PhaseIdle
+	if s.phase == contract.PhaseAwaitingAnswer {
+		s.phase = contract.PhaseBusy
 	}
+	s.restLocked()
 	return obs
 }
 
@@ -386,6 +511,10 @@ func (s *session) admitLocked() error {
 	case contract.PhaseIdle:
 		return nil
 	case contract.PhaseBusy:
+		if s.current == nil && s.auto != nil {
+			// The harness is on a turn of its own: Submit stops it first.
+			return nil
+		}
 		return refuse(contract.CodeBusy, "a turn is running")
 	case contract.PhaseAwaitingAnswer:
 		return refuse(contract.CodePromptPending, "a prompt awaits an answer")
@@ -473,6 +602,7 @@ func (s *session) Send(ctx context.Context, in contract.Input) (contract.SendRes
 		if freed {
 			delete(s.turns, in.InputID)
 		}
+		s.restLocked()
 		s.mu.Unlock()
 		code := contract.CodeInternal
 		if ce != nil {
@@ -499,11 +629,11 @@ func (s *session) Send(ctx context.Context, in contract.Input) (contract.SendRes
 // ---- Interrupt
 
 func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) (contract.InterruptOutcome, error) {
-	if !contract.ValidID(req.InputID) {
-		return "", &contract.Error{Code: contract.CodeProtocol, Field: "input_id", Message: fmt.Sprintf("%q is not an id", req.InputID)}
+	if err := req.Validate(); err != nil {
+		return "", err
 	}
-	if req.DeadlineMS != 0 && (req.Deadline() < contract.MinInterruptDeadline || req.Deadline() > contract.MaxInterruptDeadline) {
-		return "", &contract.Error{Code: contract.CodeProtocol, Field: "deadline_ms", Message: "out of range"}
+	if req.TurnID != "" && !s.has(contract.CapAutonomousTurns) {
+		return "", contract.Errorf(contract.CodeUnsupported, "%s starts no turn of its own to name", s.a.desc.Harness.Name)
 	}
 	deadline := time.NewTimer(req.Deadline())
 	defer deadline.Stop()
@@ -528,9 +658,12 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 		s.mu.Unlock()
 		return "", contract.Errorf(contract.CodeUnexpected, "interrupt in %s", s.phase)
 	}
+	if req.TurnID != "" {
+		return s.interruptAuto(ctx, req, deadline.C) // unlocks
+	}
 	t := s.turns[req.InputID]
 	switch {
-	case t == nil && s.current == nil:
+	case t == nil && s.current == nil && s.auto == nil:
 		s.mu.Unlock()
 		return contract.InterruptNoTurn, nil
 	case t == nil:
@@ -568,6 +701,61 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 		}
 	}
 	return s.awaitInterrupt(ctx, op, deadline.C)
+}
+
+// interruptAuto stops the turn req names by its turn id, one the harness
+// started itself, if it is the turn the harness is on. It is called with s.mu
+// held, and releases it.
+func (s *session) interruptAuto(ctx context.Context, req contract.InterruptRequest, deadline <-chan time.Time) (contract.InterruptOutcome, error) {
+	var at *autoTurn
+	for _, a := range s.autos {
+		if a.turnID == req.TurnID {
+			at = a
+		}
+	}
+	switch {
+	case at == nil && s.current == nil && s.auto == nil:
+		s.mu.Unlock()
+		return contract.InterruptNoTurn, nil
+	case at == nil:
+		s.mu.Unlock()
+		return contract.InterruptTooLate, nil
+	case at.interrupt != nil:
+		op := at.interrupt
+		s.mu.Unlock()
+		return s.awaitInterrupt(ctx, op, deadline)
+	case at.ended || at != s.auto:
+		s.mu.Unlock()
+		return contract.InterruptTooLate, nil
+	}
+	if s.phase == contract.PhaseExited {
+		s.mu.Unlock()
+		return "", contract.Errorf(contract.CodeInterruptUnconfirmed, "the harness exited; the turn's outcome is the record's")
+	}
+	tr, ok := s.t.(SelfStarter)
+	if !ok {
+		s.mu.Unlock()
+		return "", contract.Errorf(contract.CodeUnsupported, "%s starts no turn of its own to name", s.a.desc.Harness.Name)
+	}
+	op := &interruptOp{done: make(chan struct{})}
+	at.interrupt = op
+	s.mu.Unlock()
+
+	ictx, cancel := context.WithTimeout(ctx, req.Deadline())
+	err := tr.InterruptTurn(ictx, at.native)
+	cancel()
+	if err != nil {
+		s.mu.Lock()
+		if at.interrupt == op && op.outcome == "" {
+			at.interrupt = nil // never reached the harness: a repeat asks again
+		}
+		settled := op.outcome != ""
+		s.mu.Unlock()
+		if !settled {
+			return "", contract.Errorf(contract.CodeInterruptUnconfirmed, "%v", err)
+		}
+	}
+	return s.awaitInterrupt(ctx, op, deadline)
 }
 
 func (s *session) awaitInterrupt(ctx context.Context, op *interruptOp, deadline <-chan time.Time) (contract.InterruptOutcome, error) {
@@ -680,6 +868,9 @@ func (s *session) stateLocked() contract.State {
 	st := contract.State{Phase: s.phase}
 	if t := s.current; t != nil && !t.ended && (s.phase == contract.PhaseBusy || s.phase == contract.PhaseAwaitingAnswer) {
 		st.TurnID, st.InputID = t.turnID, t.inputID
+	}
+	if at := s.auto; at != nil && !at.ended && st.TurnID == "" && s.phase == contract.PhaseBusy {
+		st.TurnID = at.turnID
 	}
 	if s.prompt != nil {
 		p := *s.prompt
