@@ -1,12 +1,12 @@
 # Save and Load: can a Session continue in a fresh environment?
 
 **Probed:** claude 2.1.283 and codex 0.144.5, the versions hw pins, through
-hw's Harness Adapter at `v0.24.0-3-g0f2ba59`, on 2026-09-30. macOS arm64, and
+hw's Harness Adapter at `v0.24.0-5-g92409c9`, on 2026-09-30. macOS arm64, and
 Linux arm64 on two Lima VMs (Ubuntu, kernel 7.0; Debian, kernel 6.12) with the
 claude-code distribution agentd installed there. Mock runs use
-`internal/mockapi`. The live run is Claude Code on haiku under a
-`claude setup-token` token. **Codex has had no live run:** no credential was
-given for one.
+`internal/mockapi`. The live runs are on macOS: Claude Code on haiku under a
+`claude setup-token` token, and Codex on its default model under a ChatGPT
+login (see *The Codex live run's credential*).
 
 Rerun: [README.md](README.md). Each run's evidence is
 `evidence/<platform>/<harness>-<mode>.json`, with its tables beside it as `.md`.
@@ -15,40 +15,55 @@ Rerun: [README.md](README.md). Each run's evidence is
 stopped. Does it continue in an environment where every root has another path
 and the source is gone?
 
-**Yes for both against the mock** — on macOS, on Linux, and saved on one VM
-and loaded on the other — **and yes for Claude Code live. Codex live is
-pending, so the gate has not passed yet.** Nothing in a record had to be
-rewritten: Claude Code needs one directory renamed, Codex nothing.
+**Yes, for both.** Against the mock on macOS, on Linux, and saved on one VM
+and loaded on the other; and against each harness's live API. **Every required
+check of the gate passes.** Nothing in a record had to be rewritten: Claude
+Code needs one directory renamed, Codex nothing.
 
 ## The gate
 
 | What the plan's gate asks | Claude Code, mock | Claude Code, live | Codex, mock | Codex, live |
 |---|---|---|---|---|
-| The source is gone before the restore, and nothing reads or writes it after (`source.inaccessible`, `source.untouched`; across two VMs, `source.elsewhere`) | pass | pass | pass | pending |
+| The source is gone before the restore, and nothing reads or writes it after (`source.inaccessible`, `source.untouched`; across two VMs, `source.elsewhere`) | pass | pass | pass | pass |
 | The first resumed model request carries the earlier turns and the tool result (`load.history`) | pass | | pass | |
-| The live model recalls the nonce, with no tool and no fixture (`load.history`) | | pass | | pending |
-| The same native Session id (`load.same-session`) | pass | pass | pass | pending |
-| The record reader reaches the restored record's end; its checkpoint is at the last byte (`load.record-read`) | pass | pass | pass | pending |
-| Only new record events after the reopen (`load.new-events-only`) | pass | pass | pass | pending |
-| A stop and a second reopen keep what the restored Session added (`load.second-reopen`) | pass | pass | pass | pending |
-| The new working directory (`load.new-cwd`) | pass | pass | pass | pending |
-| The record is appended to, never rewritten (`load.no-rewrite`) | pass | pass | pass | pending |
+| The live model recalls the nonce, with no tool and no fixture (`load.history`) | | pass | | pass |
+| The same native Session id (`load.same-session`) | pass | pass | pass | pass |
+| The record reader reaches the restored record's end; its checkpoint is at the last byte (`load.record-read`) | pass | pass | pass | pass |
+| Only new record events after the reopen (`load.new-events-only`) | pass | pass | pass | pass |
+| A stop and a second reopen keep what the restored Session added (`load.second-reopen`) | pass | pass | pass | pass |
+| The new working directory (`load.new-cwd`) | pass | pass | pass | pass |
+| The record is appended to, never rewritten (`load.no-rewrite`) | pass | pass | pass | pass |
 | Every request carries the new environment's credential (`load.fresh-credential`) | pass | | pass | |
-| The thread's name and goal are kept (`load.aux`, `load.aux-kept`) | | | pass | pending |
-| Negative control: nothing restored (`negative.harness-refuses`, `negative.no-context`) | pass | pass | pass | pending |
+| The thread's name and goal are kept (`load.aux`, `load.aux-kept`) | | | pass | pass |
+| Negative control: nothing restored (`negative.harness-refuses`, `negative.no-context`) | pass | pass | pass | pass |
 
 The mock columns hold for all three mock runs of each harness: macOS, Linux,
-and Linux across two machines. Every required check passed in each: 15 for
-Claude Code and 18 for Codex on one machine, 11 and 13 when the archive came
-from another.
+and Linux across two machines. Every required check passed in each run: 15 for
+Claude Code and 18 for Codex against the mock on one machine, 11 and 13 when
+the archive came from another, 14 and 17 live.
 
-In the live run, turn one replied `PONG<nonce>` and turn two ran
+In each live run, turn one replied `PONG<nonce>` and turn two ran
 `echo <nonce T> | tee saveload-note.txt`. After the restore the model was asked
 "What exact word did you reply with in your very first answer in this
 conversation?" and answered with the nonce, using no tool. After a stop and a
 second reopen it was asked what the shell command had printed, and answered
 with nonce T. With nothing restored, the same first question got "This is the
-first message you've sent me in this conversation".
+first message in the conversation, so I have not given a prior answer" from
+Claude Code, and "None" from Codex.
+
+### The Codex live run's credential
+
+The adapter's Codex profile takes an OpenAI API key or a ChatGPT workspace's
+access token. The live run had neither: it ran on the ChatGPT login of the
+codex on the machine, which is not one of those kinds. The probe lent it
+itself, by setting codex's credential store to a file and giving each
+environment an `auth.json` with the login's access token, staged anew per
+environment and saved by no archive. The refresh token was never copied.
+
+So the Codex live run differs from an agentd agent's in how codex got its
+credential, and in nothing else: the same adapter, app-server, `thread/resume`
+and record reader. A run under one of the adapter's two kinds has not been
+made.
 
 ## What to save
 
@@ -96,8 +111,8 @@ So:
 - The rollout does log a goal's update, as a `thread_goal_updated` event, but
   codex does not rebuild the goal from it.
 - `state_5.sqlite*`, `logs_2.sqlite*`, `memories_1.sqlite*`, `installation_id`,
-  `.personality_migration` and `skills/**` are not needed: a load without them
-  passed every check.
+  `.personality_migration`, `skills/**` and, live, `models_cache.json` are not
+  needed: a load without them passed every check.
 - codex was seen to write nothing outside `CODEX_HOME` and the workspace.
 
 ## Relocation
@@ -191,12 +206,12 @@ mock, which answers at once and never completes a goal
 | Goal paused, thread resumed and left alone | 0 | 0 |
 | Goal set active | 116 | 115 |
 | Thread resumed in a new process, goal active, nothing sent | 68 | 67 |
-| Reopened through the adapter, before any input | not seen by the adapter: the Session is `idle` | 52 |
+| Reopened through the adapter, before any input | not seen by the adapter: the Session is `idle` | 51 |
 
 Then one input was sent through the adapter. The record reported it whole —
 `user_input`, `assistant_text` and a record-origin `turn_ended` — but no live
 `turn_ended` came in ten seconds, and the Session stayed `busy` while codex
-made 168 more requests that carried the prompt.
+made 163 more requests that carried the prompt.
 
 Two things follow, neither of them made by Save or Load:
 
@@ -238,7 +253,7 @@ after any park.
 
 ## Not covered
 
-- Codex against its real API.
+- Codex live under one of the adapter's own credential kinds.
 - A save taken mid-turn, or with record events not yet acknowledged. The probe
   saves after a settled turn and a drained close.
 - A conversation long enough for the harness to compact it.

@@ -1,0 +1,900 @@
+{
+  "harness": "codex",
+  "mode": "live",
+  "when": "2026-09-30T08:48:02Z",
+  "platform": "darwin/arm64",
+  "versions": {
+    "binary": "codex-cli 0.144.5",
+    "binary_sha256": "5e29ab10ca1171be158f7335dd6bd8ce1aaf9af1556939db36a5ee338be6f5f2",
+    "pinned": "0.144.5",
+    "adapter": "harness-wrapper (devel)",
+    "revision": "v0.24.0-5-g92409c9",
+    "contract": "harness-adapter/1.0",
+    "checkpoint_format": 1
+  },
+  "launches": [
+    {
+      "when": "source: the fresh open",
+      "command": "$WORK/source/harness/bin/codex app-server"
+    },
+    {
+      "when": "restored: the reopen",
+      "command": "$WORK/restored/candidate/agent/dist/bin/codex app-server"
+    }
+  ],
+  "source": {
+    "layout": {
+      "home": "$WORK/source/home",
+      "config": "$WORK/source/profile",
+      "workspace": "$WORK/source/workspace",
+      "secrets": "$WORK/source/secrets",
+      "scratch": "$WORK/source/spool"
+    },
+    "workspace_resolved": "$WORK/source/workspace",
+    "harness_root": "$WORK/source/harness",
+    "session_id": "01a0f17f-dc8c-7b92-92f5-398ff42ba104",
+    "record": "$WORK/source/profile/sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+    "credential": "a ChatGPT login's access token, lent in config/auth.json (no refresh token; codex's credential store set to file)"
+  },
+  "restored": {
+    "layout": {
+      "home": "$WORK/restored/candidate/agent/h",
+      "config": "$WORK/restored/candidate/agent/cfg",
+      "workspace": "$WORK/restored/candidate/agent/ws",
+      "secrets": "$WORK/restored/candidate/agent/sec",
+      "scratch": "$WORK/restored/candidate/agent/scr"
+    },
+    "workspace_resolved": "$WORK/restored/candidate/agent/ws",
+    "harness_root": "$WORK/restored/candidate/agent/dist",
+    "session_id": "01a0f17f-dc8c-7b92-92f5-398ff42ba104",
+    "record": "$WORK/restored/candidate/agent/cfg/sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+    "credential": "a ChatGPT login's access token, lent in config/auth.json (no refresh token; codex's credential store set to file)"
+  },
+  "relocations": null,
+  "inventory": [
+    {
+      "path": "config/.personality_migration",
+      "files": 1,
+      "bytes": 3,
+      "class": "other"
+    },
+    {
+      "path": "config/AGENTS.md",
+      "files": 1,
+      "bytes": 326,
+      "class": "rendered"
+    },
+    {
+      "path": "config/auth.json",
+      "files": 1,
+      "bytes": 3912,
+      "class": "secret"
+    },
+    {
+      "path": "config/config.toml",
+      "files": 1,
+      "bytes": 463,
+      "class": "rendered"
+    },
+    {
+      "path": "config/goals_1.sqlite",
+      "files": 1,
+      "bytes": 4096,
+      "class": "other",
+      "in": [
+        "candidate",
+        "rollout+goals",
+        "rollout+goals-wal",
+        "rollout+goals-db"
+      ]
+    },
+    {
+      "path": "config/goals_1.sqlite-shm",
+      "files": 1,
+      "bytes": 32768,
+      "class": "other",
+      "in": [
+        "candidate",
+        "rollout+goals"
+      ]
+    },
+    {
+      "path": "config/goals_1.sqlite-wal",
+      "files": 1,
+      "bytes": 61832,
+      "class": "other",
+      "in": [
+        "candidate",
+        "rollout+goals",
+        "rollout+goals-wal"
+      ]
+    },
+    {
+      "path": "config/installation_id",
+      "files": 1,
+      "bytes": 36,
+      "class": "other"
+    },
+    {
+      "path": "config/logs_2.sqlite",
+      "files": 1,
+      "bytes": 176128,
+      "class": "other"
+    },
+    {
+      "path": "config/logs_2.sqlite-shm",
+      "files": 1,
+      "bytes": 32768,
+      "class": "other"
+    },
+    {
+      "path": "config/logs_2.sqlite-wal",
+      "files": 1,
+      "bytes": 399672,
+      "class": "other"
+    },
+    {
+      "path": "config/memories_1.sqlite",
+      "files": 1,
+      "bytes": 40960,
+      "class": "other"
+    },
+    {
+      "path": "config/memories_1.sqlite-shm",
+      "files": 1,
+      "bytes": 32768,
+      "class": "other"
+    },
+    {
+      "path": "config/memories_1.sqlite-wal",
+      "files": 1,
+      "bytes": 65952,
+      "class": "other"
+    },
+    {
+      "path": "config/memory/notes.md",
+      "files": 1,
+      "bytes": 34,
+      "class": "history",
+      "in": [
+        "candidate",
+        "history-roots"
+      ]
+    },
+    {
+      "path": "config/models_cache.json",
+      "files": 1,
+      "bytes": 245362,
+      "class": "other"
+    },
+    {
+      "path": "config/session_index.jsonl",
+      "files": 1,
+      "bytes": 132,
+      "class": "other",
+      "in": [
+        "candidate",
+        "rollout+index"
+      ]
+    },
+    {
+      "path": "config/sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+      "files": 1,
+      "bytes": 36848,
+      "class": "history",
+      "in": [
+        "candidate",
+        "history-roots",
+        "rollout-only",
+        "rollout+index",
+        "rollout+goals",
+        "rollout+goals-wal",
+        "rollout+goals-db"
+      ]
+    },
+    {
+      "path": "config/skills/**",
+      "files": 50,
+      "bytes": 374701,
+      "class": "other"
+    },
+    {
+      "path": "config/state_5.sqlite",
+      "files": 1,
+      "bytes": 4096,
+      "class": "other"
+    },
+    {
+      "path": "config/state_5.sqlite-shm",
+      "files": 1,
+      "bytes": 32768,
+      "class": "other"
+    },
+    {
+      "path": "config/state_5.sqlite-wal",
+      "files": 1,
+      "bytes": 2377272,
+      "class": "other"
+    },
+    {
+      "path": "scratch/markers/**",
+      "files": 3,
+      "bytes": 351,
+      "class": "other"
+    },
+    {
+      "path": "workspace/AGENTS.md",
+      "files": 1,
+      "bytes": 49,
+      "class": "rendered"
+    },
+    {
+      "path": "workspace/saveload-note.txt",
+      "files": 1,
+      "bytes": 12,
+      "class": "other",
+      "in": [
+        "candidate"
+      ]
+    }
+  ],
+  "archives": [
+    {
+      "variant": "candidate",
+      "note": "the adapter's history_roots (config/sessions, config/memory) less its secret_paths, session_index.jsonl, goals_1.sqlite with its sidecars, and the workspace's note",
+      "bytes": 144896,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-shm",
+          "size": 32768,
+          "sha256": "2fdc7e82606644e2dde216600d1dd62c0602f66fc3c140bd6686f192352c6833"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "30fee3fbf3a3e918c1aedfc6625749f1bf36022b97388657618d0471e358512b"
+        },
+        {
+          "root": "config",
+          "path": "memory/notes.md",
+          "size": 34,
+          "sha256": "2ed284cd0b39afbf6d312a010a9c8a765faef340e1ec7b13d46dc62e1a41b63e"
+        },
+        {
+          "root": "config",
+          "path": "session_index.jsonl",
+          "size": 132,
+          "sha256": "bedc431975604a5ee268d83440c5acb2ed17c431841bf6f90e62bce67f9a0b4f"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        },
+        {
+          "root": "workspace",
+          "path": "saveload-note.txt",
+          "size": 12,
+          "sha256": "232901ac87aa7f7ac37d2c4e40cc3671b79e125015eadd36f6bf40a9292899ba"
+        }
+      ]
+    },
+    {
+      "variant": "history-roots",
+      "note": "the adapter's history_roots alone: what a delete archives today",
+      "bytes": 41472,
+      "entries": [
+        {
+          "root": "config",
+          "path": "memory/notes.md",
+          "size": 34,
+          "sha256": "2ed284cd0b39afbf6d312a010a9c8a765faef340e1ec7b13d46dc62e1a41b63e"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    },
+    {
+      "variant": "rollout-only",
+      "note": "the thread's rollout alone",
+      "bytes": 40448,
+      "entries": [
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+index",
+      "note": "the rollout and session_index.jsonl",
+      "bytes": 41472,
+      "entries": [
+        {
+          "root": "config",
+          "path": "session_index.jsonl",
+          "size": 132,
+          "sha256": "bedc431975604a5ee268d83440c5acb2ed17c431841bf6f90e62bce67f9a0b4f"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals",
+      "note": "the rollout and goals_1.sqlite with its sidecars",
+      "bytes": 141312,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-shm",
+          "size": 32768,
+          "sha256": "2fdc7e82606644e2dde216600d1dd62c0602f66fc3c140bd6686f192352c6833"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "30fee3fbf3a3e918c1aedfc6625749f1bf36022b97388657618d0471e358512b"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals-wal",
+      "note": "the rollout, goals_1.sqlite and its -wal, without its -shm",
+      "bytes": 108032,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "30fee3fbf3a3e918c1aedfc6625749f1bf36022b97388657618d0471e358512b"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals-db",
+      "note": "the rollout and goals_1.sqlite without its sidecars",
+      "bytes": 45056,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl",
+          "size": 36848,
+          "sha256": "1895b8018723ad9f24cd29aca601fbc14f2e9cb3e8412c7909590de35e1e12f1"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "source.turns",
+      "title": "two source turns: a reply with nonce A, a tool result with nonce T",
+      "required": true,
+      "result": "pass",
+      "detail": "turn 1 completed, reply \"PONGaf416f40ef7\"; turn 2 completed, 1 tool call(s), output \"Script completed\\nWall time 0.1 seconds\\nOutput:\\ntb3cfad2c23\""
+    },
+    {
+      "id": "source.stopped",
+      "title": "the source harness and its children stopped before anything is copied",
+      "required": true,
+      "result": "pass",
+      "detail": "Close: stopped=true drained=true err=\u003cnil\u003e; processes still naming the source: 0"
+    },
+    {
+      "id": "source.aux",
+      "title": "the Session's name and goal are set, and read back, before the save",
+      "required": true,
+      "result": "pass",
+      "detail": "goal=\"Keep the save and load probe's notes maa451586f1\", goal_status=\"paused\", name=\"saveload probe maa451586f1\"; err=\u003cnil\u003e; processes left: 0"
+    },
+    {
+      "id": "archive.standalone",
+      "title": "the candidate state is copied to a standalone archive, each file with its size and hash",
+      "required": true,
+      "result": "pass",
+      "detail": "7 files in the candidate archive; 7 variants saved"
+    },
+    {
+      "id": "source.inaccessible",
+      "title": "the source's roots are gone before the restore starts",
+      "required": true,
+      "result": "pass",
+      "detail": "the record's path: stat $WORK/source/profile/sessions/2026/09/30/rollout-2026-09-30T10-48-03-01a0f17f-dc8c-7b92-92f5-398ff42ba104.jsonl: no such file or directory; the kept copy: open $WORK/.gone-2fc4aa75bf: permission denied"
+    },
+    {
+      "id": "load.record-read",
+      "title": "the adapter's record reader reaches the restored record's end, with nothing published",
+      "required": true,
+      "result": "pass",
+      "detail": "6 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 36848 of the restored 36848 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
+    },
+    {
+      "id": "checkpoint.carried",
+      "title": "the source's checkpoint, given to the restored record",
+      "required": false,
+      "result": "info",
+      "detail": "the source's checkpoint (offset 36476, inode 250737987) on the restored file: 1 reset(s) [replaced], then all 6 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
+    },
+    {
+      "id": "load.history",
+      "title": "the live model recalls nonce A in the restored Session, without a tool",
+      "required": true,
+      "result": "pass",
+      "detail": "the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"PONGaf416f40ef7\", after 0 tool call(s); the prompt names no nonce: true"
+    },
+    {
+      "id": "load.same-session",
+      "title": "the Session reopens under its saved native id",
+      "required": true,
+      "result": "pass",
+      "detail": "saved 01a0f17f-dc8c-7b92-92f5-398ff42ba104, reopened 01a0f17f-dc8c-7b92-92f5-398ff42ba104"
+    },
+    {
+      "id": "load.new-events-only",
+      "title": "after the reopen from the seeded checkpoint, only the new turn's record events are delivered",
+      "required": true,
+      "result": "pass",
+      "detail": "3 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\"]; resets 0, faults 0"
+    },
+    {
+      "id": "load.aux",
+      "title": "the Session's name and goal are read back after the load",
+      "required": true,
+      "result": "pass",
+      "detail": "saved goal=\"Keep the save and load probe's notes maa451586f1\", goal_status=\"paused\", name=\"saveload probe maa451586f1\"; read back goal=\"Keep the save and load probe's notes maa451586f1\", goal_status=\"paused\", name=\"saveload probe maa451586f1\"; err=\u003cnil\u003e"
+    },
+    {
+      "id": "load.second-reopen",
+      "title": "after a stop and a second reopen, what the restored Session added is kept, and only new record events follow",
+      "required": true,
+      "result": "pass",
+      "detail": "the reply to \"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" was \"tb3cfad2c23\", after 0 tool call(s); reopened 01a0f17f-dc8c-7b92-92f5-398ff42ba104 from the checkpoint at offset 42867; 8 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no tools.\" \"Use your shell tool to run exactly this command: pwd — then reply with the command's output and nothing else.\"]; resets 0, faults 0"
+    },
+    {
+      "id": "load.new-cwd",
+      "title": "the resumed Session works in the new workspace",
+      "required": true,
+      "result": "pass",
+      "detail": "a tool run after the restore printed \"Script completed\\nWall time 0.1 seconds\\nOutput:\\n$WORK/restored/candidate/agent/ws\""
+    },
+    {
+      "id": "load.aux-kept",
+      "title": "the Session's name and goal are still there after two more turns and a second reopen",
+      "required": true,
+      "result": "pass",
+      "detail": "saved goal=\"Keep the save and load probe's notes maa451586f1\", goal_status=\"paused\", name=\"saveload probe maa451586f1\"; read back goal=\"Keep the save and load probe's notes maa451586f1\", goal_status=\"paused\", name=\"saveload probe maa451586f1\"; err=\u003cnil\u003e"
+    },
+    {
+      "id": "load.no-rewrite",
+      "title": "the restored record is appended to, its saved bytes unchanged: relocation moves paths, not contents",
+      "required": true,
+      "result": "pass",
+      "detail": "the first 36848 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 0"
+    },
+    {
+      "id": "load.memory",
+      "title": "the saved memory file is in the new memory directory",
+      "required": false,
+      "result": "info",
+      "detail": "memory/notes.md restored with the saved content: true"
+    },
+    {
+      "id": "negative.harness-refuses",
+      "title": "with no history restored, the harness alone refuses to resume the id",
+      "required": true,
+      "result": "pass",
+      "detail": "the harness has no record of the session: thread/resume: codex: no rollout found for thread id 01a0f17f-dc8c-7b92-92f5-398ff42ba104 (-32600)"
+    },
+    {
+      "id": "negative.empty-record",
+      "title": "with no history restored, the record reader finds an empty record",
+      "required": false,
+      "result": "info",
+      "detail": "0 observations, checkpoint false, end of record true, err=\u003cnil\u003e — the sign a Load must refuse on, before any open"
+    },
+    {
+      "id": "negative.no-context",
+      "title": "with no history restored, a reopen through the adapter fails or lacks the earlier context",
+      "required": true,
+      "result": "pass",
+      "detail": "the adapter opened a Session 01a0f180-73c4-7b53-8a9b-6e176c811bb8 (the saved id: false) — a fresh conversation, not an error; the reply to \"What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no tools.\" was \"None\"; err=\u003cnil\u003e"
+    },
+    {
+      "id": "source.untouched",
+      "title": "nothing was read from or written to the source while the restored Sessions ran",
+      "required": true,
+      "result": "pass",
+      "detail": "the source's path is still absent: true; its 76 files, kept out of reach, are unchanged: true"
+    }
+  ],
+  "records": [
+    {
+      "name": "source",
+      "observations": [
+        {
+          "id": "turn_started:source-1",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:03Z"
+        },
+        {
+          "id": "user_input:u:d8898b25-3662-470d-b84b-4f54d20a40e0",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:05Z",
+          "text": "Reply with exactly PONGaf416f40ef7 and nothing else."
+        },
+        {
+          "id": "rate_limit:6e5d645fe234.1",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:07Z"
+        },
+        {
+          "id": "assistant_text:msg_0650eba992eba7f3016abcccc74dfc87d2b394f0d80a5005ff:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:07Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "turn_ended:source-1",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:07Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "turn_ended:source-1",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "source-1",
+          "time": "2026-09-30T08:48:07Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "turn_started:source-2",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:08Z"
+        },
+        {
+          "id": "user_input:u:838b4719-6c05-42da-8440-e2175a15bb71",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:08Z",
+          "text": "Use your shell tool to run exactly this command: echo tb3cfad2c23 | tee saveload-note.txt — then reply with the comman…"
+        },
+        {
+          "id": "tool_use:call_h5Dqa0GyLPwnYtTLQNPxYDLo",
+          "kind": "tool_use",
+          "origin": "record",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:14Z",
+          "text": "exec \"const r = await tools.exec_command({\\\"cmd\\\":\\\"echo tb3cfad2c23 | tee saveload-note.txt\\\",\\\"workdir\\\":\\\"$WORK/sourc…"
+        },
+        {
+          "id": "rate_limit:6e5d645fe234.2",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:14Z"
+        },
+        {
+          "id": "tool_result:call_h5Dqa0GyLPwnYtTLQNPxYDLo",
+          "kind": "tool_result",
+          "origin": "record",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:14Z",
+          "text": "Script completed\nWall time 0.1 seconds\nOutput:\ntb3cfad2c23"
+        },
+        {
+          "id": "rate_limit:6e5d645fe234.3",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:17Z"
+        },
+        {
+          "id": "assistant_text:msg_0650eba992eba7f3016abcccd1605087d2b6d81a1d8944b2fa:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:17Z",
+          "text": "tb3cfad2c23"
+        },
+        {
+          "id": "turn_ended:source-2",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:17Z",
+          "text": "tb3cfad2c23"
+        },
+        {
+          "id": "turn_ended:source-2",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "source-2",
+          "time": "2026-09-30T08:48:17Z",
+          "text": "tb3cfad2c23"
+        }
+      ]
+    },
+    {
+      "name": "restored: read to the end before the reopen (not published)",
+      "observations": [
+        {
+          "id": "user_input:u:d8898b25-3662-470d-b84b-4f54d20a40e0",
+          "kind": "user_input",
+          "origin": "record",
+          "time": "2026-09-30T08:48:05Z",
+          "text": "Reply with exactly PONGaf416f40ef7 and nothing else."
+        },
+        {
+          "id": "assistant_text:msg_0650eba992eba7f3016abcccc74dfc87d2b394f0d80a5005ff:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "time": "2026-09-30T08:48:07Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "user_input:u:838b4719-6c05-42da-8440-e2175a15bb71",
+          "kind": "user_input",
+          "origin": "record",
+          "time": "2026-09-30T08:48:08Z",
+          "text": "Use your shell tool to run exactly this command: echo tb3cfad2c23 | tee saveload-note.txt — then reply with the comman…"
+        },
+        {
+          "id": "tool_use:call_h5Dqa0GyLPwnYtTLQNPxYDLo",
+          "kind": "tool_use",
+          "origin": "record",
+          "time": "2026-09-30T08:48:14Z",
+          "text": "exec \"const r = await tools.exec_command({\\\"cmd\\\":\\\"echo tb3cfad2c23 | tee saveload-note.txt\\\",\\\"workdir\\\":\\\"$WORK/sourc…"
+        },
+        {
+          "id": "tool_result:call_h5Dqa0GyLPwnYtTLQNPxYDLo",
+          "kind": "tool_result",
+          "origin": "record",
+          "time": "2026-09-30T08:48:14Z",
+          "text": "Script completed\nWall time 0.1 seconds\nOutput:\ntb3cfad2c23"
+        },
+        {
+          "id": "assistant_text:msg_0650eba992eba7f3016abcccd1605087d2b6d81a1d8944b2fa:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "time": "2026-09-30T08:48:17Z",
+          "text": "tb3cfad2c23"
+        }
+      ]
+    },
+    {
+      "name": "restored: the first Session after the reopen",
+      "observations": [
+        {
+          "id": "turn_started:restored-candidate-1",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:19Z"
+        },
+        {
+          "id": "user_input:u:fa88c23b-4ac2-47a0-8e82-b97d0af68189",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:21Z",
+          "text": "What exact word did you reply with in your very first answer in this conversation? Reply with that word only, and use no…"
+        },
+        {
+          "id": "rate_limit:7d55ad60199d.1",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:23Z"
+        },
+        {
+          "id": "assistant_text:msg_024815375df1853c016abcccd6d9b487d2b8fa3de9b11e2db2:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:23Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "turn_ended:restored-candidate-1",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:23Z",
+          "text": "PONGaf416f40ef7"
+        },
+        {
+          "id": "turn_ended:restored-candidate-1",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:48:23Z",
+          "text": "PONGaf416f40ef7"
+        }
+      ]
+    },
+    {
+      "name": "restored: the Session after the second reopen",
+      "observations": [
+        {
+          "id": "turn_started:restored-candidate-2",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:24Z"
+        },
+        {
+          "id": "user_input:u:e621d77f-5487-446a-b157-53d841e418b6",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:26Z",
+          "text": "Earlier in this conversation you ran a shell command for me. What did it print? Reply with that output only, and use no …"
+        },
+        {
+          "id": "rate_limit:98965f39d204.1",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:29Z"
+        },
+        {
+          "id": "assistant_text:msg_0742ff015ebda81c016abcccdd19c887d29d83a70a3400e3e8:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:29Z",
+          "text": "tb3cfad2c23"
+        },
+        {
+          "id": "turn_ended:restored-candidate-2",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:29Z",
+          "text": "tb3cfad2c23"
+        },
+        {
+          "id": "turn_ended:restored-candidate-2",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:48:29Z",
+          "text": "tb3cfad2c23"
+        },
+        {
+          "id": "turn_started:restored-candidate-3",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:30Z"
+        },
+        {
+          "id": "user_input:u:a8ed0a66-fdec-4c2e-b895-29c66af5dfa2",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:30Z",
+          "text": "Use your shell tool to run exactly this command: pwd — then reply with the command's output and nothing else."
+        },
+        {
+          "id": "rate_limit:98965f39d204.2",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:36Z"
+        },
+        {
+          "id": "tool_use:call_wUxoS0C2OXFa18p85l43cvc9",
+          "kind": "tool_use",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:36Z",
+          "text": "exec \"const r = await tools.exec_command({\\\"cmd\\\":\\\"pwd\\\",\\\"workdir\\\":\\\"$WORK/restored/candidate/agent/ws\\\",\\\"yield_time…"
+        },
+        {
+          "id": "tool_result:call_wUxoS0C2OXFa18p85l43cvc9",
+          "kind": "tool_result",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:36Z",
+          "text": "Script completed\nWall time 0.1 seconds\nOutput:\n$WORK/restored/candidate/agent/ws"
+        },
+        {
+          "id": "rate_limit:98965f39d204.3",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:40Z"
+        },
+        {
+          "id": "assistant_text:msg_0742ff015ebda81c016abccce6650487d2bfffa2206b180329:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:40Z",
+          "text": "$WORK/restored/candidate/agent/ws"
+        },
+        {
+          "id": "turn_ended:restored-candidate-3",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:40Z",
+          "text": "$WORK/restored/candidate/agent/ws"
+        },
+        {
+          "id": "turn_ended:restored-candidate-3",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:48:40Z",
+          "text": "$WORK/restored/candidate/agent/ws"
+        }
+      ]
+    }
+  ]
+}

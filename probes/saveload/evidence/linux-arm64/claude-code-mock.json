@@ -1,25 +1,25 @@
 {
   "harness": "claude-code",
   "mode": "mock",
-  "when": "2026-09-30T08:06:49Z",
+  "when": "2026-09-30T08:49:32Z",
   "platform": "linux/arm64",
   "versions": {
     "binary": "2.1.283 (Claude Code)",
     "binary_sha256": "346d294f0103d6fc0de11ac953579b5c62dfa90698a4cfc486b6f927c615e697",
     "pinned": "2.1.283",
     "adapter": "harness-wrapper (devel)",
-    "revision": "v0.24.0-3-g0f2ba59",
+    "revision": "v0.24.0-5-g92409c9",
     "contract": "harness-adapter/1.0",
     "checkpoint_format": 1
   },
   "launches": [
     {
       "when": "source: the fresh open",
-      "command": "$WORK/source/harness/bin/claude --session-id edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/source/profile/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions"
+      "command": "$WORK/source/harness/bin/claude --session-id 0ec085bb-4fe6-4078-86ad-4f34c397702a -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/source/profile/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions"
     },
     {
       "when": "restored: the reopen",
-      "command": "$WORK/restored/history-roots/agent/dist/bin/claude --resume edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100 -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/restored/history-roots/agent/cfg/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions"
+      "command": "$WORK/restored/history-roots/agent/dist/bin/claude --resume 0ec085bb-4fe6-4078-86ad-4f34c397702a -p --input-format stream-json --output-format stream-json --verbose --append-system-prompt-file $WORK/restored/history-roots/agent/cfg/persona.md --system-prompt-snapshot off --permission-mode bypassPermissions"
     }
   ],
   "source": {
@@ -32,8 +32,8 @@
     },
     "workspace_resolved": "$WORK/source/workspace",
     "harness_root": "$WORK/source/harness",
-    "session_id": "edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100",
-    "record": "$WORK/source/profile/projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl",
+    "session_id": "0ec085bb-4fe6-4078-86ad-4f34c397702a",
+    "record": "$WORK/source/profile/projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl",
     "credential": "claude_oauth_token in $WORK/source/secrets/claude-oauth-token"
   },
   "restored": {
@@ -46,8 +46,8 @@
     },
     "workspace_resolved": "$WORK/restored/history-roots/agent/ws",
     "harness_root": "$WORK/restored/history-roots/agent/dist",
-    "session_id": "edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100",
-    "record": "$WORK/restored/history-roots/agent/cfg/projects/-WORK-restored-history-roots-agent-ws/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl",
+    "session_id": "0ec085bb-4fe6-4078-86ad-4f34c397702a",
+    "record": "$WORK/restored/history-roots/agent/cfg/projects/-WORK-restored-history-roots-agent-ws/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl",
     "credential": "claude_oauth_token in $WORK/restored/history-roots/agent/sec/claude-oauth-token"
   },
   "relocations": [
@@ -66,13 +66,13 @@
     {
       "path": "config/.claude.json",
       "files": 1,
-      "bytes": 796,
+      "bytes": 797,
       "class": "rendered"
     },
     {
       "path": "config/backups/**",
       "files": 1,
-      "bytes": 273,
+      "bytes": 274,
       "class": "other"
     },
     {
@@ -91,9 +91,9 @@
       "class": "rendered"
     },
     {
-      "path": "config/projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl",
+      "path": "config/projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl",
       "files": 1,
-      "bytes": 39424,
+      "bytes": 40694,
       "class": "history",
       "in": [
         "history-roots",
@@ -101,16 +101,16 @@
       ]
     },
     {
-      "path": "config/projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.jsonl",
+      "path": "config/projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.jsonl",
       "files": 1,
-      "bytes": 19616,
+      "bytes": 19629,
       "class": "history",
       "in": [
         "history-roots"
       ]
     },
     {
-      "path": "config/projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.meta.json",
+      "path": "config/projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.meta.json",
       "files": 1,
       "bytes": 157,
       "class": "history",
@@ -121,13 +121,13 @@
     {
       "path": "config/settings.json",
       "files": 1,
-      "bytes": 4117,
+      "bytes": 4128,
       "class": "rendered"
     },
     {
       "path": "scratch/markers/**",
       "files": 4,
-      "bytes": 517,
+      "bytes": 518,
       "class": "other"
     },
     {
@@ -149,20 +149,20 @@
   "outside_the_roots": [
     {
       "root": "outside",
-      "path": "/tmp/claude-501/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/",
+      "path": "/tmp/claude-501/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/",
       "size": 0,
       "sha256": ""
     },
     {
       "root": "outside",
-      "path": "/tmp/claude-501/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/tasks/",
+      "path": "/tmp/claude-501/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/tasks/",
       "size": 0,
       "sha256": ""
     },
     {
       "root": "outside",
-      "path": "/tmp/claude-501/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/tasks/a079636ae59cb753a.output",
-      "size": 199,
+      "path": "/tmp/claude-501/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/tasks/a273fa2e635520125.output",
+      "size": 201,
       "sha256": ""
     }
   ],
@@ -170,50 +170,50 @@
     {
       "variant": "history-roots",
       "note": "the adapter's history_roots (config/projects, config/memory) less its secret_paths, and the workspace's note",
-      "bytes": 67072,
+      "bytes": 68608,
       "entries": [
         {
           "root": "config",
           "path": "memory/notes.md",
           "size": 34,
-          "sha256": "78cfeac05ae74bce6bafb8020e0d0c380881097eabf140cd9beb1a1c7d39f3fa"
+          "sha256": "12735838b7bd07259b5f47bc7f5768919715299f00e10debf61d088d1f737924"
         },
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl",
-          "size": 39424,
-          "sha256": "4cbfd31d4ab8f0537a6716d9c8ffa88a391162b42859e69bcff91a04c47277b1"
+          "path": "projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl",
+          "size": 40694,
+          "sha256": "3fb1143c9ee1c22d285241825e976d679c78eaefa9769b9eeffa3ed275290c62"
         },
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.jsonl",
-          "size": 19616,
-          "sha256": "ea0ec3840c8cc64de6915d510c514b6b614e40d8fc1bbe115b22e5b062f9a8fa"
+          "path": "projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.jsonl",
+          "size": 19629,
+          "sha256": "a509ac49bc6e41beaed1249a7f2452ae220fce3cd75435eb66f8ad7d8c1d9124"
         },
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.meta.json",
+          "path": "projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.meta.json",
           "size": 157,
-          "sha256": "d14e321fa5d9264fe45e0b35d9de34d87c7358bfe754975adc5eca66e9e4efce"
+          "sha256": "2e80db57510a6e8a13d7e354f6ac54b96855a49e3a4f3d177634d9ed0cc123a2"
         },
         {
           "root": "workspace",
           "path": "saveload-note.txt",
           "size": 12,
-          "sha256": "424618c24cf54b2d952f5147ccbab3555b17b03920cabf929a53cbffcc5d1dc1"
+          "sha256": "d9957fee963e7b5b78b3ffff1ef19b66afb60e475839d47fbaed97d9719d9acc"
         }
       ]
     },
     {
       "variant": "transcript-only",
       "note": "the Session's transcript alone",
-      "bytes": 42496,
+      "bytes": 44032,
       "entries": [
         {
           "root": "config",
-          "path": "projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl",
-          "size": 39424,
-          "sha256": "4cbfd31d4ab8f0537a6716d9c8ffa88a391162b42859e69bcff91a04c47277b1"
+          "path": "projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl",
+          "size": 40694,
+          "sha256": "3fb1143c9ee1c22d285241825e976d679c78eaefa9769b9eeffa3ed275290c62"
         }
       ]
     }
@@ -224,7 +224,7 @@
       "title": "two source turns: a reply with nonce A, a tool result with nonce T",
       "required": true,
       "result": "pass",
-      "detail": "turn 1 completed, reply \"PONG ab3d1aa89ab\"; turn 2 completed, 1 tool call(s), output \"t7bbcbbd73d\""
+      "detail": "turn 1 completed, reply \"PONG aa8af70d32e\"; turn 2 completed, 1 tool call(s), output \"t6ed5a5b13e\""
     },
     {
       "id": "source.subagent",
@@ -252,21 +252,21 @@
       "title": "the source's roots are gone before the restore starts",
       "required": true,
       "result": "pass",
-      "detail": "the record's path: stat $WORK/source/profile/projects/-WORK-source-workspace/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100.jsonl: no such file or directory; the kept copy: open $WORK/.gone-93efe93c4d: permission denied"
+      "detail": "the record's path: stat $WORK/source/profile/projects/-WORK-source-workspace/0ec085bb-4fe6-4078-86ad-4f34c397702a.jsonl: no such file or directory; the kept copy: open $WORK/.gone-f92d34c16a: permission denied"
     },
     {
       "id": "load.record-read",
       "title": "the adapter's record reader reaches the restored record's end, with nothing published",
       "required": true,
       "result": "pass",
-      "detail": "10 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 39424 of the restored 39424 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
+      "detail": "10 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 40694 of the restored 40694 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
     },
     {
       "id": "checkpoint.carried",
       "title": "the source's checkpoint, given to the restored record",
       "required": false,
       "result": "info",
-      "detail": "the source's checkpoint (offset 39424, inode 34654) on the restored file: 1 reset(s) [replaced], then all 10 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
+      "detail": "the source's checkpoint (offset 40694, inode 36229) on the restored file: 1 reset(s) [replaced], then all 10 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
     },
     {
       "id": "load.history",
@@ -280,14 +280,14 @@
       "title": "a subagent's record, saved beneath the Session's own, moves with it",
       "required": false,
       "result": "info",
-      "detail": "2 of 2 subagent file(s) restored with their saved content, at [projects/-WORK-restored-history-roots-agent-ws/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.jsonl projects/-WORK-restored-history-roots-agent-ws/edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100/subagents/agent-a079636ae59cb753a.meta.json]; the first resumed request carries the subagent's hand-back: true"
+      "detail": "2 of 2 subagent file(s) restored with their saved content, at [projects/-WORK-restored-history-roots-agent-ws/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.jsonl projects/-WORK-restored-history-roots-agent-ws/0ec085bb-4fe6-4078-86ad-4f34c397702a/subagents/agent-a273fa2e635520125.meta.json]; the first resumed request carries the subagent's hand-back: true"
     },
     {
       "id": "load.same-session",
       "title": "the Session reopens under its saved native id",
       "required": true,
       "result": "pass",
-      "detail": "saved edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100, reopened edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100"
+      "detail": "saved 0ec085bb-4fe6-4078-86ad-4f34c397702a, reopened 0ec085bb-4fe6-4078-86ad-4f34c397702a"
     },
     {
       "id": "load.new-events-only",
@@ -301,14 +301,14 @@
       "title": "after a stop and a second reopen, what the restored Session added is kept, and only new record events follow",
       "required": true,
       "result": "pass",
-      "detail": "request 8 carries the saved turns and the first restored turn; missing: []; err=\u003cnil\u003e; reopened edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100 from the checkpoint at offset 45914; 10 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"PING third\" \"TOOL pwd; cat saveload-note.txt\"]; resets 0, faults 0"
+      "detail": "request 8 carries the saved turns and the first restored turn; missing: []; err=\u003cnil\u003e; reopened 0ec085bb-4fe6-4078-86ad-4f34c397702a from the checkpoint at offset 47196; 10 record observations; ids the restored record already held: 0; dated no later than its last entry: 0; user inputs: [\"PING third\" \"TOOL pwd; cat saveload-note.txt\"]; resets 0, faults 0"
     },
     {
       "id": "load.new-cwd",
       "title": "the resumed Session works in the new workspace",
       "required": true,
       "result": "pass",
-      "detail": "a tool run after the restore printed \"$WORK/restored/history-roots/agent/ws\\nt7bbcbbd73d\""
+      "detail": "a tool run after the restore printed \"$WORK/restored/history-roots/agent/ws\\nt6ed5a5b13e\""
     },
     {
       "id": "load.workspace-file",
@@ -322,7 +322,7 @@
       "title": "the restored record is appended to, its saved bytes unchanged: relocation moves paths, not contents",
       "required": true,
       "result": "pass",
-      "detail": "the first 39424 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 1"
+      "detail": "the first 40694 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 1"
     },
     {
       "id": "load.memory",
@@ -343,7 +343,7 @@
       "title": "with no history restored, the harness alone refuses to resume the id",
       "required": true,
       "result": "pass",
-      "detail": "claude --resume: No conversation found with session ID: edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100"
+      "detail": "claude --resume: No conversation found with session ID: 0ec085bb-4fe6-4078-86ad-4f34c397702a"
     },
     {
       "id": "negative.empty-record",
@@ -357,7 +357,7 @@
       "title": "with no history restored, a reopen through the adapter fails or lacks the earlier context",
       "required": true,
       "result": "pass",
-      "detail": "the adapter opened a Session edf6f87a-a0c4-4c1a-9f0a-3a6a45ea6100 (the saved id: true) — a fresh conversation, not an error; request 12 has 4 items; a nonce among them: false (err=\u003cnil\u003e); err=\u003cnil\u003e"
+      "detail": "the adapter opened a Session 0ec085bb-4fe6-4078-86ad-4f34c397702a (the saved id: true) — a fresh conversation, not an error; request 12 has 4 items; a nonce among them: false (err=\u003cnil\u003e); err=\u003cnil\u003e"
     },
     {
       "id": "source.untouched",
@@ -395,7 +395,7 @@
         {
           "role": "user",
           "type": "text",
-          "text": "PING ab3d1aa89ab"
+          "text": "PING aa8af70d32e"
         },
         {
           "role": "system",
@@ -405,12 +405,12 @@
         {
           "role": "assistant",
           "type": "text",
-          "text": "PONG ab3d1aa89ab"
+          "text": "PONG aa8af70d32e"
         },
         {
           "role": "user",
           "type": "text",
-          "text": "TOOL echo t7bbcbbd73d | tee saveload-note.txt"
+          "text": "TOOL echo t6ed5a5b13e | tee saveload-note.txt"
         },
         {
           "role": "system",
@@ -421,12 +421,12 @@
           "role": "assistant",
           "type": "tool_use",
           "name": "Bash",
-          "text": "{\"command\":\"echo t7bbcbbd73d | tee saveload-note.txt\",\"description\":\"mock\"}"
+          "text": "{\"command\":\"echo t6ed5a5b13e | tee saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
           "role": "user",
           "type": "tool_result",
-          "text": "t7bbcbbd73d"
+          "text": "t6ed5a5b13e"
         },
         {
           "role": "system",
@@ -436,7 +436,7 @@
         {
           "role": "assistant",
           "type": "text",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
           "role": "user",
@@ -503,7 +503,7 @@
         {
           "role": "user",
           "type": "text",
-          "text": "PING ab3d1aa89ab"
+          "text": "PING aa8af70d32e"
         },
         {
           "role": "system",
@@ -513,12 +513,12 @@
         {
           "role": "assistant",
           "type": "text",
-          "text": "PONG ab3d1aa89ab"
+          "text": "PONG aa8af70d32e"
         },
         {
           "role": "user",
           "type": "text",
-          "text": "TOOL echo t7bbcbbd73d | tee saveload-note.txt"
+          "text": "TOOL echo t6ed5a5b13e | tee saveload-note.txt"
         },
         {
           "role": "system",
@@ -529,12 +529,12 @@
           "role": "assistant",
           "type": "tool_use",
           "name": "Bash",
-          "text": "{\"command\":\"echo t7bbcbbd73d | tee saveload-note.txt\",\"description\":\"mock\"}"
+          "text": "{\"command\":\"echo t6ed5a5b13e | tee saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
           "role": "user",
           "type": "tool_result",
-          "text": "t7bbcbbd73d"
+          "text": "t6ed5a5b13e"
         },
         {
           "role": "system",
@@ -544,7 +544,7 @@
         {
           "role": "assistant",
           "type": "text",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
           "role": "user",
@@ -645,175 +645,168 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:49Z"
+          "time": "2026-09-30T08:49:33Z"
         },
         {
-          "id": "rate_limit:01f0f4190c35.1",
+          "id": "rate_limit:3a61e0c1c38b.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:50Z"
+          "time": "2026-09-30T08:49:33Z"
         },
         {
           "id": "turn_ended:source-1",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "PONG ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PONG aa8af70d32e"
         },
         {
-          "id": "user_input:23097099-c697-4af1-a9c0-7345a8c4f696:0",
+          "id": "user_input:69bb0e55-e8b4-431a-ace5-e0301e5ee5af:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:49Z",
-          "text": "PING ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PING aa8af70d32e"
         },
         {
-          "id": "assistant_text:daf93e25-2aed-43a5-a07f-1ee53a0921f9:0",
+          "id": "assistant_text:72494e46-dfcf-4f2c-9822-b1b401579f16:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:49Z",
-          "text": "PONG ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PONG aa8af70d32e"
         },
         {
           "id": "turn_ended:source-1",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "source-1",
-          "time": "2026-09-30T08:06:49Z",
-          "text": "PONG ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PONG aa8af70d32e"
         },
         {
           "id": "turn_started:source-2",
           "kind": "turn_started",
           "origin": "live",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z"
-        },
-        {
-          "id": "rate_limit:01f0f4190c35.2",
-          "kind": "rate_limit",
-          "origin": "live",
-          "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z"
+          "time": "2026-09-30T08:49:33Z"
         },
         {
           "id": "turn_ended:source-2",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
-          "id": "user_input:17da5c81-dd3d-45c7-8b2d-237c92bc5f5d:0",
+          "id": "user_input:886ae2bb-3a46-4edc-9ae0-296e909e6707:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL echo t7bbcbbd73d | tee saveload-note.txt"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL echo t6ed5a5b13e | tee saveload-note.txt"
         },
         {
-          "id": "tool_use:toolu_dlshvulhnnxw",
+          "id": "tool_use:toolu_dlsisk3s4x1r",
           "kind": "tool_use",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "Bash {\"command\":\"echo t7bbcbbd73d | tee saveload-note.txt\",\"description\":\"mock\"}"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "Bash {\"command\":\"echo t6ed5a5b13e | tee saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
-          "id": "tool_result:toolu_dlshvulhnnxw",
+          "id": "tool_result:toolu_dlsisk3s4x1r",
           "kind": "tool_result",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "t6ed5a5b13e"
         },
         {
-          "id": "assistant_text:d78e5f26-d24d-4548-a18e-8726f8ddbffe:0",
+          "id": "assistant_text:d0e18615-be8d-4f73-ac20-9296a2915d3c:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
           "id": "turn_ended:source-2",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "source-2",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
-          "id": "tool_finished:toolu_dlshvulhnnxw",
+          "id": "tool_finished:toolu_dlsisk3s4x1r",
           "kind": "tool_finished",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
+          "time": "2026-09-30T08:49:33Z",
           "text": "Bash"
         },
         {
-          "id": "tool_started:toolu_dlshvulhnnxw",
+          "id": "tool_started:toolu_dlsisk3s4x1r",
           "kind": "tool_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "Bash {\"command\":\"echo t7bbcbbd73d | tee saveload-note.txt\",\"description\":\"mock\"}"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "Bash {\"command\":\"echo t6ed5a5b13e | tee saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
           "id": "turn_started:source-3",
           "kind": "turn_started",
           "origin": "live",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z"
+          "time": "2026-09-30T08:49:34Z"
         },
         {
-          "id": "rate_limit:01f0f4190c35.3",
+          "id": "rate_limit:3a61e0c1c38b.2",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z"
+          "time": "2026-09-30T08:49:34Z"
         },
         {
           "id": "turn_ended:source-3",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "TOOL DONE: [Subagent hand-back] The text below is the final report of a"
         },
         {
-          "id": "user_input:d6e89052-23fe-4a48-b7ca-507b4eef8725:0",
+          "id": "user_input:d2b61584-e2d8-4a3f-a2d9-939ab0947de3:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "AGENT PING sub"
         },
         {
-          "id": "tool_use:toolu_dlshvuw8thpp",
+          "id": "tool_use:toolu_dlsiske8i4gw",
           "kind": "tool_use",
           "origin": "record",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "Agent {\"description\":\"mock\",\"prompt\":\"PING sub\",\"run_in_background\":false,\"subagent_type\":\"general-purpose\"}"
         },
         {
-          "id": "tool_result:toolu_dlshvuw8thpp",
+          "id": "tool_result:toolu_dlsiske8i4gw",
           "kind": "tool_result",
           "origin": "record",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT…"
         },
         {
-          "id": "assistant_text:b2d4b6d5-5bd7-4b7f-859b-3d32ffaa3480:0",
+          "id": "assistant_text:a2185d7a-95b6-4156-82d2-05a905a6fafe:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "TOOL DONE: [Subagent hand-back] The text below is the final report of a"
         },
         {
@@ -821,34 +814,34 @@
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "source-3",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "TOOL DONE: [Subagent hand-back] The text below is the final report of a"
         },
         {
-          "id": "tool_finished:toolu_dlshvuw8thpp",
+          "id": "tool_finished:toolu_dlsiske8i4gw",
           "kind": "tool_finished",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "Agent"
         },
         {
-          "id": "tool_started:toolu_dlshvuw8thpp",
+          "id": "tool_started:toolu_dlsiske8i4gw",
           "kind": "tool_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "Agent {\"description\":\"mock\",\"prompt\":\"PING sub\",\"subagent_type\":\"general-purpose\",\"run_in_background\":false}"
         },
         {
-          "id": "subagent_started:a079636ae59cb753a",
+          "id": "subagent_started:a273fa2e635520125",
           "kind": "subagent_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z"
+          "time": "2026-09-30T08:49:34Z"
         },
         {
-          "id": "subagent_stopped:a079636ae59cb753a",
+          "id": "subagent_stopped:a273fa2e635520125",
           "kind": "subagent_stopped",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z"
+          "time": "2026-09-30T08:49:34Z"
         }
       ]
     },
@@ -856,73 +849,73 @@
       "name": "restored: read to the end before the reopen (not published)",
       "observations": [
         {
-          "id": "user_input:23097099-c697-4af1-a9c0-7345a8c4f696:0",
+          "id": "user_input:69bb0e55-e8b4-431a-ace5-e0301e5ee5af:0",
           "kind": "user_input",
           "origin": "record",
-          "time": "2026-09-30T08:06:49Z",
-          "text": "PING ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PING aa8af70d32e"
         },
         {
-          "id": "assistant_text:daf93e25-2aed-43a5-a07f-1ee53a0921f9:0",
+          "id": "assistant_text:72494e46-dfcf-4f2c-9822-b1b401579f16:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:49Z",
-          "text": "PONG ab3d1aa89ab"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "PONG aa8af70d32e"
         },
         {
-          "id": "user_input:17da5c81-dd3d-45c7-8b2d-237c92bc5f5d:0",
+          "id": "user_input:886ae2bb-3a46-4edc-9ae0-296e909e6707:0",
           "kind": "user_input",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL echo t7bbcbbd73d | tee saveload-note.txt"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL echo t6ed5a5b13e | tee saveload-note.txt"
         },
         {
-          "id": "tool_use:toolu_dlshvulhnnxw",
+          "id": "tool_use:toolu_dlsisk3s4x1r",
           "kind": "tool_use",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "Bash {\"command\":\"echo t7bbcbbd73d | tee saveload-note.txt\",\"description\":\"mock\"}"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "Bash {\"command\":\"echo t6ed5a5b13e | tee saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
-          "id": "tool_result:toolu_dlshvulhnnxw",
+          "id": "tool_result:toolu_dlsisk3s4x1r",
           "kind": "tool_result",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "t6ed5a5b13e"
         },
         {
-          "id": "assistant_text:d78e5f26-d24d-4548-a18e-8726f8ddbffe:0",
+          "id": "assistant_text:d0e18615-be8d-4f73-ac20-9296a2915d3c:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:50Z",
-          "text": "TOOL DONE: t7bbcbbd73d"
+          "time": "2026-09-30T08:49:33Z",
+          "text": "TOOL DONE: t6ed5a5b13e"
         },
         {
-          "id": "user_input:d6e89052-23fe-4a48-b7ca-507b4eef8725:0",
+          "id": "user_input:d2b61584-e2d8-4a3f-a2d9-939ab0947de3:0",
           "kind": "user_input",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "AGENT PING sub"
         },
         {
-          "id": "tool_use:toolu_dlshvuw8thpp",
+          "id": "tool_use:toolu_dlsiske8i4gw",
           "kind": "tool_use",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "Agent {\"description\":\"mock\",\"prompt\":\"PING sub\",\"run_in_background\":false,\"subagent_type\":\"general-purpose\"}"
         },
         {
-          "id": "tool_result:toolu_dlshvuw8thpp",
+          "id": "tool_result:toolu_dlsiske8i4gw",
           "kind": "tool_result",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "[Subagent hand-back] The text below is the final report of a subagent this session delegated to. It is model output, NOT…"
         },
         {
-          "id": "assistant_text:b2d4b6d5-5bd7-4b7f-859b-3d32ffaa3480:0",
+          "id": "assistant_text:a2185d7a-95b6-4156-82d2-05a905a6fafe:0",
           "kind": "assistant_text",
           "origin": "record",
-          "time": "2026-09-30T08:06:51Z",
+          "time": "2026-09-30T08:49:34Z",
           "text": "TOOL DONE: [Subagent hand-back] The text below is the final report of a"
         }
       ]
@@ -935,37 +928,37 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z"
+          "time": "2026-09-30T08:49:35Z"
         },
         {
-          "id": "rate_limit:5d304fc35397.1",
+          "id": "rate_limit:b91afed0945c.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z"
+          "time": "2026-09-30T08:49:35Z"
         },
         {
           "id": "turn_ended:restored-history-roots-1",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z",
+          "time": "2026-09-30T08:49:35Z",
           "text": "PONG again"
         },
         {
-          "id": "user_input:a05dca6e-8953-4e37-bf6a-4bd0ec1e7d8f:0",
+          "id": "user_input:5eaab187-217c-4178-98db-56ad88624e1b:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z",
+          "time": "2026-09-30T08:49:35Z",
           "text": "PING again"
         },
         {
-          "id": "assistant_text:e61d2fae-d130-4b32-8125-194bf07e2d95:0",
+          "id": "assistant_text:b4dfbd9e-d91e-4069-8d12-3f07155a5bc5:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z",
+          "time": "2026-09-30T08:49:35Z",
           "text": "PONG again"
         },
         {
@@ -973,7 +966,7 @@
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-1",
-          "time": "2026-09-30T08:06:52Z",
+          "time": "2026-09-30T08:49:35Z",
           "text": "PONG again"
         }
       ]
@@ -986,37 +979,37 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z"
+          "time": "2026-09-30T08:49:36Z"
         },
         {
-          "id": "rate_limit:9f3eab7968a5.1",
+          "id": "rate_limit:bcc3a1bb838a.1",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z"
+          "time": "2026-09-30T08:49:36Z"
         },
         {
           "id": "turn_ended:restored-history-roots-2",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z",
+          "time": "2026-09-30T08:49:36Z",
           "text": "PONG third"
         },
         {
-          "id": "user_input:7b19b872-f93a-4c1f-8b71-cecb4531ae97:0",
+          "id": "user_input:1daf403d-d9a2-464d-8d59-f7c36111855f:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z",
+          "time": "2026-09-30T08:49:36Z",
           "text": "PING third"
         },
         {
-          "id": "assistant_text:8425c87c-fb87-4d82-82c9-b119a80d0695:0",
+          "id": "assistant_text:c401c9cd-5b0b-4f37-acfb-9ccde29a38fb:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z",
+          "time": "2026-09-30T08:49:36Z",
           "text": "PONG third"
         },
         {
@@ -1024,7 +1017,7 @@
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-2",
-          "time": "2026-09-30T08:06:53Z",
+          "time": "2026-09-30T08:49:36Z",
           "text": "PONG third"
         },
         {
@@ -1032,75 +1025,75 @@
           "kind": "turn_started",
           "origin": "live",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z"
+          "time": "2026-09-30T08:49:37Z"
         },
         {
-          "id": "rate_limit:9f3eab7968a5.2",
+          "id": "rate_limit:bcc3a1bb838a.2",
           "kind": "rate_limit",
           "origin": "live",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z"
+          "time": "2026-09-30T08:49:37Z"
         },
         {
           "id": "turn_ended:restored-history-roots-3",
           "kind": "turn_ended",
           "origin": "live",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
-          "text": "TOOL DONE: $WORK/restored/history-ro"
+          "time": "2026-09-30T08:49:37Z",
+          "text": "TOOL DONE: $WORK/restored/history-r"
         },
         {
-          "id": "user_input:f8ace5d0-ecf7-483b-8330-3c1c8d097616:0",
+          "id": "user_input:70bf5d9a-b172-426c-8c0d-6b77a69f5726:0",
           "kind": "user_input",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
+          "time": "2026-09-30T08:49:37Z",
           "text": "TOOL pwd; cat saveload-note.txt"
         },
         {
-          "id": "tool_use:toolu_dlshvw9pqhpe",
+          "id": "tool_use:toolu_dlsislsdstsx",
           "kind": "tool_use",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
+          "time": "2026-09-30T08:49:37Z",
           "text": "Bash {\"command\":\"pwd; cat saveload-note.txt\",\"description\":\"mock\"}"
         },
         {
-          "id": "tool_result:toolu_dlshvw9pqhpe",
+          "id": "tool_result:toolu_dlsislsdstsx",
           "kind": "tool_result",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
-          "text": "$WORK/restored/history-roots/agent/ws\nt7bbcbbd73d"
+          "time": "2026-09-30T08:49:37Z",
+          "text": "$WORK/restored/history-roots/agent/ws\nt6ed5a5b13e"
         },
         {
-          "id": "assistant_text:35738d53-d669-4467-8bd7-d1d6236be1b4:0",
+          "id": "assistant_text:b7f09bed-6b85-46af-91e2-c13f6b4fdf01:0",
           "kind": "assistant_text",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
-          "text": "TOOL DONE: $WORK/restored/history-ro"
+          "time": "2026-09-30T08:49:37Z",
+          "text": "TOOL DONE: $WORK/restored/history-r"
         },
         {
           "id": "turn_ended:restored-history-roots-3",
           "kind": "turn_ended",
           "origin": "record",
           "input_id": "restored-history-roots-3",
-          "time": "2026-09-30T08:06:54Z",
-          "text": "TOOL DONE: $WORK/restored/history-ro"
+          "time": "2026-09-30T08:49:37Z",
+          "text": "TOOL DONE: $WORK/restored/history-r"
         },
         {
-          "id": "tool_finished:toolu_dlshvw9pqhpe",
+          "id": "tool_finished:toolu_dlsislsdstsx",
           "kind": "tool_finished",
           "origin": "record",
-          "time": "2026-09-30T08:06:54Z",
+          "time": "2026-09-30T08:49:37Z",
           "text": "Bash"
         },
         {
-          "id": "tool_started:toolu_dlshvw9pqhpe",
+          "id": "tool_started:toolu_dlsislsdstsx",
           "kind": "tool_started",
           "origin": "record",
-          "time": "2026-09-30T08:06:54Z",
+          "time": "2026-09-30T08:49:37Z",
           "text": "Bash {\"command\":\"pwd; cat saveload-note.txt\",\"description\":\"mock\"}"
         }
       ]

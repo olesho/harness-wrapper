@@ -2,23 +2,23 @@
   "codex": "codex-cli 0.144.5",
   "paused_turns_started": 0,
   "paused_model_requests": 0,
-  "active_turns_started_after_set": 74,
-  "active_model_requests_after_set": 73,
-  "active_turns_started_after_resume": 56,
-  "active_model_requests_after_resume": 55,
-  "adapter_model_requests_before_any_input": 41,
+  "active_turns_started_after_set": 72,
+  "active_model_requests_after_set": 71,
+  "active_turns_started_after_resume": 34,
+  "active_model_requests_after_resume": 33,
+  "adapter_model_requests_before_any_input": 43,
   "adapter_phase_before_any_input": "idle",
-  "adapter_record_observations_before_any_input": 41,
+  "adapter_record_observations_before_any_input": 42,
   "adapter_input_turn_ended": false,
   "adapter_input_wait": "10s",
   "adapter_input_error": "no turn_ended of goal-2 within 10s",
   "adapter_input_observations": {
     "assistant_text (record)": 1,
-    "rate_limit (live)": 137,
+    "rate_limit (live)": 144,
     "turn_ended (record)": 1,
     "user_input (record)": 1
   },
-  "adapter_model_requests_with_the_input": 136,
+  "adapter_model_requests_with_the_input": 143,
   "adapter_phase_after": "busy",
-  "adapter_model_requests_in_all": 196
+  "adapter_model_requests_in_all": 205
 }
