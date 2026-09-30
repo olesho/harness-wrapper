@@ -25,6 +25,14 @@ import (
 //	LIMIT           a usage wall: 429 usage_limit_reached, the primary window
 //	                at 100% and resetting an hour away, every time
 //	BIG <kib>       reply with <kib> KiB of text, in 64 KiB deltas
+//	MKGOAL <text>   a create_goal call with <text> as the goal's objective;
+//	                after its output, "TOOL DONE: <output>"
+//	GOAL <n> <k>    work on a goal: the first <n> times this text is seen,
+//	                reply "goal step <i>" in <k> deltas (default 1),
+//	                Server.ChunkDelay apart; the next time, an update_goal
+//	                call that marks the goal complete. It is a goal's
+//	                objective: codex repeats it in every turn it starts for
+//	                the goal.
 //	anything else   reply "ok"
 //
 // Every reply carries codex's rate-limit headers, so codex reports its usage.
@@ -194,6 +202,27 @@ func (s *Server) serveResponses(w http.ResponseWriter, raw []byte, auth string) 
 			chunks = append(chunks, chunk[:min(left, 64)<<10])
 		}
 		s.stream(w, response{chunks: chunks})
+	case words[0] == "MKGOAL":
+		objective := strings.TrimSpace(strings.TrimPrefix(scenario, "MKGOAL"))
+		s.stream(w, response{call: &call{name: "create_goal", args: map[string]any{"objective": objective}}})
+	case words[0] == "GOAL":
+		n, k := arg(1, 1), arg(2, 1)
+		s.mu.Lock()
+		s.seen[scenario]++
+		c := s.seen[scenario]
+		s.mu.Unlock()
+		switch {
+		case c <= n:
+			chunks := make([]string, k)
+			for i := range chunks {
+				chunks[i] = fmt.Sprintf("goal step %d.%d ", c, i)
+			}
+			s.stream(w, response{chunks: chunks, delay: s.ChunkDelay})
+		case c == n+1:
+			s.stream(w, response{call: &call{name: "update_goal", args: map[string]any{"status": "complete"}}})
+		default:
+			s.stream(w, response{text: "ok"})
+		}
 	default:
 		s.stream(w, response{text: "ok"})
 	}
