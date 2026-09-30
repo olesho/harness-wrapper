@@ -28,6 +28,11 @@ const (
 	// live run's credential.
 	envCodexKey   = "HW_SAVELOAD_CODEX_API_KEY_FILE"      //nolint:gosec // an environment variable's name
 	envCodexToken = "HW_SAVELOAD_CODEX_ACCESS_TOKEN_FILE" //nolint:gosec // an environment variable's name
+	// envCodexLogin names the auth.json of a codex logged in with ChatGPT
+	// (~/.codex/auth.json): the live run borrows that login. Neither of the
+	// adapter's credential kinds is such a login, so this run's credential
+	// does not travel as an agentd agent's would: see Adjust.
+	envCodexLogin = "HW_SAVELOAD_CODEX_LOGIN" //nolint:gosec // an environment variable's name
 	// envCodexModel names the live run's model; codex's default otherwise.
 	envCodexModel = "HW_SAVELOAD_CODEX_MODEL"
 )
@@ -53,8 +58,9 @@ func (codexCLI) Version(out string) string {
 }
 
 func (codexCLI) LiveReady() (bool, string) {
-	return os.Getenv(envCodexKey) != "" || os.Getenv(envCodexToken) != "",
-		envCodexKey + " names a file holding an OpenAI API key, or " + envCodexToken + " one holding a Codex access token"
+	return os.Getenv(envCodexKey) != "" || os.Getenv(envCodexToken) != "" || os.Getenv(envCodexLogin) != "",
+		envCodexKey + " names a file holding an OpenAI API key, " + envCodexToken + " one holding a Codex access token, or " +
+			envCodexLogin + " the auth.json of a ChatGPT login"
 }
 
 // Distribution is agentd's codex distribution: bin/codex, the native binary.
@@ -81,9 +87,64 @@ func (codexCLI) Spec(p *probe, memory []contract.MemoryFile) contract.AgentSpec 
 	return spec
 }
 
-// PointAt gives the rendered config.toml a model provider of its own at the
-// mock, the way the profile's own tests do.
-func (codexCLI) PointAt(mock *mockapi.Server, r *contract.ProvisionResult) error {
+// Adjust, in mock mode, gives the rendered config.toml a model provider of its
+// own at the mock, the way the profile's own tests do. In a live run on a
+// borrowed ChatGPT login it lends codex the login.
+func (c codexCLI) Adjust(p *probe, r *contract.ProvisionResult) (string, error) {
+	switch {
+	case p.mock != nil:
+		return "", c.pointAt(p.mock, r)
+	case os.Getenv(envCodexLogin) != "" && os.Getenv(envCodexKey) == "" && os.Getenv(envCodexToken) == "":
+		return c.lendLogin(os.Getenv(envCodexLogin), r)
+	}
+	return "", nil
+}
+
+// lendLogin gives the environment a ChatGPT login to run on: the login's
+// access token, in an auth.json of the environment's own, which codex reads
+// once its credential store is a file. The adapter's profile keeps codex's
+// credentials in memory and takes an API key or a workspace's access token,
+// so this is not how an agentd agent gets a credential; it is how a probe
+// borrows the one login at hand.
+//
+// The refresh token is never copied. A refresh token is spent when it is
+// used, and a copy that refreshed would log the lender out.
+func (codexCLI) lendLogin(from string, r *contract.ProvisionResult) (string, error) {
+	data, err := os.ReadFile(from) //nolint:gosec // the login the caller named
+	if err != nil {
+		return "", err
+	}
+	var login map[string]any
+	if err := json.Unmarshal(data, &login); err != nil {
+		return "", fmt.Errorf("%s: %w", from, err)
+	}
+	tokens, _ := login["tokens"].(map[string]any)
+	if access, _ := tokens["access_token"].(string); access == "" {
+		return "", fmt.Errorf("%s holds no ChatGPT login", from)
+	}
+	tokens["refresh_token"] = "withheld-by-the-saveload-probe"
+	lent, err := json.Marshal(login)
+	if err != nil {
+		return "", err
+	}
+	for i, f := range r.Files {
+		if f.Root != contract.RootConfig || f.Path != "config.toml" {
+			continue
+		}
+		const memory, file = `cli_auth_credentials_store = "ephemeral"`, `cli_auth_credentials_store = "file"`
+		if !strings.Contains(string(f.Content()), memory) {
+			return "", errors.New("the rendered config.toml names no credential store")
+		}
+		r.Files[i] = contract.TextFile(f.Root, f.Path, f.Mode, strings.Replace(string(f.Content()), memory, file, 1))
+		r.Files = append(r.Files, contract.TextFile(contract.RootConfig, "auth.json", "0600", string(lent)))
+		return "a ChatGPT login's access token, lent in config/auth.json (no refresh token; codex's credential store set to file)", nil
+	}
+	return "", errors.New("no config.toml rendered")
+}
+
+// pointAt gives the rendered config.toml a model provider of its own at the
+// mock.
+func (codexCLI) pointAt(mock *mockapi.Server, r *contract.ProvisionResult) error {
 	for i, f := range r.Files {
 		if f.Root != contract.RootConfig || f.Path != "config.toml" {
 			continue
@@ -113,6 +174,9 @@ func (codexCLI) Credential(p *probe, l contract.Layout, label string) *contract.
 		from := os.Getenv(envCodexKey)
 		if from == "" {
 			kind, name, from = codex.CredentialAccessToken, "codex-access-token", os.Getenv(envCodexToken)
+		}
+		if from == "" {
+			return nil // a borrowed ChatGPT login: Adjust lends it
 		}
 		b, err := os.ReadFile(from) //nolint:gosec // the credential file the caller named
 		if err != nil {

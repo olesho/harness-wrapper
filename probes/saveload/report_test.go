@@ -163,9 +163,9 @@ func newReport(p *probe, version string) *report {
 	return r
 }
 
-// secretLike matches what a real credential looks like; nothing of the kind
-// belongs in the evidence.
-var secretLike = regexp.MustCompile(`sk-[A-Za-z0-9_-]{24,}`)
+// secretLike matches what a real credential looks like — an API key, a signed
+// token; nothing of the kind belongs in the evidence.
+var secretLike = regexp.MustCompile(`sk-[A-Za-z0-9_-]{24,}|eyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}`)
 
 // clean makes a string fit for the evidence: the run's directories by name,
 // not by where this machine put them, and nothing shaped like a credential.
@@ -194,7 +194,7 @@ func (r *report) clean(s string) string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		s = strings.ReplaceAll(s, home, "~")
 	}
-	return secretLike.ReplaceAllString(s, "sk-…")
+	return secretLike.ReplaceAllString(s, "(credential withheld)")
 }
 
 func (r *report) cleanErr(err error) string {
@@ -214,8 +214,11 @@ func (r *report) environment(e *environment, sessionID, record string) environme
 		Workspace: r.clean(canonical(l.Workspace)), HarnessRoot: r.clean(e.root),
 		SessionID: sessionID, Record: r.clean(record),
 	}
-	if e.cred != nil {
+	switch {
+	case e.cred != nil:
 		shown.Credential = e.cred.Kind + " in " + r.clean(e.cred.File)
+	case e.credNote != "":
+		shown.Credential = e.credNote
 	}
 	return shown
 }

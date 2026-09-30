@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/olesho/harness-wrapper/internal/mockapi"
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/adapter/claudecode"
@@ -106,17 +105,20 @@ type claudeOpenConfig struct {
 	Spool      string   `json:"spool"`
 }
 
-// PointAt gives claude the mock's address, and few retries, the way the
-// profile's own tests do.
-func (claudeCode) PointAt(mock *mockapi.Server, r *contract.ProvisionResult) error {
+// Adjust gives claude the mock's address, and few retries, the way the
+// profile's own tests do. A live run takes the result as rendered.
+func (claudeCode) Adjust(p *probe, r *contract.ProvisionResult) (string, error) {
+	if p.mock == nil {
+		return "", nil
+	}
 	var cfg claudeOpenConfig
 	if err := json.Unmarshal(r.OpenConfig, &cfg); err != nil {
-		return err
+		return "", err
 	}
-	cfg.Env = append(cfg.Env, "ANTHROPIC_BASE_URL="+mock.URL(), "CLAUDE_CODE_MAX_RETRIES=2")
+	cfg.Env = append(cfg.Env, "ANTHROPIC_BASE_URL="+p.mock.URL(), "CLAUDE_CODE_MAX_RETRIES=2")
 	var err error
 	r.OpenConfig, err = json.Marshal(cfg)
-	return err
+	return "", err
 }
 
 // Credential stages the token where agentd's launcher does: a file named for

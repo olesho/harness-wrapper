@@ -41,7 +41,18 @@ HW_SAVELOAD_CLAUDE_TOKEN_FILE=~/.config/agentd-smoke/token \
 # (HW_SAVELOAD_CODEX_ACCESS_TOKEN_FILE). HW_SAVELOAD_CODEX_MODEL names a model.
 HW_SAVELOAD_CODEX_API_KEY_FILE=/path/to/key \
   go test -count=1 -v -timeout 30m -run 'TestCodexSaveLoadLive$' ./probes/saveload/
+
+# Codex, on the ChatGPT login of a codex on this machine.
+HW_SAVELOAD_CODEX_LOGIN=~/.codex/auth.json \
+  go test -count=1 -v -timeout 30m -run 'TestCodexSaveLoadLive$' ./probes/saveload/
 ```
+
+A borrowed ChatGPT login is not one of the adapter's credential kinds, so that
+run differs from an agentd agent's in how codex gets its credential, and in
+nothing else: the probe sets codex's credential store to a file and gives each
+environment an `auth.json` holding the login's access token. It never copies
+the refresh token, which is spent when it is used: a copy that refreshed would
+log the lender out. The run works while the access token lasts.
 
 | Variable | What it does |
 |---|---|
