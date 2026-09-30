@@ -1,0 +1,836 @@
+{
+  "harness": "codex",
+  "mode": "mock",
+  "when": "2026-09-30T08:07:22Z",
+  "platform": "linux/arm64",
+  "versions": {
+    "binary": "codex-cli 0.144.5",
+    "binary_sha256": "8f1d33626fd268dd5a530f39b6fcf68f3655f1d1b4e87a37b3381141cf4e44bc",
+    "pinned": "0.144.5",
+    "adapter": "harness-wrapper (devel)",
+    "revision": "v0.24.0-3-g0f2ba59",
+    "contract": "harness-adapter/1.0",
+    "checkpoint_format": 1
+  },
+  "launches": [
+    {
+      "when": "restored: the reopen",
+      "command": "$WORK/restored/candidate/agent/dist/bin/codex app-server"
+    }
+  ],
+  "source": {
+    "layout": {
+      "home": "$SOURCE/source/home",
+      "config": "$SOURCE/source/profile",
+      "workspace": "$SOURCE/source/workspace",
+      "secrets": "$SOURCE/source/secrets",
+      "scratch": "$SOURCE/source/spool"
+    },
+    "workspace_resolved": "$SOURCE/source/workspace",
+    "harness_root": "$SOURCE/source/harness",
+    "session_id": "01a0f15a-3af0-7fb0-a856-25a19ed358d8",
+    "record": "$SOURCE/source/profile/sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+    "credential": "openai_api_key in $SOURCE/source/secrets/openai-api-key"
+  },
+  "restored": {
+    "layout": {
+      "home": "$WORK/restored/candidate/agent/h",
+      "config": "$WORK/restored/candidate/agent/cfg",
+      "workspace": "$WORK/restored/candidate/agent/ws",
+      "secrets": "$WORK/restored/candidate/agent/sec",
+      "scratch": "$WORK/restored/candidate/agent/scr"
+    },
+    "workspace_resolved": "$WORK/restored/candidate/agent/ws",
+    "harness_root": "$WORK/restored/candidate/agent/dist",
+    "session_id": "01a0f15a-3af0-7fb0-a856-25a19ed358d8",
+    "record": "$WORK/restored/candidate/agent/cfg/sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+    "credential": "openai_api_key in $WORK/restored/candidate/agent/sec/openai-api-key"
+  },
+  "relocations": null,
+  "inventory": null,
+  "archives": [
+    {
+      "variant": "candidate",
+      "note": "the adapter's history_roots (config/sessions, config/memory) less its secret_paths, session_index.jsonl, goals_1.sqlite with its sidecars, and the workspace's note",
+      "bytes": 142848,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-shm",
+          "size": 32768,
+          "sha256": "d07a3c6e5de12429d94ab4bb99000b63c32c46fc9dc1b4455f65e387cae5baad"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "c0bda239d44869735cf2a654593c9d55b67168192a4031407584c1c92f723a4b"
+        },
+        {
+          "root": "config",
+          "path": "memory/notes.md",
+          "size": 34,
+          "sha256": "ae9c0e2cdf0a66fff946faf069eb0a2a4c0d1ea26286395d6c82b95d87473532"
+        },
+        {
+          "root": "config",
+          "path": "session_index.jsonl",
+          "size": 135,
+          "sha256": "c431b836d59119ffc4491a699c65a9e8dd114e42395ec11fd0d22ebd3e9e07cb"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        },
+        {
+          "root": "workspace",
+          "path": "saveload-note.txt",
+          "size": 12,
+          "sha256": "439094830d195a7f061ca425a53c280b8ccbb9c5afcb6068fdeaa5240636c29d"
+        }
+      ]
+    },
+    {
+      "variant": "history-roots",
+      "note": "the adapter's history_roots alone: what a delete archives today",
+      "bytes": 39936,
+      "entries": [
+        {
+          "root": "config",
+          "path": "memory/notes.md",
+          "size": 34,
+          "sha256": "ae9c0e2cdf0a66fff946faf069eb0a2a4c0d1ea26286395d6c82b95d87473532"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    },
+    {
+      "variant": "rollout-only",
+      "note": "the thread's rollout alone",
+      "bytes": 38400,
+      "entries": [
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+index",
+      "note": "the rollout and session_index.jsonl",
+      "bytes": 39936,
+      "entries": [
+        {
+          "root": "config",
+          "path": "session_index.jsonl",
+          "size": 135,
+          "sha256": "c431b836d59119ffc4491a699c65a9e8dd114e42395ec11fd0d22ebd3e9e07cb"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals",
+      "note": "the rollout and goals_1.sqlite with its sidecars",
+      "bytes": 139264,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-shm",
+          "size": 32768,
+          "sha256": "d07a3c6e5de12429d94ab4bb99000b63c32c46fc9dc1b4455f65e387cae5baad"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "c0bda239d44869735cf2a654593c9d55b67168192a4031407584c1c92f723a4b"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals-wal",
+      "note": "the rollout, goals_1.sqlite and its -wal, without its -shm",
+      "bytes": 105984,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "goals_1.sqlite-wal",
+          "size": 61832,
+          "sha256": "c0bda239d44869735cf2a654593c9d55b67168192a4031407584c1c92f723a4b"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    },
+    {
+      "variant": "rollout+goals-db",
+      "note": "the rollout and goals_1.sqlite without its sidecars",
+      "bytes": 43520,
+      "entries": [
+        {
+          "root": "config",
+          "path": "goals_1.sqlite",
+          "size": 4096,
+          "sha256": "4eeb710c739848e62f0d53d04057e17375b4af741c9b441f2a546f6ed860c79f"
+        },
+        {
+          "root": "config",
+          "path": "sessions/2026/09/30/rollout-2026-09-30T10-06-57-01a0f15a-3af0-7fb0-a856-25a19ed358d8.jsonl",
+          "size": 35111,
+          "sha256": "2792a69dfbdedaf0fc55d7755c604f7c671e84a0e4c21a3ec278351b9cfd2a55"
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "source.elsewhere",
+      "title": "the archive was saved on another machine, which this one cannot reach into",
+      "required": true,
+      "result": "pass",
+      "detail": "saved on lima-agentd-ubuntu (linux/arm64, codex-cli 0.144.5); loaded on lima-agentd-debian (linux/arm64)"
+    },
+    {
+      "id": "load.record-read",
+      "title": "the adapter's record reader reaches the restored record's end, with nothing published",
+      "required": true,
+      "result": "pass",
+      "detail": "6 observations in 1 batch(es), end of record true; the saved prompt, reply, tool call and tool result read: true true true true; checkpoint at offset 35111 of the restored 35111 bytes; resets 0, rescans 0, faults 0; err=\u003cnil\u003e"
+    },
+    {
+      "id": "checkpoint.carried",
+      "title": "the source's checkpoint, given to the restored record",
+      "required": false,
+      "result": "info",
+      "detail": "the source's checkpoint (offset 34739, inode 35027) on the restored file: 1 reset(s) [replaced], then all 6 observations delivered again — a checkpoint names the file it was made on, so a Load seeds its own"
+    },
+    {
+      "id": "load.history",
+      "title": "the first resumed model request carries the saved turns and the tool result",
+      "required": true,
+      "result": "pass",
+      "detail": "request 1 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items); the prompt names no nonce: true"
+    },
+    {
+      "id": "load.same-session",
+      "title": "the Session reopens under its saved native id",
+      "required": true,
+      "result": "pass",
+      "detail": "saved 01a0f15a-3af0-7fb0-a856-25a19ed358d8, reopened 01a0f15a-3af0-7fb0-a856-25a19ed358d8"
+    },
+    {
+      "id": "load.new-events-only",
+      "title": "after the reopen from the seeded checkpoint, only the new turn's record events are delivered",
+      "required": true,
+      "result": "pass",
+      "detail": "3 record observations; ids the restored record already held: 0; dates not compared: the record was saved under another machine's clock; user inputs: [\"PING again\"]; resets 0, faults 0"
+    },
+    {
+      "id": "load.aux",
+      "title": "the Session's name and goal are read back after the load",
+      "required": true,
+      "result": "pass",
+      "detail": "saved goal=\"Keep the save and load probe's notes m1bf12d9c36\", goal_status=\"paused\", name=\"saveload probe m1bf12d9c36\"; read back goal=\"Keep the save and load probe's notes m1bf12d9c36\", goal_status=\"paused\", name=\"saveload probe m1bf12d9c36\"; err=\u003cnil\u003e"
+    },
+    {
+      "id": "load.second-reopen",
+      "title": "after a stop and a second reopen, what the restored Session added is kept, and only new record events follow",
+      "required": true,
+      "result": "pass",
+      "detail": "request 2 carries the saved turns and the first restored turn; missing: []; err=\u003cnil\u003e; reopened 01a0f15a-3af0-7fb0-a856-25a19ed358d8 from the checkpoint at offset 40179; 8 record observations; ids the restored record already held: 0; dates not compared: the record was saved under another machine's clock; user inputs: [\"PING third\" \"TOOL pwd; cat saveload-note.txt\"]; resets 0, faults 0"
+    },
+    {
+      "id": "load.new-cwd",
+      "title": "the resumed Session works in the new workspace",
+      "required": true,
+      "result": "pass",
+      "detail": "a tool run after the restore printed \"Chunk ID: f7951f\\nWall time: 0.0000 seconds\\nProcess exited with code 0\\nOriginal token count: 20\\nOutput:\\n$WORK/restored/candidate/agent/ws\\nt4208ef251d\""
+    },
+    {
+      "id": "load.workspace-file",
+      "title": "a workspace file saved with the Session is read by a tool in the new workspace",
+      "required": false,
+      "result": "info",
+      "detail": "saveload-note.txt restored; the tool's output holds nonce T: true (a smoke check, not workspace fidelity)"
+    },
+    {
+      "id": "load.aux-kept",
+      "title": "the Session's name and goal are still there after two more turns and a second reopen",
+      "required": true,
+      "result": "pass",
+      "detail": "saved goal=\"Keep the save and load probe's notes m1bf12d9c36\", goal_status=\"paused\", name=\"saveload probe m1bf12d9c36\"; read back goal=\"Keep the save and load probe's notes m1bf12d9c36\", goal_status=\"paused\", name=\"saveload probe m1bf12d9c36\"; err=\u003cnil\u003e"
+    },
+    {
+      "id": "load.no-rewrite",
+      "title": "the restored record is appended to, its saved bytes unchanged: relocation moves paths, not contents",
+      "required": true,
+      "result": "pass",
+      "detail": "the first 35111 bytes of the continued record hash to the saved sha256: true; it grew: true; relocation rules: 0"
+    },
+    {
+      "id": "load.memory",
+      "title": "the saved memory file is in the new memory directory",
+      "required": false,
+      "result": "info",
+      "detail": "memory/notes.md restored with the saved content: true"
+    },
+    {
+      "id": "load.fresh-credential",
+      "title": "the restored Session's requests carry the credential staged for the new environment",
+      "required": true,
+      "result": "pass",
+      "detail": "4 requests with the new environment's credential, 0 with the source's, 0 with none"
+    },
+    {
+      "id": "negative.harness-refuses",
+      "title": "with no history restored, the harness alone refuses to resume the id",
+      "required": true,
+      "result": "pass",
+      "detail": "the harness has no record of the session: thread/resume: codex: no rollout found for thread id 01a0f15a-3af0-7fb0-a856-25a19ed358d8 (-32600)"
+    },
+    {
+      "id": "negative.empty-record",
+      "title": "with no history restored, the record reader finds an empty record",
+      "required": false,
+      "result": "info",
+      "detail": "0 observations, checkpoint false, end of record true, err=\u003cnil\u003e — the sign a Load must refuse on, before any open"
+    },
+    {
+      "id": "negative.no-context",
+      "title": "with no history restored, a reopen through the adapter fails or lacks the earlier context",
+      "required": true,
+      "result": "pass",
+      "detail": "the adapter opened a Session 01a0f15a-be78-7463-9068-3c090d425654 (the saved id: false) — a fresh conversation, not an error; request 11 has 5 items; a nonce among them: false (err=\u003cnil\u003e); err=\u003cnil\u003e"
+    }
+  ],
+  "variants": [
+    {
+      "variant": "history-roots",
+      "note": "the adapter's history_roots alone: what a delete archives today",
+      "files": 2,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "",
+        "goal_status": "",
+        "name": ""
+      },
+      "detail": "request 5 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    },
+    {
+      "variant": "rollout-only",
+      "note": "the thread's rollout alone",
+      "files": 1,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "",
+        "goal_status": "",
+        "name": ""
+      },
+      "detail": "request 6 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    },
+    {
+      "variant": "rollout+index",
+      "note": "the rollout and session_index.jsonl",
+      "files": 2,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "",
+        "goal_status": "",
+        "name": "saveload probe m1bf12d9c36"
+      },
+      "detail": "request 7 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    },
+    {
+      "variant": "rollout+goals",
+      "note": "the rollout and goals_1.sqlite with its sidecars",
+      "files": 4,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "Keep the save and load probe's notes m1bf12d9c36",
+        "goal_status": "paused",
+        "name": ""
+      },
+      "detail": "request 8 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    },
+    {
+      "variant": "rollout+goals-wal",
+      "note": "the rollout, goals_1.sqlite and its -wal, without its -shm",
+      "files": 3,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "Keep the save and load probe's notes m1bf12d9c36",
+        "goal_status": "paused",
+        "name": ""
+      },
+      "detail": "request 9 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    },
+    {
+      "variant": "rollout+goals-db",
+      "note": "the rollout and goals_1.sqlite without its sidecars",
+      "files": 2,
+      "conversation_continued": true,
+      "same_session_id": true,
+      "native_state": {
+        "goal": "",
+        "goal_status": "",
+        "name": ""
+      },
+      "detail": "request 10 carries the source's two turns — prompt, reply, tool call, tool result, reply — before the new prompt (13 items)"
+    }
+  ],
+  "requests": [
+    {
+      "name": "the first resumed request",
+      "n": 1,
+      "conversation": [
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cpermissions instructions\u003e\nFilesystem sandboxing defines whi…"
+        },
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cskills_instructions\u003e\n## Skills\nA skill is a set of instruct…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "# AGENTS.md instructions for $SOURCE/source/workspace\n\n\u003cINSTRUCTIONS\u003e\nYou are the agent of a save-and-load probe. Do exactly what each message asks, and be brief.\n\n## Memory\n\nYour memory is the direct…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "\u003cenvironment_context\u003e\n  \u003ccwd\u003e$SOURCE/source/workspace\u003c/cwd\u003e\n…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING a73d538c9c3"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "text": "PONG a73d538c9c3"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "TOOL echo t4208ef251d | tee saveload-note.txt"
+        },
+        {
+          "role": "assistant",
+          "type": "tool_use",
+          "name": "exec_command",
+          "text": "{\"cmd\":\"echo t4208ef251d | tee saveload-note.txt\",\"yield_time_ms\":5000}"
+        },
+        {
+          "role": "tool",
+          "type": "tool_result",
+          "text": "Chunk ID: 354e25\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 3\nOutput:\nt4208ef251d"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "text": "TOOL DONE: t4208ef251d"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "# AGENTS.md instructions for $WORK/restored/candidate/agent/ws\n\n\u003cINSTRUCTIONS\u003e\nThese AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\nYou are the agent of a save-and-loa…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "\u003cenvironment_context\u003e\n  \u003ccwd\u003e$WORK/restored/candidate/agent/…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING again"
+        }
+      ]
+    },
+    {
+      "name": "the first request after the second reopen",
+      "n": 2,
+      "conversation": [
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cpermissions instructions\u003e\nFilesystem sandboxing defines whi…"
+        },
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cskills_instructions\u003e\n## Skills\nA skill is a set of instruct…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "# AGENTS.md instructions for $SOURCE/source/workspace\n\n\u003cINSTRUCTIONS\u003e\nYou are the agent of a save-and-load probe. Do exactly what each message asks, and be brief.\n\n## Memory\n\nYour memory is the direct…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "\u003cenvironment_context\u003e\n  \u003ccwd\u003e$SOURCE/source/workspace\u003c/cwd\u003e\n…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING a73d538c9c3"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "text": "PONG a73d538c9c3"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "TOOL echo t4208ef251d | tee saveload-note.txt"
+        },
+        {
+          "role": "assistant",
+          "type": "tool_use",
+          "name": "exec_command",
+          "text": "{\"cmd\":\"echo t4208ef251d | tee saveload-note.txt\",\"yield_time_ms\":5000}"
+        },
+        {
+          "role": "tool",
+          "type": "tool_result",
+          "text": "Chunk ID: 354e25\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 3\nOutput:\nt4208ef251d"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "text": "TOOL DONE: t4208ef251d"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "# AGENTS.md instructions for $WORK/restored/candidate/agent/ws\n\n\u003cINSTRUCTIONS\u003e\nThese AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\nYou are the agent of a save-and-loa…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "\u003cenvironment_context\u003e\n  \u003ccwd\u003e$WORK/restored/candidate/agent/…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING again"
+        },
+        {
+          "role": "assistant",
+          "type": "text",
+          "text": "PONG again"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING third"
+        }
+      ]
+    },
+    {
+      "name": "the negative control's request",
+      "n": 11,
+      "conversation": [
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cpermissions instructions\u003e\nFilesystem sandboxing defines whi…"
+        },
+        {
+          "role": "developer",
+          "type": "text",
+          "text": "\u003cskills_instructions\u003e\n## Skills\nA skill is a set of instruct…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "# AGENTS.md instructions for $WORK/negative/agent/ws\n\n\u003cINSTRUCTIONS\u003e\nYou are the agent of a save-and-load probe. Do exactly what each message asks, and be brief.\n\n## Memory\n\nYour memory is the directo…"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "\u003cenvironment_context\u003e\n  \u003ccwd\u003e$WORK/negative/agent/ws\u003c/cwd\u003e\n …"
+        },
+        {
+          "role": "user",
+          "type": "text",
+          "text": "PING again"
+        }
+      ]
+    }
+  ],
+  "records": [
+    {
+      "name": "restored: read to the end before the reopen (not published)",
+      "observations": [
+        {
+          "id": "user_input:u:3bb7dff7-55c2-4680-843e-3eff68d2d4e3",
+          "kind": "user_input",
+          "origin": "record",
+          "time": "2026-09-30T08:06:57Z",
+          "text": "PING a73d538c9c3"
+        },
+        {
+          "id": "assistant_text:msg_dlshvxq8d36j:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "time": "2026-09-30T08:06:57Z",
+          "text": "PONG a73d538c9c3"
+        },
+        {
+          "id": "user_input:u:bc70a055-ae64-483b-a99e-b1667ba57b4f",
+          "kind": "user_input",
+          "origin": "record",
+          "time": "2026-09-30T08:06:58Z",
+          "text": "TOOL echo t4208ef251d | tee saveload-note.txt"
+        },
+        {
+          "id": "tool_use:call_dlshvy0hivzm",
+          "kind": "tool_use",
+          "origin": "record",
+          "time": "2026-09-30T08:06:58Z",
+          "text": "exec_command {\"cmd\":\"echo t4208ef251d | tee saveload-note.txt\",\"yield_time_ms\":5000}"
+        },
+        {
+          "id": "tool_result:call_dlshvy0hivzm",
+          "kind": "tool_result",
+          "origin": "record",
+          "time": "2026-09-30T08:06:58Z",
+          "text": "Chunk ID: 354e25\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 3\nOutput:\nt4208ef251d"
+        },
+        {
+          "id": "assistant_text:msg_dlshvy1h7e2z:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "time": "2026-09-30T08:06:58Z",
+          "text": "TOOL DONE: t4208ef251d"
+        }
+      ]
+    },
+    {
+      "name": "restored: the first Session after the reopen",
+      "observations": [
+        {
+          "id": "turn_started:restored-candidate-1",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z"
+        },
+        {
+          "id": "rate_limit:d4e3d7ea6507.1",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z"
+        },
+        {
+          "id": "user_input:u:d5472f36-fa61-49ae-bd2e-2f6732e28c8b",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z",
+          "text": "PING again"
+        },
+        {
+          "id": "assistant_text:msg_dlshw9he091i:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z",
+          "text": "PONG again"
+        },
+        {
+          "id": "turn_ended:restored-candidate-1",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z",
+          "text": "PONG again"
+        },
+        {
+          "id": "turn_ended:restored-candidate-1",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-1",
+          "time": "2026-09-30T08:07:23Z",
+          "text": "PONG again"
+        }
+      ]
+    },
+    {
+      "name": "restored: the Session after the second reopen",
+      "observations": [
+        {
+          "id": "turn_started:restored-candidate-2",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z"
+        },
+        {
+          "id": "rate_limit:c2bc1f348356.1",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z"
+        },
+        {
+          "id": "user_input:u:7bdc3e08-d60f-4c2b-bff9-1e4677d03a91",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "PING third"
+        },
+        {
+          "id": "assistant_text:msg_dlshw9x15w90:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "PONG third"
+        },
+        {
+          "id": "turn_ended:restored-candidate-2",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "PONG third"
+        },
+        {
+          "id": "turn_ended:restored-candidate-2",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-2",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "PONG third"
+        },
+        {
+          "id": "turn_started:restored-candidate-3",
+          "kind": "turn_started",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z"
+        },
+        {
+          "id": "rate_limit:c2bc1f348356.2",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z"
+        },
+        {
+          "id": "user_input:u:dc3badcf-d422-4e0a-a563-8cccfeb8b45f",
+          "kind": "user_input",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "TOOL pwd; cat saveload-note.txt"
+        },
+        {
+          "id": "tool_use:call_dlshwa6ippb0",
+          "kind": "tool_use",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "exec_command {\"cmd\":\"pwd; cat saveload-note.txt\",\"yield_time_ms\":5000}"
+        },
+        {
+          "id": "tool_result:call_dlshwa6ippb0",
+          "kind": "tool_result",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "Chunk ID: f7951f\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 20\nOutput:\n$WORK/restored/ca…"
+        },
+        {
+          "id": "rate_limit:c2bc1f348356.3",
+          "kind": "rate_limit",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z"
+        },
+        {
+          "id": "assistant_text:msg_dlshwa7c9abg:0",
+          "kind": "assistant_text",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "TOOL DONE: $WORK/restored/candidate/agen"
+        },
+        {
+          "id": "turn_ended:restored-candidate-3",
+          "kind": "turn_ended",
+          "origin": "live",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "TOOL DONE: $WORK/restored/candidate/agen"
+        },
+        {
+          "id": "turn_ended:restored-candidate-3",
+          "kind": "turn_ended",
+          "origin": "record",
+          "input_id": "restored-candidate-3",
+          "time": "2026-09-30T08:07:24Z",
+          "text": "TOOL DONE: $WORK/restored/candidate/agen"
+        }
+      ]
+    }
+  ]
+}
