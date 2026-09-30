@@ -126,8 +126,11 @@ type harness interface {
 	Distribution(p *probe, root string)
 	// Spec is the agent's spec, with memory's files seeded.
 	Spec(p *probe, memory []contract.MemoryFile) contract.AgentSpec
-	// PointAt makes a provisioned result reach the mock model API.
-	PointAt(mock *mockapi.Server, r *contract.ProvisionResult) error
+	// Adjust fits a provisioned result to the run before it is applied: in
+	// mock mode it points the harness at the mock model API; in a live one it
+	// adds whatever the run's credential needs beyond a credential file, and
+	// says so in note.
+	Adjust(p *probe, r *contract.ProvisionResult) (note string, err error)
 	// Credential stages the environment's credential: a placeholder that
 	// names label in mock mode, the live one otherwise.
 	Credential(p *probe, l contract.Layout, label string) *contract.CredentialFile

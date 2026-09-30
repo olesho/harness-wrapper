@@ -40,7 +40,10 @@ type environment struct {
 	layout contract.Layout
 	result contract.ProvisionResult
 	cred   *contract.CredentialFile
-	inputs int
+	// credNote says how the environment got its credential when it is not a
+	// credential file.
+	credNote string
+	inputs   int
 }
 
 // newEnvironment makes an empty environment under base: the roots, 0700, and
@@ -69,8 +72,8 @@ func (p *probe) newEnvironment(label, base string, d dirs) *environment {
 }
 
 // provision renders spec for the environment and applies it, as a Supervisor
-// does, with a credential staged for it. In mock mode the rendered result is
-// pointed at the mock model API first.
+// does, with a credential staged for it. The harness adjusts the rendered
+// result first: in mock mode, to reach the mock model API.
 func (e *environment) provision(spec contract.AgentSpec) {
 	t := e.p.t
 	t.Helper()
@@ -84,10 +87,8 @@ func (e *environment) provision(spec contract.AgentSpec) {
 	if err != nil {
 		t.Fatalf("%s: Provision: %v", e.label, err)
 	}
-	if e.p.mock != nil {
-		if err := e.p.h.PointAt(e.p.mock, &res); err != nil {
-			t.Fatalf("%s: pointing at the mock: %v", e.label, err)
-		}
+	if e.credNote, err = e.p.h.Adjust(e.p, &res); err != nil {
+		t.Fatalf("%s: adjusting the provisioned result: %v", e.label, err)
 	}
 	if err := conformance.Apply(e.layout, res); err != nil {
 		t.Fatalf("%s: applying the provisioned files: %v", e.label, err)
