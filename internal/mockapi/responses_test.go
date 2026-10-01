@@ -119,3 +119,49 @@ func TestResponsesScenarios(t *testing.T) {
 		t.Errorf("after the tool: %q", text)
 	}
 }
+
+// A goal's scenarios: MKGOAL has the model make a goal, and the goal's
+// objective, which codex repeats in every turn it starts for it, steps a
+// number of times and then has the model complete it.
+func TestResponsesGoalScenarios(t *testing.T) {
+	s := Start()
+	defer s.Close()
+	s.ChunkDelay = 0
+	call := func(events []map[string]any) map[string]any {
+		for _, ev := range events {
+			if ev["type"] == "response.output_item.done" {
+				if item := ev["item"].(map[string]any); item["type"] == "function_call" {
+					return item
+				}
+			}
+		}
+		return nil
+	}
+
+	_, _, events := respond(t, s, []string{"create_goal"}, user("MKGOAL GOAL 2 3"))
+	if fc := call(events); fc == nil || fc["name"] != "create_goal" || fc["arguments"] != `{"objective":"GOAL 2 3"}` {
+		t.Fatalf("MKGOAL: %v", fc)
+	}
+	// codex's own message for a goal turn carries the objective on a line of
+	// its own, between tags.
+	goal := user("<codex_internal_context source=\"goal\">\nContinue working toward the active thread goal.\n\n<objective>\nGOAL 2 3\n</objective>\n</codex_internal_context>")
+	for i, want := range []string{"goal step 1.0 goal step 1.1 goal step 1.2 ", "goal step 2.0 goal step 2.1 goal step 2.2 "} {
+		_, _, events = respond(t, s, nil, goal)
+		if text, end := replyOf(events); text != want || end != "response.completed" {
+			t.Errorf("goal turn %d: %q %q, want %q", i+1, text, end, want)
+		}
+	}
+	_, _, events = respond(t, s, []string{"update_goal"}, goal)
+	if fc := call(events); fc == nil || fc["name"] != "update_goal" || fc["arguments"] != `{"status":"complete"}` {
+		t.Errorf("the turn after the goal's steps: %v, want an update_goal call", fc)
+	}
+	_, _, events = respond(t, s, nil, goal)
+	if text, _ := replyOf(events); text != "ok" {
+		t.Errorf("a goal turn after the goal is complete: %q", text)
+	}
+	// An input sent while the goal is active is answered for itself.
+	_, _, events = respond(t, s, nil, goal, user("PING 4"))
+	if text, _ := replyOf(events); text != "PONG 4" {
+		t.Errorf("an input after a goal turn: %q", text)
+	}
+}

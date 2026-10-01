@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -22,6 +23,30 @@ type ProvisionRequest struct {
 	Layout Layout `json:"layout"`
 	// Spec is the harness-neutral Agent Spec.
 	Spec AgentSpec `json:"spec"`
+	// Load, when set, says the environment is one a saved Session is loaded
+	// into (capability session_load): the result then carries the
+	// relocations that take the Session's history to where the harness looks
+	// for it here. Provision refuses a source its Descriptor's Load does not
+	// name, with CodeUnsupported.
+	Load *LoadSource `json:"load,omitempty"`
+}
+
+// LoadSource is where a saved Session comes from: what its archive's metadata
+// says of the environment it was saved in.
+type LoadSource struct {
+	// Format is the archive's format.
+	Format int `json:"format"`
+	// Harness is the saving Descriptor's harness: its name, its version then,
+	// and the adapter that ran it.
+	Harness HarnessInfo `json:"harness"`
+	// Layout is the source environment's roots, as they were there.
+	Layout Layout `json:"layout"`
+	// Workspace is the source's workspace as the harness resolved it, every
+	// symlink followed: a harness that names its record for its working
+	// directory named it for this path, and the new environment cannot
+	// resolve a path of a machine that is gone. Layout's roots, in a request
+	// that loads, are resolved paths too: Provision resolves none.
+	Workspace string `json:"workspace"`
 }
 
 // Layout is an agent's roots. They are distinct, absolute and clean, exist
@@ -351,6 +376,21 @@ type ProvisionResult struct {
 	HistoryRoots []RootPath `json:"history_roots,omitempty"`
 	// SecretPaths are what export and archive must skip.
 	SecretPaths []RootPath `json:"secret_paths,omitempty"`
+	// HistoryRelocations are, for a request that loads, where the saved
+	// history goes in the new environment when that is not where it was:
+	// prefix rules, each moving the path From, and everything beneath it, to
+	// To. A saved path no rule names keeps its root and path. Both ends of a
+	// rule lie at or beneath a history root and outside every secret path; no
+	// two rules' sources, and no two destinations, are one another or nested.
+	// The Supervisor restores each saved file at Relocate's answer, and
+	// rewrites nothing inside it.
+	HistoryRelocations []Relocation `json:"history_relocations,omitempty"`
+}
+
+// Relocation moves a saved path, and everything beneath it, to another.
+type Relocation struct {
+	From RootPath `json:"from"`
+	To   RootPath `json:"to"`
 }
 
 // File is one rendered file. It has exactly one of Text and Bytes.
@@ -393,6 +433,41 @@ type RootPath struct {
 	Path string `json:"path"`
 }
 
+// Within reports whether p is q, or beneath it.
+func (p RootPath) Within(q RootPath) bool {
+	return p.Root == q.Root && (p.Path == q.Path || strings.HasPrefix(p.Path, q.Path+"/"))
+}
+
+// String is the path as an archive names it: its root, then its path.
+func (p RootPath) String() string { return string(p.Root) + "/" + p.Path }
+
+// Relocate is where the saved path p goes in a new environment under rules:
+// moved by the rule whose source it is, or lies beneath, and itself when no
+// rule names it.
+func Relocate(rules []Relocation, p RootPath) RootPath {
+	for _, r := range rules {
+		if p.Within(r.From) {
+			return RootPath{Root: r.To.Root, Path: r.To.Path + strings.TrimPrefix(p.Path, r.From.Path)}
+		}
+	}
+	return p
+}
+
+// Archived reports whether p is part of the history r names: at or beneath a
+// history root, and outside every secret path.
+func (r ProvisionResult) Archived(p RootPath) bool {
+	in := false
+	for _, h := range r.HistoryRoots {
+		in = in || p.Within(h)
+	}
+	for _, s := range r.SecretPaths {
+		if p.Within(s) {
+			return false
+		}
+	}
+	return in
+}
+
 // Validate checks r against the Supervisor's rules: files beneath config,
 // workspace or home, clean relative paths each named once, exactly one of text
 // and bytes, modes no wider than 0644, and a bounded open_config.
@@ -430,13 +505,76 @@ func (r ProvisionResult) Validate() error {
 	if len(r.OpenConfig) > MaxOpenConfigBytes {
 		return invalid("open_config", "%d bytes, more than %d", len(r.OpenConfig), MaxOpenConfigBytes)
 	}
-	for i, p := range append(append([]RootPath(nil), r.HistoryRoots...), r.SecretPaths...) {
+	checkPath := func(field string, p RootPath) error {
 		if p.Root != RootHome && p.Root != RootConfig && p.Root != RootWorkspace && p.Root != RootScratch {
-			return invalid("paths["+strconv.Itoa(i)+"].root", "%q", p.Root)
+			return invalid(field+".root", "%q", p.Root)
 		}
 		if err := CheckRelPath(p.Path); err != nil {
-			return invalid("paths["+strconv.Itoa(i)+"].path", "%v", err)
+			return invalid(field+".path", "%v", err)
 		}
+		return nil
+	}
+	for i, p := range append(append([]RootPath(nil), r.HistoryRoots...), r.SecretPaths...) {
+		if err := checkPath("paths["+strconv.Itoa(i)+"]", p); err != nil {
+			return err
+		}
+	}
+	for i, m := range r.HistoryRelocations {
+		field := "history_relocations[" + strconv.Itoa(i) + "]"
+		if err := checkPath(field+".from", m.From); err != nil {
+			return err
+		}
+		if err := checkPath(field+".to", m.To); err != nil {
+			return err
+		}
+		if !r.Archived(m.From) || !r.Archived(m.To) {
+			return invalid(field, "%s to %s: both must be history, and no secret path", m.From, m.To)
+		}
+		for j, other := range r.HistoryRelocations[:i] {
+			if m.From.Within(other.From) || other.From.Within(m.From) {
+				return invalid(field+".from", "%s overlaps history_relocations[%d]'s %s", m.From, j, other.From)
+			}
+			if m.To.Within(other.To) || other.To.Within(m.To) {
+				return invalid(field+".to", "%s collides with history_relocations[%d]'s %s", m.To, j, other.To)
+			}
+		}
+	}
+	return nil
+}
+
+// CheckLoad refuses a load d's adapter does not take, with CodeUnsupported
+// naming what, or whose source is malformed, with CodeInvalidSpec. An
+// adapter's Provision calls it for a request that loads.
+func CheckLoad(d Descriptor, l LoadSource) error {
+	unsupported := func(field, format string, args ...any) error {
+		return &Error{Code: CodeUnsupported, Field: field, Message: fmt.Sprintf(format, args...)}
+	}
+	switch {
+	case !d.Has(CapSessionLoad) || d.Load == nil:
+		return unsupported("load", "%s loads no saved Session", d.Harness.Name)
+	case l.Harness.Name != d.Harness.Name:
+		return unsupported("load.harness.name", "a Session of %q, not of %s", l.Harness.Name, d.Harness.Name)
+	}
+	format := false
+	for _, f := range d.Load.Formats {
+		format = format || f == l.Format
+	}
+	if !format {
+		return unsupported("load.format", "archive format %d; %s loads %v", l.Format, d.Harness.Adapter, d.Load.Formats)
+	}
+	if !supports(d.Load.Sources, l.Harness.Version) {
+		return unsupported("load.harness.version", "a Session %s %s saved; %s %s loads those of %v",
+			l.Harness.Name, l.Harness.Version, d.Harness.Name, d.Harness.Version, d.Load.Sources)
+	}
+	if err := l.Layout.Validate(); err != nil {
+		var e *Error
+		if errors.As(err, &e) {
+			return &Error{Code: CodeInvalidSpec, Field: "load." + e.Field, Message: e.Message}
+		}
+		return err
+	}
+	if !filepath.IsAbs(l.Workspace) || filepath.Clean(l.Workspace) != l.Workspace {
+		return &Error{Code: CodeInvalidSpec, Field: "load.workspace", Message: fmt.Sprintf("%q is not a clean absolute path", l.Workspace)}
 	}
 	return nil
 }

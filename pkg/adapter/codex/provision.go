@@ -122,9 +122,19 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 	return contract.ProvisionResult{
 		Files:      files,
 		OpenConfig: oc,
+		// A thread is its rollout, and what codex keeps of it elsewhere: its
+		// name in the index, its goal in the goals database and that
+		// database's write-ahead log — codex can exit with the goal's row
+		// still in the log alone — and the profile's own account of both
+		// (native.go). A thread resumes by its id whatever its working
+		// directory, so a loaded one needs no relocation.
 		HistoryRoots: []contract.RootPath{
 			{Root: contract.RootConfig, Path: sessionsDir},
 			{Root: contract.RootConfig, Path: memoryDir},
+			{Root: contract.RootConfig, Path: indexFile},
+			{Root: contract.RootConfig, Path: goalsFile},
+			{Root: contract.RootConfig, Path: goalsLogFile},
+			{Root: contract.RootScratch, Path: nativeDir},
 		},
 		SecretPaths: []contract.RootPath{{Root: contract.RootConfig, Path: authFile}},
 	}, nil
@@ -144,9 +154,17 @@ func configTOML(spec contract.AgentSpec) string {
 	// The permission posture is bypass: isolation is the runtime's.
 	b.WriteString(`approval_policy = "never"
 sandbox_mode = "danger-full-access"
-# The credential comes from the Host at every launch; codex writes none down.
+`)
+	if spec.Credential != nil && spec.Credential.Kind == CredentialLogin {
+		b.WriteString(`# A lent ChatGPT login: the Host writes it to auth.json at every launch.
+cli_auth_credentials_store = "file"
+`)
+	} else {
+		b.WriteString(`# The credential comes from the Host at every launch; codex writes none down.
 cli_auth_credentials_store = "ephemeral"
-
+`)
+	}
+	b.WriteString(`
 [features]
 plugins = false
 remote_plugin = false

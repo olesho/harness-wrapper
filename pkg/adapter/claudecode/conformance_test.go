@@ -39,7 +39,12 @@ func realClaude(t *testing.T) string {
 // claude binary, and the hook helper built from this tree.
 func distribution(t *testing.T, claudeBin string) string {
 	t.Helper()
-	root := t.TempDir()
+	return distributionAt(t, claudeBin, t.TempDir())
+}
+
+// distributionAt lays the distribution out under root.
+func distributionAt(t *testing.T, claudeBin, root string) string {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -75,15 +80,24 @@ func pointAt(mock *mockapi.Server) func(conformance.T, contract.Layout, *contrac
 	}
 }
 
-// The Claude Code profile passes the conformance kit against the pinned claude
-// and the mock Messages API: every scenario, with a real claude process, its
-// transcript and its hooks.
-func TestClaudeConforms(t *testing.T) {
-	bin := realClaude(t)
-	mock := mockapi.Start()
-	defer mock.Close()
-	root := distribution(t, bin)
-	conformance.Run(conformance.Testing(t), conformance.Fixture{
+// heard is the last request the mock answered for a turn of the kit's: the
+// conversation claude sent the model.
+func heard(mock *mockapi.Server) func(conformance.T, contract.Session) string {
+	return func(conformance.T, contract.Session) string {
+		reqs := mock.Requests()
+		for i := len(reqs) - 1; i >= 0; i-- {
+			if strings.HasPrefix(reqs[i].Scenario, "PING") {
+				return string(reqs[i].Body)
+			}
+		}
+		return ""
+	}
+}
+
+// kitFixture is the conformance kit's fixture for the profile: the pinned
+// claude in the distribution at root, driving the mock.
+func kitFixture(root string, mock *mockapi.Server) conformance.Fixture {
+	return conformance.Fixture{
 		Adapter:     adapter.New(Profile{}),
 		HarnessRoot: root,
 		Spec: contract.AgentSpec{
@@ -115,8 +129,21 @@ func TestClaudeConforms(t *testing.T) {
 			}
 			return func() { _ = os.Rename(BinaryPath(root)+".hidden", BinaryPath(root)) }
 		},
+		Heard:   heard(mock),
 		Timeout: 90 * time.Second,
-	})
+	}
+}
+
+// The Claude Code profile passes the conformance kit against the pinned claude
+// and the mock Messages API: every scenario, with a real claude process, its
+// transcript and its hooks.
+func TestClaudeConforms(t *testing.T) {
+	bin := realClaude(t)
+	mock := mockapi.Start()
+	mock.KeepBodies = true
+	defer mock.Close()
+	root := distribution(t, bin)
+	conformance.Run(conformance.Testing(t), kitFixture(root, mock))
 	var persona bool
 	for _, r := range mock.Requests() {
 		persona = persona || strings.Contains(r.System, "PERSONA-MARKER")

@@ -20,12 +20,27 @@
 //	BIG <kib>      reply with <kib> KiB of text
 //	ASK            raise a prompt (yes/no); on its answer, "ANSWERED <choice>"
 //	CRASH          the harness process dies mid-turn
+//	MKGOAL <text>  give the Session a goal whose objective is <text>, and reply
+//	               "TOOL DONE". From then on the harness works on the goal by
+//	               itself: once a turn completes, it starts a turn of its own
+//	               on the objective, which no input asked for
+//	GOAL <n> <k>   a goal's objective: each of the first <n> turns the harness
+//	               starts for it works <k> ticks and replies "goal step <i>";
+//	               the next one completes the goal, and the harness rests
 //	anything else  reply "ok"
 //
+// A turn the harness started itself is stopped by an input — it ends
+// interrupted, and the input's turn follows — or by an interrupt that names
+// it, after which the harness starts none until an input's turn ends or the
+// Session is reopened.
+//
 // It keeps its record — every record-origin observation, one JSON line each —
-// and its submission markers under the layout's scratch root, so a record
-// handle, or a Session reopened by another Adapter value, reads what an
-// earlier one left, as it would after a crash.
+// its submission markers and its goal under the layout's scratch root, in a
+// directory named for the workspace, so a record handle, or a Session reopened
+// by another Adapter value, reads what an earlier one left, as it would after
+// a crash. A Session saved in one environment is therefore loaded into another
+// by moving that directory to the new workspace's name: the relocation
+// Provision answers a request that loads with.
 package fakeadapter
 
 import (
@@ -78,6 +93,9 @@ var Breaks = []string{
 	"no-record-turn-end", "unsent-unknown", "no-session-exited", "close-differs",
 	"block-on-overloaded", "ignore-checkpoint", "no-retrying", "prompt-pending-maybe",
 	"idle-too-late", "send-after-close",
+	"load-starts-fresh", "load-keeps-path", "load-any-source", "load-forgets", "load-drops-goal",
+	"auto-unreported", "auto-send-busy", "auto-input-id", "auto-interrupt-ignored", "auto-restarts",
+	"auto-no-record-end",
 }
 
 // Adapter is the fake harness's adapter.
@@ -98,15 +116,22 @@ func Register() { contract.Register(Name, New(Options{})) }
 
 func (a *Adapter) breaks(rule string) bool { return a.opts.Break == rule }
 
+// Version is the fake harness's version.
+const Version = "1.0.0"
+
+// ArchiveFormat is the archive format the fake's load recipe is written for.
+const ArchiveFormat = 2
+
 // Describe describes the fake: every capability, every spec field.
 func (a *Adapter) Describe() contract.Descriptor {
 	return contract.Descriptor{
 		Contract: contract.Version,
-		Harness:  contract.HarnessInfo{Name: Name, Version: "1.0.0", Adapter: "harness-wrapper fakeadapter"},
+		Harness:  contract.HarnessInfo{Name: Name, Version: Version, Adapter: "harness-wrapper fakeadapter"},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapPrompts, contract.CapStreamingText,
-			contract.CapToolsObserved, contract.CapRetryVisible,
+			contract.CapToolsObserved, contract.CapRetryVisible, contract.CapSessionLoad, contract.CapAutonomousTurns,
 		},
+		Load:             &contract.LoadSupport{Formats: []int{ArchiveFormat}, Sources: []string{Version}},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialKind},
 		Spec: contract.SpecSupport{
@@ -147,6 +172,24 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 	if err := contract.CheckSpec(a.Describe(), req.Spec); err != nil {
 		return contract.ProvisionResult{}, err
 	}
+	var moves []contract.Relocation
+	if req.Load != nil {
+		l := *req.Load
+		if a.breaks("load-any-source") {
+			l.Harness.Version = Version
+		}
+		if err := contract.CheckLoad(a.Describe(), l); err != nil {
+			return contract.ProvisionResult{}, err
+		}
+		// The record sits in a directory named for the workspace it was made
+		// in: it moves to the new workspace's.
+		from, to := historyDir+"/"+workspaceKey(l.Workspace), historyDir+"/"+workspaceKey(req.Layout.Workspace)
+		if from != to && !a.breaks("load-keeps-path") {
+			moves = []contract.Relocation{{
+				From: contract.RootPath{Root: contract.RootScratch, Path: from}, To: contract.RootPath{Root: contract.RootScratch, Path: to},
+			}}
+		}
+	}
 	spec, _ := json.MarshalIndent(req.Spec, "", "  ")
 	files := []contract.File{contract.TextFile(contract.RootConfig, "fake.json", "0600", string(spec)+"\n")}
 	if a.breaks("impure-provision") {
@@ -170,11 +213,23 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 	}
 	cfg, _ := json.Marshal(openConfig{Binary: BinaryPath(req.HarnessRoot), Model: req.Spec.Model})
 	return contract.ProvisionResult{
-		Files:        files,
-		OpenConfig:   cfg,
-		HistoryRoots: []contract.RootPath{{Root: contract.RootScratch, Path: "fake"}},
-		SecretPaths:  []contract.RootPath{{Root: contract.RootConfig, Path: "fake.json"}},
+		Files:              files,
+		OpenConfig:         cfg,
+		HistoryRoots:       []contract.RootPath{{Root: contract.RootScratch, Path: historyDir}},
+		SecretPaths:        []contract.RootPath{{Root: contract.RootConfig, Path: "fake.json"}},
+		HistoryRelocations: moves,
 	}, nil
+}
+
+// historyDir is the fake's one history root, beneath the scratch root.
+const historyDir = "fake"
+
+// workspaceKey names the directory a workspace's Sessions are kept in: the
+// fake, like a harness that names its record for its working directory, keeps
+// them by the workspace's path.
+func workspaceKey(workspace string) string {
+	sum := sha256.Sum256([]byte(workspace))
+	return "w" + hex.EncodeToString(sum[:8])
 }
 
 // NewSession returns an unopened Session.
@@ -213,9 +268,9 @@ func (a *Adapter) OpenRecord(_ context.Context, req contract.RecordRequest) (con
 
 // ---- the record on disk
 
-// sessionDir is a Session's directory: its record and its markers.
+// sessionDir is a Session's directory: its record, its markers and its goal.
 func sessionDir(l contract.Layout, sessionID string) string {
-	return filepath.Join(l.Scratch, "fake", sessionID)
+	return filepath.Join(l.Scratch, historyDir, workspaceKey(l.Workspace), sessionID)
 }
 
 // store is a Session's durable files.
@@ -226,6 +281,36 @@ type store struct {
 
 func (s store) recordPath() string          { return filepath.Join(s.dir, "record.jsonl") }
 func (s store) markerPath(in string) string { return filepath.Join(s.dir, "markers", in) }
+func (s store) goalPath() string            { return filepath.Join(s.dir, "goal.json") }
+
+// goal is a Session's goal: what the harness works on by itself while it is
+// active.
+type goal struct {
+	Objective string `json:"objective"`
+	Active    bool   `json:"active"`
+	// Turns counts the turns the harness started for it; Seq, every turn
+	// the harness ever started by itself in the Session, which names them.
+	Turns int `json:"turns"`
+	Seq   int `json:"seq"`
+}
+
+// readGoal reads the Session's goal; nil when it has none.
+func (s store) readGoal() *goal {
+	b, err := os.ReadFile(s.goalPath())
+	if err != nil {
+		return nil
+	}
+	var g goal
+	if json.Unmarshal(b, &g) != nil {
+		return nil
+	}
+	return &g
+}
+
+func (s store) writeGoal(g goal) {
+	b, _ := json.Marshal(g)
+	_ = os.WriteFile(s.goalPath(), b, 0o600)
+}
 
 func (s store) create() error {
 	if err := os.MkdirAll(filepath.Join(s.dir, "markers"), 0o700); err != nil {

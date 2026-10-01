@@ -137,7 +137,10 @@ func textOf(raw json.RawMessage) string {
 	return strings.Join(out, "\n")
 }
 
-var keywords = map[string]bool{"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "ERR": true, "BIG": true, "LIMIT": true}
+var keywords = map[string]bool{
+	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "ERR": true, "BIG": true, "LIMIT": true,
+	"GOAL": true, "MKGOAL": true,
+}
 
 // route finds the scenario in the last user message: its keyword line, or
 // else the result of the tool a scenario ran.

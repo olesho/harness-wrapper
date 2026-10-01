@@ -7,7 +7,8 @@
 //
 //   - the Session: its states, the admission gate, one outstanding send, an
 //     interrupt that names its input, answers, and Close with stopped and
-//     drained;
+//     drained; and the turns a harness starts with no input, which it
+//     reports, lets a caller interrupt, and stops for an input;
 //   - Observe and Ack: one cursor over the live events and the profile's
 //     record, with the checkpoint on the batch that covers a chunk's last
 //     item;
@@ -35,6 +36,12 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
+// ArchiveFormat is the archive format the profiles' load recipes are written
+// for: every regular file beneath the history roots, less the secret paths,
+// kept under its root and its path, and restored where the new environment's
+// history_relocations send it.
+const ArchiveFormat = 2
+
 // Profile is what one harness supplies.
 type Profile interface {
 	// Describe is the harness's Descriptor. It is pure.
@@ -61,6 +68,13 @@ type Start struct {
 	OpenConfig []byte
 	Layout     contract.Layout
 	Credential *contract.CredentialFile
+	// Loaded: the Session was loaded into this environment from an archive.
+	// Start then fails with open_failed session_not_found rather than start
+	// a fresh conversation, opens under SessionID and no other id, and — the
+	// first time in this environment — fails with state_mismatch when what
+	// the harness keeps of the Session outside its record did not come with
+	// it.
+	Loaded bool
 	// Report receives the harness's events, in the order it reports them,
 	// from one goroutine at a time. Exited is the last.
 	Report func(Event)
@@ -72,7 +86,9 @@ type Transport interface {
 	SessionID() string
 	// Submit hands an input to the harness, and returns once the harness has
 	// it. An error wrapping ErrNotSubmitted guarantees nothing reached the
-	// harness; any other means the input may have.
+	// harness; any other means the input may have. A harness on a turn of its
+	// own (SelfStarter) is stopped first: the input's turn is the input's
+	// alone.
 	Submit(ctx context.Context, s Submission) error
 	// Interrupt asks the harness to stop its current turn, and returns once
 	// it has the request. The turn's end comes as an Ended event.
@@ -83,6 +99,16 @@ type Transport interface {
 	// ends, and reports whether every process of it is gone. It returns once
 	// they are, or ctx ends.
 	Stop(ctx context.Context, grace time.Duration) (stopped bool)
+}
+
+// SelfStarter is the Transport of a harness that starts turns with no input
+// (capability autonomous_turns): it reports each as Started and Ended events
+// whose Auto is the turn's native id.
+type SelfStarter interface {
+	// InterruptTurn asks the harness to stop the turn native, which it
+	// started itself, if that is the turn it is on, and returns once it has
+	// the request. The turn's end comes as its Ended event.
+	InterruptTurn(ctx context.Context, native string) error
 }
 
 // ErrNotSubmitted marks a Submit failure that reached nothing.
@@ -124,7 +150,10 @@ type Event struct {
 	Kind EventKind
 	// Native is the input the event concerns, in the harness's terms.
 	Native string
-	Time   time.Time
+	// Auto, on a Started or an Ended, is the native id of a turn the harness
+	// started with no input; Native is then empty.
+	Auto string
+	Time time.Time
 
 	Outcome contract.TurnOutcome
 	Text    string
@@ -216,12 +245,20 @@ func (a *harnessAdapter) Provision(req contract.ProvisionRequest) (contract.Prov
 	if err := contract.CheckSpec(a.desc, req.Spec); err != nil {
 		return contract.ProvisionResult{}, err
 	}
+	if req.Load != nil {
+		if err := contract.CheckLoad(a.desc, *req.Load); err != nil {
+			return contract.ProvisionResult{}, err
+		}
+	}
 	res, err := a.p.Provision(req)
 	if err != nil {
 		return contract.ProvisionResult{}, err
 	}
 	if err := res.Validate(); err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile rendered an invalid result: " + err.Error()}
+	}
+	if req.Load == nil && len(res.HistoryRelocations) > 0 {
+		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile relocated history for a request that loads none"}
 	}
 	return res, nil
 }
@@ -238,6 +275,9 @@ func (a *harnessAdapter) NewSession(req contract.OpenRequest) (contract.Session,
 	}
 	if req.Mode == contract.OpenFresh && req.SessionID != "" && !a.desc.Has(contract.CapAssignSessionID) {
 		return nil, contract.Errorf(contract.CodeUnsupported, "choosing a fresh session's id needs %s", contract.CapAssignSessionID)
+	}
+	if req.Loaded && !a.desc.Has(contract.CapSessionLoad) {
+		return nil, contract.Errorf(contract.CodeUnsupported, "opening a loaded session needs %s", contract.CapSessionLoad)
 	}
 	return newSession(a, req), nil
 }

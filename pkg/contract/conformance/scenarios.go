@@ -30,6 +30,11 @@ var scenarios = []scenario{
 	{"close-drain", closeDrain},
 	{"close-starting", closeStarting},
 	{"prompts", prompts},
+	{"load", load},
+	{"load-missing", loadMissing},
+	{"load-refused", loadRefused},
+	{"autonomous", autonomous},
+	{"load-autonomous", loadAutonomous},
 }
 
 // describe: the Descriptor is well formed.
@@ -59,15 +64,22 @@ func describe(c *check) {
 	if !reflect.DeepEqual(d, c.f.Adapter.Describe()) {
 		c.fail("describe.pure", "two Describe calls differ")
 	}
+	switch l := d.Load; {
+	case !c.has(contract.CapSessionLoad):
+		if l != nil {
+			c.fail("describe.load", "load %+v declared without capability %s", *l, contract.CapSessionLoad)
+		}
+	case l == nil || len(l.Formats) == 0 || len(l.Sources) == 0:
+		c.fail("describe.load", "%s, and no archive format or no source version named", contract.CapSessionLoad)
+	case !d.Loads(l.Formats[0], d.Harness.Version):
+		c.fail("describe.load", "the sources %v lack the harness's own version %s: it cannot load what it saves", l.Sources, d.Harness.Version)
+	}
 }
 
 // provision: pure, valid, and it refuses what the Descriptor does not name.
 func provision(c *check) {
 	a := c.newAgent()
-	req := contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: c.f.HarnessRoot, Layout: a.layout, Spec: c.f.Spec}
-	if a.cred != nil {
-		req.Spec.Credential = &contract.CredentialRef{Kind: a.cred.Kind}
-	}
+	req := c.request(a, nil)
 	r1, err1 := c.f.Adapter.Provision(req)
 	r2, err2 := c.f.Adapter.Provision(req)
 	if err1 != nil || err2 != nil {
@@ -804,3 +816,263 @@ func prompts(c *check) {
 }
 
 func removeFile(p string) error { return removeFunc(p) }
+
+// own reports whether o is of a turn the harness started itself: a turn, and
+// of no input the scenario sent.
+func (c *check) own(o contract.Observation) bool {
+	return (o.TurnID != "" || o.Kind == contract.KindTurnStarted || o.Kind == contract.KindTurnEnded) && !c.sent[o.InputID]
+}
+
+// ownStarted waits for the start of a turn the harness started itself, other
+// than those named.
+func (h *host) ownStarted(skip ...string) (contract.Observation, bool) {
+	return h.await("a turn of the harness's own", func(o contract.Observation) bool {
+		if o.Kind != contract.KindTurnStarted || !h.c.own(o) {
+			return false
+		}
+		for _, id := range skip {
+			if o.TurnID == id {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// ownEnded waits for the end of the turn named, which the harness started
+// itself.
+func (h *host) ownEnded(turnID string) (contract.TurnEndedData, bool) {
+	o, ok := h.await("the end of "+turnID, func(o contract.Observation) bool {
+		return o.Kind == contract.KindTurnEnded && o.TurnID == turnID && h.c.own(o)
+	})
+	var d contract.TurnEndedData
+	if !ok || o.Decode(&d) != nil {
+		return contract.TurnEndedData{}, false
+	}
+	return d, true
+}
+
+// index is where the first delivery pred holds of came, among all; -1 when
+// none did.
+func (h *host) index(pred func(contract.Observation) bool) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i, o := range h.all {
+		if pred(o) {
+			return i
+		}
+	}
+	return -1
+}
+
+// autonomous: a harness that works by itself — on a goal it was given — has
+// its turns reported as turns of no input; an input stops the one that runs
+// and is answered by a turn of its own; an interrupt that names one stops it,
+// and the harness rests until an input's turn ends.
+func autonomous(c *check) {
+	if !c.has(contract.CapAutonomousTurns) {
+		c.t.Logf("no autonomous_turns: skipped")
+		return
+	}
+	a := c.newAgent()
+	s, h := c.openSession(a)
+	ctx, cancel := c.ctx()
+	defer cancel()
+
+	// The model gives the Session a goal: two turns of work, then done.
+	mk := c.send(s, "MKGOAL GOAL 2 40")
+	if end, ok := h.turnEnded(mk); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("auto.reported", "the turn that sets the goal: %+v", end)
+	}
+	first, ok := h.ownStarted()
+	if !ok {
+		c.stop("auto.reported", "the harness has a goal, and no turn of its own was reported started")
+	}
+	if st := s.State(); st.Phase != contract.PhaseBusy || st.TurnID != first.TurnID || st.InputID != "" {
+		c.fail("auto.reported", "while the harness is on turn %q of its own the state is %+v, want busy, naming that turn and no input", first.TurnID, st)
+	}
+
+	// An input does not wait for the harness's own work: that turn yields.
+	in := newInputID()
+	c.sent[in] = true
+	if _, err := s.Send(ctx, contract.Text(in, "PING 31")); err != nil {
+		c.stop("auto.send", "Send while the harness is on a turn of its own: %v, want it taken", err)
+	}
+	if end, ok := h.turnEnded(in); !ok || end.Outcome != contract.TurnCompleted || !strings.Contains(end.Text, "PONG 31") {
+		c.fail("auto.send", "the input's turn: %+v, want completed with PONG 31: a turn of its own, not a part of the harness's", end)
+	}
+	if end, ok := h.ownEnded(first.TurnID); !ok || end.Outcome != contract.TurnInterrupted {
+		c.fail("auto.send", "the harness's turn the input stopped ended %+v, want interrupted", end)
+	}
+	ended := h.index(func(o contract.Observation) bool { return o.Kind == contract.KindTurnEnded && o.TurnID == first.TurnID })
+	began := h.index(func(o contract.Observation) bool { return o.Kind == contract.KindTurnStarted && o.InputID == in })
+	if ended < 0 || began < 0 || ended > began {
+		c.fail("auto.send", "the input's turn started (delivery %d) before the harness's own ended (delivery %d)", began, ended)
+	}
+
+	// Its turn over, the harness takes its work up again; an interrupt that
+	// names that turn stops it, and the harness rests.
+	second, ok := h.ownStarted(first.TurnID)
+	if !ok {
+		c.stop("auto.reported", "after the input's turn the harness did not take its work up again")
+	}
+	if out, err := s.Interrupt(ctx, contract.InterruptRequest{InputID: in}); err != nil || out != contract.InterruptTooLate {
+		c.fail("auto.interrupt", "interrupting an ended input while the harness is on a turn of its own: %v %v, want too_late", out, err)
+	}
+	out, err := s.Interrupt(ctx, contract.InterruptRequest{TurnID: second.TurnID, DeadlineMS: 15000})
+	if err != nil || out != contract.InterruptStopped {
+		c.fail("auto.interrupt", "interrupting turn %s of the harness's own: %v %v, want stopped", second.TurnID, out, err)
+	}
+	if end, ok := h.ownEnded(second.TurnID); !ok || end.Outcome != contract.TurnInterrupted {
+		c.fail("auto.interrupt", "the interrupted turn ended %+v, want interrupted", end)
+	}
+	if again, err := s.Interrupt(ctx, contract.InterruptRequest{TurnID: second.TurnID}); err != nil || again != out {
+		c.fail("auto.interrupt", "a repeated interrupt: %v %v, want the established %v", again, err, out)
+	}
+	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
+		c.fail("auto.rests", "after the interrupt the Session is %s, want idle", p)
+	}
+	time.Sleep(c.f.quiet())
+	if o, ok := h.ownStartedNow(first.TurnID, second.TurnID); ok {
+		c.fail("auto.rests", "the harness started turn %s by itself after an interrupt stopped its work", o.TurnID)
+	}
+	if p := s.State().Phase; p != contract.PhaseIdle {
+		c.fail("auto.rests", "a harness that rests is %s, want idle", p)
+	}
+
+	// The next input's turn wakes it, and it finishes its goal.
+	in = c.send(s, "PING 32")
+	if end, ok := h.turnEnded(in); !ok || end.Outcome != contract.TurnCompleted || !strings.Contains(end.Text, "PONG 32") {
+		c.fail("auto.send", "a turn while the harness rests: %+v", end)
+	}
+	third, ok := h.ownStarted(first.TurnID, second.TurnID)
+	if !ok {
+		c.stop("auto.reported", "after an input's turn the harness that rested did not take its work up again")
+	}
+	if end, ok := h.ownEnded(third.TurnID); !ok || end.Outcome != contract.TurnCompleted {
+		c.fail("auto.reported", "the harness's last turn ended %+v, want completed", end)
+	}
+	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
+		c.fail("auto.reported", "its goal complete, the Session is %s, want idle", p)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	turns := []string{first.TurnID, second.TurnID, third.TurnID}
+	for _, o := range h.deliveries(c.own) {
+		switch {
+		case o.InputID != "":
+			c.fail("auto.ids", "%s of a turn the harness started names input %q", o.Kind, o.InputID)
+		case o.TurnID == "":
+			c.fail("auto.ids", "%s of a turn the harness started names no turn", o.Kind)
+		case (o.Kind == contract.KindTurnStarted || o.Kind == contract.KindTurnEnded) && o.ID != contract.ObservationID(o.Kind, o.TurnID):
+			c.fail("auto.ids", "%s id %q, want %q: the turn's id is its key", o.Kind, o.ID, contract.ObservationID(o.Kind, o.TurnID))
+		}
+	}
+	for _, id := range turns {
+		if n := len(ids(h.deliveries(func(o contract.Observation) bool { return o.Kind == contract.KindTurnStarted && o.TurnID == id }))); n != 1 {
+			c.fail("auto.ids", "%d turn_started ids for turn %s, want 1", n, id)
+		}
+		outcomes := map[contract.TurnOutcome]bool{}
+		for _, o := range h.deliveries(func(o contract.Observation) bool { return o.Kind == contract.KindTurnEnded && o.TurnID == id }) {
+			var d contract.TurnEndedData
+			_ = o.Decode(&d)
+			outcomes[d.Outcome] = true
+		}
+		if len(outcomes) != 1 {
+			c.fail("auto.ids", "turn %s reported %d outcomes", id, len(outcomes))
+		}
+	}
+
+	// The record proves those turns ended, under the ids their ends had.
+	if res, err := s.Close(ctx, contract.ClosePark, contract.DefaultDrain); err != nil || !res.Drained {
+		c.fail("auto.record", "Close = %+v %v, want drained", res, err)
+	}
+	h.halt()
+	r, err := c.f.Adapter.OpenRecord(ctx, contract.RecordRequest{SessionID: h.id, OpenConfig: a.result.OpenConfig, Layout: a.layout})
+	if err != nil {
+		c.stop("auto.record", "OpenRecord: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	rh := c.watch(r)
+	for _, id := range turns {
+		want := contract.ObservationID(contract.KindTurnEnded, id)
+		if o, ok := rh.await(want, func(o contract.Observation) bool { return o.ID == want }); !ok || o.Origin != contract.OriginRecord || o.InputID != "" {
+			c.fail("auto.record", "the record, read alone, does not deliver %s: the end of a turn the harness started", want)
+		}
+	}
+}
+
+// ownStartedNow is a turn the harness started itself, other than those
+// named, if one was delivered already.
+func (h *host) ownStartedNow(skip ...string) (contract.Observation, bool) {
+	i := h.index(func(o contract.Observation) bool {
+		if o.Kind != contract.KindTurnStarted || !h.c.own(o) {
+			return false
+		}
+		for _, id := range skip {
+			if o.TurnID == id {
+				return false
+			}
+		}
+		return true
+	})
+	if i < 0 {
+		return contract.Observation{}, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.all[i], true
+}
+
+// loadAutonomous: work the harness had of its own is saved with the Session,
+// and the loaded Session takes it up.
+func loadAutonomous(c *check) {
+	if !c.has(contract.CapSessionLoad) || !c.has(contract.CapAutonomousTurns) {
+		c.t.Logf("no session_load with autonomous_turns: skipped")
+		return
+	}
+	src := c.newAgent()
+	s, h := c.openSession(src)
+	ctx, cancel := c.ctx()
+	defer cancel()
+	mk := c.send(s, "MKGOAL GOAL 3 30")
+	if end, ok := h.turnEnded(mk); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("load.own-work", "the turn that sets the goal: %+v", end)
+	}
+	first, ok := h.ownStarted()
+	if !ok {
+		c.stop("load.own-work", "the harness has a goal, and no turn of its own was reported started")
+	}
+	// Stopped, the harness rests with its goal unfinished: the state to save.
+	if out, err := s.Interrupt(ctx, contract.InterruptRequest{TurnID: first.TurnID, DeadlineMS: 15000}); err != nil || out != contract.InterruptStopped {
+		c.stop("load.own-work", "interrupting the harness's own turn: %v %v, want stopped", out, err)
+	}
+	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
+		c.stop("load.own-work", "after the interrupt the Session is %s, want idle", p)
+	}
+	if res, err := s.Close(ctx, contract.ClosePark, contract.DefaultDrain); err != nil || !res.Drained {
+		c.stop("load.own-work", "Close = %+v %v, want drained", res, err)
+	}
+	h.halt()
+	saved := c.save(src, "load.own-work")
+	dst := c.loadAgent(saved, true, "load.provision")
+	_, cp := c.seed(dst, h.id, "load.record")
+
+	req := c.openRequest(dst, contract.OpenReopen, h.id, cp)
+	req.Loaded = true
+	s2, err := c.f.Adapter.NewSession(req)
+	if err != nil {
+		c.stop("load.open", "NewSession of a loaded Session: %v", err)
+	}
+	s2, h2 := c.openWatch(s2, "load.open")
+	next, ok := h2.ownStarted()
+	if !ok {
+		c.stop("load.own-work", "the saved Session had a goal it had not finished, and the loaded one starts no turn for it")
+	}
+	if next.TurnID == first.TurnID {
+		c.fail("load.own-work", "the loaded Session's turn has the id of one the saved Session ran: %s", next.TurnID)
+	}
+	if out, err := s2.Interrupt(ctx, contract.InterruptRequest{TurnID: next.TurnID, DeadlineMS: 15000}); err != nil || out != contract.InterruptStopped {
+		c.fail("load.own-work", "interrupting the loaded Session's own turn: %v %v, want stopped", out, err)
+	}
+}

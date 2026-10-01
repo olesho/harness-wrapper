@@ -26,6 +26,34 @@ type Descriptor struct {
 	Spec SpecSupport `json:"spec"`
 	// Limits bounds what the adapter takes.
 	Limits Limits `json:"limits"`
+	// Load says which saved Sessions the adapter continues in a fresh
+	// environment (capability session_load); nil without it.
+	Load *LoadSupport `json:"load,omitempty"`
+}
+
+// LoadSupport is the saved Sessions an adapter loads: each entry a
+// combination it has passed with a Session saved that way, never one inferred
+// from an order of versions.
+type LoadSupport struct {
+	// Formats are the archive formats its load recipe — what is saved, and
+	// where it goes — is written for.
+	Formats []int `json:"formats"`
+	// Sources are the harness versions whose saved Sessions the adapter
+	// continues at its own harness version.
+	Sources []string `json:"sources"`
+}
+
+// Loads reports whether d's adapter continues a Session the harness version
+// saved in an archive of format.
+func (d Descriptor) Loads(format int, harnessVersion string) bool {
+	if d.Load == nil || !d.Has(CapSessionLoad) {
+		return false
+	}
+	ok := false
+	for _, f := range d.Load.Formats {
+		ok = ok || f == format
+	}
+	return ok && supports(d.Load.Sources, harnessVersion)
 }
 
 // HarnessInfo names a harness, its version and its adapter.
@@ -50,7 +78,8 @@ func (d Descriptor) Has(c Capability) bool {
 
 // Capability is a named behaviour an adapter may offer. Each adds exactly
 // what its constant says; without it, the operations answer CodeUnsupported,
-// or the observations never appear. The set is closed in 1.0.
+// or the observations never appear. The set is closed within a minor version;
+// 1.1 added session_load and autonomous_turns.
 type Capability string
 
 // Capabilities.
@@ -73,11 +102,28 @@ const (
 	// CapRetryVisible: retrying observations while the harness retries a
 	// model call.
 	CapRetryVisible Capability = "retry_visible"
+	// CapSessionLoad: a Session saved in one environment continues in
+	// another: Provision takes ProvisionRequest.Load and answers the
+	// history's relocations, and Open takes OpenRequest.Loaded. The
+	// Descriptor's Load names the saved Sessions it takes.
+	CapSessionLoad Capability = "session_load"
+	// CapAutonomousTurns: the harness may start a turn no input asked for.
+	// Such a turn is reported as turn_started and turn_ended naming a turn
+	// and no input, live and from the record; while it runs the Session is
+	// busy with State.TurnID and no State.InputID; Interrupt may name it by
+	// InterruptRequest.TurnID; and Send stops it before it submits its
+	// input. Once an interrupt or an input stopped such a turn, the harness
+	// starts none of its own until an input's turn completes or the Session
+	// is reopened.
+	CapAutonomousTurns Capability = "autonomous_turns"
 )
 
 // Values lists the set.
 func (Capability) Values() []string {
-	return []string{"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible"}
+	return []string{
+		"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible",
+		"session_load", "autonomous_turns",
+	}
 }
 
 // SpecSupport is the part of the Agent Spec a harness honours.

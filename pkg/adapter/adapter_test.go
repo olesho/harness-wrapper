@@ -3,6 +3,7 @@ package adapter
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,13 @@ func fakeFixture(t *testing.T) conformance.Fixture {
 			PermissionPosture: contract.PostureBypass,
 		},
 		Kill: func(_ conformance.T, s contract.Session) { s.(*session).t.(*fakeTransport).kill() },
+		Heard: func(_ conformance.T, s contract.Session) string {
+			t := s.(*session).t.(*fakeTransport)
+			t.mu.Lock()
+			defer t.mu.Unlock()
+			return strings.Join(t.heard, "\n")
+		},
+		Quiet: 300 * time.Millisecond,
 		HideBinary: func(t conformance.T) func() {
 			if err := os.Rename(bin, bin+".hidden"); err != nil {
 				t.Errorf("hiding the binary: %v", err)

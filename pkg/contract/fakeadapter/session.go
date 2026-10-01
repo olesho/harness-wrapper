@@ -34,6 +34,18 @@ type session struct {
 	proc      int // the harness process instance, for live keys
 	counter   int
 	turn      *turn
+	// auto is the turn the harness started itself and is on; autoEnded, what
+	// an interrupt of an ended one finds, by turn id. rest: a turn did not
+	// complete, and the harness starts none of its own until an input's turn
+	// does.
+	auto      *autoTurn
+	autoEnded map[string]contract.InterruptOutcome
+	rest      bool
+	// heard is the conversation the model was last given.
+	heard []string
+	// loadedAt is, for a loaded Session, where its record ended when it
+	// opened.
+	loadedAt  int64
 	ended     map[string]contract.InterruptOutcome // inputs whose turns ended: what an interrupt now finds
 	block     *contract.Block
 	prompt    *contract.PromptInfo
@@ -60,6 +72,22 @@ type turn struct {
 	answer    chan string
 }
 
+// autoTurn is a turn the harness started by itself, for its goal.
+type autoTurn struct {
+	id        string // its turn id
+	interrupt chan struct{}
+	intOnce   sync.Once
+	done      chan struct{} // closed once it ended
+	doneOnce  sync.Once
+	outcome   contract.InterruptOutcome
+	// preempted: an input stopped it, and that input's turn follows.
+	preempted bool
+}
+
+// stop asks the turn to stop; finish marks it ended.
+func (at *autoTurn) stop()   { at.intOnce.Do(func() { close(at.interrupt) }) }
+func (at *autoTurn) finish() { at.doneOnce.Do(func() { close(at.done) }) }
+
 func newSession(a *Adapter, req contract.OpenRequest, cfg openConfig) *session {
 	return &session{
 		adapter:   a,
@@ -67,6 +95,7 @@ func newSession(a *Adapter, req contract.OpenRequest, cfg openConfig) *session {
 		cfg:       cfg,
 		cursor:    newCursor(a),
 		phase:     contract.PhaseUnopened,
+		autoEnded: map[string]contract.InterruptOutcome{},
 		ended:     map[string]contract.InterruptOutcome{},
 		answered:  map[string]string{},
 		closed:    make(chan struct{}),
@@ -74,6 +103,19 @@ func newSession(a *Adapter, req contract.OpenRequest, cfg openConfig) *session {
 		kill:      make(chan struct{}),
 		exited:    make(chan struct{}),
 	}
+}
+
+// Heard is the conversation the Session's harness last gave its model: every
+// prompt, reply and tool result, in order, the input it was answering last.
+// It is what a real harness's model API would have been sent.
+func Heard(s contract.Session) []string {
+	fs, ok := s.(*session)
+	if !ok {
+		return nil
+	}
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return append([]string(nil), fs.heard...)
 }
 
 // Kill crashes a Session's harness — the process dies without Close — for a
@@ -141,10 +183,21 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		}
 	case contract.OpenReopen:
 		if _, err := os.Stat(st.recordPath()); err != nil {
-			return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenSessionNotFound, Message: id})
+			if !s.req.Loaded || !s.adapter.breaks("load-starts-fresh") {
+				return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenSessionNotFound, Message: id})
+			}
+			if err := st.create(); err != nil {
+				return fail(contract.Errorf(contract.CodeInternal, "%v", err))
+			}
 		}
 		if err := s.cursor.load(st, s.req.Checkpoint); err != nil {
 			return fail(err)
+		}
+		if fi, err := os.Stat(st.recordPath()); err == nil && s.req.Loaded {
+			s.loadedAt = fi.Size()
+		}
+		if s.req.Loaded && s.adapter.breaks("load-drops-goal") {
+			_ = os.Remove(st.goalPath())
 		}
 	}
 	select {
@@ -164,6 +217,8 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	state := s.stateLocked()
 	s.mu.Unlock()
 	go s.watchKill()
+	// A Session with an active goal goes back to work as it opens.
+	s.work()
 	return contract.OpenResult{SessionID: id, State: state}, nil
 }
 
@@ -184,6 +239,8 @@ func (s *session) exit(class contract.ExitClass, detail string) {
 	s.phase = contract.PhaseExited
 	t := s.turn
 	s.turn = nil
+	at := s.auto
+	s.auto = nil
 	s.counter++
 	key := fmt.Sprintf("%d.%d", s.proc, s.counter)
 	s.mu.Unlock()
@@ -194,6 +251,10 @@ func (s *session) exit(class contract.ExitClass, detail string) {
 		default:
 		}
 	}
+	if at != nil {
+		at.stop()
+		at.finish()
+	}
 	if !s.adapter.breaks("no-session-exited") {
 		s.cursor.push(item{obs: contract.NewObservation(contract.KindSessionExited, key, contract.OriginLive, time.Now(),
 			contract.SessionExitedData{Class: class, Detail: detail})})
@@ -203,9 +264,12 @@ func (s *session) exit(class contract.ExitClass, detail string) {
 
 func (s *session) stateLocked() contract.State {
 	st := contract.State{Phase: s.phase, Block: s.block, Prompt: s.prompt}
-	if s.turn != nil {
+	switch {
+	case s.turn != nil:
 		st.InputID = s.turn.in.InputID
 		st.TurnID = turnID(s.turn.in.InputID)
+	case s.auto != nil:
+		st.TurnID = s.auto.id
 	}
 	return st
 }
@@ -232,8 +296,24 @@ func (s *session) Send(ctx context.Context, in contract.Input) (contract.SendRes
 		s.sending = nil
 		s.mu.Unlock()
 		close(sending)
+		// An input that was refused leaves the harness to its own work.
+		s.work()
 	}()
 	s.mu.Lock()
+	for s.auto != nil && s.turn == nil && s.phase == contract.PhaseBusy && !s.closing && !s.adapter.breaks("auto-send-busy") {
+		// The harness is on a turn of its own: the input stops it, and the
+		// input's turn follows.
+		at := s.auto
+		at.preempted = true
+		s.mu.Unlock()
+		at.stop()
+		select {
+		case <-at.done:
+		case <-ctx.Done():
+			return contract.SendResult{}, &contract.Error{Code: contract.CodeBusy, Certainty: contract.NotSubmitted, Message: "the harness's own turn did not stop"}
+		}
+		s.mu.Lock()
+	}
 	switch {
 	case s.closing && !s.adapter.breaks("send-after-close"):
 		s.mu.Unlock()
@@ -308,7 +388,8 @@ func (s *session) refusal() contract.Certainty {
 	return contract.NotSubmitted
 }
 
-// record appends a record observation and queues it for delivery.
+// record appends a record observation and queues it for delivery. One of a
+// turn the harness started itself names that turn already, and no input.
 func (s *session) record(o contract.Observation, inputID string) (int64, error) {
 	o.InputID = inputID
 	if inputID != "" {
@@ -365,6 +446,7 @@ func (s *session) run(t *turn) {
 	s.mu.Lock()
 	t.started = true
 	s.mu.Unlock()
+	s.hear()
 
 	msg := "m-" + in
 	reply := func(text string) {
@@ -464,8 +546,173 @@ func (s *session) run(t *turn) {
 		}
 	case "CRASH":
 		s.killOnce.Do(func() { close(s.kill) })
+	case "MKGOAL":
+		s.mu.Lock()
+		st := s.store
+		s.mu.Unlock()
+		g := goal{Objective: arg, Active: true}
+		if old := st.readGoal(); old != nil {
+			g.Seq = old.Seq
+		}
+		st.writeGoal(g)
+		reply("TOOL DONE")
 	default:
 		reply("ok")
+	}
+}
+
+// hear gives the model the conversation: everything the record holds. A
+// loaded Session's record is the saved one, continued.
+func (s *session) hear() {
+	s.mu.Lock()
+	st, from := s.store, int64(0)
+	if s.adapter.breaks("load-forgets") {
+		from = s.loadedAt
+	}
+	s.mu.Unlock()
+	lines, _, err := st.readRecord(from)
+	if err != nil {
+		return
+	}
+	var heard []string
+	for _, l := range lines {
+		var d struct {
+			Text   string `json:"text"`
+			Output string `json:"output"`
+		}
+		switch l.obs.Kind {
+		case contract.KindUserInput, contract.KindAssistantText, contract.KindToolResult:
+			if l.obs.Decode(&d) == nil {
+				heard = append(heard, d.Text+d.Output)
+			}
+		}
+	}
+	s.mu.Lock()
+	s.heard = heard
+	s.mu.Unlock()
+}
+
+// work starts a turn of the harness's own when its goal is active and
+// nothing else runs: once the Session opens, and once a turn completes. An
+// input being sent comes first.
+func (s *session) work() {
+	s.mu.Lock()
+	if s.phase != contract.PhaseIdle || s.turn != nil || s.auto != nil || s.rest || s.closing || s.sending != nil {
+		s.mu.Unlock()
+		return
+	}
+	st := s.store
+	g := st.readGoal()
+	if g == nil || !g.Active {
+		s.mu.Unlock()
+		return
+	}
+	g.Turns++
+	g.Seq++
+	st.writeGoal(*g)
+	at := &autoTurn{id: "a_g" + strconv.Itoa(g.Seq), interrupt: make(chan struct{}), done: make(chan struct{})}
+	s.auto = at
+	s.phase = contract.PhaseBusy
+	s.mu.Unlock()
+	go s.runAuto(at, *g)
+}
+
+// autoObs is an observation of a turn the harness started itself: it names
+// the turn, and no input.
+func (s *session) autoObs(at *autoTurn, kind contract.Kind, key string, origin contract.Origin, data any) contract.Observation {
+	o := contract.NewObservation(kind, key, origin, time.Now(), data)
+	o.TurnID = at.id
+	if s.adapter.breaks("auto-input-id") {
+		o.InputID = "auto"
+	}
+	return o
+}
+
+// runAuto is the fake harness working on its goal for one turn.
+func (s *session) runAuto(at *autoTurn, g goal) {
+	tick := s.adapter.opts.Tick
+	reported := !s.adapter.breaks("auto-unreported")
+	if reported {
+		s.cursor.push(item{obs: s.autoObs(at, contract.KindTurnStarted, at.id, contract.OriginLive, struct{}{})})
+	}
+	words := strings.Fields(g.Objective)
+	n, k := 1, 1
+	if len(words) > 1 {
+		n = atoi(words[1], 1)
+	}
+	if len(words) > 2 {
+		k = atoi(words[2], 1)
+	}
+	text := "TOOL DONE"
+	if g.Turns <= n {
+		for i := 0; i < k; i++ {
+			select {
+			case <-at.interrupt:
+				s.endAuto(at, contract.TurnInterrupted, "", reported)
+				return
+			case <-time.After(tick):
+			}
+		}
+		text = "goal step " + strconv.Itoa(g.Turns)
+	} else {
+		g.Active = false
+		s.mu.Lock()
+		st := s.store
+		s.mu.Unlock()
+		st.writeGoal(g)
+	}
+	msg := "m-" + at.id
+	o := s.autoObs(at, contract.KindAssistantText, msg+".0", contract.OriginRecord, contract.AssistantTextData{MessageID: msg, Text: text})
+	s.mu.Lock()
+	st := s.store
+	s.mu.Unlock()
+	if end, err := st.appendRecord(o); err == nil {
+		s.cursor.push(item{obs: o, end: end})
+	}
+	s.endAuto(at, contract.TurnCompleted, text, reported)
+}
+
+// endAuto settles a turn of the harness's own, live and in the record. One
+// that completed is followed by the next, while the goal is active; one an
+// interrupt stopped is followed by none, until an input's turn completes.
+func (s *session) endAuto(at *autoTurn, outcome contract.TurnOutcome, text string, reported bool) {
+	s.mu.Lock()
+	if s.auto != at || s.phase == contract.PhaseExited {
+		s.mu.Unlock()
+		return
+	}
+	st := s.store
+	s.mu.Unlock()
+	data := contract.TurnEndedData{Outcome: outcome, Text: text}
+	if reported {
+		s.cursor.push(item{obs: s.autoObs(at, contract.KindTurnEnded, at.id, contract.OriginLive, data)})
+	}
+	if reported && !s.adapter.breaks("auto-no-record-end") {
+		o := s.autoObs(at, contract.KindTurnEnded, at.id, contract.OriginRecord, data)
+		if end, err := st.appendRecord(o); err == nil {
+			s.cursor.push(item{obs: o, end: end})
+		}
+	}
+	s.mu.Lock()
+	if s.auto == at {
+		s.auto = nil
+		if s.phase == contract.PhaseBusy {
+			s.phase = contract.PhaseIdle
+		}
+	}
+	at.outcome = contract.InterruptTooLate
+	if outcome == contract.TurnInterrupted {
+		at.outcome = contract.InterruptStopped
+		if !at.preempted && !s.adapter.breaks("auto-restarts") {
+			s.rest = true
+		}
+	}
+	s.autoEnded[at.id] = at.outcome
+	again := outcome == contract.TurnCompleted || !at.preempted && s.adapter.breaks("auto-restarts")
+	s.mu.Unlock()
+	at.finish()
+	if again {
+		s.work()
 	}
 }
 
@@ -580,10 +827,15 @@ func (s *session) end(t *turn, outcome contract.TurnOutcome, text string, terr *
 		intOutcome = contract.InterruptTooLate
 	}
 	s.ended[in] = intOutcome
+	// The harness takes its own work up once an input's turn completes.
+	s.rest = outcome != contract.TurnCompleted
 	s.mu.Unlock()
 	select {
 	case t.outcome <- intOutcome:
 	default:
+	}
+	if outcome == contract.TurnCompleted {
+		s.work()
 	}
 }
 
@@ -599,14 +851,17 @@ func (s *session) afterSend() {
 }
 
 func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) (contract.InterruptOutcome, error) {
-	if !contract.ValidID(req.InputID) {
-		return "", &contract.Error{Code: contract.CodeProtocol, Field: "input_id"}
+	if err := req.Validate(); err != nil {
+		return "", err
 	}
 	s.afterSend()
 	s.mu.Lock()
 	if s.phase == contract.PhaseUnopened || s.phase == contract.PhaseStarting {
 		s.mu.Unlock()
 		return "", contract.Errorf(contract.CodeUnexpected, "interrupt in phase %s", s.phase)
+	}
+	if req.TurnID != "" {
+		return s.interruptAuto(ctx, req) // unlocks
 	}
 	t := s.turn
 	if outcome, done := s.ended[req.InputID]; done && (!s.adapter.breaks("interrupt-other-turn") || t == nil) {
@@ -617,8 +872,9 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 		return outcome, nil
 	}
 	if t == nil {
+		own := s.auto != nil
 		s.mu.Unlock()
-		if s.adapter.breaks("idle-too-late") {
+		if own || s.adapter.breaks("idle-too-late") {
 			return contract.InterruptTooLate, nil
 		}
 		return contract.InterruptNoTurn, nil
@@ -638,6 +894,45 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 		}
 		t.outcome <- outcome // for a repeated interrupt racing this one
 		return outcome, nil
+	case <-deadline.C:
+		return "", &contract.Error{Code: contract.CodeInterruptUnconfirmed}
+	case <-ctx.Done():
+		return "", &contract.Error{Code: contract.CodeInterruptUnconfirmed, Message: ctx.Err().Error()}
+	}
+}
+
+// interruptAuto stops the turn req names by its turn id, one the harness
+// started itself, if it is the turn the harness is on. It is called with s.mu
+// held, and releases it.
+func (s *session) interruptAuto(ctx context.Context, req contract.InterruptRequest) (contract.InterruptOutcome, error) {
+	if outcome, done := s.autoEnded[req.TurnID]; done {
+		s.mu.Unlock()
+		return outcome, nil
+	}
+	at := s.auto
+	switch {
+	case at == nil && s.turn == nil:
+		s.mu.Unlock()
+		return contract.InterruptNoTurn, nil
+	case at == nil || at.id != req.TurnID:
+		s.mu.Unlock()
+		return contract.InterruptTooLate, nil
+	}
+	s.mu.Unlock()
+	if s.adapter.breaks("auto-interrupt-ignored") {
+		return contract.InterruptStopped, nil
+	}
+	at.stop()
+	deadline := time.NewTimer(req.Deadline())
+	defer deadline.Stop()
+	select {
+	case <-at.done:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if at.outcome == "" {
+			return "", &contract.Error{Code: contract.CodeExited}
+		}
+		return at.outcome, nil
 	case <-deadline.C:
 		return "", &contract.Error{Code: contract.CodeInterruptUnconfirmed}
 	case <-ctx.Done():

@@ -136,7 +136,9 @@
         "tools_observed",
         "subagents",
         "rate_limits",
-        "retry_visible"
+        "retry_visible",
+        "session_load",
+        "autonomous_turns"
       ],
       "type": "string"
     },
@@ -304,6 +306,9 @@
         },
         "limits": {
           "$ref": "#/$defs/Limits"
+        },
+        "load": {
+          "$ref": "#/$defs/LoadSupport"
         },
         "spec": {
           "$ref": "#/$defs/SpecSupport"
@@ -490,11 +495,11 @@
         },
         "input_id": {
           "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
         }
       },
-      "required": [
-        "input_id"
-      ],
       "type": "object"
     },
     "Kind": {
@@ -557,6 +562,51 @@
       },
       "required": [
         "max_input_bytes"
+      ],
+      "type": "object"
+    },
+    "LoadSource": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "type": "integer"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessInfo"
+        },
+        "layout": {
+          "$ref": "#/$defs/Layout"
+        },
+        "workspace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "harness",
+        "layout",
+        "workspace"
+      ],
+      "type": "object"
+    },
+    "LoadSupport": {
+      "properties": {
+        "formats": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "formats",
+        "sources"
       ],
       "type": "object"
     },
@@ -635,7 +685,8 @@
         "auth_required",
         "session_not_found",
         "session_in_use",
-        "config_invalid"
+        "config_invalid",
+        "state_mismatch"
       ],
       "type": "string"
     },
@@ -657,6 +708,9 @@
         },
         "layout": {
           "$ref": "#/$defs/Layout"
+        },
+        "loaded": {
+          "type": "boolean"
         },
         "mode": {
           "$ref": "#/$defs/OpenMode"
@@ -780,6 +834,9 @@
         "layout": {
           "$ref": "#/$defs/Layout"
         },
+        "load": {
+          "$ref": "#/$defs/LoadSource"
+        },
         "spec": {
           "$ref": "#/$defs/AgentSpec"
         }
@@ -797,6 +854,12 @@
         "files": {
           "items": {
             "$ref": "#/$defs/File"
+          },
+          "type": "array"
+        },
+        "history_relocations": {
+          "items": {
+            "$ref": "#/$defs/Relocation"
           },
           "type": "array"
         },
@@ -913,6 +976,21 @@
         "unknown"
       ],
       "type": "string"
+    },
+    "Relocation": {
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/RootPath"
+        },
+        "to": {
+          "$ref": "#/$defs/RootPath"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
     },
     "Rescan": {
       "properties": {
@@ -1333,5 +1411,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.0"
+  "title": "Harness Adapter Interface harness-adapter/1.1"
 }

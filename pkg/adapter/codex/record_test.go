@@ -213,3 +213,83 @@ func TestRecoverFromRecord(t *testing.T) {
 		}
 	}
 }
+
+// goalRollout is a thread whose goal made codex start turns itself, as codex
+// 0.144 writes them: one that completed; one stopped before codex wrote
+// anything of it; one that took an input in, which codex folds into a turn
+// that runs; and one cut by a crash.
+const goalRollout = `{"timestamp":"2026-09-30T15:00:00.000Z","type":"session_meta","payload":{"id":"` + thread + `"}}
+{"timestamp":"2026-09-30T15:00:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"g1"}}
+{"timestamp":"2026-09-30T15:00:01.001Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">\nContinue working toward the active thread goal.\n</codex_internal_context>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"g1"}}}
+{"timestamp":"2026-09-30T15:00:01.002Z","type":"response_item","payload":{"type":"message","id":"msg_g1","role":"assistant","content":[{"type":"output_text","text":"goal step 1"}],"internal_chat_message_metadata_passthrough":{"turn_id":"g1"}}}
+{"timestamp":"2026-09-30T15:00:01.003Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"g1","last_agent_message":"goal step 1"}}
+{"timestamp":"2026-09-30T15:00:02.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"g2"}}
+{"timestamp":"2026-09-30T15:00:02.001Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"g2","reason":"interrupted"}}
+{"timestamp":"2026-09-30T15:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"g3"}}
+{"timestamp":"2026-09-30T15:00:03.001Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<codex_internal_context source=\"goal\">\nContinue working toward the active thread goal.\n</codex_internal_context>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"g3"}}}
+{"timestamp":"2026-09-30T15:00:03.002Z","type":"response_item","payload":{"type":"message","id":"msg_g3a","role":"assistant","content":[{"type":"output_text","text":"working"}],"internal_chat_message_metadata_passthrough":{"turn_id":"g3"}}}
+{"timestamp":"2026-09-30T15:00:03.003Z","type":"event_msg","payload":{"type":"user_message","client_id":"n6","message":"PING 6"}}
+{"timestamp":"2026-09-30T15:00:03.004Z","type":"response_item","payload":{"type":"message","id":"msg_g3b","role":"assistant","content":[{"type":"output_text","text":"PONG 6"}],"internal_chat_message_metadata_passthrough":{"turn_id":"g3"}}}
+{"timestamp":"2026-09-30T15:00:03.005Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"g3","last_agent_message":"PONG 6"}}
+{"timestamp":"2026-09-30T15:00:04.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"g4"}}
+{"timestamp":"2026-09-30T15:00:04.001Z","type":"response_item","payload":{"type":"function_call","name":"update_goal","arguments":"{\"status\":\"complete\"}","call_id":"call_g4","internal_chat_message_metadata_passthrough":{"turn_id":"g4"}}}
+`
+
+// The turns codex started itself are read as its own: their items and their
+// ends name the turn and no input, under the ids the live Session gave them.
+// A turn that took an input in ends there, and the rest is the input's.
+func TestReadRecordOfOwnTurns(t *testing.T) {
+	e := newRecordEnv(t)
+	e.write(t, goalRollout)
+	r, err := Profile{}.Record(e.src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, cp := readAll(t, r)
+	var got []string
+	for _, o := range items {
+		s := o.ID + " turn=" + o.TurnID + " input=" + o.InputID
+		if o.Kind == contract.KindTurnEnded {
+			var d contract.TurnEndedData
+			_ = o.Decode(&d)
+			s += " " + string(d.Outcome) + " " + d.Text
+		}
+		got = append(got, strings.TrimSpace(s))
+	}
+	want := []string{
+		"assistant_text:msg_g1:0 turn=a_g1 input=",
+		"turn_ended:a_g1 turn=a_g1 input= completed goal step 1",
+		"turn_ended:a_g2 turn=a_g2 input= interrupted",
+		"assistant_text:msg_g3a:0 turn=a_g3 input=",
+		"turn_ended:a_g3 turn=a_g3 input= interrupted",
+		"user_input:u:n6 turn=t_in_6 input=in_6",
+		"assistant_text:msg_g3b:0 turn=t_in_6 input=in_6",
+		"turn_ended:in_6 turn=t_in_6 input=in_6 completed PONG 6",
+		"tool_use:call_g4 turn=a_g4 input=",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("items:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if adapter.AutoTurnID("g1") != "a_g1" {
+		t.Errorf("AutoTurnID(g1) = %s", adapter.AutoTurnID("g1"))
+	}
+
+	// Reopened at the checkpoint, inside codex's own turn, the reader still
+	// knows whose turn it is in.
+	e.write(t, goalRollout+`{"timestamp":"2026-09-30T15:00:04.002Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_g4","output":"{}"}}
+{"timestamp":"2026-09-30T15:00:04.003Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"g4","last_agent_message":"done"}}
+`)
+	src := e.src
+	src.Checkpoint = cp
+	r2, err := Profile{}.Record(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, _ = readAll(t, r2)
+	if got := summary(items); strings.Join(got, "\n") != "tool_result:call_g4\nturn_ended:a_g4  completed done" || items[0].TurnID != "a_g4" || items[1].TurnID != "a_g4" {
+		t.Errorf("after the checkpoint: %q, turns %s %s", got, items[0].TurnID, items[1].TurnID)
+	}
+	if got, err := r2.Recover(context.Background(), adapter.Marker{InputID: "in_6", Native: "n6", SessionID: thread}); err != nil || got.Outcome != contract.RecoveredCompleted {
+		t.Errorf("Recover of the input codex folded into its own turn = %+v %v, want completed", got, err)
+	}
+}

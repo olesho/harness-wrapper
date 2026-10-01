@@ -71,8 +71,45 @@ func TestProvision(t *testing.T) {
 	if cfg.Binary != "/opt/codex/bin/codex" || cfg.WorkingDir != "/w/ws" || cfg.CodexHome != "/w/config" || strings.Join(cfg.Env, " ") != "HOME=/w/home USER=home CODEX_HOME=/w/config" {
 		t.Errorf("open_config %+v", cfg)
 	}
-	if len(res.SecretPaths) != 1 || res.SecretPaths[0].Path != authFile || len(res.HistoryRoots) != 2 {
-		t.Errorf("secret paths %+v, history roots %+v", res.SecretPaths, res.HistoryRoots)
+	var roots []string
+	for _, h := range res.HistoryRoots {
+		roots = append(roots, h.String())
+	}
+	// The rollouts and the memory, and what codex keeps of a thread outside
+	// its rollout: its name, its goal with the goal's log, and the profile's
+	// account of both.
+	want := "config/sessions config/memory config/session_index.jsonl config/goals_1.sqlite config/goals_1.sqlite-wal scratch/native"
+	if len(res.SecretPaths) != 1 || res.SecretPaths[0].Path != authFile || strings.Join(roots, " ") != want {
+		t.Errorf("secret paths %+v, history roots %v, want %s", res.SecretPaths, roots, want)
+	}
+	if len(res.HistoryRelocations) != 0 {
+		t.Errorf("history relocations %+v, want none", res.HistoryRelocations)
+	}
+}
+
+// A request that loads a saved thread relocates nothing: a thread resumes by
+// its id wherever its rollout's directory is. One codex of another version
+// saved is refused.
+func TestProvisionLoadsAThread(t *testing.T) {
+	a := adapter.New(Profile{})
+	d := a.Describe()
+	if !d.Has(contract.CapSessionLoad) || !d.Has(contract.CapAutonomousTurns) || !d.Loads(adapter.ArchiveFormat, d.Harness.Version) {
+		t.Fatalf("the profile does not load its own version's threads: %v %+v", d.Capabilities, d.Load)
+	}
+	l := contract.Layout{Home: "/w/home", Config: "/w/config", Workspace: "/w/ws", Secrets: "/w/secrets", Scratch: "/w/scratch"}
+	src := contract.Layout{Home: "/old/home", Config: "/old/config", Workspace: "/old/ws", Secrets: "/old/secrets", Scratch: "/old/scratch"}
+	req := contract.ProvisionRequest{
+		Contract: contract.Version, HarnessRoot: "/opt/codex", Layout: l,
+		Spec: contract.AgentSpec{PermissionPosture: contract.PostureBypass},
+		Load: &contract.LoadSource{Format: adapter.ArchiveFormat, Harness: d.Harness, Layout: src, Workspace: "/old/ws"},
+	}
+	res, err := a.Provision(req)
+	if err != nil || len(res.HistoryRelocations) != 0 {
+		t.Fatalf("Provision = %+v %v, want no relocation", res.HistoryRelocations, err)
+	}
+	req.Load.Harness.Version = "0.1.0"
+	if _, err := a.Provision(req); contract.CodeOf(err) != contract.CodeUnsupported {
+		t.Errorf("a thread another codex saved: %v, want unsupported", err)
 	}
 }
 

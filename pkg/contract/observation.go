@@ -11,7 +11,9 @@ import (
 //
 // ID is "<kind>:<key>": unique within the Session, and stable — the same fact
 // has the same id in every batch, process and adapter version. Keys by kind:
-// turn_started and turn_ended, the input id; user_input and assistant_text,
+// turn_started and turn_ended, the input id — or, for a turn the harness
+// started with no input (capability autonomous_turns), its turn id, which no
+// input id equals; user_input and assistant_text,
 // the record entry's id and block index (for a record without entry ids,
 // assistant_text's message id and block index); api_error, the record entry's
 // id; tool_*, the tool use id; subagent_*, the subagent id; prompt_*, the
@@ -22,12 +24,15 @@ import (
 // observation under (agent, session, id): the same id in another Session is
 // another fact.
 type Observation struct {
-	ID      string    `json:"id"`
-	Kind    Kind      `json:"kind"`
-	Origin  Origin    `json:"origin"`
-	Time    time.Time `json:"time"`
-	TurnID  string    `json:"turn_id,omitempty"`
-	InputID string    `json:"input_id,omitempty"`
+	ID     string    `json:"id"`
+	Kind   Kind      `json:"kind"`
+	Origin Origin    `json:"origin"`
+	Time   time.Time `json:"time"`
+	// TurnID is the turn the fact belongs to, and InputID the input that
+	// turn is for. A turn the harness started itself has a TurnID and no
+	// InputID, and so has everything it reports.
+	TurnID  string `json:"turn_id,omitempty"`
+	InputID string `json:"input_id,omitempty"`
 	// Entry is the id of the harness's record entry that holds a record-origin
 	// fact, where the record gives its entries ids. It says where the fact
 	// is; ID alone is its identity.

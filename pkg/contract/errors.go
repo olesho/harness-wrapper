@@ -87,13 +87,17 @@ const (
 	OpenSessionNotFound    OpenFailure = "session_not_found"
 	OpenSessionInUse       OpenFailure = "session_in_use"
 	OpenConfigInvalid      OpenFailure = "config_invalid"
+	// OpenStateMismatch: a loaded Session's conversation is where the
+	// harness looks, but what the harness keeps of it outside its record — a
+	// thread's name, its goal — is not what the saved Session had (1.1).
+	OpenStateMismatch OpenFailure = "state_mismatch"
 )
 
 // Values lists the set.
 func (OpenFailure) Values() []string {
 	return []string{
 		"adapter_missing", "binary_not_found", "version_unsupported", "capability_missing",
-		"auth_required", "session_not_found", "session_in_use", "config_invalid",
+		"auth_required", "session_not_found", "session_in_use", "config_invalid", "state_mismatch",
 	}
 }
 

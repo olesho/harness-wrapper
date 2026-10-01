@@ -26,6 +26,14 @@ import (
 // a task_complete with an error, completed at one with a reply. A
 // task_complete with neither — how codex 0.144 records a failed turn —
 // proves no outcome: it ends the turn, and the record ends no input's.
+//
+// A turn codex started itself, for the thread's goal, holds no user message:
+// it opens with a message of codex's own (tcodex.KindGoalContext), or — one
+// stopped before codex wrote that — with nothing. Its items name the turn
+// (adapter.AutoTurnID of codex's turn id) and no input, and so does its
+// turn_ended. Should such a turn take an input in — codex folds one sent
+// while a turn runs into that turn — codex's own turn ends there,
+// interrupted, and the rest is the input's.
 type reader struct {
 	session string
 	cfg     openConfig
@@ -42,7 +50,28 @@ type reader struct {
 type recordState struct {
 	turnID string
 	input  string
-	ended  bool
+	// user: the turn holds a user message. auto: it is known to be one codex
+	// started itself — it opened with codex's message to itself, or said
+	// something before any user message.
+	user, auto bool
+	ended      bool
+}
+
+// own is the turn id of the turn the record is in, when that is known to be
+// one codex started itself, and it runs still.
+func (st recordState) own() string {
+	if st.auto && !st.ended && st.input == "" && st.turnID != "" {
+		return adapter.AutoTurnID(st.turnID)
+	}
+	return ""
+}
+
+// said notes that the turn produced something: before any user message, that
+// makes it codex's own.
+func (st *recordState) said() {
+	if !st.user && !st.ended && st.input == "" && st.turnID != "" {
+		st.auto = true
+	}
 }
 
 type chunkToken struct {
@@ -205,8 +234,11 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 		// Items belong to the input whose turn the record is in; after that
 		// turn's end, to none, until the next turn of an input with a marker.
 		stamp := func(o contract.Observation) contract.Observation {
-			if st.input != "" && !st.ended {
+			switch {
+			case st.input != "" && !st.ended:
 				o.InputID, o.TurnID = st.input, adapter.TurnID(st.input)
+			case st.own() != "":
+				o.TurnID = st.own()
 			}
 			return o
 		}
@@ -214,12 +246,25 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 		switch {
 		case e.Kind == "task_started":
 			st = recordState{turnID: e.TurnID}
+		case e.Kind == tcodex.KindGoalContext:
+			if st.turnID == "" && !st.ended {
+				st.turnID = e.TurnID
+			}
+			st.said()
 		case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser:
+			st.user = true
 			key := fallback
 			if e.ClientID != "" {
 				key = "u:" + e.ClientID
 				if mk, ok := r.markers.ByNative(e.ClientID); ok && mk.SessionID == r.session {
-					st.input, st.ended = mk.InputID, false
+					if own := st.own(); own != "" {
+						// codex took the input into a turn of its own: that
+						// turn ends here, and the rest is the input's.
+						o := contract.NewObservation(contract.KindTurnEnded, own, contract.OriginRecord, at, contract.TurnEndedData{Outcome: contract.TurnInterrupted})
+						o.TurnID = own
+						out = append(out, o)
+					}
+					st.input, st.ended, st.auto = mk.InputID, false, false
 					if st.turnID == "" {
 						st.turnID = e.TurnID
 					}
@@ -230,6 +275,7 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			o.Truncated = cut
 			out = append(out, o)
 		case ev.Type == transcript.EventText && ev.Role == transcript.RoleAssistant:
+			st.said()
 			key := fallback
 			if e.MessageID != "" {
 				key = e.MessageID + ":" + strconv.Itoa(fe.Block)
@@ -240,12 +286,14 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			o.Truncated = cut
 			out = append(out, o)
 		case ev.Type == transcript.EventToolUse:
+			st.said()
 			input, cut := boundInput(ev.ToolInput)
 			o := stamp(contract.NewObservation(contract.KindToolUse, toolKey(ev.ToolUseID, fallback), contract.OriginRecord, at,
 				contract.ToolUseData{ToolUseID: ev.ToolUseID, Name: ev.ToolName, Input: input}))
 			o.Truncated = cut
 			out = append(out, o)
 		case ev.Type == transcript.EventToolResult:
+			st.said()
 			text, cut := adapter.Truncate(ev.Output)
 			o := stamp(contract.NewObservation(contract.KindToolResult, toolKey(ev.ToolUseID, fallback), contract.OriginRecord, at,
 				contract.ToolResultData{ToolUseID: ev.ToolUseID, Output: text}))
@@ -255,8 +303,16 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			if st.ended || e.TurnID != "" && st.turnID != "" && e.TurnID != st.turnID {
 				continue
 			}
-			if data, ok := ended(e, at); ok && st.input != "" {
-				out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.input, contract.OriginRecord, at, data)))
+			// A turn that ends with no user message in it is codex's own,
+			// whatever it said.
+			st.said()
+			if data, ok := ended(e, at); ok {
+				switch own := st.own(); {
+				case st.input != "":
+					out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.input, contract.OriginRecord, at, data)))
+				case own != "":
+					out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, own, contract.OriginRecord, at, data)))
+				}
 			}
 			st.ended = true
 		}

@@ -1,0 +1,36 @@
+{
+  "source": {
+    "format": 2,
+    "harness": {
+      "name": "claude-code",
+      "version": "2.1.283",
+      "adapter": "harness-wrapper (devel)"
+    },
+    "layout": {
+      "home": "/private/tmp/hw-saved-session/claude-code/home",
+      "config": "/private/tmp/hw-saved-session/claude-code/config",
+      "workspace": "/private/tmp/hw-saved-session/claude-code/workspace",
+      "secrets": "/private/tmp/hw-saved-session/claude-code/secrets",
+      "scratch": "/private/tmp/hw-saved-session/claude-code/scratch"
+    },
+    "workspace": "/private/tmp/hw-saved-session/claude-code/workspace"
+  },
+  "session_id": "d2e0ddf3-315b-45b1-bf7c-9e4663942303",
+  "remembers": [
+    "PING 1",
+    "PONG 1",
+    "TOOL echo saved"
+  ],
+  "files": [
+    {
+      "root": "config",
+      "path": "projects/-private-tmp-hw-saved-session-claude-code-workspace/d2e0ddf3-315b-45b1-bf7c-9e4663942303.jsonl",
+      "mode": "0600"
+    },
+    {
+      "root": "config",
+      "path": "memory/notes.md",
+      "mode": "0600"
+    }
+  ]
+}

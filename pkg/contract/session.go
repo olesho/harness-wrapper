@@ -36,6 +36,15 @@ type OpenRequest struct {
 	// Checkpoint is the last committed one of the Session being reopened.
 	// A fresh open has none.
 	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+	// Loaded says the Session was loaded into this environment from an
+	// archive (capability session_load; a reopen only). Such an open never
+	// starts a fresh conversation: it fails with session_not_found when the
+	// harness's record of the Session is not where the harness looks, and
+	// the id it returns is SessionID. The first open in the new environment
+	// also checks that what the harness keeps of the Session outside its
+	// record — a thread's name, its goal — came with it, and fails with
+	// state_mismatch when it did not.
+	Loaded bool `json:"loaded,omitempty"`
 }
 
 // CredentialFile is a staged credential: its kind, and the file holding it.
@@ -58,6 +67,9 @@ func (r OpenRequest) Validate() error {
 		}
 	default:
 		return &Error{Code: CodeProtocol, Field: "mode", Message: fmt.Sprintf("%q, want fresh or reopen", r.Mode)}
+	}
+	if r.Loaded && r.Mode != OpenReopen {
+		return &Error{Code: CodeProtocol, Field: "loaded", Message: "a loaded Session is reopened, never opened fresh"}
 	}
 	if r.SessionID != "" && !ValidID(r.SessionID) {
 		return &Error{Code: CodeProtocol, Field: "session_id", Message: fmt.Sprintf("%q is not an id", r.SessionID)}
@@ -155,11 +167,32 @@ type SendResult struct {
 	TurnID  string  `json:"turn_id"`
 }
 
-// InterruptRequest names the input whose turn to stop.
+// InterruptRequest names the turn to stop: an input's, by InputID, or — with
+// capability autonomous_turns — one the harness started itself, by TurnID.
+// Exactly one of them is set.
 type InterruptRequest struct {
-	InputID string `json:"input_id"`
+	InputID string `json:"input_id,omitempty"`
+	// TurnID is the turn id a turn_started with no input reported, or State
+	// gives while such a turn runs.
+	TurnID string `json:"turn_id,omitempty"`
 	// DeadlineMS bounds the wait for the outcome, 100–60000.
 	DeadlineMS int `json:"deadline_ms,omitempty"`
+}
+
+// Validate checks that the request names exactly one turn, by an id.
+func (r InterruptRequest) Validate() error {
+	switch {
+	case r.InputID != "" && r.TurnID != "":
+		return &Error{Code: CodeProtocol, Field: "turn_id", Message: "an interrupt names an input or a turn, not both"}
+	case r.TurnID != "" && !ValidID(r.TurnID):
+		return &Error{Code: CodeProtocol, Field: "turn_id", Message: fmt.Sprintf("%q is not an id", r.TurnID)}
+	case r.TurnID == "" && !ValidID(r.InputID):
+		return &Error{Code: CodeProtocol, Field: "input_id", Message: fmt.Sprintf("%q is not an id", r.InputID)}
+	}
+	if r.DeadlineMS != 0 && (r.Deadline() < MinInterruptDeadline || r.Deadline() > MaxInterruptDeadline) {
+		return &Error{Code: CodeProtocol, Field: "deadline_ms", Message: "out of range"}
+	}
+	return nil
 }
 
 // Deadline is the request's deadline, DefaultInterruptDeadline when unset.
@@ -185,8 +218,8 @@ const (
 	InterruptCancelled InterruptOutcome = "cancelled"
 	// InterruptNoTurn: no turn is running.
 	InterruptNoTurn InterruptOutcome = "no_turn"
-	// InterruptTooLate: the named input's turn already ended, or another
-	// input's turn is current. Nothing was stopped.
+	// InterruptTooLate: the named turn already ended, or another turn is
+	// current. Nothing was stopped.
 	InterruptTooLate InterruptOutcome = "too_late"
 )
 
@@ -232,6 +265,8 @@ const (
 	// PhaseIdle: ready for one input.
 	PhaseIdle Phase = "idle"
 	// PhaseBusy: a turn is running, possibly retrying or being interrupted.
+	// While the turn is one the harness started itself, Send is still legal:
+	// it stops that turn, then submits its input.
 	PhaseBusy Phase = "busy"
 	// PhaseAwaitingAnswer: the turn waits on a prompt (capability prompts).
 	PhaseAwaitingAnswer Phase = "awaiting_answer"
@@ -292,7 +327,8 @@ type RetryInfo struct {
 }
 
 // State is a Session's snapshot. It is observational: nothing may be
-// authorized from it.
+// authorized from it. While a turn the harness started itself runs
+// (capability autonomous_turns), it has that turn's TurnID and no InputID.
 type State struct {
 	Phase   Phase       `json:"phase"`
 	TurnID  string      `json:"turn_id,omitempty"`
