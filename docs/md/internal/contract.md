@@ -163,11 +163,16 @@ whose death would leave the native process holding the thread.
 
 - **Provision** renders `CODEX_HOME` in the config root: `config.toml` — the model and effort, no
   approvals and `danger-full-access` (the runtime's isolation is the sandbox), a credential store in
-  memory only, no plugins, apps or analytics, and an MCP server per connector — `AGENTS.md` with the
-  persona and where the memory directory is, the skills and the memory's files; and the workspace's
-  `AGENTS.md`. The credential kinds are `openai_api_key`, which the transport hands codex over the
-  protocol (`account/login/start`), and `codex_access_token`, which codex reads from
-  `CODEX_ACCESS_TOKEN`.
+  memory only (in `auth.json` for a lent login), no plugins, apps or analytics, and an MCP server per
+  connector — `AGENTS.md` with the persona and where the memory directory is, the skills and the
+  memory's files; and the workspace's `AGENTS.md`. The credential kinds are `openai_api_key`, which
+  the transport hands codex over the protocol (`account/login/start`); `codex_access_token`, a
+  ChatGPT Business or Enterprise workspace's Codex access token, which codex reads from
+  `CODEX_ACCESS_TOKEN`; and `codex_chatgpt_login`, a ChatGPT login lent for tests and short runs.
+  That is a codex's `auth.json` with its refresh token left out, which the transport writes into
+  `CODEX_HOME` at every launch with a refresh token that refreshes nothing: codex runs on the
+  access token until it expires. A lent login that holds a refresh token is refused, because a
+  refresh token is spent when it is used, and a copy that refreshed would log the lender out.
 - **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
   of its own. codex chooses a thread's id, so a fresh Session opens without one (no
   `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex

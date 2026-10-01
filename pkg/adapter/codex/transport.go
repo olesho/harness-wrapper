@@ -231,17 +231,23 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	env := append(adapter.HostEnv(), cfg.Env...)
 	apiKey := ""
 	if c := req.Credential; c != nil {
-		tok, err := readToken(c.File)
-		if err != nil {
-			return nil, openFailed(contract.OpenAuthRequired, "%v", err)
-		}
 		switch c.Kind {
-		case CredentialAPIKey:
-			apiKey = tok
-		case CredentialAccessToken:
-			env = append(env, "CODEX_ACCESS_TOKEN="+tok)
+		case CredentialAPIKey, CredentialAccessToken:
+			tok, err := readToken(c.File)
+			if err != nil {
+				return nil, openFailed(contract.OpenAuthRequired, "%v", err)
+			}
+			if c.Kind == CredentialAPIKey {
+				apiKey = tok
+			} else {
+				env = append(env, "CODEX_ACCESS_TOKEN="+tok)
+			}
+		case CredentialLogin:
+			if err := writeLogin(c.File, cfg.CodexHome); err != nil {
+				return nil, openFailed(contract.OpenAuthRequired, "%v", err)
+			}
 		default:
-			return nil, openFailed(contract.OpenConfigInvalid, "credential kind %q, want %s or %s", c.Kind, CredentialAPIKey, CredentialAccessToken)
+			return nil, openFailed(contract.OpenConfigInvalid, "credential kind %q, want %s, %s or %s", c.Kind, CredentialAPIKey, CredentialAccessToken, CredentialLogin)
 		}
 	}
 	t := &transport{

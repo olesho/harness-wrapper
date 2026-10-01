@@ -22,11 +22,18 @@ import (
 const Name = "codex"
 
 // Credential kinds codex takes: an OpenAI API key, handed to codex over the
-// protocol, which codex keeps in memory only; or a ChatGPT workspace's Codex
-// access token, which codex reads from CODEX_ACCESS_TOKEN.
+// protocol, which codex keeps in memory only; a ChatGPT workspace's Codex
+// access token, which codex reads from CODEX_ACCESS_TOKEN; or a ChatGPT login
+// lent for a while.
 const (
 	CredentialAPIKey      = "openai_api_key"
 	CredentialAccessToken = "codex_access_token"
+	// CredentialLogin is a ChatGPT login lent to the agent, for tests and
+	// short runs: the auth.json of a codex signed in with ChatGPT, its refresh
+	// token left out. The transport writes it into CODEX_HOME at every launch
+	// (login.go), and codex's credential store is that file. codex runs on
+	// the login's access token until it expires, and never refreshes it.
+	CredentialLogin = "codex_chatgpt_login"
 )
 
 // CheckpointFormat is the checkpoint format the profile writes: the rollout
@@ -61,7 +68,7 @@ func (Profile) Describe() contract.Descriptor {
 		},
 		Load:             &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		CheckpointFormat: CheckpointFormat,
-		CredentialKinds:  []string{CredentialAPIKey, CredentialAccessToken},
+		CredentialKinds:  []string{CredentialAPIKey, CredentialAccessToken, CredentialLogin},
 		Spec: contract.SpecSupport{
 			Models:             contract.Models{Any: true},
 			Efforts:            efforts,

@@ -154,9 +154,17 @@ func configTOML(spec contract.AgentSpec) string {
 	// The permission posture is bypass: isolation is the runtime's.
 	b.WriteString(`approval_policy = "never"
 sandbox_mode = "danger-full-access"
-# The credential comes from the Host at every launch; codex writes none down.
+`)
+	if spec.Credential != nil && spec.Credential.Kind == CredentialLogin {
+		b.WriteString(`# A lent ChatGPT login: the Host writes it to auth.json at every launch.
+cli_auth_credentials_store = "file"
+`)
+	} else {
+		b.WriteString(`# The credential comes from the Host at every launch; codex writes none down.
 cli_auth_credentials_store = "ephemeral"
-
+`)
+	}
+	b.WriteString(`
 [features]
 plugins = false
 remote_plugin = false
