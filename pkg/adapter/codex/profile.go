@@ -67,7 +67,8 @@ var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 // sources once a thread it saved has passed the kit's load scenarios at the
 // pin, its name and its goal with it. Behind an egress broker it takes an API
 // key or a ChatGPT login as a placeholder; a workspace's access token, never
-// tried that way, it does not.
+// tried that way, it does not. A runtime may keep a ChatGPT login for its
+// agents with the official codex (keeper.go).
 func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
@@ -75,7 +76,7 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
-			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials,
+			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials, contract.CapLoginKeeper,
 		},
 		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		Egress: &contract.Egress{
@@ -84,6 +85,7 @@ func (Profile) Describe() contract.Descriptor {
 				{Kind: CredentialLogin, Hosts: []string{ChatGPTHost}, Headers: []string{"Authorization"}},
 			},
 		},
+		Keeper:           &contract.KeeperSupport{Kind: CredentialLogin},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialAPIKey, CredentialAccessToken, CredentialLogin},
 		Spec: contract.SpecSupport{
