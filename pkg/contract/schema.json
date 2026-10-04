@@ -138,7 +138,8 @@
         "rate_limits",
         "retry_visible",
         "session_load",
-        "autonomous_turns"
+        "autonomous_turns",
+        "brokered_credentials"
       ],
       "type": "string"
     },
@@ -281,6 +282,31 @@
       ],
       "type": "object"
     },
+    "CredentialRoute": {
+      "properties": {
+        "headers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "headers",
+        "hosts",
+        "kind"
+      ],
+      "type": "object"
+    },
     "Descriptor": {
       "properties": {
         "capabilities": {
@@ -300,6 +326,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "egress": {
+          "$ref": "#/$defs/Egress"
         },
         "harness": {
           "$ref": "#/$defs/HarnessInfo"
@@ -323,6 +352,23 @@
         "limits",
         "spec"
       ],
+      "type": "object"
+    },
+    "Egress": {
+      "properties": {
+        "credentials": {
+          "items": {
+            "$ref": "#/$defs/CredentialRoute"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "Error": {
@@ -763,6 +809,51 @@
         "exited"
       ],
       "type": "string"
+    },
+    "PlaceholderRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "type": "string"
+        },
+        "credential": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "nonce": {
+          "contentEncoding": "base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "credential",
+        "kind",
+        "nonce"
+      ],
+      "type": "object"
+    },
+    "PlaceholderResult": {
+      "properties": {
+        "file": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "swaps": {
+          "items": {
+            "$ref": "#/$defs/Swap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file",
+        "swaps"
+      ],
+      "type": "object"
     },
     "PromptInfo": {
       "properties": {
@@ -1272,6 +1363,35 @@
       ],
       "type": "object"
     },
+    "Swap": {
+      "properties": {
+        "headers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "headers",
+        "hosts",
+        "placeholder",
+        "secret"
+      ],
+      "type": "object"
+    },
     "TextData": {
       "properties": {
         "text": {
@@ -1411,5 +1531,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.1"
+  "title": "Harness Adapter Interface harness-adapter/1.2"
 }

@@ -52,7 +52,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -63,6 +66,10 @@ const Name = "fake"
 
 // CredentialKind is the credential kind the fake takes.
 const CredentialKind = "fake_token"
+
+// Host is where the fake presents its token, as a bearer token in
+// Authorization, behind an egress broker (capability brokered_credentials).
+const Host = "model.fake.example"
 
 // CheckpointFormat is the checkpoint format the fake writes.
 const CheckpointFormat = 1
@@ -96,11 +103,15 @@ var Breaks = []string{
 	"load-starts-fresh", "load-keeps-path", "load-any-source", "load-forgets", "load-drops-goal",
 	"auto-unreported", "auto-send-busy", "auto-input-id", "auto-interrupt-ignored", "auto-restarts",
 	"auto-no-record-end",
+	"egress-without-capability", "impure-placeholder", "placeholder-ignores-nonce", "placeholder-holds-secret",
+	"placeholder-off-route",
 }
 
 // Adapter is the fake harness's adapter.
 type Adapter struct {
 	opts Options
+	// placeholders counts Placeholder's calls, for a break that makes it impure.
+	placeholders atomic.Int64
 }
 
 // New returns an Adapter.
@@ -125,13 +136,14 @@ const ArchiveFormat = 2
 // Describe describes the fake: every capability, every spec field.
 func (a *Adapter) Describe() contract.Descriptor {
 	return contract.Descriptor{
-		Contract: contract.Version,
-		Harness:  contract.HarnessInfo{Name: Name, Version: Version, Adapter: "harness-wrapper fakeadapter"},
-		Capabilities: []contract.Capability{
-			contract.CapResume, contract.CapAssignSessionID, contract.CapPrompts, contract.CapStreamingText,
-			contract.CapToolsObserved, contract.CapRetryVisible, contract.CapSessionLoad, contract.CapAutonomousTurns,
+		Contract:     contract.Version,
+		Harness:      contract.HarnessInfo{Name: Name, Version: Version, Adapter: "harness-wrapper fakeadapter"},
+		Capabilities: a.capabilities(),
+		Load:         &contract.LoadSupport{Formats: []int{ArchiveFormat}, Sources: []string{Version}},
+		Egress: &contract.Egress{
+			Hosts:       []string{Host},
+			Credentials: []contract.CredentialRoute{{Kind: CredentialKind, Hosts: []string{Host}, Headers: []string{"Authorization"}}},
 		},
-		Load:             &contract.LoadSupport{Formats: []int{ArchiveFormat}, Sources: []string{Version}},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialKind},
 		Spec: contract.SpecSupport{
@@ -146,6 +158,56 @@ func (a *Adapter) Describe() contract.Descriptor {
 		},
 		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
 	}
+}
+
+func (a *Adapter) capabilities() []contract.Capability {
+	caps := []contract.Capability{
+		contract.CapResume, contract.CapAssignSessionID, contract.CapPrompts, contract.CapStreamingText,
+		contract.CapToolsObserved, contract.CapRetryVisible, contract.CapSessionLoad, contract.CapAutonomousTurns,
+	}
+	if !a.breaks("egress-without-capability") {
+		caps = append(caps, contract.CapBrokeredCredentials)
+	}
+	return caps
+}
+
+// Placeholder renders the fake token's placeholder: "fake-" and 32 hex digits
+// drawn from the nonce, staged as the file and swapped at Host.
+func (a *Adapter) Placeholder(req contract.PlaceholderRequest) (contract.PlaceholderResult, error) {
+	if !contract.Compatible(req.Contract) {
+		return contract.PlaceholderResult{}, contract.Errorf(contract.CodeProtocol, "contract %q", req.Contract)
+	}
+	if req.Kind != CredentialKind {
+		return contract.PlaceholderResult{}, &contract.Error{Code: contract.CodeUnsupported, Field: "kind", Message: "no route for " + req.Kind}
+	}
+	if len(req.Nonce) < contract.MinNonceBytes {
+		return contract.PlaceholderResult{}, &contract.Error{Code: contract.CodeProtocol, Field: "nonce", Message: "too short"}
+	}
+	tok := strings.TrimSpace(string(req.Credential))
+	if tok == "" || strings.ContainsAny(tok, "\n\r\x00") {
+		return contract.PlaceholderResult{}, &contract.Error{Code: contract.CodeInvalidSpec, Field: "credential", Message: "not a token"}
+	}
+	seed := req.Nonce
+	if a.breaks("placeholder-ignores-nonce") {
+		seed = nil
+	}
+	sum := sha256.Sum256(append([]byte("fake placeholder\x00"), seed...))
+	ph := "fake-" + hex.EncodeToString(sum[:16])
+	if a.breaks("impure-placeholder") {
+		ph += strconv.FormatInt(a.placeholders.Add(1), 10)
+	}
+	file := []byte(ph)
+	if a.breaks("placeholder-holds-secret") {
+		file = []byte(ph + "\n" + tok)
+	}
+	hosts := []string{Host}
+	if a.breaks("placeholder-off-route") {
+		hosts = []string{"elsewhere.fake.example"}
+	}
+	return contract.PlaceholderResult{
+		File:  file,
+		Swaps: []contract.Swap{{Placeholder: ph, Secret: tok, Hosts: hosts, Headers: []string{"Authorization"}}},
+	}, nil
 }
 
 // openConfig is the fake's opaque open_config.

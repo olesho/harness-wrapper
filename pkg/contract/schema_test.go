@@ -38,6 +38,8 @@ var messages = []any{
 	Descriptor{},
 	ProvisionRequest{},
 	ProvisionResult{},
+	PlaceholderRequest{},
+	PlaceholderResult{},
 	OpenRequest{},
 	OpenResult{},
 	Input{},
@@ -80,6 +82,7 @@ var requests = map[reflect.Type]bool{
 	reflect.TypeOf(Input{}): true, reflect.TypeOf(ContentPart{}): true,
 	reflect.TypeOf(InterruptRequest{}): true, reflect.TypeOf(Choice{}): true,
 	reflect.TypeOf(RecordRequest{}): true, reflect.TypeOf(LoadSource{}): true,
+	reflect.TypeOf(PlaceholderRequest{}): true,
 }
 
 type enum interface{ Values() []string }
