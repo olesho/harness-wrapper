@@ -14,7 +14,8 @@
 // (autonomous_turns: turn_started and turn_ended naming a turn and no input,
 // and an interrupt that names a turn). Minor 2 adds credentials kept from the
 // harness by an egress broker (brokered_credentials: Descriptor.Egress and
-// Placeholder).
+// Placeholder), and a subscription login the runtime keeps itself and lends
+// behind that broker (login_keeper: Descriptor.Keeper and Keep).
 //
 // Two callers use an Adapter:
 //

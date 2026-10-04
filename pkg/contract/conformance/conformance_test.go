@@ -48,7 +48,12 @@ func fakeFixture(t *testing.T, breaks string) Fixture {
 			}
 			return func() { _ = os.Rename(bin+".hidden", bin) }
 		},
-		Heard:   func(_ T, s contract.Session) string { return strings.Join(fakeadapter.Heard(s), "\n") },
+		Heard: func(_ T, s contract.Session) string { return strings.Join(fakeadapter.Heard(s), "\n") },
+		Approve: func(t T, k contract.Keeper, dc contract.DeviceCode) {
+			if err := fakeadapter.Approve(k, dc.Code); err != nil {
+				t.Errorf("approving the sign-in: %v", err)
+			}
+		},
 		Timeout: 10 * time.Second,
 		Quiet:   300 * time.Millisecond,
 	}
@@ -128,6 +133,9 @@ var broken = map[string]struct{ rule, scenario string }{
 	"placeholder-ignores-nonce": {"placeholder.nonce", "placeholder"},
 	"placeholder-holds-secret":  {"placeholder.valid", "placeholder"},
 	"placeholder-off-route":     {"placeholder.valid", "placeholder"},
+	"keeper-forgets":            {"keeper.persists", "keeper"},
+	"keeper-lends-unbrokerable": {"keeper.lend", "keeper"},
+	"keeper-signout-keeps":      {"keeper.sign-out", "keeper"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule
@@ -152,6 +160,7 @@ func TestBrokenAdaptersFail(t *testing.T) {
 				Run(r, Fixture{
 					Adapter: f.Adapter, HarnessRoot: f.HarnessRoot, Spec: f.Spec, Credential: f.Credential, Kill: f.Kill,
 					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: 3 * time.Second, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
+					Approve: f.Approve,
 				})
 			}
 			if !ran {

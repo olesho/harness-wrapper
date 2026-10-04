@@ -7,7 +7,7 @@ import (
 
 // Adapter is one harness, exposed through the interface. Describe, Provision
 // and Placeholder are pure and serve the Supervisor; NewSession and OpenRecord
-// serve the Host.
+// serve the Host; Keep serves the runtime's login keeper.
 type Adapter interface {
 	// Describe returns what the adapter offers. It performs no I/O.
 	Describe() Descriptor
@@ -25,6 +25,11 @@ type Adapter interface {
 	// capability, or for a kind the Descriptor's Egress does not route, it
 	// answers CodeUnsupported.
 	Placeholder(PlaceholderRequest) (PlaceholderResult, error)
+	// Keep opens a keeper of the harness's subscription login under a home
+	// of the runtime's keeper identity (capability login_keeper). It starts
+	// nothing until a keeper method needs the harness. Without the
+	// capability it answers CodeUnsupported.
+	Keep(KeeperRequest) (Keeper, error)
 	// NewSession returns a Session handle in state unopened, without any I/O.
 	// The handle exists before opening starts, so an open can be watched and
 	// cancelled.

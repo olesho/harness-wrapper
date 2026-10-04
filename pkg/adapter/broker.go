@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"path/filepath"
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -114,4 +115,32 @@ func Drawn(nonce []byte, use string, n int) string {
 		}
 	}
 	return b.String()
+}
+
+// Keeping is the part of a Profile that keeps its harness's subscription
+// login for a runtime (capability login_keeper).
+type Keeping interface {
+	// Keep opens a keeper of the login under req.Home.
+	Keep(req contract.KeeperRequest) (contract.Keeper, error)
+}
+
+// Keep opens the profile's keeper, the request checked against the
+// Descriptor first.
+func (a *harnessAdapter) Keep(req contract.KeeperRequest) (contract.Keeper, error) {
+	if err := checkVersion(req.Contract); err != nil {
+		return nil, err
+	}
+	if !a.desc.Has(contract.CapLoginKeeper) {
+		return nil, contract.Errorf(contract.CodeUnsupported, "%s keeps no login for a runtime", a.desc.Harness.Name)
+	}
+	for field, p := range map[string]string{"home": req.Home, "harness_root": req.HarnessRoot} {
+		if p == "" || !filepath.IsAbs(p) || filepath.Clean(p) != p {
+			return nil, &contract.Error{Code: contract.CodeProtocol, Field: field, Message: "not a clean absolute path"}
+		}
+	}
+	k, ok := a.p.(Keeping)
+	if !ok {
+		return nil, &contract.Error{Code: contract.CodeInternal, Message: "the profile declares " + string(contract.CapLoginKeeper) + " and keeps no login"}
+	}
+	return k.Keep(req)
 }

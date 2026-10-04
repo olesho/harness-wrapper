@@ -104,7 +104,7 @@ var Breaks = []string{
 	"auto-unreported", "auto-send-busy", "auto-input-id", "auto-interrupt-ignored", "auto-restarts",
 	"auto-no-record-end",
 	"egress-without-capability", "impure-placeholder", "placeholder-ignores-nonce", "placeholder-holds-secret",
-	"placeholder-off-route",
+	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
 }
 
 // Adapter is the fake harness's adapter.
@@ -144,6 +144,7 @@ func (a *Adapter) Describe() contract.Descriptor {
 			Hosts:       []string{Host},
 			Credentials: []contract.CredentialRoute{{Kind: CredentialKind, Hosts: []string{Host}, Headers: []string{"Authorization"}}},
 		},
+		Keeper:           &contract.KeeperSupport{Kind: CredentialKind},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialKind},
 		Spec: contract.SpecSupport{
@@ -168,7 +169,7 @@ func (a *Adapter) capabilities() []contract.Capability {
 	if !a.breaks("egress-without-capability") {
 		caps = append(caps, contract.CapBrokeredCredentials)
 	}
-	return caps
+	return append(caps, contract.CapLoginKeeper)
 }
 
 // Placeholder renders the fake token's placeholder: "fake-" and 32 hex digits

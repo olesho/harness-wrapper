@@ -139,7 +139,8 @@
         "retry_visible",
         "session_load",
         "autonomous_turns",
-        "brokered_credentials"
+        "brokered_credentials",
+        "login_keeper"
       ],
       "type": "string"
     },
@@ -333,6 +334,9 @@
         "harness": {
           "$ref": "#/$defs/HarnessInfo"
         },
+        "keeper": {
+          "$ref": "#/$defs/KeeperSupport"
+        },
         "limits": {
           "$ref": "#/$defs/Limits"
         },
@@ -351,6 +355,21 @@
         "harness",
         "limits",
         "spec"
+      ],
+      "type": "object"
+    },
+    "DeviceCode": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "url"
       ],
       "type": "object"
     },
@@ -548,6 +567,37 @@
       },
       "type": "object"
     },
+    "KeeperRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "type": "string"
+        },
+        "harness_root": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "harness_root",
+        "home"
+      ],
+      "type": "object"
+    },
+    "KeeperSupport": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "Kind": {
       "enum": [
         "turn_started",
@@ -597,6 +647,23 @@
         "scratch",
         "secrets",
         "workspace"
+      ],
+      "type": "object"
+    },
+    "Lent": {
+      "properties": {
+        "credential": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "expiry": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "credential",
+        "expiry"
       ],
       "type": "object"
     },
@@ -653,6 +720,39 @@
       "required": [
         "formats",
         "sources"
+      ],
+      "type": "object"
+    },
+    "LoginState": {
+      "enum": [
+        "signed_out",
+        "signing_in",
+        "signed_in",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "LoginStatus": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiry": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/LoginState"
+        }
+      },
+      "required": [
+        "state"
       ],
       "type": "object"
     },

@@ -36,6 +36,7 @@ var scenarios = []scenario{
 	{"autonomous", autonomous},
 	{"load-autonomous", loadAutonomous},
 	{"placeholder", placeholderScenario},
+	{"keeper", keeperScenario},
 }
 
 // describe: the Descriptor is well formed.
@@ -67,6 +68,9 @@ func describe(c *check) {
 	}
 	if err := contract.CheckEgress(d); err != nil {
 		c.fail("describe.egress", "%v", err)
+	}
+	if err := contract.CheckKeeper(d); err != nil {
+		c.fail("describe.keeper", "%v", err)
 	}
 	switch l := d.Load; {
 	case !c.has(contract.CapSessionLoad):
