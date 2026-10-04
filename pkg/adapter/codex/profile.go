@@ -36,6 +36,15 @@ const (
 	CredentialLogin = "codex_chatgpt_login"
 )
 
+// The hosts codex presents its credentials to, each as a bearer token in
+// Authorization: an API key to the OpenAI API; a ChatGPT login's access token
+// to ChatGPT, where codex sends its model traffic, over a WebSocket, whatever
+// chatgpt_base_url says.
+const (
+	APIHost     = "api.openai.com"
+	ChatGPTHost = "chatgpt.com"
+)
+
 // CheckpointFormat is the checkpoint format the profile writes: the rollout
 // follower's checkpoint (transcript.Checkpoint) as JSON.
 const CheckpointFormat = 1
@@ -56,7 +65,9 @@ var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 // thread with an active goal makes codex start turns by itself. The profile
 // loads the threads that codex saved, and no other's: a version joins Load's
 // sources once a thread it saved has passed the kit's load scenarios at the
-// pin, its name and its goal with it.
+// pin, its name and its goal with it. Behind an egress broker it takes an API
+// key or a ChatGPT login as a placeholder; a workspace's access token, never
+// tried that way, it does not.
 func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
@@ -64,9 +75,15 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
-			contract.CapSessionLoad, contract.CapAutonomousTurns,
+			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials,
 		},
-		Load:             &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		Egress: &contract.Egress{
+			Credentials: []contract.CredentialRoute{
+				{Kind: CredentialAPIKey, Hosts: []string{APIHost}, Headers: []string{"Authorization"}},
+				{Kind: CredentialLogin, Hosts: []string{ChatGPTHost}, Headers: []string{"Authorization"}},
+			},
+		},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialAPIKey, CredentialAccessToken, CredentialLogin},
 		Spec: contract.SpecSupport{

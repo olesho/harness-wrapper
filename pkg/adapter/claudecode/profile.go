@@ -25,6 +25,11 @@ const Name = "claude-code"
 // token, given to claude as CLAUDE_CODE_OAUTH_TOKEN.
 const CredentialKind = "claude_oauth_token"
 
+// APIHost is the one host claude reaches with its nonessential traffic off,
+// which the profile always turns off: its model API, where it presents its
+// token, as a bearer token in Authorization.
+const APIHost = "api.anthropic.com"
+
 // CheckpointFormat is the checkpoint format the profile writes: the transcript
 // follower's checkpoint (transcript.Checkpoint) as JSON — the form agentd
 // stored before this profile existed, which it therefore reads.
@@ -48,7 +53,8 @@ var efforts = []string{"low", "medium", "high", "xhigh", "max"}
 // Describe describes the profile. The harness version is hw's pin: the claude
 // the profile was verified against. It loads the Sessions that claude saved,
 // and no other's: a version joins Load's sources once a Session it saved has
-// passed the kit's load scenarios at the pin (testdata/load).
+// passed the kit's load scenarios at the pin (testdata/load). Behind an
+// egress broker claude reaches APIHost alone, with a placeholder token.
 func (Profile) Describe() contract.Descriptor {
 	pin, _ := versions.Pinned(Name)
 	return contract.Descriptor{
@@ -57,9 +63,13 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible,
-			contract.CapSessionLoad,
+			contract.CapSessionLoad, contract.CapBrokeredCredentials,
 		},
-		Load:             &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		Egress: &contract.Egress{
+			Hosts:       []string{APIHost},
+			Credentials: []contract.CredentialRoute{{Kind: CredentialKind, Hosts: []string{APIHost}, Headers: []string{"Authorization"}}},
+		},
 		CheckpointFormat: CheckpointFormat,
 		CredentialKinds:  []string{CredentialKind},
 		Spec: contract.SpecSupport{
