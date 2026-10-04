@@ -12,8 +12,9 @@ Minor 1 adds two things, each behind a capability
 environment (`session_load`), and the turns a harness **starts by itself** (`autonomous_turns`). A
 1.0 caller meets neither: it sends no `load`, and the observations of a harness's own turn name no
 input it sent. Minor 2 adds credentials kept from the harness by an **egress broker**
-(`brokered_credentials`, [ADR-014](decisions/adr-014-brokered-credentials.md)), which a 1.1 caller
-never asks for.
+(`brokered_credentials`, [ADR-014](decisions/adr-014-brokered-credentials.md)), and a subscription
+login the runtime **keeps** itself and lends behind that broker (`login_keeper`,
+[ADR-015](decisions/adr-015-login-keeper.md)), which a 1.1 caller never asks for.
 
 ## The packages
 
@@ -101,6 +102,24 @@ credential belongs. An adapter with `brokered_credentials` says what only it kno
   harness however it reads them.
 
 The kit's `placeholder` scenario holds the rules, and opens a Session on the placeholder file.
+
+## A login the runtime keeps
+
+A subscription login's access token expires, and the refresh token that renews it rotates: a copy
+that refreshes logs every other holder out. A runtime may keep such a login itself, outside every
+agent, and lend it behind its broker (`login_keeper`):
+
+- `Descriptor.keeper` names the kind a kept login is lent as, one its egress routes
+  (`contract.CheckKeeper`).
+- `Keep` opens a `Keeper` over a home of the runtime's keeper identity, which no agent reaches. It
+  signs in with a device code (`SignIn`), which the person the login belongs to approves wherever
+  they are; reports where the login stands (`Status`); has the harness's own client refresh it
+  (`Refresh`), before its credential expires; lends the credential with nothing that refreshes it
+  (`Lend`), for `Placeholder`; and signs out.
+- A refused refresh fails and `Status` says why; once its credential expires the login is
+  `expired` until someone signs in again.
+
+The kit's `keeper` scenario runs a keeper whose sign-in the fixture approves (`Fixture.Approve`).
 
 ## harness-wrapper's Harness Adapter
 
@@ -211,6 +230,12 @@ whose death would leave the native process holding the thread.
   login's plan and account claims and no other, expiring in 2100 so codex never tries to refresh
   them, the account id, and the refresh token that refreshes nothing. The transport copies the
   certificates in `SSL_CERT_FILE` to `CODEX_CA_CERTIFICATE`, where codex reads them.
+- **Keeper:** a ChatGPT login kept with the pinned codex, `CODEX_HOME` the keeper's home with a file
+  credential store. The app-server runs for a sign-in (`account/login/start` with
+  `chatgptDeviceCode`, until `account/login/completed`), a refresh (`account/read` with
+  `refreshToken`) and a sign-out (`account/logout`); `Lend` reads `auth.json` and lends it without
+  its refresh token, as a `codex_chatgpt_login`. `TestCodexKeeperLive` signs in against ChatGPT for
+  a person who approves it.
 - **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
   of its own. codex chooses a thread's id, so a fresh Session opens without one (no
   `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex
