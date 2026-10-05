@@ -250,7 +250,9 @@ func settingsJSON(harnessRoot, config string) ([]byte, error) {
 // headers_file, the file each value is read from, by a script claude runs
 // each time it connects (headersHelper), so the value is in no
 // configuration and no process's environment. A script is a file of its
-// own under config, holding paths and no value.
+// own under config, holding paths and no value; claude hands headersHelper
+// to a shell, which runs it with /bin/sh, since no provisioned file is
+// executable.
 func mcpJSON(conns []contract.Connector, config string) ([]byte, []contract.File, error) {
 	servers := map[string]any{}
 	var helpers []contract.File
@@ -284,8 +286,8 @@ func mcpJSON(conns []contract.Connector, config string) ([]byte, []contract.File
 			}
 			if len(c.HTTP.HeadersFile) > 0 {
 				rel := path.Join(headersDir, c.Name+".sh")
-				helpers = append(helpers, contract.TextFile(contract.RootConfig, rel, "0700", headersScript(c.Name, c.HTTP.HeadersFile)))
-				s["headersHelper"] = filepath.Join(config, rel)
+				helpers = append(helpers, contract.TextFile(contract.RootConfig, rel, "0600", headersScript(c.Name, c.HTTP.HeadersFile)))
+				s["headersHelper"] = "/bin/sh " + shQuote(filepath.Join(config, rel))
 			}
 			servers[c.Name] = s
 		}

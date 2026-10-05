@@ -325,9 +325,11 @@ func TestProvisionRelocatesALoadedSession(t *testing.T) {
 
 // An http connector's headers_file reaches claude through a headersHelper
 // script beside mcp.json: the script holds paths, no value, and prints each
-// header's value from its file as JSON, escaped, each time claude connects.
+// header's value from its file as JSON, escaped, each time claude connects
+// and runs the helper in a shell. Like every provisioned file it is not
+// executable.
 func TestProvisionHeadersFromFiles(t *testing.T) {
-	dir := t.TempDir()
+	dir, config := t.TempDir(), filepath.Join(t.TempDir(), "it's config")
 	token, odd := filepath.Join(dir, "token"), filepath.Join(dir, "it's odd")
 	if err := os.WriteFile(token, []byte("Bearer sk-1\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -337,7 +339,7 @@ func TestProvisionHeadersFromFiles(t *testing.T) {
 	}
 	req := contract.ProvisionRequest{
 		Contract: contract.Version, HarnessRoot: t.TempDir(),
-		Layout: contract.Layout{Home: "/w/home", Config: "/w/profile", Workspace: "/w/workspace", Secrets: "/w/secrets", Scratch: "/w/spool"},
+		Layout: contract.Layout{Home: "/w/home", Config: config, Workspace: "/w/workspace", Secrets: "/w/secrets", Scratch: "/w/spool"},
 		Spec: contract.AgentSpec{
 			PermissionPosture: contract.PostureBypass,
 			Connectors: []contract.Connector{{Name: "docs", HTTP: &contract.HTTPConnector{
@@ -349,6 +351,9 @@ func TestProvisionHeadersFromFiles(t *testing.T) {
 	res, err := (Profile{}).Provision(req)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := res.Validate(); err != nil {
+		t.Fatalf("the result: %v", err)
 	}
 	var mcp struct {
 		MCPServers map[string]struct {
@@ -368,17 +373,21 @@ func TestProvisionHeadersFromFiles(t *testing.T) {
 		}
 	}
 	srv := mcp.MCPServers["docs"]
-	if srv.HeadersHelper != filepath.Join(req.Layout.Config, headersDir, "docs.sh") || len(srv.Headers) != 1 || srv.Headers["X-Team"] != "t" {
+	if len(srv.Headers) != 1 || srv.Headers["X-Team"] != "t" {
 		t.Fatalf("the server %+v", srv)
 	}
-	if script.Path == "" || script.Mode != "0700" || strings.Contains(string(script.Content()), "sk-1") {
+	if script.Path == "" || script.Mode != "0600" || strings.Contains(string(script.Content()), "sk-1") {
 		t.Fatalf("the helper %q, mode %s:\n%s", script.Path, script.Mode, script.Content())
 	}
-	sh := filepath.Join(t.TempDir(), "docs.sh")
-	if err := os.WriteFile(sh, script.Content(), 0o700); err != nil {
+	sh := filepath.Join(config, script.Path)
+	if err := os.MkdirAll(filepath.Dir(sh), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.Command("/bin/sh", sh).Output()
+	if err := os.WriteFile(sh, script.Content(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	helper := exec.Command("/bin/sh", "-c", srv.HeadersHelper)
+	out, err := helper.Output()
 	if err != nil {
 		t.Fatalf("the helper: %v", err)
 	}
@@ -393,7 +402,7 @@ func TestProvisionHeadersFromFiles(t *testing.T) {
 	if err := os.Remove(token); err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.Command("/bin/sh", sh).Run(); err == nil {
+	if err := exec.Command("/bin/sh", "-c", srv.HeadersHelper).Run(); err == nil {
 		t.Error("the helper succeeded with a header's file gone")
 	}
 }
