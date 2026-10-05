@@ -52,8 +52,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      CODEX_VERSION: "0.144.5"
-      CODEX_SHA256: "7fa2e1763a7e6cf47e013b57e95997440c36ec0c95255a4328616b30005c4876"
+      CODEX_VERSION: "0.160.0"
+      CODEX_SHA256: "37a41d61c3399182b8c727b77090cc7a1566bd849d0f09070a0bbc6fec4c58dc"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
