@@ -13,6 +13,9 @@
 //	AGENT <prompt>  an Agent tool_use running a general-purpose subagent on <prompt>, in the
 //	                foreground; the subagent's own request routes on <prompt>, and after its
 //	                result, "TOOL DONE: <output>"
+//	BG <command>    a Bash tool_use running <command> in the background; after its result,
+//	                "TOOL DONE: <output>", and once claude reports the command finished (a
+//	                <task-notification>), "BG DONE"
 //	ERR <code> <k>  answer HTTP <code> the first <k> times this text is seen
 //	                (529 overloaded_error, 429 rate_limit_error, else api_error),
 //	                then "RECOVERED"
@@ -138,7 +141,7 @@ func textOf(raw json.RawMessage) string {
 }
 
 var keywords = map[string]bool{
-	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "ERR": true, "BIG": true, "LIMIT": true,
+	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
 	"GOAL": true, "MKGOAL": true,
 }
 
@@ -154,6 +157,11 @@ func route(b body) (scenario string, toolResult *string) {
 	}
 	if last == nil {
 		return "", nil
+	}
+	// claude tells the model a background task ended in a message of its
+	// own: the turn it starts for that answers it.
+	if strings.Contains(textOf(last.Content), "<task-notification>") {
+		return "TASK-NOTIFICATION", nil
 	}
 	var lines []string
 	for _, l := range strings.Split(textOf(last.Content), "\n") {
@@ -275,6 +283,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case words[0] == "TOOL":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
 		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]any{"command": cmd, "description": "mock"}}})
+	case words[0] == "BG":
+		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "BG"))
+		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]any{"command": cmd, "description": "mock", "run_in_background": true}}})
+	case words[0] == "TASK-NOTIFICATION":
+		s.reply(w, b, reply{text: "BG DONE"})
 	case words[0] == "AGENT":
 		prompt := strings.TrimSpace(strings.TrimPrefix(scenario, "AGENT"))
 		s.reply(w, b, reply{tool: &tool{name: "Agent", input: map[string]any{

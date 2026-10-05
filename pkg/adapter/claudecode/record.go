@@ -41,6 +41,9 @@ type reader struct {
 // whether that turn's end is in it yet.
 type recordState struct {
 	input string
+	// own is the turn claude started itself to take background work up
+	// (background_turns), when the record is in one.
+	own   string
 	ended bool
 }
 
@@ -225,22 +228,37 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 				st = recordState{input: mk.InputID}
 			}
 		}
+		if e.TaskNotification != "" {
+			// claude tells the model background work ended: the turn it
+			// takes that up in is its own.
+			st = recordState{own: adapter.AutoTurnID(ownNative(e.TaskNotification))}
+		}
 		// Items belong to the input whose turn the record is in; after that
 		// turn's end, to none, until the next prompt of an input with a
 		// marker. A prompt without one — sent by another host — never takes
 		// an ended turn's input.
 		stamp := func(o contract.Observation) contract.Observation {
 			o.Entry = e.UUID
-			if st.input != "" && !st.ended {
+			switch {
+			case st.ended:
+			case st.input != "":
 				o.InputID, o.TurnID = st.input, adapter.TurnID(st.input)
+			case st.own != "":
+				o.TurnID = st.own
 			}
 			return o
 		}
 		end := func(at time.Time, data contract.TurnEndedData) {
-			if st.input == "" || st.ended {
+			switch {
+			case st.ended:
+				return
+			case st.input != "":
+				out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.input, contract.OriginRecord, at, data)))
+			case st.own != "":
+				out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.own, contract.OriginRecord, at, data)))
+			default:
 				return
 			}
-			out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.input, contract.OriginRecord, at, data)))
 			st.ended = true
 		}
 		var reply []string
@@ -253,6 +271,8 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			}
 			key := e.UUID + ":" + strconv.Itoa(fe.Block)
 			switch {
+			case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser && e.TaskNotification != "":
+				// What claude told the model, not an input.
 			case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser:
 				text, cut := adapter.Truncate(ev.Text)
 				o := stamp(contract.NewObservation(contract.KindUserInput, key, contract.OriginRecord, at, contract.TextData{Text: text}))
@@ -439,3 +459,8 @@ func capText(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// ownNative is the native id of the turn claude starts itself to take up
+// background work task ended: live, from the task_notification frame before
+// it; in the record, from the notification's entry.
+func ownNative(task string) string { return "task-" + task }

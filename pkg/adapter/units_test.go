@@ -289,3 +289,63 @@ func TestHostEnv(t *testing.T) {
 		t.Error("a variable HW_HARNESS_ENV does not name passed through")
 	}
 }
+
+// selfStopper is a transport whose harness starts turns of its own: it
+// passes on the ones an interrupt names.
+type selfStopper struct {
+	refusingTransport
+	stopped chan string
+}
+
+func (s *selfStopper) InterruptTurn(_ context.Context, native string) error {
+	s.stopped <- native
+	return nil
+}
+
+// A turn the harness starts itself to take up background work
+// (background_turns) keeps the Session busy under that turn's id: a Send
+// answers busy, not submitted, until it ends, as during an input's turn —
+// where an autonomous turn would be stopped for it — and an interrupt may
+// name it.
+func TestBackgroundTurnHoldsSends(t *testing.T) {
+	ctx := context.Background()
+	m, err := OpenMarkers(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := newFakeProfile().Describe()
+	d.Capabilities = []contract.Capability{contract.CapResume, contract.CapBackgroundTurns}
+	tr := &selfStopper{stopped: make(chan string, 1)}
+	s := newSession(&harnessAdapter{p: newFakeProfile(), desc: d}, contract.OpenRequest{})
+	s.phase, s.t, s.markers, s.sessionID = contract.PhaseIdle, tr, m, "s"
+	s.report(Event{Kind: Started, Auto: "task-1"})
+	if st := s.State(); st.Phase != contract.PhaseBusy || st.TurnID != AutoTurnID("task-1") || st.InputID != "" {
+		t.Fatalf("on a turn of its own the Session is %+v, want busy under that turn", st)
+	}
+	if _, err := s.Send(ctx, contract.Text("in-1", "hello")); contract.CodeOf(err) != contract.CodeBusy || contract.CertaintyOf(err) != contract.NotSubmitted {
+		t.Fatalf("Send during the harness's background turn: %v, want busy, not submitted", err)
+	}
+	done := make(chan contract.InterruptOutcome, 1)
+	go func() {
+		out, _ := s.Interrupt(ctx, contract.InterruptRequest{TurnID: AutoTurnID("task-1"), DeadlineMS: 5000})
+		done <- out
+	}()
+	select {
+	case native := <-tr.stopped:
+		if native != "task-1" {
+			t.Fatalf("the interrupt reached %s, want task-1", native)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the interrupt never reached the harness")
+	}
+	s.report(Event{Kind: Ended, Auto: "task-1", Outcome: contract.TurnInterrupted})
+	if out := <-done; out != contract.InterruptStopped {
+		t.Errorf("the interrupt of the background turn: %s, want stopped", out)
+	}
+	if st := s.State(); st.Phase != contract.PhaseIdle {
+		t.Fatalf("after its turn the Session is %+v, want idle", st)
+	}
+	if res, err := s.Send(ctx, contract.Text("in-1", "hello")); err != nil || res.Receipt != contract.ReceiptSubmitted {
+		t.Fatalf("Send once the background turn ended: %+v %v", res, err)
+	}
+}

@@ -314,7 +314,7 @@ func (s *session) report(ev Event) {
 // turn_started and turn_ended name the turn and no input, and while it runs
 // the Session is busy.
 func (s *session) autoLocked(ev Event) []contract.Observation {
-	if !s.has(contract.CapAutonomousTurns) || ev.Kind != Started && ev.Kind != Ended {
+	if !s.has(contract.CapAutonomousTurns) && !s.has(contract.CapBackgroundTurns) || ev.Kind != Started && ev.Kind != Ended {
 		return nil
 	}
 	at := s.autos[ev.Auto]
@@ -511,8 +511,10 @@ func (s *session) admitLocked() error {
 	case contract.PhaseIdle:
 		return nil
 	case contract.PhaseBusy:
-		if s.current == nil && s.auto != nil {
+		if s.current == nil && s.auto != nil && s.has(contract.CapAutonomousTurns) {
 			// The harness is on a turn of its own: Submit stops it first.
+			// A turn taking background work up (background_turns) is not
+			// cut short: the input waits, as for an input's turn.
 			return nil
 		}
 		return refuse(contract.CodeBusy, "a turn is running")
@@ -632,7 +634,7 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 	if err := req.Validate(); err != nil {
 		return "", err
 	}
-	if req.TurnID != "" && !s.has(contract.CapAutonomousTurns) {
+	if req.TurnID != "" && !s.has(contract.CapAutonomousTurns) && !s.has(contract.CapBackgroundTurns) {
 		return "", contract.Errorf(contract.CodeUnsupported, "%s starts no turn of its own to name", s.a.desc.Harness.Name)
 	}
 	deadline := time.NewTimer(req.Deadline())

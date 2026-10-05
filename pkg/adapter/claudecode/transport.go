@@ -70,9 +70,14 @@ type transport struct {
 	control map[string]chan controlResult
 	ctlSeq  int
 
-	mu        sync.Mutex
-	receipts  map[string]chan struct{} // by native id: closed once claude has the message
-	turn      *turnState               // the input claude is on, nil when none
+	mu       sync.Mutex
+	receipts map[string]chan struct{} // by native id: closed once claude has the message
+	turn     *turnState               // the input claude is on, nil when none
+	// own is the turn claude started itself to take up background work that
+	// ended (background_turns), nil when none; task is the task the latest
+	// task_notification named, which the next such turn is named after.
+	own       *turnState
+	task      string
 	capsDone  bool
 	stopping  bool
 	killed    bool
@@ -102,6 +107,9 @@ type frame struct {
 	Capabilities []string `json:"capabilities"`
 	Version      string   `json:"claude_code_version"`
 
+	// system/task_notification: background work ended
+	TaskID string `json:"task_id"`
+
 	// system/api_retry
 	Attempt     int    `json:"attempt"`
 	MaxRetries  int    `json:"max_retries"`
@@ -124,6 +132,11 @@ type frame struct {
 	Result         string `json:"result"`
 	TerminalReason string `json:"terminal_reason"`
 	APIErrorStatus int    `json:"api_error_status"`
+	// Origin says what a turn took up when no input started it: the
+	// task-notification of background work that ended.
+	Origin *struct {
+		Kind string `json:"kind"`
+	} `json:"origin"`
 
 	// control_request / control_response
 	RequestID string          `json:"request_id"`
@@ -346,6 +359,11 @@ func (t *transport) onFrame(f *frame, raw []byte) {
 		switch f.Subtype {
 		case "init":
 			t.onInit(f)
+			t.ownStarted()
+		case "task_notification":
+			t.mu.Lock()
+			t.task = f.TaskID
+			t.mu.Unlock()
 		case "api_retry":
 			t.mu.Lock()
 			native := ""
@@ -382,8 +400,8 @@ func (t *transport) onFrame(f *frame, raw []byte) {
 			}
 		}
 		t.mu.Lock()
-		if t.turn != nil {
-			t.turn.fail.tag, t.turn.fail.text = tag.Error, strings.Join(text, "\n")
+		if ts := t.current(); ts != nil {
+			ts.fail.tag, ts.fail.text = tag.Error, strings.Join(text, "\n")
 		}
 		t.mu.Unlock()
 	case "rate_limit_event":
@@ -500,17 +518,75 @@ func (t *transport) onInit(f *frame) {
 	go t.Stop(context.Background(), quitWait)
 }
 
+// current is the turn claude is on: an input's, or one of its own. It is
+// called with t.mu held.
+func (t *transport) current() *turnState {
+	if t.turn != nil {
+		return t.turn
+	}
+	return t.own
+}
+
+// ownStarted takes claude's init, which starts each of its turns, after a
+// task notification while it is on no input's turn, for a turn of its own:
+// one taking up background work that ended, named after the task the
+// notification named. An init with no notification before it starts none.
+func (t *transport) ownStarted() {
+	t.mu.Lock()
+	if t.turn != nil || t.own != nil || t.task == "" {
+		t.mu.Unlock()
+		return
+	}
+	native := ownNative(t.task)
+	t.own, t.task = &turnState{native: native, started: true}, ""
+	t.mu.Unlock()
+	t.report(adapter.Event{Kind: adapter.Started, Auto: native})
+}
+
+// InterruptTurn stops claude's own turn native, if claude is on it: the
+// interrupt an input's turn gets.
+func (t *transport) InterruptTurn(ctx context.Context, native string) error {
+	t.mu.Lock()
+	on := t.own != nil && t.own.native == native
+	t.mu.Unlock()
+	if !on {
+		return nil
+	}
+	return t.Interrupt(ctx)
+}
+
 // onResult ends the turn claude reports ended: by is_error and
-// terminal_reason, never by subtype.
+// terminal_reason, never by subtype. A result whose origin is a task
+// notification is claude's own turn's, and so is any result while it is on
+// no input's.
 func (t *transport) onResult(f *frame) {
 	t.mu.Lock()
-	ts := t.turn
-	t.turn = nil
+	var ts *turnState
+	own := f.Origin != nil && f.Origin.Kind == "task-notification" || t.turn == nil && t.own != nil
+	if own {
+		ts, t.own = t.own, nil
+	} else {
+		ts, t.turn = t.turn, nil
+	}
+	started := ts != nil
+	if own && ts == nil {
+		ts = &turnState{native: ownNative(t.task)}
+		if t.task == "" {
+			ts.native = ownNative("result")
+		}
+		t.task = ""
+	}
 	t.mu.Unlock()
 	if ts == nil {
 		return
 	}
 	ev := adapter.Event{Kind: adapter.Ended, Native: ts.native}
+	if own {
+		ev.Native, ev.Auto = "", ts.native
+		if !started {
+			t.report(adapter.Event{Kind: adapter.Started, Auto: ts.native})
+		}
+	}
 	switch {
 	case strings.HasPrefix(f.TerminalReason, "aborted"):
 		ev.Outcome = contract.TurnInterrupted
@@ -695,7 +771,7 @@ func (t *transport) Stop(ctx context.Context, grace time.Duration) bool {
 	deadline := time.Now().Add(grace)
 	t.mu.Lock()
 	t.stopping = true
-	busy := t.turn != nil
+	busy := t.turn != nil || t.own != nil
 	t.mu.Unlock()
 	if !busy {
 		t.wmu.Lock()
