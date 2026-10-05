@@ -3,6 +3,8 @@ package claudecode
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -318,5 +320,80 @@ func TestProvisionRelocatesALoadedSession(t *testing.T) {
 	req.Load = nil
 	if res, err = a.Provision(req); err != nil || len(res.HistoryRelocations) != 0 {
 		t.Errorf("no load: %+v %v, want no relocation", res.HistoryRelocations, err)
+	}
+}
+
+// An http connector's headers_file reaches claude through a headersHelper
+// script beside mcp.json: the script holds paths, no value, and prints each
+// header's value from its file as JSON, escaped, each time claude connects.
+func TestProvisionHeadersFromFiles(t *testing.T) {
+	dir := t.TempDir()
+	token, odd := filepath.Join(dir, "token"), filepath.Join(dir, "it's odd")
+	if err := os.WriteFile(token, []byte("Bearer sk-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(odd, []byte("a \"quoted\" \\ value\twith a tab"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	req := contract.ProvisionRequest{
+		Contract: contract.Version, HarnessRoot: t.TempDir(),
+		Layout: contract.Layout{Home: "/w/home", Config: "/w/profile", Workspace: "/w/workspace", Secrets: "/w/secrets", Scratch: "/w/spool"},
+		Spec: contract.AgentSpec{
+			PermissionPosture: contract.PostureBypass,
+			Connectors: []contract.Connector{{Name: "docs", HTTP: &contract.HTTPConnector{
+				URL: "https://mcp.example.com/mcp", Headers: map[string]string{"X-Team": "t"},
+				HeadersFile: map[string]string{"Authorization": token, "X-Odd": odd},
+			}}},
+		},
+	}
+	res, err := (Profile{}).Provision(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mcp struct {
+		MCPServers map[string]struct {
+			Headers       map[string]string `json:"headers"`
+			HeadersHelper string            `json:"headersHelper"`
+		} `json:"mcpServers"`
+	}
+	var script contract.File
+	for _, f := range res.Files {
+		switch f.Path {
+		case mcpFile:
+			if err := json.Unmarshal(f.Content(), &mcp); err != nil {
+				t.Fatal(err)
+			}
+		case headersDir + "/docs.sh":
+			script = f
+		}
+	}
+	srv := mcp.MCPServers["docs"]
+	if srv.HeadersHelper != filepath.Join(req.Layout.Config, headersDir, "docs.sh") || len(srv.Headers) != 1 || srv.Headers["X-Team"] != "t" {
+		t.Fatalf("the server %+v", srv)
+	}
+	if script.Path == "" || script.Mode != "0700" || strings.Contains(string(script.Content()), "sk-1") {
+		t.Fatalf("the helper %q, mode %s:\n%s", script.Path, script.Mode, script.Content())
+	}
+	sh := filepath.Join(t.TempDir(), "docs.sh")
+	if err := os.WriteFile(sh, script.Content(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("/bin/sh", sh).Output()
+	if err != nil {
+		t.Fatalf("the helper: %v", err)
+	}
+	var headers map[string]string
+	if err := json.Unmarshal(out, &headers); err != nil {
+		t.Fatalf("the helper's output %q: %v", out, err)
+	}
+	want := map[string]string{"Authorization": "Bearer sk-1", "X-Odd": "a \"quoted\" \\ value\twith a tab"}
+	if !reflect.DeepEqual(headers, want) {
+		t.Errorf("the helper's headers %q, want %q", headers, want)
+	}
+	if err := os.Remove(token); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("/bin/sh", sh).Run(); err == nil {
+		t.Error("the helper succeeded with a header's file gone")
 	}
 }

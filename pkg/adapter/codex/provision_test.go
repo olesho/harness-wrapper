@@ -3,6 +3,9 @@ package codex
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,6 +26,7 @@ func spec() contract.AgentSpec {
 		Connectors: []contract.Connector{
 			{Name: "probe", Stdio: &contract.StdioConnector{Command: "/bin/probe", Args: []string{"-v", `say "hi"`}, Env: map[string]string{"K": "v"}}},
 			{Name: "docs", HTTP: &contract.HTTPConnector{URL: "https://mcp.example.com", Headers: map[string]string{"X-Team": "t"}, HeadersEnv: map[string]string{"Authorization": "DOCS_TOKEN"}}},
+			{Name: "kept", HTTP: &contract.HTTPConnector{URL: "https://kept.example.com", HeadersFile: map[string]string{"Authorization": "/w/secrets/kept-auth", "X-Key": "/w/secrets/kept-key"}}},
 		},
 		PermissionPosture: contract.PostureBypass,
 		Credential:        &contract.CredentialRef{Kind: CredentialAPIKey},
@@ -48,6 +52,7 @@ func TestProvision(t *testing.T) {
 		`[mcp_servers."probe"]`, `command = "/bin/probe"`, `args = ["-v", "say \"hi\""]`, `env = { "K" = "v" }`,
 		`[mcp_servers."docs"]`, `url = "https://mcp.example.com"`, `http_headers = { "X-Team" = "t" }`,
 		`env_http_headers = { "Authorization" = "DOCS_TOKEN" }`,
+		`[mcp_servers."kept"]`, `env_http_headers = { "Authorization" = "HW_MCP_HEADER_1", "X-Key" = "HW_MCP_HEADER_2" }`,
 	} {
 		if !strings.Contains(toml, want) {
 			t.Errorf("config.toml has no %s:\n%s", want, toml)
@@ -164,5 +169,37 @@ func TestTOMLString(t *testing.T) {
 		if got := tomlString(in); got != want {
 			t.Errorf("tomlString(%q) = %s, want %s", in, got, want)
 		}
+	}
+}
+
+// A header of headers_file is read from its file into the variable
+// config.toml names for it, for codex's environment alone; its value is in
+// no file Provision renders.
+func TestHeadersFromFiles(t *testing.T) {
+	res, err := adapter.New(Profile{}).Provision(contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: "/opt/codex", Layout: layout(), Spec: spec()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := parseOpenConfig(res.OpenConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]string{"HW_MCP_HEADER_1": "/w/secrets/kept-auth", "HW_MCP_HEADER_2": "/w/secrets/kept-key"}; !reflect.DeepEqual(cfg.HeaderFiles, want) {
+		t.Fatalf("the open config's header files %v, want %v", cfg.HeaderFiles, want)
+	}
+	dir := t.TempDir()
+	auth, key := filepath.Join(dir, "auth"), filepath.Join(dir, "key")
+	if err := os.WriteFile(auth, []byte("Bearer v-1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, []byte("k=2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env, err := headerEnv(map[string]string{"HW_MCP_HEADER_1": auth, "HW_MCP_HEADER_2": key})
+	if err != nil || !reflect.DeepEqual(env, []string{"HW_MCP_HEADER_1=Bearer v-1", "HW_MCP_HEADER_2=k=2"}) {
+		t.Errorf("headerEnv: %q %v", env, err)
+	}
+	if _, err := headerEnv(map[string]string{"HW_MCP_HEADER_1": filepath.Join(dir, "gone")}); err == nil {
+		t.Error("a header's file gone, and no error")
 	}
 }
