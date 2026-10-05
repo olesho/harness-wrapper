@@ -349,3 +349,51 @@ func TestBackgroundTurnHoldsSends(t *testing.T) {
 		t.Fatalf("Send once the background turn ended: %+v %v", res, err)
 	}
 }
+
+// The work a harness runs in the background (background_turns) is reported
+// as it changes — a live background_tasks observation naming no input or
+// turn, every task still running — and listed in State until it ends or the
+// harness exits; without the capability, neither.
+func TestBackgroundTasks(t *testing.T) {
+	d := newFakeProfile().Describe()
+	d.Capabilities = []contract.Capability{contract.CapResume, contract.CapBackgroundTurns}
+	s := newSession(&harnessAdapter{p: newFakeProfile(), desc: d}, contract.OpenRequest{})
+	s.phase = contract.PhaseIdle
+	task := contract.BackgroundTask{ID: "b1", Kind: contract.BackgroundSubagent, Description: "research"}
+	s.report(Event{Kind: Background, Tasks: []contract.BackgroundTask{task}})
+	if st := s.State(); st.Phase != contract.PhaseIdle || len(st.Background) != 1 || st.Background[0] != task {
+		t.Fatalf("with work in the background the Session is %+v, want idle, listing it", st)
+	}
+	s.report(Event{Kind: Background})
+	if st := s.State(); len(st.Background) != 0 {
+		t.Fatalf("with the work ended State lists %+v", st.Background)
+	}
+	s.report(Event{Kind: Background, Tasks: []contract.BackgroundTask{task}})
+	s.report(Event{Kind: Exited})
+	if st := s.State(); len(st.Background) != 0 {
+		t.Fatalf("after the harness exited State lists %+v", st.Background)
+	}
+	var got [][]contract.BackgroundTask
+	s.cur.mu.Lock()
+	for _, e := range s.cur.queue {
+		if e.obs.Kind != contract.KindBackgroundTasks {
+			continue
+		}
+		var d contract.BackgroundTasksData
+		if err := e.obs.Decode(&d); err != nil || d.Tasks == nil || e.obs.Origin != contract.OriginLive || e.obs.InputID != "" || e.obs.TurnID != "" {
+			t.Errorf("background_tasks %+v (%v)", e.obs, err)
+		}
+		got = append(got, d.Tasks)
+	}
+	s.cur.mu.Unlock()
+	if len(got) != 3 || len(got[0]) != 1 || len(got[1]) != 0 || len(got[2]) != 1 {
+		t.Errorf("background_tasks reported %v, want one task, none, one", got)
+	}
+
+	plain := newSession(&harnessAdapter{p: newFakeProfile(), desc: newFakeProfile().Describe()}, contract.OpenRequest{})
+	plain.phase = contract.PhaseIdle
+	plain.report(Event{Kind: Background, Tasks: []contract.BackgroundTask{task}})
+	if st := plain.State(); len(st.Background) != 0 {
+		t.Errorf("without background_turns State lists %+v", st.Background)
+	}
+}

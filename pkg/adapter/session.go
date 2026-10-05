@@ -75,6 +75,8 @@ type session struct {
 	prompt     *contract.PromptInfo
 	answered   map[string]contract.Choice
 	retry      *contract.RetryInfo
+	// background is the work the harness runs in the background now.
+	background []contract.BackgroundTask
 	exited     chan struct{} // closed once the harness exited
 	exitOnce   sync.Once
 	closing    bool
@@ -266,6 +268,13 @@ func (s *session) report(ev Event) {
 		if s.has(contract.CapRetryVisible) {
 			obs = append(obs, s.liveObs(contract.KindRetrying, t.inputID+":"+strconv.Itoa(ev.Retry.Attempt), t, ev.Time, ev.Retry))
 		}
+	case Background:
+		if !s.has(contract.CapBackgroundTurns) || s.phase == contract.PhaseExited {
+			break
+		}
+		tasks := append([]contract.BackgroundTask{}, ev.Tasks...)
+		s.background = tasks
+		obs = append(obs, s.liveObs(contract.KindBackgroundTasks, s.liveKeyLocked(), nil, ev.Time, contract.BackgroundTasksData{Tasks: tasks}))
 	case RateLimited:
 		if ev.ResumeAt != nil {
 			at := *ev.ResumeAt
@@ -299,7 +308,7 @@ func (s *session) report(ev Event) {
 			exit.Detail, _ = Truncate(exit.Detail)
 			obs = append(obs, s.liveObs(contract.KindSessionExited, s.liveKeyLocked(), nil, ev.Time, exit))
 			s.phase = contract.PhaseExited
-			s.prompt, s.retry = nil, nil
+			s.prompt, s.retry, s.background = nil, nil, nil
 			if s.gateTimer != nil {
 				s.gateTimer.Stop()
 			}
@@ -885,6 +894,9 @@ func (s *session) stateLocked() contract.State {
 	if s.retry != nil && s.has(contract.CapRetryVisible) {
 		r := *s.retry
 		st.Retry = &r
+	}
+	if len(s.background) > 0 {
+		st.Background = append([]contract.BackgroundTask(nil), s.background...)
 	}
 	return st
 }
