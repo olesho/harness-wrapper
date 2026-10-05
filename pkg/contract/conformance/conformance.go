@@ -82,6 +82,10 @@ type Fixture struct {
 	Quiet time.Duration
 	// Skip names scenarios the harness cannot run, with the reason.
 	Skip map[string]string
+	// Approve approves a keeper's device-code sign-in (capability
+	// login_keeper), as its user would; nil skips the scenario that needs
+	// it.
+	Approve func(t T, k contract.Keeper, dc contract.DeviceCode)
 }
 
 func (f Fixture) timeout() time.Duration {

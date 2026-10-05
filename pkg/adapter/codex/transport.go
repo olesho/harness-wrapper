@@ -228,7 +228,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		// ended before its first turn — has nothing to resume: a new one
 		// starts, under the id codex gives it.
 	}
-	env := append(adapter.HostEnv(), cfg.Env...)
+	env := caEnv(append(adapter.HostEnv(), cfg.Env...))
 	apiKey := ""
 	if c := req.Credential; c != nil {
 		switch c.Kind {

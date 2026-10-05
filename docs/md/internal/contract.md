@@ -5,13 +5,16 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.1`.
+package is its normative form, contract version `harness-adapter/1.2`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
 environment (`session_load`), and the turns a harness **starts by itself** (`autonomous_turns`). A
 1.0 caller meets neither: it sends no `load`, and the observations of a harness's own turn name no
-input it sent.
+input it sent. Minor 2 adds credentials kept from the harness by an **egress broker**
+(`brokered_credentials`, [ADR-014](decisions/adr-014-brokered-credentials.md)), and a subscription
+login the runtime **keeps** itself and lends behind that broker (`login_keeper`,
+[ADR-015](decisions/adr-015-login-keeper.md)), which a 1.1 caller never asks for.
 
 ## The packages
 
@@ -26,7 +29,8 @@ input it sent.
 - The **Supervisor** calls `Describe` and `Provision`. `Provision` is pure: it turns a harness-neutral
   `AgentSpec` into files, an opaque `open_config` and the paths archives include and skip. The
   Supervisor writes the files — beneath their roots, never through a symlink, with modes no wider
-  than `0644` (`ProvisionResult.Validate`, `conformance.Apply`).
+  than `0644` (`ProvisionResult.Validate`, `conformance.Apply`). For a credential it keeps from the
+  harness it also calls `Placeholder`.
 - The **Host** opens Sessions (`NewSession`, then `Open`) and record handles (`OpenRecord`), feeds a
   Session one input at a time, and acknowledges each batch of observations only after the
   Supervisor has committed it.
@@ -77,6 +81,46 @@ is everything the turn says. While it runs the Session is `busy` with `State.tur
 - The record proves such a turn's end under the same id, so a Supervisor that lost the live
   `turn_ended` to a crash finds it in the record.
 
+## Credentials behind an egress broker
+
+A runtime may keep a harness's credentials out of the harness's reach: it stages a placeholder where
+the credential would be, fences the harness's network so that an egress broker is its only way out,
+and the broker puts the credential in the placeholder's place in the requests sent where the
+credential belongs. An adapter with `brokered_credentials` says what only it knows of that:
+
+- `Descriptor.egress` names the hosts every Session of the harness reaches and, per credential kind,
+  a route: the exact hosts the harness presents it to and the headers that carry it there
+  (`contract.CheckEgress` holds the form). A kind with no route is never brokered.
+- `Placeholder` renders what stands in for a credential: the file the Supervisor stages in its place,
+  which `Open` reads as it reads the credential, and the swaps — placeholder, secret, hosts,
+  headers — the Supervisor hands its broker. It is pure, a function of the credential and a nonce of
+  the Supervisor's, and its result holds the credential's secrets: the Supervisor gives them to the
+  broker alone and never journals or logs them (`Swap` prints without its secret).
+  `PlaceholderResult.Validate` keeps each swap within its route and every secret out of the file.
+- The runtime gives every harness the broker's address in `HTTPS_PROXY` and the certificates to
+  trust in `SSL_CERT_FILE`, through `HW_HARNESS_ENV`; a profile hands the certificates to its
+  harness however it reads them.
+
+The kit's `placeholder` scenario holds the rules, and opens a Session on the placeholder file.
+
+## A login the runtime keeps
+
+A subscription login's access token expires, and the refresh token that renews it rotates: a copy
+that refreshes logs every other holder out. A runtime may keep such a login itself, outside every
+agent, and lend it behind its broker (`login_keeper`):
+
+- `Descriptor.keeper` names the kind a kept login is lent as, one its egress routes
+  (`contract.CheckKeeper`).
+- `Keep` opens a `Keeper` over a home of the runtime's keeper identity, which no agent reaches. It
+  signs in with a device code (`SignIn`), which the person the login belongs to approves wherever
+  they are; reports where the login stands (`Status`); has the harness's own client refresh it
+  (`Refresh`), before its credential expires; lends the credential with nothing that refreshes it
+  (`Lend`), for `Placeholder`; and signs out.
+- A refused refresh fails and `Status` says why; once its credential expires the login is
+  `expired` until someone signs in again.
+
+The kit's `keeper` scenario runs a keeper whose sign-in the fixture approves (`Fixture.Approve`).
+
 ## harness-wrapper's Harness Adapter
 
 `pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
@@ -108,7 +152,10 @@ model API. Never a credential.
 A profile (`adapter.Profile`) supplies what is its harness's own: the Descriptor, `Provision`, a
 `Transport` to the running harness (submit, interrupt, answer, stop, and its events) and a
 `Reader` of its record (chunks of record-origin observations, commit, and the evidence for
-`Recover`). It registers with `adapter.Register` under its harness's name.
+`Recover`). It registers with `adapter.Register` under its harness's name. A profile that keeps its
+credentials behind a broker also renders their placeholders (`adapter.Placeholderer`); the shared
+part checks each request against the Descriptor and each result against the kind's route, and
+`adapter.TokenPlaceholder` draws a token's placeholder in its shape.
 
 ## The Claude Code profile
 
@@ -144,6 +191,9 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
   `unknown`.
+- **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
+  traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
+  token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.
 - **Load:** the history is `config/projects` and `config/memory`. claude names a working directory's
   transcripts for its resolved path, so one relocation moves `config/projects/<source workspace>` to
   `config/projects/<new workspace>` — a subagent's transcript, beneath it, with it — and nothing
@@ -173,6 +223,19 @@ whose death would leave the native process holding the thread.
   `CODEX_HOME` at every launch with a refresh token that refreshes nothing: codex runs on the
   access token until it expires. A lent login that holds a refresh token is refused, because a
   refresh token is spent when it is used, and a copy that refreshed would log the lender out.
+- **Behind a broker** codex presents an API key to `api.openai.com` and a ChatGPT login's access token
+  to `chatgpt.com`, where it sends its model traffic over a WebSocket whatever `chatgpt_base_url`
+  says, both in `Authorization`; a workspace's access token has no route. An API key's placeholder
+  is a key of its shape. A login's is built afresh: JWT-shaped id and access tokens carrying the
+  login's plan and account claims and no other, expiring in 2100 so codex never tries to refresh
+  them, the account id, and the refresh token that refreshes nothing. The transport copies the
+  certificates in `SSL_CERT_FILE` to `CODEX_CA_CERTIFICATE`, where codex reads them.
+- **Keeper:** a ChatGPT login kept with the pinned codex, `CODEX_HOME` the keeper's home with a file
+  credential store. The app-server runs for a sign-in (`account/login/start` with
+  `chatgptDeviceCode`, until `account/login/completed`), a refresh (`account/read` with
+  `refreshToken`) and a sign-out (`account/logout`); `Lend` reads `auth.json` and lends it without
+  its refresh token, as a `codex_chatgpt_login`. `TestCodexKeeperLive` signs in against ChatGPT for
+  a person who approves it.
 - **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
   of its own. codex chooses a thread's id, so a fresh Session opens without one (no
   `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex

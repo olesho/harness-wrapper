@@ -12,13 +12,17 @@
 // environment (session_load: ProvisionRequest.Load, history_relocations and
 // OpenRequest.Loaded), and the turns a harness starts with no input
 // (autonomous_turns: turn_started and turn_ended naming a turn and no input,
-// and an interrupt that names a turn).
+// and an interrupt that names a turn). Minor 2 adds credentials kept from the
+// harness by an egress broker (brokered_credentials: Descriptor.Egress and
+// Placeholder), and a subscription login the runtime keeps itself and lends
+// behind that broker (login_keeper: Descriptor.Keeper and Keep).
 //
 // Two callers use an Adapter:
 //
 //   - the Supervisor, before any agent process exists, calls Describe and
 //     Provision — the pure rendering of a harness-neutral Agent Spec into the
-//     harness's files, argv and environment, which the Supervisor writes;
+//     harness's files, argv and environment, which the Supervisor writes —
+//     and, for a credential it keeps from the harness, Placeholder;
 //   - the Host, one per agent and inside the agent's isolation, opens Sessions
 //     (NewSession, then Open … Close) and record handles (OpenRecord).
 //
@@ -37,7 +41,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.1"
+const Version = "harness-adapter/1.2"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -45,7 +49,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 1
+	Minor = 2
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

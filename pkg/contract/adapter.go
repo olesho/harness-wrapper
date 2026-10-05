@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Adapter is one harness, exposed through the interface. Describe and
-// Provision are pure and serve the Supervisor; NewSession and OpenRecord serve
-// the Host.
+// Adapter is one harness, exposed through the interface. Describe, Provision
+// and Placeholder are pure and serve the Supervisor; NewSession and OpenRecord
+// serve the Host; Keep serves the runtime's login keeper.
 type Adapter interface {
 	// Describe returns what the adapter offers. It performs no I/O.
 	Describe() Descriptor
@@ -17,6 +17,19 @@ type Adapter interface {
 	// result (see ProvisionResult). A request that loads a saved Session
 	// (ProvisionRequest.Load) is also told where that Session's history goes.
 	Provision(ProvisionRequest) (ProvisionResult, error)
+	// Placeholder renders what stands in for a credential (capability
+	// brokered_credentials): the file the Supervisor stages in its place,
+	// and the substitutions an egress broker makes for it. It is pure. Its
+	// result holds the credential's secrets: the Supervisor hands them to
+	// the broker alone, and never journals or logs them. Without the
+	// capability, or for a kind the Descriptor's Egress does not route, it
+	// answers CodeUnsupported.
+	Placeholder(PlaceholderRequest) (PlaceholderResult, error)
+	// Keep opens a keeper of the harness's subscription login under a home
+	// of the runtime's keeper identity (capability login_keeper). It starts
+	// nothing until a keeper method needs the harness. Without the
+	// capability it answers CodeUnsupported.
+	Keep(KeeperRequest) (Keeper, error)
 	// NewSession returns a Session handle in state unopened, without any I/O.
 	// The handle exists before opening starts, so an open can be watched and
 	// cancelled.

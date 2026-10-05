@@ -138,7 +138,9 @@
         "rate_limits",
         "retry_visible",
         "session_load",
-        "autonomous_turns"
+        "autonomous_turns",
+        "brokered_credentials",
+        "login_keeper"
       ],
       "type": "string"
     },
@@ -281,6 +283,31 @@
       ],
       "type": "object"
     },
+    "CredentialRoute": {
+      "properties": {
+        "headers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "headers",
+        "hosts",
+        "kind"
+      ],
+      "type": "object"
+    },
     "Descriptor": {
       "properties": {
         "capabilities": {
@@ -301,8 +328,14 @@
           },
           "type": "array"
         },
+        "egress": {
+          "$ref": "#/$defs/Egress"
+        },
         "harness": {
           "$ref": "#/$defs/HarnessInfo"
+        },
+        "keeper": {
+          "$ref": "#/$defs/KeeperSupport"
         },
         "limits": {
           "$ref": "#/$defs/Limits"
@@ -323,6 +356,38 @@
         "limits",
         "spec"
       ],
+      "type": "object"
+    },
+    "DeviceCode": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "url"
+      ],
+      "type": "object"
+    },
+    "Egress": {
+      "properties": {
+        "credentials": {
+          "items": {
+            "$ref": "#/$defs/CredentialRoute"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
       "type": "object"
     },
     "Error": {
@@ -502,6 +567,37 @@
       },
       "type": "object"
     },
+    "KeeperRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "type": "string"
+        },
+        "harness_root": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "harness_root",
+        "home"
+      ],
+      "type": "object"
+    },
+    "KeeperSupport": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "Kind": {
       "enum": [
         "turn_started",
@@ -551,6 +647,23 @@
         "scratch",
         "secrets",
         "workspace"
+      ],
+      "type": "object"
+    },
+    "Lent": {
+      "properties": {
+        "credential": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "expiry": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "credential",
+        "expiry"
       ],
       "type": "object"
     },
@@ -607,6 +720,39 @@
       "required": [
         "formats",
         "sources"
+      ],
+      "type": "object"
+    },
+    "LoginState": {
+      "enum": [
+        "signed_out",
+        "signing_in",
+        "signed_in",
+        "expired"
+      ],
+      "type": "string"
+    },
+    "LoginStatus": {
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "expiry": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/LoginState"
+        }
+      },
+      "required": [
+        "state"
       ],
       "type": "object"
     },
@@ -763,6 +909,51 @@
         "exited"
       ],
       "type": "string"
+    },
+    "PlaceholderRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "type": "string"
+        },
+        "credential": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "nonce": {
+          "contentEncoding": "base64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "credential",
+        "kind",
+        "nonce"
+      ],
+      "type": "object"
+    },
+    "PlaceholderResult": {
+      "properties": {
+        "file": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "swaps": {
+          "items": {
+            "$ref": "#/$defs/Swap"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file",
+        "swaps"
+      ],
+      "type": "object"
     },
     "PromptInfo": {
       "properties": {
@@ -1272,6 +1463,35 @@
       ],
       "type": "object"
     },
+    "Swap": {
+      "properties": {
+        "headers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "headers",
+        "hosts",
+        "placeholder",
+        "secret"
+      ],
+      "type": "object"
+    },
     "TextData": {
       "properties": {
         "text": {
@@ -1411,5 +1631,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.1"
+  "title": "Harness Adapter Interface harness-adapter/1.2"
 }

@@ -29,6 +29,13 @@ type Descriptor struct {
 	// Load says which saved Sessions the adapter continues in a fresh
 	// environment (capability session_load); nil without it.
 	Load *LoadSupport `json:"load,omitempty"`
+	// Egress is the network the harness reaches, and where it presents each
+	// credential kind it takes as a placeholder (capability
+	// brokered_credentials); nil without it.
+	Egress *Egress `json:"egress,omitempty"`
+	// Keeper is what a login the runtime keeps for the harness is lent as
+	// (capability login_keeper); nil without it.
+	Keeper *KeeperSupport `json:"keeper,omitempty"`
 }
 
 // LoadSupport is the saved Sessions an adapter loads: each entry a
@@ -79,7 +86,8 @@ func (d Descriptor) Has(c Capability) bool {
 // Capability is a named behaviour an adapter may offer. Each adds exactly
 // what its constant says; without it, the operations answer CodeUnsupported,
 // or the observations never appear. The set is closed within a minor version;
-// 1.1 added session_load and autonomous_turns.
+// 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
+// login_keeper.
 type Capability string
 
 // Capabilities.
@@ -116,13 +124,25 @@ const (
 	// starts none of its own until an input's turn completes or the Session
 	// is reopened.
 	CapAutonomousTurns Capability = "autonomous_turns"
+	// CapBrokeredCredentials: the harness can work with placeholders for the
+	// credential kinds the Descriptor's Egress routes, through an egress
+	// broker that substitutes them: Placeholder renders a credential's
+	// placeholder, and the harness reaches the network only at the hosts
+	// Egress names, through the proxy in HTTPS_PROXY, trusting the
+	// certificates in SSL_CERT_FILE.
+	CapBrokeredCredentials Capability = "brokered_credentials"
+	// CapLoginKeeper: the runtime can keep the harness's subscription login
+	// itself, outside every agent: Keep opens a keeper that signs in with a
+	// device code, has the harness's own client refresh the login, and lends
+	// its credential as the kind the Descriptor's Keeper names.
+	CapLoginKeeper Capability = "login_keeper"
 )
 
 // Values lists the set.
 func (Capability) Values() []string {
 	return []string{
 		"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible",
-		"session_load", "autonomous_turns",
+		"session_load", "autonomous_turns", "brokered_credentials", "login_keeper",
 	}
 }
 
