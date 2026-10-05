@@ -69,6 +69,7 @@ var messages = []any{
 	PromptResolvedData{},
 	RateLimitData{},
 	RetryingData{},
+	BackgroundTasksData{},
 	Block{},
 	SessionExitedData{},
 }

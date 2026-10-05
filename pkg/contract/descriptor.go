@@ -87,7 +87,8 @@ func (d Descriptor) Has(c Capability) bool {
 // what its constant says; without it, the operations answer CodeUnsupported,
 // or the observations never appear. The set is closed within a minor version;
 // 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
-// login_keeper, 1.3 background_turns.
+// login_keeper, 1.3 background_turns (its background_tasks observation in
+// 1.4).
 type Capability string
 
 // Capabilities.
@@ -132,7 +133,10 @@ const (
 	// State.InputID, and Send answers busy as during an input's turn; and
 	// Interrupt may name it by InterruptRequest.TurnID. Unlike
 	// autonomous_turns, the harness starts one whenever background work ends,
-	// whatever stopped one before.
+	// whatever stopped one before. Since 1.4 the work itself is reported as
+	// it changes, live (background_tasks), and State.Background lists it: a
+	// Session whose harness works on in the background is idle between
+	// turns, yet not at rest.
 	CapBackgroundTurns Capability = "background_turns"
 	// CapBrokeredCredentials: the harness can work with placeholders for the
 	// credential kinds the Descriptor's Egress routes, through an egress

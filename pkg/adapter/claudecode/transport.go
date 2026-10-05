@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/internal/procgroup"
@@ -109,6 +110,9 @@ type frame struct {
 
 	// system/task_notification: background work ended
 	TaskID string `json:"task_id"`
+	// system/background_tasks_changed: every task running in the
+	// background, decoded for that frame alone (backgroundTasks)
+	Tasks json.RawMessage `json:"tasks"`
 
 	// system/api_retry
 	Attempt     int    `json:"attempt"`
@@ -298,6 +302,44 @@ func (t *transport) start(bin string, args []string, dir string, env []string) e
 
 func (t *transport) SessionID() string { return t.id }
 
+// maxTaskDescription bounds a background task's description, in bytes.
+const maxTaskDescription = 200
+
+// backgroundTasks is claude's list of the tasks it runs in the background, in
+// the contract's terms: a shell (local_bash) is a command, an agent a
+// subagent.
+func backgroundTasks(raw json.RawMessage) []contract.BackgroundTask {
+	var tasks []struct {
+		TaskID      string `json:"task_id"`
+		TaskType    string `json:"task_type"`
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(raw, &tasks)
+	out := make([]contract.BackgroundTask, 0, len(tasks))
+	for _, x := range tasks {
+		if x.TaskID == "" {
+			continue
+		}
+		kind := contract.BackgroundOther
+		switch {
+		case x.TaskType == "local_bash":
+			kind = contract.BackgroundCommand
+		case strings.HasSuffix(x.TaskType, "_agent"):
+			kind = contract.BackgroundSubagent
+		}
+		desc := x.Description
+		if len(desc) > maxTaskDescription {
+			cut := maxTaskDescription
+			for cut > 0 && !utf8.RuneStart(desc[cut]) {
+				cut--
+			}
+			desc = desc[:cut]
+		}
+		out = append(out, contract.BackgroundTask{ID: x.TaskID, Kind: kind, Description: desc})
+	}
+	return out
+}
+
 // NewNative is an input's id in claude's terms: a message uuid.
 func (t *transport) NewNative(string) string { return sessionid.NewUUID() }
 
@@ -364,6 +406,8 @@ func (t *transport) onFrame(f *frame, raw []byte) {
 			t.mu.Lock()
 			t.task = f.TaskID
 			t.mu.Unlock()
+		case "background_tasks_changed":
+			t.report(adapter.Event{Kind: adapter.Background, Tasks: backgroundTasks(f.Tasks)})
 		case "api_retry":
 			t.mu.Lock()
 			native := ""

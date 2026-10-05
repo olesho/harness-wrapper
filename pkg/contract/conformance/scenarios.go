@@ -1090,6 +1090,24 @@ func background(c *check) {
 	if end, ok := h.turnEnded(in); !ok || end.Outcome != contract.TurnCompleted {
 		c.stop("bg.input", "the turn that starts the background work: %+v", end)
 	}
+	tasks := func(n int) func(contract.Observation) bool {
+		return func(o contract.Observation) bool {
+			var d contract.BackgroundTasksData
+			return o.Kind == contract.KindBackgroundTasks && o.Decode(&d) == nil && len(d.Tasks) == n
+		}
+	}
+	if o, ok := h.await("the background work running", tasks(1)); !ok {
+		c.fail("bg.tasks", "the background work was never reported running (background_tasks)")
+	} else {
+		var d contract.BackgroundTasksData
+		_ = o.Decode(&d)
+		if t := d.Tasks[0]; t.ID == "" || t.Kind != contract.BackgroundCommand || o.Origin != contract.OriginLive || o.InputID != "" || o.TurnID != "" {
+			c.fail("bg.tasks", "the background work running: %+v %+v, want one command, live, naming no input or turn", o, t)
+		}
+	}
+	if _, ok := h.await("the background work ended", tasks(0)); !ok {
+		c.fail("bg.tasks", "the background work was never reported ended (background_tasks, no task)")
+	}
 	own, ok := h.ownStarted()
 	if !ok {
 		c.stop("bg.reported", "the background work ended, and no turn of the harness's own was reported started")
@@ -1099,6 +1117,9 @@ func background(c *check) {
 	}
 	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
 		c.fail("bg.reported", "after the harness's own turn the Session is %s, want idle", p)
+	}
+	if st := s.State(); len(st.Background) != 0 {
+		c.fail("bg.tasks", "with the background work taken up State lists %+v", st.Background)
 	}
 	for _, o := range h.deliveries(c.own) {
 		if o.InputID != "" {

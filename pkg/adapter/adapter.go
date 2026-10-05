@@ -143,6 +143,9 @@ const (
 	PromptResolved
 	// Exited: the harness process ended (Exit). It is the last event.
 	Exited
+	// Background: the work the harness runs in the background changed:
+	// Tasks is every task still running (background_turns).
+	Background
 )
 
 // Event is one thing a harness reported.
@@ -168,6 +171,8 @@ type Event struct {
 	By       string
 
 	Exit contract.SessionExitedData
+
+	Tasks []contract.BackgroundTask
 }
 
 // RecordSource names one Session's record for Profile.Record.
