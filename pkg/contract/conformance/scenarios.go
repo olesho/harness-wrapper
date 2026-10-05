@@ -35,6 +35,7 @@ var scenarios = []scenario{
 	{"load-refused", loadRefused},
 	{"autonomous", autonomous},
 	{"load-autonomous", loadAutonomous},
+	{"background", background},
 	{"placeholder", placeholderScenario},
 	{"keeper", keeperScenario},
 }
@@ -1007,6 +1008,53 @@ func autonomous(c *check) {
 		if o, ok := rh.await(want, func(o contract.Observation) bool { return o.ID == want }); !ok || o.Origin != contract.OriginRecord || o.InputID != "" {
 			c.fail("auto.record", "the record, read alone, does not deliver %s: the end of a turn the harness started", want)
 		}
+	}
+}
+
+// background: work the harness began in the background ends, and the
+// harness takes its result up in a turn of its own: reported live as a turn
+// of no input, and its end from the record too, under the id it had.
+func background(c *check) {
+	if !c.has(contract.CapBackgroundTurns) {
+		c.t.Logf("no background_turns: skipped")
+		return
+	}
+	a := c.newAgent()
+	s, h := c.openSession(a)
+	ctx, cancel := c.ctx()
+	defer cancel()
+	in := c.send(s, "BG sleep 2; echo bg-out")
+	if end, ok := h.turnEnded(in); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("bg.input", "the turn that starts the background work: %+v", end)
+	}
+	own, ok := h.ownStarted()
+	if !ok {
+		c.stop("bg.reported", "the background work ended, and no turn of the harness's own was reported started")
+	}
+	if end, ok := h.ownEnded(own.TurnID); !ok || end.Outcome != contract.TurnCompleted || !strings.Contains(end.Text, "BG DONE") {
+		c.fail("bg.reported", "the turn that takes the background work up ended %+v, want completed with BG DONE", end)
+	}
+	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
+		c.fail("bg.reported", "after the harness's own turn the Session is %s, want idle", p)
+	}
+	for _, o := range h.deliveries(c.own) {
+		if o.InputID != "" {
+			c.fail("bg.ids", "%s of the harness's own turn names input %q", o.Kind, o.InputID)
+		}
+	}
+	if res, err := s.Close(ctx, contract.ClosePark, contract.DefaultDrain); err != nil || !res.Drained {
+		c.fail("bg.record", "Close = %+v %v, want drained", res, err)
+	}
+	h.halt()
+	r, err := c.f.Adapter.OpenRecord(ctx, contract.RecordRequest{SessionID: h.id, OpenConfig: a.result.OpenConfig, Layout: a.layout})
+	if err != nil {
+		c.stop("bg.record", "OpenRecord: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	rh := c.watch(r)
+	want := contract.ObservationID(contract.KindTurnEnded, own.TurnID)
+	if o, ok := rh.await(want, func(o contract.Observation) bool { return o.ID == want }); !ok || o.Origin != contract.OriginRecord || o.InputID != "" {
+		c.fail("bg.record", "the record, read alone, does not deliver %s: the end of the harness's own turn", want)
 	}
 }
 

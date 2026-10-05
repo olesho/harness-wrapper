@@ -140,7 +140,8 @@
         "session_load",
         "autonomous_turns",
         "brokered_credentials",
-        "login_keeper"
+        "login_keeper",
+        "background_turns"
       ],
       "type": "string"
     },
