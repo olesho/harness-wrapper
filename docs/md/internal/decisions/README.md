@@ -26,6 +26,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-014](adr-014-brokered-credentials.md) | Interface 1.2: behind an egress broker a harness works with placeholders; the Descriptor routes each credential kind to its hosts and headers, `Placeholder` renders what stands in for a credential and the swaps a broker makes, and the runtime passes the broker and its certificates in the environment | Accepted 2026-10-04 | 3, 6, 7 |
 | [ADR-015](adr-015-login-keeper.md) | Interface 1.2 lets a runtime keep a subscription login itself: signed in with a device code, refreshed by the harness's own client on asking, lent behind its broker with nothing that refreshes it; codex's keeper drives its app-server | Accepted 2026-10-04 | 3, 6, 7 |
 | [ADR-016](adr-016-headers-from-files.md) | Interface 1.3 lets an MCP connector's secret header come from a file: claude reads it through a headersHelper script each time it connects; codex, which reads headers from its configuration or environment alone, gets it in its own environment at start | Accepted 2026-10-05 | 3, 6 |
+| [ADR-017](adr-017-background-turns.md) | Interface 1.3 adds background_turns: the turn a harness starts by itself when background work ends is reported as a turn of no input, live and in the record, and keeps the Session busy without being cut short; claude's is named after the task, from its task notification | Accepted 2026-10-05 | 3, 4, 6 |
 
 ## Intent coverage
 
