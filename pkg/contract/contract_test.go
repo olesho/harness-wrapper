@@ -305,3 +305,35 @@ func mustTime(s string) time.Time {
 	}
 	return t
 }
+
+// An http connector's headers are tokens, each named once across headers,
+// headers_env and headers_file in any case, and a header's file is an
+// absolute path.
+func TestCheckSpecHeaders(t *testing.T) {
+	d := testDescriptor()
+	d.Spec.Connectors = []string{ConnectorStdio, ConnectorHTTP}
+	spec := func(h HTTPConnector) AgentSpec {
+		h.URL = "https://mcp.example.com/mcp"
+		return AgentSpec{Model: "m", Connectors: []Connector{{Name: "c", HTTP: &h}}, PermissionPosture: PostureBypass}
+	}
+	if err := CheckSpec(d, spec(HTTPConnector{
+		Headers: map[string]string{"X-Team": "t"}, HeadersEnv: map[string]string{"X-Env": "V"}, HeadersFile: map[string]string{"Authorization": "/s/auth"},
+	})); err != nil {
+		t.Fatalf("well-formed headers: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		h     HTTPConnector
+		field string
+	}{
+		"bad header name": {HTTPConnector{HeadersFile: map[string]string{"X Key": "/s/k"}}, "connectors[0].http.headers_file"},
+		"named twice":     {HTTPConnector{Headers: map[string]string{"authorization": "a"}, HeadersFile: map[string]string{"Authorization": "/s/k"}}, "connectors[0].http.headers_file"},
+		"relative file":   {HTTPConnector{HeadersFile: map[string]string{"Authorization": "secrets/k"}}, "connectors[0].http.headers_file"},
+		"unclean file":    {HTTPConnector{HeadersFile: map[string]string{"Authorization": "/s/../k"}}, "connectors[0].http.headers_file"},
+		"bad env header":  {HTTPConnector{HeadersEnv: map[string]string{"X:Y": "V"}}, "connectors[0].http.headers_env"},
+	} {
+		var e *Error
+		if err := CheckSpec(d, spec(tc.h)); !errors.As(err, &e) || e.Code != CodeInvalidSpec || e.Field != tc.field {
+			t.Errorf("%s: %v, want invalid_spec on %s", name, err, tc.field)
+		}
+	}
+}

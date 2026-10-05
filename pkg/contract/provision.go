@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -178,10 +179,19 @@ type StdioConnector struct {
 // HTTPConnector is a server at a URL.
 type HTTPConnector struct {
 	URL string `json:"url"`
-	// Headers are sent as they are. A secret belongs in HeadersEnv.
+	// Headers are sent as they are. A secret belongs in HeadersFile.
 	Headers map[string]string `json:"headers,omitempty"`
+	// HeadersFile maps a header to the absolute path of a file holding its
+	// value (1.3). The harness reads the file when it connects, where it can,
+	// so the value stays out of the rendered configuration and of every
+	// process's environment; where it cannot, its adapter reads the file
+	// when it starts the harness and gives the value to that process alone.
+	// The host may rewrite a file between launches.
+	HeadersFile map[string]string `json:"headers_file,omitempty"`
 	// HeadersEnv maps a header to the environment variable its value is read
-	// from, so the value stays out of the rendered configuration.
+	// from, so the value stays out of the rendered configuration, though in
+	// the harness's environment and its children's. HeadersFile supersedes
+	// it.
 	HeadersEnv map[string]string `json:"headers_env,omitempty"`
 }
 
@@ -270,6 +280,11 @@ func CheckSpec(d Descriptor, s AgentSpec) error {
 		case c.HTTP != nil && c.HTTP.URL == "":
 			return invalid(field+".http.url", "missing")
 		}
+		if c.HTTP != nil {
+			if err := validHeaders(field+".http", *c.HTTP); err != nil {
+				return err
+			}
+		}
 	}
 	switch s.PermissionPosture {
 	case "":
@@ -321,6 +336,49 @@ func CheckSpec(d Descriptor, s AgentSpec) error {
 		}
 	}
 	return nil
+}
+
+// validHeaders: each header a token, named once across headers,
+// headers_env and headers_file in any case, and each file an absolute path.
+func validHeaders(field string, h HTTPConnector) error {
+	seen := map[string]bool{}
+	for _, part := range []struct {
+		name string
+		m    map[string]string
+	}{{"headers", h.Headers}, {"headers_env", h.HeadersEnv}, {"headers_file", h.HeadersFile}} {
+		names := make([]string, 0, len(part.m))
+		for n := range part.m {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			if !validToken(n) {
+				return &Error{Code: CodeInvalidSpec, Field: field + "." + part.name, Message: fmt.Sprintf("header %q", n)}
+			}
+			if seen[strings.ToLower(n)] {
+				return &Error{Code: CodeInvalidSpec, Field: field + "." + part.name, Message: fmt.Sprintf("header %q given twice", n)}
+			}
+			seen[strings.ToLower(n)] = true
+			if p := part.m[n]; part.name == "headers_file" && (!filepath.IsAbs(p) || filepath.Clean(p) != p) {
+				return &Error{Code: CodeInvalidSpec, Field: field + ".headers_file", Message: fmt.Sprintf("header %q: %q is not an absolute path", n, p)}
+			}
+		}
+	}
+	return nil
+}
+
+// validToken is an HTTP header's name: one or more token characters
+// (RFC 9110).
+func validToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r > '~' || r <= ' ' || strings.ContainsRune(`"(),/:;<=>?@[\]{}`, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // validName is a connector's or skill's name: 1–64 of [A-Za-z0-9._-].
