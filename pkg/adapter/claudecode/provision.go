@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/pkg/contract"
@@ -28,6 +29,7 @@ const (
 	claudeJSON    = ".claude.json"
 	personaFile   = "persona.md"
 	mcpFile       = "mcp.json"
+	headersDir    = "mcp-headers" // a headersHelper script per server, beside mcp.json
 	skillsDir     = "skills"
 	memoryDir     = "memory"
 	workspaceFile = "CLAUDE.md"
@@ -163,10 +165,11 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		"--system-prompt-snapshot", "off",
 	}
 	if len(spec.Connectors) > 0 {
-		mcp, err := mcpJSON(spec.Connectors)
+		mcp, helpers, err := mcpJSON(spec.Connectors, l.Config)
 		if err != nil {
 			return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
 		}
+		files = append(files, helpers...)
 		files = append(files, contract.TextFile(contract.RootConfig, mcpFile, "0600", string(mcp)))
 		args = append(args, "--mcp-config", filepath.Join(l.Config, mcpFile), "--strict-mcp-config")
 	}
@@ -241,11 +244,18 @@ func settingsJSON(harnessRoot, config string) ([]byte, error) {
 	return harnesscore.RenderSettingsJSONHooks(base, hookSpec(), []string{HookPath(harnessRoot)}, "claude")
 }
 
-// mcpJSON is mcp.json: one server per connector. An http connector's
-// headers_env names the variable each header's value is read from, which
-// claude expands as ${VAR}.
-func mcpJSON(conns []contract.Connector) ([]byte, error) {
+// mcpJSON is mcp.json: one server per connector, and the files it needs
+// beside it. An http connector's headers_env names the variable each
+// header's value is read from, which claude expands as ${VAR}; its
+// headers_file, the file each value is read from, by a script claude runs
+// each time it connects (headersHelper), so the value is in no
+// configuration and no process's environment. A script is a file of its
+// own under config, holding paths and no value; claude hands headersHelper
+// to a shell, which runs it with /bin/sh, since no provisioned file is
+// executable.
+func mcpJSON(conns []contract.Connector, config string) ([]byte, []contract.File, error) {
 	servers := map[string]any{}
+	var helpers []contract.File
 	for _, c := range conns {
 		switch {
 		case c.Stdio != nil:
@@ -274,8 +284,47 @@ func mcpJSON(conns []contract.Connector) ([]byte, error) {
 			if len(headers) > 0 {
 				s["headers"] = headers
 			}
+			if len(c.HTTP.HeadersFile) > 0 {
+				rel := path.Join(headersDir, c.Name+".sh")
+				helpers = append(helpers, contract.TextFile(contract.RootConfig, rel, "0600", headersScript(c.Name, c.HTTP.HeadersFile)))
+				s["headersHelper"] = "/bin/sh " + shQuote(filepath.Join(config, rel))
+			}
 			servers[c.Name] = s
 		}
 	}
-	return json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
+	b, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
+	return b, helpers, err
+}
+
+// headersScript prints the headers of MCP server name as headersHelper
+// answers them, a JSON object: each header's value read from its file, its
+// newlines dropped and its backslashes, quotes and tabs escaped. A file it
+// cannot read fails it, and claude says so.
+func headersScript(name string, files map[string]string) string {
+	names := make([]string, 0, len(files))
+	for k := range files {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	fmt.Fprintf(&b, "#!/bin/sh\n# The headers of MCP server %s, read from their files each time claude\n# connects: no value is in claude's configuration or environment.\nset -eu\n", name)
+	b.WriteString("v() { tr -d '\\n' <\"$1\" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g' -e 's/\t/\\\\t/g'; }\n")
+	for _, k := range names {
+		fmt.Fprintf(&b, "[ -r %s ] || { echo %s >&2; exit 1; }\n", shQuote(files[k]), shQuote("cannot read the file of header "+k))
+	}
+	b.WriteString("printf '{'\n")
+	for i, k := range names {
+		sep := ","
+		if i == 0 {
+			sep = ""
+		}
+		fmt.Fprintf(&b, "printf '%s\"%%s\":\"%%s\"' %s \"$(v %s)\"\n", sep, shQuote(k), shQuote(files[k]))
+	}
+	b.WriteString("printf '}\\n'\n")
+	return b.String()
+}
+
+// shQuote is s as one shell word.
+func shQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

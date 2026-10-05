@@ -2,7 +2,10 @@ package conformance
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +16,7 @@ import (
 var scenarios = []scenario{
 	{"describe", describe},
 	{"provision", provision},
+	{"headers", headers},
 	{"open", open},
 	{"turn", turnScenario},
 	{"send-refused", sendRefused},
@@ -35,6 +39,7 @@ var scenarios = []scenario{
 	{"load-refused", loadRefused},
 	{"autonomous", autonomous},
 	{"load-autonomous", loadAutonomous},
+	{"background", background},
 	{"placeholder", placeholderScenario},
 	{"keeper", keeperScenario},
 }
@@ -111,6 +116,65 @@ func provision(c *check) {
 		c.fail("provision.unsupported", "an undeclared credential kind: %v, want unsupported", err)
 	} else if asErr(err, &e); e.Field == "" {
 		c.fail("provision.unsupported", "unsupported, but naming no field")
+	}
+}
+
+// headers: an http connector's header read from its file (headers_file) is
+// in no file the adapter renders, nor in its open configuration, and — when
+// the fixture's harness connects to MCP servers — reaches the server.
+func headers(c *check) {
+	if !slices.Contains(c.desc.Spec.Connectors, contract.ConnectorHTTP) {
+		c.t.Logf("no http connectors: skipped")
+		return
+	}
+	m := newMCPServer()
+	defer m.close()
+	secret := "hw-conformance-" + newInputID()
+	a := c.roots()
+	file := filepath.Join(a.layout.Secrets, "mcp-authorization")
+	if err := os.WriteFile(file, []byte("Bearer "+secret+"\n"), 0o600); err != nil {
+		c.stop("setup", "the header's file: %v", err)
+	}
+	spec := c.f.Spec
+	spec.Connectors = append(slices.Clone(spec.Connectors), contract.Connector{Name: "hw-conformance", HTTP: &contract.HTTPConnector{
+		URL: m.url(), HeadersFile: map[string]string{"Authorization": file},
+	}})
+	c.spec = &spec
+	res, err := c.provision(a, nil)
+	if err != nil {
+		c.stop("headers.provision", "Provision: %v", err)
+	}
+	if err := Apply(a.layout, res); err != nil {
+		c.stop("headers.provision", "applying the result: %v", err)
+	}
+	a.result = res
+	for _, f := range res.Files {
+		if strings.Contains(string(f.Content()), secret) {
+			c.fail("headers.provision", "%s/%s holds the header's value", f.Root, f.Path)
+		}
+	}
+	if strings.Contains(string(res.OpenConfig), secret) {
+		c.fail("headers.provision", "the open configuration holds the header's value")
+	}
+	if !c.f.MCP {
+		c.t.Logf("the harness connects to no MCP server: the live check skipped")
+		return
+	}
+	s, h := c.openSession(a)
+	if end, ok := h.turnEnded(c.send(s, "PING")); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("headers.reach", "the turn: %+v", end)
+	}
+	deadline := time.Now().Add(c.f.timeout())
+	for {
+		ok, n := m.heard("Authorization", "Bearer "+secret)
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			c.fail("headers.reach", "the MCP server heard %d requests, none with the header from its file", n)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -1007,6 +1071,53 @@ func autonomous(c *check) {
 		if o, ok := rh.await(want, func(o contract.Observation) bool { return o.ID == want }); !ok || o.Origin != contract.OriginRecord || o.InputID != "" {
 			c.fail("auto.record", "the record, read alone, does not deliver %s: the end of a turn the harness started", want)
 		}
+	}
+}
+
+// background: work the harness began in the background ends, and the
+// harness takes its result up in a turn of its own: reported live as a turn
+// of no input, and its end from the record too, under the id it had.
+func background(c *check) {
+	if !c.has(contract.CapBackgroundTurns) {
+		c.t.Logf("no background_turns: skipped")
+		return
+	}
+	a := c.newAgent()
+	s, h := c.openSession(a)
+	ctx, cancel := c.ctx()
+	defer cancel()
+	in := c.send(s, "BG sleep 2; echo bg-out")
+	if end, ok := h.turnEnded(in); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("bg.input", "the turn that starts the background work: %+v", end)
+	}
+	own, ok := h.ownStarted()
+	if !ok {
+		c.stop("bg.reported", "the background work ended, and no turn of the harness's own was reported started")
+	}
+	if end, ok := h.ownEnded(own.TurnID); !ok || end.Outcome != contract.TurnCompleted || !strings.Contains(end.Text, "BG DONE") {
+		c.fail("bg.reported", "the turn that takes the background work up ended %+v, want completed with BG DONE", end)
+	}
+	if p := c.awaitPhase(s, contract.PhaseIdle); p != contract.PhaseIdle {
+		c.fail("bg.reported", "after the harness's own turn the Session is %s, want idle", p)
+	}
+	for _, o := range h.deliveries(c.own) {
+		if o.InputID != "" {
+			c.fail("bg.ids", "%s of the harness's own turn names input %q", o.Kind, o.InputID)
+		}
+	}
+	if res, err := s.Close(ctx, contract.ClosePark, contract.DefaultDrain); err != nil || !res.Drained {
+		c.fail("bg.record", "Close = %+v %v, want drained", res, err)
+	}
+	h.halt()
+	r, err := c.f.Adapter.OpenRecord(ctx, contract.RecordRequest{SessionID: h.id, OpenConfig: a.result.OpenConfig, Layout: a.layout})
+	if err != nil {
+		c.stop("bg.record", "OpenRecord: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	rh := c.watch(r)
+	want := contract.ObservationID(contract.KindTurnEnded, own.TurnID)
+	if o, ok := rh.await(want, func(o contract.Observation) bool { return o.ID == want }); !ok || o.Origin != contract.OriginRecord || o.InputID != "" {
+		c.fail("bg.record", "the record, read alone, does not deliver %s: the end of the harness's own turn", want)
 	}
 }
 

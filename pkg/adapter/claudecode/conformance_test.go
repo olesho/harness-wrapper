@@ -131,6 +131,7 @@ func kitFixture(root string, mock *mockapi.Server) conformance.Fixture {
 		},
 		Heard:   heard(mock),
 		Timeout: 90 * time.Second,
+		MCP:     true,
 	}
 }
 

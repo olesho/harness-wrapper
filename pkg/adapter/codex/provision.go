@@ -43,6 +43,11 @@ type openConfig struct {
 	// CodexHome is CODEX_HOME: the configuration root, where codex writes
 	// the thread's rollout.
 	CodexHome string `json:"codex_home"`
+	// HeaderFiles are the connectors' headers_file, by the variable
+	// env_http_headers names for each: codex reads a header from its
+	// configuration or its environment alone, so Start reads each file into
+	// codex's environment, and no other process's.
+	HeaderFiles map[string]string `json:"header_files,omitempty"`
 }
 
 func parseOpenConfig(raw []byte) (openConfig, error) {
@@ -115,6 +120,12 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		WorkingDir: l.Workspace,
 		CodexHome:  l.Config,
 	}
+	for _, hv := range headerVars(spec.Connectors) {
+		if cfg.HeaderFiles == nil {
+			cfg.HeaderFiles = map[string]string{}
+		}
+		cfg.HeaderFiles[hv.env] = hv.file
+	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
@@ -173,6 +184,10 @@ apps = false
 [analytics]
 enabled = false
 `)
+	vars := map[string][]headerVar{}
+	for _, hv := range headerVars(spec.Connectors) {
+		vars[hv.connector] = append(vars[hv.connector], hv)
+	}
 	for _, c := range spec.Connectors {
 		fmt.Fprintf(&b, "\n[mcp_servers.%s]\n", tomlString(c.Name))
 		switch {
@@ -189,13 +204,48 @@ enabled = false
 			if len(c.HTTP.Headers) > 0 {
 				fmt.Fprintf(&b, "http_headers = %s\n", tomlTable(c.HTTP.Headers))
 			}
-			// headers_env names the variable each header's value is read from.
-			if len(c.HTTP.HeadersEnv) > 0 {
-				fmt.Fprintf(&b, "env_http_headers = %s\n", tomlTable(c.HTTP.HeadersEnv))
+			// headers_env names the variable each header's value is read
+			// from; a header of headers_file has one Start fills from its file.
+			envHeaders := map[string]string{}
+			for k, v := range c.HTTP.HeadersEnv {
+				envHeaders[k] = v
+			}
+			for _, hv := range vars[c.Name] {
+				envHeaders[hv.header] = hv.env
+			}
+			if len(envHeaders) > 0 {
+				fmt.Fprintf(&b, "env_http_headers = %s\n", tomlTable(envHeaders))
 			}
 		}
 	}
 	return b.String()
+}
+
+// headerVar is a header of a connector's headers_file, and the variable
+// codex reads it from.
+type headerVar struct {
+	connector, header, env, file string
+}
+
+// headerVars numbers the headers of the connectors' headers_file, in the
+// connectors' order and each one's headers' — the same at Provision and at
+// Start, which reads them from the open config.
+func headerVars(conns []contract.Connector) []headerVar {
+	var out []headerVar
+	for _, c := range conns {
+		if c.HTTP == nil {
+			continue
+		}
+		names := make([]string, 0, len(c.HTTP.HeadersFile))
+		for k := range c.HTTP.HeadersFile {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			out = append(out, headerVar{connector: c.Name, header: k, env: fmt.Sprintf("HW_MCP_HEADER_%d", len(out)+1), file: c.HTTP.HeadersFile[k]})
+		}
+	}
+	return out
 }
 
 // agentsMD is CODEX_HOME's AGENTS.md, which codex adds to every turn's

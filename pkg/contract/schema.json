@@ -140,7 +140,8 @@
         "session_load",
         "autonomous_turns",
         "brokered_credentials",
-        "login_keeper"
+        "login_keeper",
+        "background_turns"
       ],
       "type": "string"
     },
@@ -488,6 +489,12 @@
           "type": "object"
         },
         "headers_env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "headers_file": {
           "additionalProperties": {
             "type": "string"
           },
@@ -1631,5 +1638,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.2"
+  "title": "Harness Adapter Interface harness-adapter/1.3"
 }

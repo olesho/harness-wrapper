@@ -31,6 +31,11 @@ type Entry struct {
 	Interrupt bool
 	// Sidechain marks an entry of a subagent's conversation.
 	Sidechain bool
+	// TaskNotification is set on the user entry claude writes to tell the
+	// model background work ended (origin kind task-notification): the
+	// first task id it names, or "unknown". The turn it starts is claude's
+	// own (claude 2.1.283).
+	TaskNotification string
 }
 
 // EventEntry is the Type of the one event FollowEntries gives an entry that
@@ -40,6 +45,24 @@ const EventEntry = "entry"
 
 // interruptText begins every user entry claude writes for an interrupt.
 const interruptText = "[Request interrupted by user"
+
+// originTaskNotification is the origin kind of what claude writes to tell
+// the model background work ended, and of the turn that takes it up.
+const originTaskNotification = "task-notification"
+
+// TaskID is the first task id a task notification's text names
+// (<task-id>…</task-id>); "" for none.
+func TaskID(text string) string {
+	_, rest, ok := strings.Cut(text, "<task-id>")
+	if !ok {
+		return ""
+	}
+	id, _, ok := strings.Cut(rest, "</task-id>")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(id)
+}
 
 // FollowEntries is Follow with DecodeEntry: every event carries its entry.
 func FollowEntries(sessionID, workingDir string, env []string, from transcript.Checkpoint) (*transcript.Follower, error) {
@@ -63,9 +86,13 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		Error             json.RawMessage `json:"error"`
 		APIErrorStatus    int             `json:"apiErrorStatus"`
 		Message           *struct {
-			ID         string `json:"id"`
-			StopReason string `json:"stop_reason"`
+			ID         string          `json:"id"`
+			StopReason string          `json:"stop_reason"`
+			Content    json.RawMessage `json:"content"`
 		} `json:"message"`
+		Origin *struct {
+			Kind string `json:"kind"`
+		} `json:"origin"`
 	}
 	if json.Unmarshal(record, &raw) != nil {
 		return events, nil
@@ -79,6 +106,16 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		_ = json.Unmarshal(raw.Error, &tag)
 		e.APIError = strings.TrimSpace(tag)
 		e.APIErrorStatus = raw.APIErrorStatus
+	}
+	if raw.Type == transcript.TypeUser && raw.Origin != nil && raw.Origin.Kind == originTaskNotification {
+		e.TaskNotification = "unknown"
+		if raw.Message != nil {
+			var text string
+			_ = json.Unmarshal(raw.Message.Content, &text)
+			if id := TaskID(text); id != "" {
+				e.TaskNotification = id
+			}
+		}
 	}
 	if raw.Type == transcript.TypeUser {
 		for _, be := range events {

@@ -62,7 +62,7 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
-			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible,
+			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible, contract.CapBackgroundTurns,
 			contract.CapSessionLoad, contract.CapBrokeredCredentials,
 		},
 		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},

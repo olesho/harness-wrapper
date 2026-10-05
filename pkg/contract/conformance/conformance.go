@@ -86,6 +86,10 @@ type Fixture struct {
 	// login_keeper), as its user would; nil skips the scenario that needs
 	// it.
 	Approve func(t T, k contract.Keeper, dc contract.DeviceCode)
+	// MCP says the harness connects to its http connectors' MCP servers when
+	// a Session opens: the kit checks that a header read from its file
+	// reaches one. False skips that check.
+	MCP bool
 }
 
 func (f Fixture) timeout() time.Duration {
@@ -155,6 +159,9 @@ type check struct {
 	// base, when set, is where the scenario's one agent has its roots; its
 	// agents each take a temporary directory otherwise.
 	base string
+	// spec, when set, is the Agent Spec the scenario's agents take in place
+	// of the fixture's.
+	spec *contract.AgentSpec
 }
 
 func (c *check) cleanup() {
@@ -228,6 +235,9 @@ func (c *check) roots() *agent {
 // load into them.
 func (c *check) request(a *agent, load *contract.LoadSource) contract.ProvisionRequest {
 	spec := c.f.Spec
+	if c.spec != nil {
+		spec = *c.spec
+	}
 	if a.cred != nil {
 		spec.Credential = &contract.CredentialRef{Kind: a.cred.Kind}
 	}

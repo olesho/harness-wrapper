@@ -41,7 +41,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.2"
+const Version = "harness-adapter/1.3"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -49,7 +49,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 2
+	Minor = 3
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

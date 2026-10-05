@@ -87,7 +87,7 @@ func (d Descriptor) Has(c Capability) bool {
 // what its constant says; without it, the operations answer CodeUnsupported,
 // or the observations never appear. The set is closed within a minor version;
 // 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
-// login_keeper.
+// login_keeper, 1.3 background_turns.
 type Capability string
 
 // Capabilities.
@@ -124,6 +124,16 @@ const (
 	// starts none of its own until an input's turn completes or the Session
 	// is reopened.
 	CapAutonomousTurns Capability = "autonomous_turns"
+	// CapBackgroundTurns: the harness starts a turn of its own when work it
+	// began in the background ends — a background command or subagent — to
+	// take that work's result up. Such a turn is reported as turn_started and
+	// turn_ended naming a turn and no input, live, and its end from the
+	// record too; while it runs the Session is busy with State.TurnID and no
+	// State.InputID, and Send answers busy as during an input's turn; and
+	// Interrupt may name it by InterruptRequest.TurnID. Unlike
+	// autonomous_turns, the harness starts one whenever background work ends,
+	// whatever stopped one before.
+	CapBackgroundTurns Capability = "background_turns"
 	// CapBrokeredCredentials: the harness can work with placeholders for the
 	// credential kinds the Descriptor's Egress routes, through an egress
 	// broker that substitutes them: Placeholder renders a credential's
@@ -142,7 +152,7 @@ const (
 func (Capability) Values() []string {
 	return []string{
 		"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible",
-		"session_load", "autonomous_turns", "brokered_credentials", "login_keeper",
+		"session_load", "autonomous_turns", "brokered_credentials", "login_keeper", "background_turns",
 	}
 }
 

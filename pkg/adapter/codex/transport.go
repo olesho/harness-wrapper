@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +230,11 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		// starts, under the id codex gives it.
 	}
 	env := caEnv(append(adapter.HostEnv(), cfg.Env...))
+	headers, err := headerEnv(cfg.HeaderFiles)
+	if err != nil {
+		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
+	}
+	env = append(env, headers...)
 	apiKey := ""
 	if c := req.Credential; c != nil {
 		switch c.Kind {
@@ -1274,4 +1280,23 @@ func (b *tailBuffer) String() string {
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// headerEnv reads each connector header's file into the variable codex
+// reads it from (openConfig.HeaderFiles), its trailing newline dropped.
+func headerEnv(files map[string]string) ([]string, error) {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		v, err := os.ReadFile(files[name])
+		if err != nil {
+			return nil, fmt.Errorf("a connector header's file: %w", err)
+		}
+		out = append(out, name+"="+strings.TrimRight(string(v), "\r\n"))
+	}
+	return out, nil
 }
