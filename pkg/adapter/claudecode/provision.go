@@ -6,9 +6,9 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 	"github.com/olesho/harness-wrapper/pkg/harness/claude"
 	tclaude "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
@@ -286,45 +286,12 @@ func mcpJSON(conns []contract.Connector, config string) ([]byte, []contract.File
 			}
 			if len(c.HTTP.HeadersFile) > 0 {
 				rel := path.Join(headersDir, c.Name+".sh")
-				helpers = append(helpers, contract.TextFile(contract.RootConfig, rel, "0600", headersScript(c.Name, c.HTTP.HeadersFile)))
-				s["headersHelper"] = "/bin/sh " + shQuote(filepath.Join(config, rel))
+				helpers = append(helpers, contract.TextFile(contract.RootConfig, rel, "0600", adapter.HeadersScript(c.Name, c.HTTP.HeadersFile)))
+				s["headersHelper"] = "/bin/sh " + adapter.ShellQuote(filepath.Join(config, rel))
 			}
 			servers[c.Name] = s
 		}
 	}
 	b, err := json.MarshalIndent(map[string]any{"mcpServers": servers}, "", "  ")
 	return b, helpers, err
-}
-
-// headersScript prints the headers of MCP server name as headersHelper
-// answers them, a JSON object: each header's value read from its file, its
-// newlines dropped and its backslashes, quotes and tabs escaped. A file it
-// cannot read fails it, and claude says so.
-func headersScript(name string, files map[string]string) string {
-	names := make([]string, 0, len(files))
-	for k := range files {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	var b strings.Builder
-	fmt.Fprintf(&b, "#!/bin/sh\n# The headers of MCP server %s, read from their files each time claude\n# connects: no value is in claude's configuration or environment.\nset -eu\n", name)
-	b.WriteString("v() { tr -d '\\n' <\"$1\" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g' -e 's/\t/\\\\t/g'; }\n")
-	for _, k := range names {
-		fmt.Fprintf(&b, "[ -r %s ] || { echo %s >&2; exit 1; }\n", shQuote(files[k]), shQuote("cannot read the file of header "+k))
-	}
-	b.WriteString("printf '{'\n")
-	for i, k := range names {
-		sep := ","
-		if i == 0 {
-			sep = ""
-		}
-		fmt.Fprintf(&b, "printf '%s\"%%s\":\"%%s\"' %s \"$(v %s)\"\n", sep, shQuote(k), shQuote(files[k]))
-	}
-	b.WriteString("printf '}\\n'\n")
-	return b.String()
-}
-
-// shQuote is s as one shell word.
-func shQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
