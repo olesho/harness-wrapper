@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.3`.
+package is its normative form, contract version `harness-adapter/1.4`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -80,6 +80,15 @@ is everything the turn says. While it runs the Session is `busy` with `State.tur
   until an input's turn completes or the Session is reopened.
 - The record proves such a turn's end under the same id, so a Supervisor that lost the live
   `turn_ended` to a crash finds it in the record.
+
+A harness with `background_turns` starts such a turn when work it began in the background ends — a
+command or a subagent — to take that work's result up. It is reported the same way, but `Send`
+answers `busy` while it runs, as during an input's turn: the turn carries the work's result, and an
+input waits for it. Since 1.4 the work itself is reported, live, whenever it changes:
+`background_tasks` lists every task still running (`id`, `kind` — `command`, `subagent` or `other`
+— and `description`), and an empty list once none is left; `State.background` holds the same list.
+A Session whose harness works on in the background is `idle` between turns, but not at rest: a
+Supervisor that stops idle Sessions should wait for the list to empty.
 
 ## Credentials behind an egress broker
 

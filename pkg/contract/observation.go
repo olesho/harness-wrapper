@@ -105,6 +105,7 @@ const (
 	KindBlocked         Kind = "blocked"          // live; Block
 	KindUnblocked       Kind = "unblocked"        // live; {}
 	KindSessionExited   Kind = "session_exited"   // live; SessionExitedData
+	KindBackgroundTasks Kind = "background_tasks" // live, background_turns; BackgroundTasksData (1.4)
 )
 
 // Values lists the set.
@@ -113,7 +114,7 @@ func (Kind) Values() []string {
 		"turn_started", "turn_ended", "user_input", "assistant_text", "tool_use", "tool_result",
 		"api_error", "text_delta", "tool_started", "tool_finished", "subagent_started",
 		"subagent_stopped", "prompt_raised", "prompt_resolved", "rate_limit", "retrying",
-		"blocked", "unblocked", "session_exited",
+		"blocked", "unblocked", "session_exited", "background_tasks",
 	}
 }
 
@@ -132,6 +133,8 @@ func (k Kind) Capability() Capability {
 		return CapRateLimits
 	case KindRetrying:
 		return CapRetryVisible
+	case KindBackgroundTasks:
+		return CapBackgroundTurns
 	}
 	return ""
 }
@@ -263,6 +266,36 @@ type RateLimitWindow struct {
 	UsedPct  *float64   `json:"used_pct,omitempty"`
 	ResetsAt *time.Time `json:"resets_at,omitempty"`
 }
+
+// BackgroundTasksData is background_tasks' payload: every task the harness
+// runs in the background now, each of which a turn of its own takes up when
+// it ends (background_turns). Empty: none is left. It is reported whenever
+// the set changes.
+type BackgroundTasksData struct {
+	Tasks []BackgroundTask `json:"tasks"`
+}
+
+// BackgroundTask is one task the harness runs in the background.
+type BackgroundTask struct {
+	// ID is the harness's id for the task.
+	ID   string         `json:"id"`
+	Kind BackgroundKind `json:"kind"`
+	// Description is the harness's short description of it, if any.
+	Description string `json:"description,omitempty"`
+}
+
+// BackgroundKind is what a background task runs.
+type BackgroundKind string
+
+// Background task kinds.
+const (
+	BackgroundCommand  BackgroundKind = "command"  // a shell command
+	BackgroundSubagent BackgroundKind = "subagent" // a subagent
+	BackgroundOther    BackgroundKind = "other"    // anything else
+)
+
+// Values lists the set.
+func (BackgroundKind) Values() []string { return []string{"command", "subagent", "other"} }
 
 // RetryingData is retrying's payload.
 type RetryingData struct {

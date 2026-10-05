@@ -336,6 +336,9 @@ type State struct {
 	Prompt  *PromptInfo `json:"prompt,omitempty"`
 	Block   *Block      `json:"block,omitempty"`
 	Retry   *RetryInfo  `json:"retry,omitempty"`
+	// Background is the work the harness runs in the background now
+	// (background_turns, 1.4), whatever the phase.
+	Background []BackgroundTask `json:"background,omitempty"`
 }
 
 // CloseReason is why the Host closes a Session.
