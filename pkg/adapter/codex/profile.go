@@ -78,7 +78,9 @@ func (Profile) Describe() contract.Descriptor {
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
 			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials, contract.CapLoginKeeper,
 		},
-		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		// The versions whose saved threads the pinned codex continues: each
+		// one's kept in testdata/load and loaded by TestCodexLoadsSavedThreads.
+		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{"0.144.5", pin}},
 		Egress: &contract.Egress{
 			Credentials: []contract.CredentialRoute{
 				{Kind: CredentialAPIKey, Hosts: []string{APIHost}, Headers: []string{"Authorization"}},
