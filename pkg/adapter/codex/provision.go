@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
@@ -43,11 +44,6 @@ type openConfig struct {
 	// CodexHome is CODEX_HOME: the configuration root, where codex writes
 	// the thread's rollout.
 	CodexHome string `json:"codex_home"`
-	// HeaderFiles are the connectors' headers_file, by the variable
-	// env_http_headers names for each: codex reads a header from its
-	// configuration or its environment alone, so Start reads each file into
-	// codex's environment, and no other process's.
-	HeaderFiles map[string]string `json:"header_files,omitempty"`
 }
 
 func parseOpenConfig(raw []byte) (openConfig, error) {
@@ -76,11 +72,12 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		return contract.ProvisionResult{}, invalid("instructions.persona", "%d bytes, more than %d", len(spec.Instructions.Persona), MaxPersona)
 	}
 	files := []contract.File{
-		contract.TextFile(contract.RootConfig, configFile, "0600", configTOML(spec)),
+		contract.TextFile(contract.RootConfig, configFile, "0600", configTOML(spec, l)),
 		// Always written, empty or not, so a spec without a persona replaces
 		// one that had it.
 		contract.TextFile(contract.RootConfig, agentsFile, "0600", agentsMD(spec, l)),
 	}
+	files = append(files, headerHelpers(spec.Connectors)...)
 	for i, sk := range spec.Skills {
 		if len(sk.Files) > MaxSkillFiles {
 			return contract.ProvisionResult{}, invalid(fmt.Sprintf("skills[%d].files", i), "%d files, more than %d", len(sk.Files), MaxSkillFiles)
@@ -120,12 +117,6 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		WorkingDir: l.Workspace,
 		CodexHome:  l.Config,
 	}
-	for _, hv := range headerVars(spec.Connectors) {
-		if cfg.HeaderFiles == nil {
-			cfg.HeaderFiles = map[string]string{}
-		}
-		cfg.HeaderFiles[hv.env] = hv.file
-	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
@@ -153,7 +144,7 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 
 // configTOML is config.toml: its top-level keys first, then its tables, so a
 // key added at the top stays top-level.
-func configTOML(spec contract.AgentSpec) string {
+func configTOML(spec contract.AgentSpec, l contract.Layout) string {
 	var b strings.Builder
 	b.WriteString("# Rendered by harness-wrapper's Codex profile.\n")
 	if spec.Model != "" {
@@ -184,10 +175,6 @@ apps = false
 [analytics]
 enabled = false
 `)
-	vars := map[string][]headerVar{}
-	for _, hv := range headerVars(spec.Connectors) {
-		vars[hv.connector] = append(vars[hv.connector], hv)
-	}
 	for _, c := range spec.Connectors {
 		fmt.Fprintf(&b, "\n[mcp_servers.%s]\n", tomlString(c.Name))
 		switch {
@@ -205,44 +192,34 @@ enabled = false
 				fmt.Fprintf(&b, "http_headers = %s\n", tomlTable(c.HTTP.Headers))
 			}
 			// headers_env names the variable each header's value is read
-			// from; a header of headers_file has one Start fills from its file.
-			envHeaders := map[string]string{}
-			for k, v := range c.HTTP.HeadersEnv {
-				envHeaders[k] = v
+			// from; headers_file the file, which a helper beside config.toml
+			// reads each time codex connects (headerHelpers).
+			if len(c.HTTP.HeadersEnv) > 0 {
+				fmt.Fprintf(&b, "env_http_headers = %s\n", tomlTable(c.HTTP.HeadersEnv))
 			}
-			for _, hv := range vars[c.Name] {
-				envHeaders[hv.header] = hv.env
-			}
-			if len(envHeaders) > 0 {
-				fmt.Fprintf(&b, "env_http_headers = %s\n", tomlTable(envHeaders))
+			if len(c.HTTP.HeadersFile) > 0 {
+				fmt.Fprintf(&b, "http_headers_helper = %s\n", tomlString("/bin/sh "+adapter.ShellQuote(filepath.Join(l.Config, headersHelper(c.Name)))))
 			}
 		}
 	}
 	return b.String()
 }
 
-// headerVar is a header of a connector's headers_file, and the variable
-// codex reads it from.
-type headerVar struct {
-	connector, header, env, file string
-}
+// headersDir holds, beneath config, a helper per connector with
+// headers_file: codex runs it each time it connects (http_headers_helper,
+// codex 0.160), so a header's value is in no configuration and no process's
+// environment.
+const headersDir = "mcp-headers"
 
-// headerVars numbers the headers of the connectors' headers_file, in the
-// connectors' order and each one's headers' — the same at Provision and at
-// Start, which reads them from the open config.
-func headerVars(conns []contract.Connector) []headerVar {
-	var out []headerVar
+// headersHelper is connector name's helper, relative to config.
+func headersHelper(name string) string { return path.Join(headersDir, name+".sh") }
+
+// headerHelpers are the helpers of the connectors with headers_file.
+func headerHelpers(conns []contract.Connector) []contract.File {
+	var out []contract.File
 	for _, c := range conns {
-		if c.HTTP == nil {
-			continue
-		}
-		names := make([]string, 0, len(c.HTTP.HeadersFile))
-		for k := range c.HTTP.HeadersFile {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		for _, k := range names {
-			out = append(out, headerVar{connector: c.Name, header: k, env: fmt.Sprintf("HW_MCP_HEADER_%d", len(out)+1), file: c.HTTP.HeadersFile[k]})
+		if c.HTTP != nil && len(c.HTTP.HeadersFile) > 0 {
+			out = append(out, contract.TextFile(contract.RootConfig, headersHelper(c.Name), "0600", adapter.HeadersScript(c.Name, c.HTTP.HeadersFile)))
 		}
 	}
 	return out

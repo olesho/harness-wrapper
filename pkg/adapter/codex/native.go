@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,10 @@ import (
 // history: it is saved with the thread. When a loaded thread is first opened
 // in its new environment, the profile asks codex what it has of the thread
 // there, before the thread resumes, and refuses the open when that is not
-// what was saved.
+// what was saved. codex 0.160 reads a thread's name from its state database
+// rather than session_index.jsonl, so a loaded thread with none there whose
+// session_index.jsonl came with its name is given that name back first
+// (restoreName).
 
 // Where the native state is kept, and the files of codex's it vouches for,
 // each relative to its root.
@@ -135,6 +139,26 @@ func writeNative(scratch string, s nativeState) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), p)
+}
+
+// indexedName is the name session_index.jsonl in home gives thread: its
+// latest entry's, "" when none.
+func indexedName(home, thread string) string {
+	b, err := os.ReadFile(filepath.Join(home, indexFile)) //nolint:gosec // codex's own index, under CODEX_HOME
+	if err != nil {
+		return ""
+	}
+	name := ""
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		var e struct {
+			ID   string `json:"id"`
+			Name string `json:"thread_name"`
+		}
+		if json.Unmarshal(line, &e) == nil && e.ID == thread {
+			name = e.Name
+		}
+	}
+	return name
 }
 
 // checkLoaded is what opening a loaded thread requires of its native state:

@@ -12,7 +12,7 @@ against. It is embedded into `pkg/versions` at build time.
 
 ```json
 {
-  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
+  "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
   "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
@@ -53,6 +53,13 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 > `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, the snapshot
 > is a parity *target* rather than a mirror of what meta-harness ships today, and the no-args mode
 > would drag this repo's pin *backwards* from 2.1.283 to 2.1.218.
+
+codex moved to `0.160.0` on 2026-10-05 ([ADR-019](decisions/adr-019-pin-codex-0-160.md)): the
+app-server adapter's conformance suite (`TestCodexConforms`, every scenario) and its load fixtures
+pass, and `TestCodexKeeperLive` signed in to a real ChatGPT login with a device code, refreshed it
+and signed out. claude stays at `2.1.283`: 2.1.289 passes the stream-json conformance suite and the
+hook live tests, but takes a prompt the screen driver delivers as a bracketed paste as pasted
+content, not a request, so `TestRunTurn_RealClaudeLargePromptIntact` fails on it.
 
 The read API:
 

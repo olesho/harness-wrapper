@@ -23,3 +23,4 @@ timezone out of the rollout.
 | Version | Recorded | Holds |
 |---|---|---|
 | `0.144.5` | 2026-09-30, macOS arm64 | Two turns, `PING 1` and `TOOL echo saved`; the name `a saved thread`, in `session_index.jsonl`; the paused goal `Keep what was saved`, in `goals_1.sqlite` and its `-wal`; the profile's account of both, `scratch/native/<thread>.json`; and the agent's memory. |
+| `0.160.0` | 2026-10-05, macOS arm64 | The same: two turns, `PING 1` and `TOOL echo saved`; the name `a saved thread`, in `session_index.jsonl` (codex 0.160 answers it from its state database, which no archive carries: the profile gives a loaded thread that name back); the paused goal `Keep what was saved`, in `goals_1.sqlite` and its `-wal`; the profile's account of both; and the agent's memory. |

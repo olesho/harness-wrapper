@@ -3,9 +3,6 @@ package codex
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -52,7 +49,7 @@ func TestProvision(t *testing.T) {
 		`[mcp_servers."probe"]`, `command = "/bin/probe"`, `args = ["-v", "say \"hi\""]`, `env = { "K" = "v" }`,
 		`[mcp_servers."docs"]`, `url = "https://mcp.example.com"`, `http_headers = { "X-Team" = "t" }`,
 		`env_http_headers = { "Authorization" = "DOCS_TOKEN" }`,
-		`[mcp_servers."kept"]`, `env_http_headers = { "Authorization" = "HW_MCP_HEADER_1", "X-Key" = "HW_MCP_HEADER_2" }`,
+		`[mcp_servers."kept"]`, `http_headers_helper = "/bin/sh '/w/config/mcp-headers/kept.sh'"`,
 	} {
 		if !strings.Contains(toml, want) {
 			t.Errorf("config.toml has no %s:\n%s", want, toml)
@@ -172,34 +169,34 @@ func TestTOMLString(t *testing.T) {
 	}
 }
 
-// A header of headers_file is read from its file into the variable
-// config.toml names for it, for codex's environment alone; its value is in
-// no file Provision renders.
+// A header of headers_file is read from its file by a helper beside
+// config.toml, which codex runs each time it connects (http_headers_helper):
+// the helper holds the files' paths and no value, like every provisioned
+// file it is not executable, and no header goes through codex's environment.
 func TestHeadersFromFiles(t *testing.T) {
 	res, err := adapter.New(Profile{}).Provision(contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: "/opt/codex", Layout: layout(), Spec: spec()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := parseOpenConfig(res.OpenConfig)
-	if err != nil {
-		t.Fatal(err)
+	var cfg, helper string
+	for _, f := range res.Files {
+		switch f.Path {
+		case configFile:
+			cfg = string(f.Content())
+		case headersHelper("kept"):
+			helper = string(f.Content())
+			if f.Mode != "0600" {
+				t.Errorf("the helper's mode %s", f.Mode)
+			}
+		}
 	}
-	if want := map[string]string{"HW_MCP_HEADER_1": "/w/secrets/kept-auth", "HW_MCP_HEADER_2": "/w/secrets/kept-key"}; !reflect.DeepEqual(cfg.HeaderFiles, want) {
-		t.Fatalf("the open config's header files %v, want %v", cfg.HeaderFiles, want)
+	if !strings.Contains(cfg, `http_headers_helper = "/bin/sh '/w/config/mcp-headers/kept.sh'"`) || strings.Contains(cfg, "HW_MCP_HEADER") {
+		t.Errorf("config.toml:\n%s", cfg)
 	}
-	dir := t.TempDir()
-	auth, key := filepath.Join(dir, "auth"), filepath.Join(dir, "key")
-	if err := os.WriteFile(auth, []byte("Bearer v-1\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(helper, "/w/secrets/kept-auth") || !strings.Contains(helper, "/w/secrets/kept-key") {
+		t.Errorf("the helper reads no header's file:\n%s", helper)
 	}
-	if err := os.WriteFile(key, []byte("k=2"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	env, err := headerEnv(map[string]string{"HW_MCP_HEADER_1": auth, "HW_MCP_HEADER_2": key})
-	if err != nil || !reflect.DeepEqual(env, []string{"HW_MCP_HEADER_1=Bearer v-1", "HW_MCP_HEADER_2=k=2"}) {
-		t.Errorf("headerEnv: %q %v", env, err)
-	}
-	if _, err := headerEnv(map[string]string{"HW_MCP_HEADER_1": filepath.Join(dir, "gone")}); err == nil {
-		t.Error("a header's file gone, and no error")
+	if strings.Contains(string(res.OpenConfig), "secrets") {
+		t.Errorf("the open config names a header's file: %s", res.OpenConfig)
 	}
 }
