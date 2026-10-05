@@ -2,7 +2,10 @@ package conformance
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +16,7 @@ import (
 var scenarios = []scenario{
 	{"describe", describe},
 	{"provision", provision},
+	{"headers", headers},
 	{"open", open},
 	{"turn", turnScenario},
 	{"send-refused", sendRefused},
@@ -112,6 +116,65 @@ func provision(c *check) {
 		c.fail("provision.unsupported", "an undeclared credential kind: %v, want unsupported", err)
 	} else if asErr(err, &e); e.Field == "" {
 		c.fail("provision.unsupported", "unsupported, but naming no field")
+	}
+}
+
+// headers: an http connector's header read from its file (headers_file) is
+// in no file the adapter renders, nor in its open configuration, and — when
+// the fixture's harness connects to MCP servers — reaches the server.
+func headers(c *check) {
+	if !slices.Contains(c.desc.Spec.Connectors, contract.ConnectorHTTP) {
+		c.t.Logf("no http connectors: skipped")
+		return
+	}
+	m := newMCPServer()
+	defer m.close()
+	secret := "hw-conformance-" + newInputID()
+	a := c.roots()
+	file := filepath.Join(a.layout.Secrets, "mcp-authorization")
+	if err := os.WriteFile(file, []byte("Bearer "+secret+"\n"), 0o600); err != nil {
+		c.stop("setup", "the header's file: %v", err)
+	}
+	spec := c.f.Spec
+	spec.Connectors = append(slices.Clone(spec.Connectors), contract.Connector{Name: "hw-conformance", HTTP: &contract.HTTPConnector{
+		URL: m.url(), HeadersFile: map[string]string{"Authorization": file},
+	}})
+	c.spec = &spec
+	res, err := c.provision(a, nil)
+	if err != nil {
+		c.stop("headers.provision", "Provision: %v", err)
+	}
+	if err := Apply(a.layout, res); err != nil {
+		c.stop("headers.provision", "applying the result: %v", err)
+	}
+	a.result = res
+	for _, f := range res.Files {
+		if strings.Contains(string(f.Content()), secret) {
+			c.fail("headers.provision", "%s/%s holds the header's value", f.Root, f.Path)
+		}
+	}
+	if strings.Contains(string(res.OpenConfig), secret) {
+		c.fail("headers.provision", "the open configuration holds the header's value")
+	}
+	if !c.f.MCP {
+		c.t.Logf("the harness connects to no MCP server: the live check skipped")
+		return
+	}
+	s, h := c.openSession(a)
+	if end, ok := h.turnEnded(c.send(s, "PING")); !ok || end.Outcome != contract.TurnCompleted {
+		c.stop("headers.reach", "the turn: %+v", end)
+	}
+	deadline := time.Now().Add(c.f.timeout())
+	for {
+		ok, n := m.heard("Authorization", "Bearer "+secret)
+		if ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			c.fail("headers.reach", "the MCP server heard %d requests, none with the header from its file", n)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 

@@ -34,11 +34,16 @@ Both harnesses can do better, to a degree:
 2. **`CheckSpec` checks an http connector's headers:** each a token, named once across `headers`,
    `headers_env` and `headers_file` in any case, and each file an absolute, clean path.
 3. **The claude profile** writes a script per server beside `mcp.json`, holding the files' paths
-   and no value, and names it the server's `headersHelper`. The script prints each value read from
-   its file, its newlines dropped and its backslashes, quotes and tabs escaped, and fails when a
-   file cannot be read.
+   and no value, and makes `/bin/sh` running it the server's `headersHelper`, which claude hands
+   to a shell: no provisioned file is executable. The script prints each value read from its file,
+   its newlines dropped and its backslashes, quotes and tabs escaped, and fails when a file cannot
+   be read.
 4. **The codex profile** names a variable for each such header in `env_http_headers`, and Start
    reads each file into that variable, in codex's environment alone.
+5. **The conformance scenario `headers`** provisions an http connector whose header comes from a
+   file, applies the result as a Supervisor does, and checks that the value is in no rendered file;
+   where the fixture's harness connects to MCP servers (`Fixture.MCP`), that the kit's MCP server
+   hears it.
 
 ## Consequences
 
