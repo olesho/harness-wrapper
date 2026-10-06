@@ -56,6 +56,11 @@ type Server struct {
 	// reads what the harness sent the model: the conversation a resumed
 	// session carries, say. Set it before the first request.
 	KeepBodies bool
+	// KeepRequests bounds how many requests Requests returns — the newest;
+	// 0 keeps every one. A long run sets it: each request is kept with its
+	// system prompt, so the mock's memory grows with every request it
+	// answers. Count still counts them all. Set it before the first request.
+	KeepRequests int
 
 	mu       sync.Mutex
 	seen     map[string]int
@@ -104,7 +109,11 @@ func (s *Server) Close() {
 func (s *Server) Requests() []Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]Request(nil), s.requests...)
+	reqs := s.requests
+	if k := s.KeepRequests; k > 0 && len(reqs) > k {
+		reqs = reqs[len(reqs)-k:]
+	}
+	return append([]Request(nil), reqs...)
 }
 
 type message struct {
@@ -339,7 +348,17 @@ func (s *Server) record(r Request, body []byte) int {
 		r.Body = body
 	}
 	s.requests = append(s.requests, r)
+	if k := s.KeepRequests; k > 0 && len(s.requests) >= 2*k {
+		s.requests = append([]Request(nil), s.requests[len(s.requests)-k:]...)
+	}
 	return r.N
+}
+
+// Count is how many requests the mock has answered.
+func (s *Server) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.n
 }
 
 func (s *Server) fail(w http.ResponseWriter, n, code int, typ, msg string) {

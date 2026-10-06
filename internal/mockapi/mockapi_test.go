@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -184,5 +185,23 @@ func TestRequestsKeepTheCredentialAndTheBody(t *testing.T) {
 	}
 	if r[1].Auth != "Bearer tok-c" || string(r[1].Body) != responses || r[1].Scenario != "PING 2" {
 		t.Errorf("responses request: auth %q body %q scenario %q", r[1].Auth, r[1].Body, r[1].Scenario)
+	}
+}
+
+// KeepRequests keeps the newest requests only, and Count counts them all.
+func TestKeepRequestsBoundsWhatIsKept(t *testing.T) {
+	s := Start()
+	defer s.Close()
+	s.KeepRequests = 2
+	for i := range 5 {
+		resp := post(t, s, "PING "+strconv.Itoa(i), false)
+		_ = resp.Body.Close()
+	}
+	r := s.Requests()
+	if len(r) != 2 || r[0].Scenario != "PING 3" || r[1].Scenario != "PING 4" {
+		t.Errorf("kept %+v, want the newest two", r)
+	}
+	if n := s.Count(); n != 5 {
+		t.Errorf("Count = %d, want 5", n)
 	}
 }
