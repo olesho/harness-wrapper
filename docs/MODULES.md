@@ -566,8 +566,9 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() func()`
-DisableSupervisionForTest does nothing here.
+#### `func DisableSupervisionForTest() (restore func())`
+DisableSupervisionForTest makes every launch see a host that delegates no
+cgroup, until the returned function runs. Tests only.
 
 #### `func OpenPTYPair() (int, int, error)`
 OpenPTYPair reports ErrUnsupported.
@@ -2955,7 +2956,8 @@ Placeholder), and a subscription login the runtime keeps itself and lends
 behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 5
 gives Placeholder the agent's model (PlaceholderRequest.Model), so a
 credential kind that serves several providers keeps each credential on its
-own provider's hosts.
+own provider's hosts. Minor 6 lets several Sessions of one agent be open at
+once (concurrent_sessions: Limits.MaxSessions).
 
 Two callers use an Adapter:
 
@@ -2963,8 +2965,9 @@ Two callers use an Adapter:
     Provision — the pure rendering of a harness-neutral Agent Spec into the
     harness's files, argv and environment, which the Supervisor writes —
     and, for a credential it keeps from the harness, Placeholder;
-  - the Host, one per agent and inside the agent's isolation, opens Sessions
-    (NewSession, then Open … Close) and record handles (OpenRecord).
+  - the Host, inside the agent's isolation — one per agent, or with
+    concurrent_sessions one per Session — opens Sessions (NewSession, then
+    Open … Close) and record handles (OpenRecord).
 
 An Adapter registers itself under its harness's name (Register), in its
 package's init; a runtime links the harnesses it offers through one file of
@@ -2994,6 +2997,10 @@ adapter's Provision calls it for a request that loads.
 #### `func CheckRelPath(p string) error`
 CheckRelPath refuses a path that is not relative, clean and slash-separated,
 with no empty, "." or ".." component: what a file beneath a root may be.
+
+#### `func CheckSessions(d Descriptor) error`
+CheckSessions refuses a Descriptor whose Session limit is malformed: the
+capability with fewer than 2 Sessions, or a limit without it.
 
 #### `func CheckSpec(d Descriptor, s AgentSpec) error`
 CheckSpec refuses an Agent Spec that uses a field or value d does not
@@ -3073,7 +3080,7 @@ what its constant says; without it, the operations answer CodeUnsupported,
 or the observations never appear. The set is closed within a minor version;
 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
 login_keeper, 1.3 background_turns (its background_tasks observation in
-1.4).
+1.4), 1.6 concurrent_sessions.
 
 #### `type Certainty`
 Certainty is whether a failed Send may have reached the harness.

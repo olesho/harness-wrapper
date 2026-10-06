@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.5`.
+package is its normative form, contract version `harness-adapter/1.6`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -132,6 +132,20 @@ agent, and lend it behind its broker (`login_keeper`):
   `expired` until someone signs in again.
 
 The kit's `keeper` scenario runs a keeper whose sign-in the fixture approves (`Fixture.Approve`).
+
+## Sessions side by side
+
+Since 1.6 an agent may have several Sessions open at once (`concurrent_sessions`), from one Host or
+a Host each, over one Layout and one staged credential. Each keeps its own inputs, turn, record,
+observations and checkpoint, and what one does reaches no other: an interrupt, a close or a crash
+of one ends nothing of the rest, and a record handle on one may be open while the others run.
+
+- `Descriptor.limits.max_sessions` says how many may be open at once, at least 2: the most the
+  adapter's concurrency conformance has passed with the real harness at the version it pins. Like
+  `load.sources`, it names nothing the adapter has not run, and it is run again whenever the pin
+  moves. `contract.CheckSessions` holds the form; `Descriptor.Sessions` is the number, 1 without the
+  capability.
+- An adapter without the capability has one Session of an agent open at a time.
 
 ## harness-wrapper's Harness Adapter
 

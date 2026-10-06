@@ -105,6 +105,7 @@ var Breaks = []string{
 	"auto-no-record-end",
 	"egress-without-capability", "impure-placeholder", "placeholder-ignores-nonce", "placeholder-holds-secret",
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
+	"sessions-without-capability",
 }
 
 // Adapter is the fake harness's adapter.
@@ -157,8 +158,16 @@ func (a *Adapter) Describe() contract.Descriptor {
 			PermissionPostures: []string{contract.PostureBypass, contract.PostureGated},
 			InputContent:       []string{contract.ContentText},
 		},
-		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
+		Limits: a.limits(),
 	}
+}
+
+func (a *Adapter) limits() contract.Limits {
+	l := contract.Limits{MaxInputBytes: contract.MaxInputBytes}
+	if a.breaks("sessions-without-capability") {
+		l.MaxSessions = 4
+	}
+	return l
 }
 
 func (a *Adapter) capabilities() []contract.Capability {

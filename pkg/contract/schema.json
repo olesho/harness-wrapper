@@ -181,7 +181,8 @@
         "autonomous_turns",
         "brokered_credentials",
         "login_keeper",
-        "background_turns"
+        "background_turns",
+        "concurrent_sessions"
       ],
       "type": "string"
     },
@@ -718,6 +719,9 @@
     "Limits": {
       "properties": {
         "max_input_bytes": {
+          "type": "integer"
+        },
+        "max_sessions": {
           "type": "integer"
         }
       },
@@ -1688,5 +1692,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.5"
+  "title": "Harness Adapter Interface harness-adapter/1.6"
 }
