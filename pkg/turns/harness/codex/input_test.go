@@ -240,3 +240,23 @@ func TestPromptReady_DuringInterstitialStillMatchesGlyph(t *testing.T) {
 		t.Error("DetectInput must flag the update menu so readiness overrides the '›' match")
 	}
 }
+
+// A reply quoting an interstitial's wording is conversation text: the composer
+// and status line are painted below it. Classifying it as a notice blocks the
+// session and auto-dismiss presses Enter into the composer, forever, since the
+// text stays in scrollback.
+func TestDetectInput_QuotedNoticeAboveComposer(t *testing.T) {
+	for _, quoted := range []string{continueAnchor, migrationAnchor} {
+		screen := `
+› how do I get past the startup screen?
+• Codex shows "` + quoted + `" — press Enter.
+
+›Find and fix a bug in @filename
+
+  gpt-5.5 default · /private/tmp
+`
+		if req, ok := DetectInput(screen); ok {
+			t.Errorf("reply quoting %q detected as %q", quoted, req.Kind)
+		}
+	}
+}

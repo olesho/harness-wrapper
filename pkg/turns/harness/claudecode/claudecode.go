@@ -318,21 +318,62 @@ func (a *Adapter) unparseableEvents(text string, det Detection) []turns.Event {
 	}}
 }
 
-// anchorSplit returns the dialog anchor present in text and the frame text that
-// follows it. It mirrors DetectInputDetail's anchor switch — the two must agree
+// anchorSplit returns the live dialog anchor in text and the frame text that
+// follows it. It shares liveAnchor with DetectInputDetail — the two must agree
 // on WHICH anchor matched, or a report would quote the wrong dialog.
 func anchorSplit(text string) (anchor, after string, ok bool) {
-	switch {
-	case strings.Contains(text, trustAnchor):
-		anchor = trustAnchor
-	case strings.Contains(text, trustAnchorAlt):
-		anchor = trustAnchorAlt
-	case strings.Contains(text, bypassAnchor):
-		anchor = bypassAnchor
-	default:
+	anchor, idx, _, ok := liveAnchor(text)
+	if !ok {
 		return "", "", false
 	}
-	return anchor, text[strings.Index(text, anchor)+len(anchor):], true
+	return anchor, text[idx+len(anchor):], true
+}
+
+// dialogAnchors lists the blocking-dialog questions in priority order: a
+// screen showing BOTH a trust anchor and the bypass phrase resolves to trust,
+// exactly as it always has.
+var dialogAnchors = []struct{ anchor, kind string }{
+	{trustAnchor, KindTrustPrompt},
+	{trustAnchorAlt, KindTrustPrompt},
+	{bypassAnchor, KindBypassAcceptance},
+}
+
+// liveAnchor returns the first dialog anchor (in dialogAnchors order) that is
+// painted as a live dialog, with the index of its first occurrence and its
+// kind. It is the single source of truth for DetectInputDetail, anchorSplit
+// and AnchorPresent.
+//
+// A live dialog replaces the composer. When the composer frame is painted
+// below an anchor's LAST occurrence, that anchor is text in the conversation
+// — e.g. a reply quoting "Bypass Permissions mode" — not a dialog, and reading
+// it as one would block every later send until it scrolled off.
+func liveAnchor(text string) (anchor string, idx int, kind string, ok bool) {
+	for _, a := range dialogAnchors {
+		first := strings.Index(text, a.anchor)
+		if first < 0 {
+			continue
+		}
+		last := strings.LastIndex(text, a.anchor)
+		if composerFollows(text[last+len(a.anchor):]) {
+			continue
+		}
+		return a.anchor, first, a.kind, true
+	}
+	return "", 0, "", false
+}
+
+// composerFollows reports whether text contains Claude Code's composer frame:
+// a horizontal rule (composerRuleRE) directly followed by a "❯" input line.
+// The startup dialogs (folder trust, bypass acceptance) are drawn instead of
+// the composer, so they never have one below them.
+func composerFollows(text string) bool {
+	lines := strings.Split(text, "\n")
+	for i := 0; i+1 < len(lines); i++ {
+		if composerRuleRE.MatchString(lines[i]) && strings.HasPrefix(strings.TrimLeft(lines[i+1], " "), selectorGlyph) {
+			return true
+		}
+	}
+	return false
 }
 
 // inputFingerprint hashes an anchor plus the raw candidate lines under it, the
@@ -391,18 +432,8 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 // true only because pkg/chat's readiness gate calls THIS form (ready.go), and so
 // treats an unreadable dialog as blocking instead of typing a prompt into it.
 func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
-	var prompt, kind string
-	var idx int
-	// Order matters and must not change: a screen that contains BOTH a trust
-	// anchor and the bypass phrase resolves to trust, exactly as it always has.
-	switch {
-	case strings.Contains(text, trustAnchor):
-		prompt, idx, kind = trustAnchor, strings.Index(text, trustAnchor), KindTrustPrompt
-	case strings.Contains(text, trustAnchorAlt):
-		prompt, idx, kind = trustAnchorAlt, strings.Index(text, trustAnchorAlt), KindTrustPrompt
-	case strings.Contains(text, bypassAnchor):
-		prompt, idx, kind = bypassAnchor, strings.Index(text, bypassAnchor), KindBypassAcceptance
-	default:
+	prompt, idx, kind, ok := liveAnchor(text)
+	if !ok {
 		return nil, DetectNone
 	}
 	// Everything the selector parser looks at must come AFTER the anchor: "❯" is

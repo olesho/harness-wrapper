@@ -134,6 +134,14 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 		req.ID = inputID(req)
 		return req, true
 
+	// The migration and plain notices are full-screen interstitials whose
+	// last line is the "Press enter to continue" footer. A reply that merely
+	// quotes either phrase has the composer and status line painted below it;
+	// treating it as a notice would mark the session blocked and auto-dismiss
+	// would press Enter into the composer, with the text never scrolling away.
+	case !continueFooterLast(text):
+		return nil, false
+
 	case strings.Contains(text, migrationAnchor):
 		req := &turns.InputRequest{Kind: KindModelMigration, Prompt: migrationAnchor, Options: continueOption()}
 		req.ID = inputID(req)
@@ -158,6 +166,13 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// continueFooterLast reports whether the last non-blank line of text carries
+// the interstitial footer (continueAnchor).
+func continueFooterLast(text string) bool {
+	lines := strings.Split(strings.TrimRight(text, " \t\r\n"), "\n")
+	return strings.Contains(lines[len(lines)-1], continueAnchor)
 }
 
 // detectApproval recognizes a genuine command / apply-patch approval dialog and
