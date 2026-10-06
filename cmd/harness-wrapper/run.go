@@ -22,15 +22,22 @@ import (
 const runErrPrefix = "harness-wrapper run:"
 
 // resolveRunTimeout returns the per-turn deadline, defaulting to 15m and
-// honoring a valid HARNESS_WRAPPER_RUN_TIMEOUT duration override.
+// honoring a valid HARNESS_WRAPPER_RUN_TIMEOUT duration override. An
+// unparseable or non-positive override is reported on stderr and ignored.
 func resolveRunTimeout() time.Duration {
-	timeout := 15 * time.Minute
-	if v := os.Getenv("HARNESS_WRAPPER_RUN_TIMEOUT"); v != "" {
-		if d, derr := time.ParseDuration(v); derr == nil {
-			timeout = d
-		}
+	const fallback = 15 * time.Minute
+	v := os.Getenv("HARNESS_WRAPPER_RUN_TIMEOUT")
+	if v == "" {
+		return fallback
 	}
-	return timeout
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		// A typo here would otherwise silently become the default (or, for
+		// "0s", an immediate deadline that fails every run).
+		fmt.Fprintf(os.Stderr, "harness-wrapper: ignoring HARNESS_WRAPPER_RUN_TIMEOUT=%q (want a positive duration such as 30m); using %s\n", v, fallback)
+		return fallback
+	}
+	return d
 }
 
 // runOneShot is the "proper substitution for `claude -p`": it drives ONE turn
@@ -81,7 +88,12 @@ func runOneShot(args []string) int {
 		return 2
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), resolveRunTimeout())
+	// SIGTERM/SIGHUP (an orchestrator stopping us) cancel the turn like the
+	// deadline does, so the harness is stopped gracefully and this command
+	// still reports its result instead of dying mid-run.
+	sigCtx, stopSignalWatcher := signalAwareContext(context.Background(), nil)
+	defer stopSignalWatcher()
+	ctx, cancel := context.WithTimeout(sigCtx, resolveRunTimeout())
 	defer cancel()
 
 	// Resolve interactive vs. auto-accept ONCE, up front. A /dev/tty handle (if

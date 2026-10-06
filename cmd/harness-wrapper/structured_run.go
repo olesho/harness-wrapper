@@ -62,7 +62,12 @@ func runStructuredRun(args []string) int {
 		return emitStartupError(wd, errors.New("empty prompt"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), resolveRunTimeout())
+	// SIGTERM/SIGHUP (an orchestrator stopping us) cancel the turn like the
+	// deadline does, so the harness is stopped gracefully and this command
+	// still reports its result instead of dying mid-run.
+	sigCtx, stopSignalWatcher := signalAwareContext(context.Background(), nil)
+	defer stopSignalWatcher()
+	ctx, cancel := context.WithTimeout(sigCtx, resolveRunTimeout())
 	defer cancel()
 
 	// Strip Claude Code's nesting markers (minus the credential exemption in

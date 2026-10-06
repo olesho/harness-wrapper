@@ -280,3 +280,24 @@ func readTraceEventsAllowMissing(t *testing.T, path string) []map[string]any {
 	}
 	return readTraceEvents(t, path)
 }
+
+// HARNESS_WRAPPER_RUN_TIMEOUT overrides the 15m per-turn deadline only with a
+// positive duration; anything else falls back to the default instead of
+// silently becoming an immediate deadline.
+func TestResolveRunTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want time.Duration
+	}{
+		{"", 15 * time.Minute},
+		{"30s", 30 * time.Second},
+		{"bogus", 15 * time.Minute},
+		{"0s", 15 * time.Minute},
+		{"-5m", 15 * time.Minute},
+	} {
+		t.Setenv("HARNESS_WRAPPER_RUN_TIMEOUT", tc.env)
+		if got := resolveRunTimeout(); got != tc.want {
+			t.Errorf("HARNESS_WRAPPER_RUN_TIMEOUT=%q: got %s, want %s", tc.env, got, tc.want)
+		}
+	}
+}
