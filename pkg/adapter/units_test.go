@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -67,6 +68,55 @@ func TestMarkers(t *testing.T) {
 	}
 	if err := m.Write(Marker{InputID: "in-3", Native: "n-3", SessionID: "s"}); err == nil {
 		t.Error("a marker written to a store that is not intact")
+	}
+}
+
+// Sessions opening at once on a fresh scratch root share one store, and none
+// finds it half made: every marker each writes is there, and found.
+func TestMarkersOpenedAtOnce(t *testing.T) {
+	for round := 0; round < 20; round++ {
+		scratch := t.TempDir()
+		const n = 16
+		errs := make(chan error, n)
+		var start sync.WaitGroup
+		start.Add(1)
+		for i := 0; i < n; i++ {
+			go func() {
+				start.Wait()
+				m, err := OpenMarkers(scratch)
+				if err != nil {
+					errs <- err
+					return
+				}
+				in := fmt.Sprintf("in-%d", i)
+				if err := m.Write(Marker{InputID: in, Native: "n-" + in, SessionID: "s"}); err != nil {
+					errs <- err
+					return
+				}
+				if _, ok, err := m.Lookup(in); err != nil || !ok {
+					errs <- fmt.Errorf("Lookup(%s) = %v %v", in, ok, err)
+					return
+				}
+				errs <- nil
+			}()
+		}
+		start.Done()
+		for i := 0; i < n; i++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		entries, err := os.ReadDir(scratch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].Name() != markersDir {
+			var names []string
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			t.Fatalf("round %d: scratch holds %v, want the store alone", round, names)
+		}
 	}
 }
 
