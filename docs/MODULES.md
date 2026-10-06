@@ -594,9 +594,7 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent returns the directory beneath which managed state lives:
-$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
-~/.local/state/harness-wrapper/contain.
+StateParent reports ErrUnsupported.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -645,10 +643,8 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(in Input) (*Preview, error)`
-PreviewLaunch runs the checks Prepare runs, collecting every problem
-instead of stopping at the first, and allocates nothing: no state, no
-cgroup, no ruleset. Only an invalid request is an error.
+#### `func PreviewLaunch(Input) (*Preview, error)`
+PreviewLaunch reports ErrUnsupported.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -664,13 +660,11 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(persistent bool) (*State, error)`
-NewState allocates new managed state. Persistent state survives its
-launches until Remove; ephemeral state is deleted by the launch that
-created it once that launch's cgroup is empty.
+#### `func NewState(bool) (*State, error)`
+NewState reports ErrUnsupported.
 
-#### `func OpenState(id string) (*State, error)`
-OpenState opens existing managed state by id.
+#### `func OpenState(string) (*State, error)`
+OpenState reports ErrUnsupported.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -1701,16 +1695,16 @@ group.
 ### Exported Types & Functions
 
 #### `func Empty(cmd *exec.Cmd) bool`
-Empty reports whether cmd's process ended.
+Empty reports whether no process is left in cmd's group.
 
-#### `func ExitSignal(*os.ProcessState) string`
-ExitSignal is always "".
+#### `func ExitSignal(ps *os.ProcessState) string`
+ExitSignal names the signal that ended a process, "" when none.
 
-#### `func Set(*exec.Cmd)`
-Set does nothing: there are no process groups.
+#### `func Set(cmd *exec.Cmd)`
+Set makes cmd start in a process group of its own.
 
-#### `func Signal(cmd *exec.Cmd, _ bool)`
-Signal kills cmd's process.
+#### `func Signal(cmd *exec.Cmd, kill bool)`
+Signal sends SIGTERM, or SIGKILL when kill, to cmd's group.
 
 ## Module: resettime (`internal/resettime`)
 
@@ -2927,7 +2921,10 @@ OpenRequest.Loaded), and the turns a harness starts with no input
 and an interrupt that names a turn). Minor 2 adds credentials kept from the
 harness by an egress broker (brokered_credentials: Descriptor.Egress and
 Placeholder), and a subscription login the runtime keeps itself and lends
-behind that broker (login_keeper: Descriptor.Keeper and Keep).
+behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 5
+gives Placeholder the agent's model (PlaceholderRequest.Model), so a
+credential kind that serves several providers keeps each credential on its
+own provider's hosts.
 
 Two callers use an Adapter:
 

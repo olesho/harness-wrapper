@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.4`.
+package is its normative form, contract version `harness-adapter/1.5`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -106,6 +106,9 @@ credential belongs. An adapter with `brokered_credentials` says what only it kno
   the Supervisor's, and its result holds the credential's secrets: the Supervisor gives them to the
   broker alone and never journals or logs them (`Swap` prints without its secret).
   `PlaceholderResult.Validate` keeps each swap within its route and every secret out of the file.
+  Since 1.5 the request names the agent's model: a harness whose kind serves several providers
+  narrows each swap to the provider the model names, and refuses a model it cannot place
+  (`invalid_spec` on field `model`) ([ADR-020](decisions/adr-020-placeholder-model.md)).
 - The runtime gives every harness the broker's address in `HTTPS_PROXY` and the certificates to
   trust in `SSL_CERT_FILE`, through `HW_HARNESS_ENV`; a profile hands the certificates to its
   harness however it reads them.

@@ -15,7 +15,10 @@
 // and an interrupt that names a turn). Minor 2 adds credentials kept from the
 // harness by an egress broker (brokered_credentials: Descriptor.Egress and
 // Placeholder), and a subscription login the runtime keeps itself and lends
-// behind that broker (login_keeper: Descriptor.Keeper and Keep).
+// behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 5
+// gives Placeholder the agent's model (PlaceholderRequest.Model), so a
+// credential kind that serves several providers keeps each credential on its
+// own provider's hosts.
 //
 // Two callers use an Adapter:
 //
@@ -41,7 +44,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.4"
+const Version = "harness-adapter/1.5"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -49,7 +52,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 4
+	Minor = 5
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

@@ -29,6 +29,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-017](adr-017-background-turns.md) | Interface 1.3 adds background_turns: the turn a harness starts by itself when background work ends is reported as a turn of no input, live and in the record, and keeps the Session busy without being cut short; claude's is named after the task, from its task notification | Accepted 2026-10-05 | 3, 4, 6 |
 | [ADR-018](adr-018-background-tasks.md) | Interface 1.4 adds the observation background_tasks under background_turns: every task the harness runs in the background (command, subagent or other), live, whenever the set changes, and State.background; claude's from background_tasks_changed | Accepted 2026-10-05 | 3, 6 |
 | [ADR-019](adr-019-pin-codex-0-160.md) | The codex pin moves to 0.160.0 (claude stays at 2.1.283: 2.1.289 takes a pasted prompt as content); the old pin stays a load source; a loaded thread gets back the name its session_index.jsonl gives, since codex 0.160 answers names from a database no archive carries; codex reads connector headers through http_headers_helper | Accepted 2026-10-05 | 4, 6 |
+| [ADR-020](adr-020-placeholder-model.md) | Interface 1.5 gives Placeholder the agent's model, so one credential kind can serve several providers: a harness narrows each swap to the provider the model names, and refuses a model it cannot place | Accepted 2026-10-06 | 3, 6 |
 
 ## Intent coverage
 
