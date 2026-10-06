@@ -51,7 +51,17 @@ type Markers struct {
 	mu       sync.Mutex
 	loaded   bool
 	byNative map[string]Marker
+	// scannedMod is the store directory's mtime as of the last scan, and
+	// scannedAt when that scan began; scans counts them, for tests.
+	scannedMod, scannedAt time.Time
+	scans                 int
 }
+
+// markerScanSlack is how close to a scan a directory mtime must be for the
+// scan to be not trusted to have seen every entry: a filesystem with coarse
+// timestamps can take a second entry within the same tick as the scan without
+// changing the mtime again.
+var markerScanSlack = 2 * time.Second
 
 // OpenMarkers opens the marker store under scratch, creating it the first
 // time.
@@ -205,16 +215,37 @@ func (m *Markers) Lookup(inputID string) (mk Marker, found bool, err error) {
 
 // ByNative finds the marker of the input whose native id is native. A marker
 // written by this process is found at once; one written by another is found
-// once the store is read again, which a miss does.
+// once the store is read again, which a miss does when the store directory
+// changed since it was last read. Most lookups miss — a reader asks about
+// every user entry, tool results included — so a miss on an unchanged store
+// costs one stat, not a read of every marker.
 func (m *Markers) ByNative(native string) (Marker, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if mk, ok := m.byNative[native]; ok {
 		return mk, true
 	}
+	if !m.staleLocked() {
+		return Marker{}, false
+	}
 	m.loadLocked()
 	mk, ok := m.byNative[native]
 	return mk, ok
+}
+
+// staleLocked reports whether the store may hold markers the index has not
+// read: it was never read, its directory cannot be stat'ed, its mtime moved
+// since the last scan, or that mtime was too close to the scan to rule out a
+// change in the same timestamp tick.
+func (m *Markers) staleLocked() bool {
+	if !m.loaded {
+		return true
+	}
+	fi, err := os.Stat(m.dir)
+	if err != nil {
+		return true
+	}
+	return !fi.ModTime().Equal(m.scannedMod) || m.scannedAt.Sub(m.scannedMod) < markerScanSlack
 }
 
 // loadLocked reads every marker into the native index. Markers it cannot read
@@ -222,6 +253,14 @@ func (m *Markers) ByNative(native string) (Marker, bool) {
 // unattributed, never misattributed.
 func (m *Markers) loadLocked() {
 	m.loaded = true
+	m.scans++
+	// The mtime is taken before the listing, so an entry added during the
+	// scan moves it past what is recorded and the next miss reads again.
+	m.scannedAt = time.Now()
+	m.scannedMod = time.Time{}
+	if fi, err := os.Stat(m.dir); err == nil {
+		m.scannedMod = fi.ModTime()
+	}
 	entries, err := os.ReadDir(m.dir)
 	if err != nil {
 		return

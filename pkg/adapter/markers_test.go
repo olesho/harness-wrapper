@@ -75,3 +75,68 @@ func TestMarkersWriteIsExclusiveAcrossInstances(t *testing.T) {
 		}
 	}
 }
+
+// A ByNative miss reads the store again only when it changed: a reader asks
+// about every user entry, and most are not inputs, so rereading every marker
+// on each of them is quadratic. A marker another instance writes is still
+// found by the next miss.
+func TestMarkersByNativeRescansOnlyOnChange(t *testing.T) {
+	orig := markerScanSlack
+	markerScanSlack = 0 // the test's filesystem has fine timestamps
+	defer func() { markerScanSlack = orig }()
+
+	scratch := t.TempDir()
+	writer, err := OpenMarkers(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := OpenMarkers(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Write(Marker{InputID: "in-1", Native: "n-1", SessionID: "s", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reader.ByNative("n-1"); !ok {
+		t.Fatal("n-1 not found")
+	}
+	scans := reader.scans
+	for range 100 {
+		if _, ok := reader.ByNative("tool-result-entry"); ok {
+			t.Fatal("a miss was found")
+		}
+	}
+	if reader.scans != scans {
+		t.Errorf("100 misses on an unchanged store read it %d more times, want 0", reader.scans-scans)
+	}
+
+	time.Sleep(10 * time.Millisecond) // a distinct directory mtime
+	if err := writer.Write(Marker{InputID: "in-2", Native: "n-2", SessionID: "s", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if mk, ok := reader.ByNative("n-2"); !ok || mk.InputID != "in-2" {
+		t.Fatalf("the other instance's new marker was not found: %+v %v", mk, ok)
+	}
+	if reader.scans != scans+1 {
+		t.Errorf("finding the new marker took %d scans, want 1", reader.scans-scans)
+	}
+}
+
+// With coarse timestamps a scan cannot rule out an entry added in its own
+// tick, so a store changed that close to the scan is read again on a miss.
+func TestMarkersByNativeRescansARacyScan(t *testing.T) {
+	scratch := t.TempDir()
+	m, err := OpenMarkers(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Write(Marker{InputID: "in-1", Native: "n-1", SessionID: "s", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	m.ByNative("miss")
+	scans := m.scans
+	m.ByNative("miss")
+	if m.scans != scans+1 {
+		t.Errorf("a miss right after a change read the store %d times, want 1", m.scans-scans)
+	}
+}
