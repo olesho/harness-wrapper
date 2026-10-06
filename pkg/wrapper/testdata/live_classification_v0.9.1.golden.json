@@ -872,11 +872,11 @@
  {
   "Harness": "codex",
   "Text": "ERROR: quota exceeded. try later.",
-  "Status": "api_error",
-  "Class": "RateLimited",
-  "Reason": "api error 429: quota exceeded",
-  "Terminal": false,
-  "HTTPCode": 429,
+  "Status": "blocked_by_cost",
+  "Class": "BillingError",
+  "Reason": "quota exceeded",
+  "Terminal": true,
+  "HTTPCode": 0,
   "RetryAfterMS": 0
  },
  {

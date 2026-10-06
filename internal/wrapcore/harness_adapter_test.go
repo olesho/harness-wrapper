@@ -87,6 +87,33 @@ func TestHarnessAdapter_Classify(t *testing.T) {
 			wantCode:   529,
 		},
 		{
+			// Codex prints quota exhaustion as "usage limit reached", which
+			// both the API-error phrase table and the Cost list recognise.
+			// Once idle, the terminal cost classification must win or the
+			// run never stops.
+			name:       "A8b: codex quota phrase is terminal cost once idle",
+			adapter:    codex,
+			input:      ClassifierInput{RecentOutput: "■ Usage limit reached. Try again later.", Idle: true},
+			wantStatus: StatusBlockedByCost,
+		},
+		{
+			name:       "A8c: codex quota phrase is a non-terminal api_error while streaming",
+			adapter:    codex,
+			input:      ClassifierInput{RecentOutput: "■ Usage limit reached. Try again later."},
+			wantStatus: StatusAPIError,
+			wantCode:   429,
+		},
+		{
+			// An API error still in the 64KB window must not hide a later
+			// session-limit banner.
+			name:           "A11b: claude session-limit banner wins over an older api_error",
+			adapter:        claude,
+			input:          ClassifierInput{RecentOutput: "API Error: 529 Overloaded.\n  ⎿  You've hit your session limit · resets 6:40pm (Europe/Warsaw)"},
+			wantStatus:     StatusBlockedByCost,
+			reasonHas:      "session limit",
+			wantResumeAtOK: true,
+		},
+		{
 			name:       "A9: false-positive guard — mid-line API Error in prose",
 			adapter:    claude,
 			input:      ClassifierInput{RecentOutput: "chitchat about API Error: 500 mid-line", Idle: true},
@@ -145,6 +172,26 @@ func checkClassifyCase(t *testing.T, tc classifyCase, got Classification) {
 			t.Errorf("ResumeAt is zero, want non-zero")
 		} else if !got.ResumeAt.After(time.Now()) {
 			t.Errorf("ResumeAt = %s, want in the future", got.ResumeAt)
+		}
+	}
+}
+
+// lastIndexFoldASCII finds the last ASCII-case-folded match at its offset in
+// the original string, even when a rune before it changes UTF-8 length under
+// strings.ToLower.
+func TestLastIndexFoldASCII(t *testing.T) {
+	cases := []struct {
+		s, sub string
+		want   int
+	}{
+		{"Usage Limit then usage limit", "usage limit", 17},
+		{"nothing here", "usage limit", -1},
+		{"Ⱥ" + "USAGE LIMIT", "usage limit", len("Ⱥ")},
+		{"ab", "abc", -1},
+	}
+	for _, tc := range cases {
+		if got := lastIndexFoldASCII(tc.s, tc.sub); got != tc.want {
+			t.Errorf("lastIndexFoldASCII(%q, %q) = %d, want %d", tc.s, tc.sub, got, tc.want)
 		}
 	}
 }

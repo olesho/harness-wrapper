@@ -249,6 +249,12 @@ func TestFinishedOutput_LiveIsolation(t *testing.T) {
 // Terminal are what the wrapper acts on while a harness is still running, and
 // a changed Terminal is a SIGTERM to a process that was fine. The golden is
 // the evidence that it did not, rather than an argument that it could not.
+//
+// One row has moved on purpose since the capture: codex "quota exceeded",
+// which both codex's API-error phrase table and its Cost list recognise, is
+// now the terminal blocked_by_cost it is for every other harness. An idle
+// cost phrase outranks an API error unless the error is the newer of the two;
+// as a non-terminal api_error the run never stopped.
 func TestClassifyOutput_UnchangedByFinishedOutput(t *testing.T) {
 	type row struct {
 		Harness, Text, Status, Class, Reason string
