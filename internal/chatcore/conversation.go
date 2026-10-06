@@ -414,6 +414,7 @@ type ReopenOptions struct {
 	EventQueue                wrapper.QueueLimits
 	InputPolicy               *InputPolicy
 	DisableCodexAutoDismiss   bool
+	AutoSkipCodexUpdateNotice bool
 	OnInputRequest            func(InputRequest) (InputAnswer, bool)
 
 	// Containment, for a contained session, may restate its policy: nil
@@ -422,10 +423,12 @@ type ReopenOptions struct {
 	// containment is chosen when a conversation is created, never added later.
 	Containment *wrapper.Containment
 
-	// idleGap, markerGap, wrapperQuiet and wrapperClassify mirror the
-	// unexported Options test knobs; only same-package tests set them.
+	// idleGap, markerGap, wrapperQuiet, wrapperClassify and
+	// permModeRenderTimeout mirror the unexported Options test knobs; only
+	// same-package tests set them.
 	idleGap, markerGap            time.Duration
 	wrapperQuiet, wrapperClassify time.Duration
+	permModeRenderTimeout         time.Duration
 }
 
 // Reopen resumes a previously-stored chat session against its harness's own
@@ -477,11 +480,13 @@ func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 		EventQueue:                opts.EventQueue,
 		InputPolicy:               opts.InputPolicy,
 		DisableCodexAutoDismiss:   opts.DisableCodexAutoDismiss,
+		AutoSkipCodexUpdateNotice: opts.AutoSkipCodexUpdateNotice,
 		OnInputRequest:            opts.OnInputRequest,
 		idleGap:                   opts.idleGap,
 		markerGap:                 opts.markerGap,
 		wrapperQuiet:              opts.wrapperQuiet,
 		wrapperClassify:           opts.wrapperClassify,
+		permModeRenderTimeout:     opts.permModeRenderTimeout,
 	}
 	return openWithSession(ctx, launch, *rec, false)
 }

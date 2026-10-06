@@ -40,6 +40,7 @@ type ReopenOptions struct
 	field EventQueue wrapper.QueueLimits
 	field InputPolicy *chat.InputPolicy
 	field DisableCodexAutoDismiss bool
+	field AutoSkipCodexUpdateNotice bool
 	field OnInputRequest func(chat.InputRequest) (chat.InputAnswer, bool)
 	field Containment *containment.Request
 type Conversation struct
