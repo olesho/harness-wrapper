@@ -152,10 +152,15 @@ type PolicyScopes struct {
 	Tier      string
 	ModelHost string
 	// ModelPort defaults to 443 when zero.
-	ModelPort   int
-	FleetHost   string
-	FleetPort   int
-	HarnessPath string
+	ModelPort int
+	// ModelBinaries are the in-sandbox executables allowed to reach the model
+	// endpoint. Empty ⇒ Claude Code's install path, matching the Anthropic
+	// ModelHost default; a codex/pi/opencode sandbox must name its own binary or
+	// its harness is denied egress.
+	ModelBinaries []string
+	FleetHost     string
+	FleetPort     int
+	HarnessPath   string
 	// ScrapeEndpoints are OPTIONAL extra egress targets. Absent/empty ⇒ NO scrape
 	// lane is emitted and the generated policy is byte-for-byte unchanged
 	// (additive; existing consumers unaffected).
@@ -201,6 +206,14 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 		modelPort = 443
 	}
 
+	modelBins := scopes.ModelBinaries
+	if len(modelBins) == 0 {
+		modelBins = []string{defaultModelBinary}
+	}
+	if err := checkPolicyScalars(scopes, modelBins); err != nil {
+		return "", err
+	}
+
 	ro := make([]string, len(knobs.readOnly))
 	for i, p := range knobs.readOnly {
 		ro[i] = "'" + p + "'"
@@ -220,7 +233,7 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 		"  model:",
 		fmt.Sprintf("    endpoints: [{ host: %s, port: %d, protocol: rest, access: full, enforcement: %s }]",
 			scopes.ModelHost, modelPort, knobs.enforcement),
-		"    binaries: [{ path: /usr/local/bin/claude }]",
+		fmt.Sprintf("    binaries: [%s]", binaryList(modelBins)),
 		"  fleet:",
 		fmt.Sprintf("    endpoints: [{ host: %s, port: %d, protocol: rest, access: full, enforcement: %s }]",
 			scopes.FleetHost, scopes.FleetPort, knobs.enforcement),
@@ -236,19 +249,65 @@ func GeneratePolicy(scopes PolicyScopes) (string, error) {
 		if port == 0 {
 			port = 443
 		}
-		bins := make([]string, len(e.Binaries))
-		for j, b := range e.Binaries {
-			bins[j] = fmt.Sprintf("{ path: %s }", b)
-		}
 		lines = append(
 			lines,
 			fmt.Sprintf("  scrape_%d:", i),
 			fmt.Sprintf("    endpoints: [{ host: %s, port: %d }]", e.Host, port),
-			fmt.Sprintf("    binaries: [%s]", strings.Join(bins, ", ")),
+			fmt.Sprintf("    binaries: [%s]", binaryList(e.Binaries)),
 		)
 	}
 	lines = append(lines, "  # git hub: bundle-out ⇒ NO network endpoint")
 	return strings.Join(lines, "\n") + "\n", nil
+}
+
+// defaultModelBinary is the executable allowed to reach the model endpoint
+// when PolicyScopes.ModelBinaries is empty.
+const defaultModelBinary = "/usr/local/bin/claude"
+
+// binaryList renders paths as a YAML flow list of { path: … } entries.
+func binaryList(paths []string) string {
+	entries := make([]string, len(paths))
+	for i, p := range paths {
+		entries[i] = fmt.Sprintf("{ path: %s }", p)
+	}
+	return strings.Join(entries, ", ")
+}
+
+// policyScalarRE is what a host or path interpolated into the policy may
+// contain. The policy is written as YAML flow collections, so a value holding
+// "," "}" "]" ":" "#" or whitespace would corrupt the document or smuggle in an
+// extra network rule; such values are rejected rather than escaped.
+var policyScalarRE = regexp.MustCompile(`^[A-Za-z0-9._/~+-]+$`)
+
+// checkPolicyScalars validates every host and path GeneratePolicy will
+// interpolate.
+func checkPolicyScalars(scopes PolicyScopes, modelBins []string) error {
+	check := func(field, v string) error {
+		if !policyScalarRE.MatchString(v) {
+			return fmt.Errorf("openshell policy: %s %q is not a plain host or path", field, v)
+		}
+		return nil
+	}
+	fields := [][2]string{
+		{"modelHost", scopes.ModelHost},
+		{"fleetHost", scopes.FleetHost},
+		{"harnessPath", scopes.HarnessPath},
+	}
+	for _, b := range modelBins {
+		fields = append(fields, [2]string{"modelBinaries", b})
+	}
+	for _, e := range scopes.ScrapeEndpoints {
+		fields = append(fields, [2]string{"scrape host", e.Host})
+		for _, b := range e.Binaries {
+			fields = append(fields, [2]string{"scrape binary", b})
+		}
+	}
+	for _, f := range fields {
+		if err := check(f[0], f[1]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Options configure an OpenShellContainment.
@@ -377,6 +436,7 @@ func (c *OpenShellContainment) Acquire(ctx context.Context, ws env.Workspace, po
 			Tier:            policy.Tier,
 			ModelHost:       stringOr(policy.Extra, "modelHost", "api.anthropic.com"),
 			ModelPort:       intOr(policy.Extra, "modelPort", 443),
+			ModelBinaries:   stringsOr(policy.Extra, "modelBinaries", nil),
 			FleetHost:       stringOr(policy.Extra, "fleetHost", "localhost"),
 			FleetPort:       intOr(policy.Extra, "fleetPort", 53343),
 			HarnessPath:     stringOr(policy.Extra, "harnessPath", "/usr/local/bin/harness-wrapper"),

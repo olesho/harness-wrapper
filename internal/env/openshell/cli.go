@@ -72,3 +72,27 @@ func scrapeEndpointsFrom(m map[string]interface{}) []ScrapeEndpoint {
 	eps, _ := m["scrapeEndpoints"].([]ScrapeEndpoint)
 	return eps
 }
+
+// stringsOr reads a string list from a policy Extra map, accepting []string
+// (the native shape) or []interface{} of strings (the JSON-decoded form), and
+// defaulting when absent or empty.
+func stringsOr(m map[string]interface{}, key string, def []string) []string {
+	if m == nil {
+		return def
+	}
+	var out []string
+	switch v := m[key].(type) {
+	case []string:
+		out = v
+	case []interface{}:
+		for _, e := range v {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
+}

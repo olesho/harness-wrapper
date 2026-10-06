@@ -363,3 +363,43 @@ func TestOpenShell_LayerNoName(t *testing.T) {
 		t.Errorf("expected error-layer argv, got %v", argv)
 	}
 }
+
+// A non-claude harness must be able to name its own binary for the model lane,
+// or it is denied egress under every explicit tier.
+func TestGeneratePolicy_ModelBinaries(t *testing.T) {
+	got, err := GeneratePolicy(PolicyScopes{
+		Tier: "untrusted", ModelHost: "api.openai.com", FleetHost: "localhost", FleetPort: 1,
+		HarnessPath: "/usr/local/bin/harness-wrapper", ModelBinaries: []string{"/usr/local/bin/codex"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "    binaries: [{ path: /usr/local/bin/codex }]\n") {
+		t.Errorf("model lane does not name the codex binary:\n%s", got)
+	}
+	if strings.Contains(got, "/usr/local/bin/claude") {
+		t.Errorf("claude still allowed when ModelBinaries is set:\n%s", got)
+	}
+}
+
+// Values are spliced into YAML flow collections; one carrying "," or "}"
+// would corrupt the policy or inject another rule, so it must be refused.
+func TestGeneratePolicy_RejectsUnsafeScalars(t *testing.T) {
+	base := PolicyScopes{Tier: "untrusted", ModelHost: "api.anthropic.com", FleetHost: "localhost", FleetPort: 1, HarnessPath: "/usr/local/bin/harness-wrapper"}
+	for name, mutate := range map[string]func(*PolicyScopes){
+		"model host":   func(s *PolicyScopes) { s.ModelHost = "evil.com, port: 22 }, { host: x" },
+		"fleet host":   func(s *PolicyScopes) { s.FleetHost = "a}" },
+		"harness path": func(s *PolicyScopes) { s.HarnessPath = "/bin/sh # x" },
+		"model binary": func(s *PolicyScopes) { s.ModelBinaries = []string{"/a, /b"} },
+		"scrape host":  func(s *PolicyScopes) { s.ScrapeEndpoints = []ScrapeEndpoint{{Host: "a]b", Binaries: []string{"/c"}}} },
+		"scrape binary": func(s *PolicyScopes) {
+			s.ScrapeEndpoints = []ScrapeEndpoint{{Host: "a.com", Binaries: []string{"/c }"}}}
+		},
+	} {
+		s := base
+		mutate(&s)
+		if _, err := GeneratePolicy(s); err == nil {
+			t.Errorf("%s: unsafe value accepted", name)
+		}
+	}
+}
