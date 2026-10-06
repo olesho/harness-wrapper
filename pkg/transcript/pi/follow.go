@@ -20,8 +20,9 @@ import (
 const TagType = "hw.input"
 
 // EventEntry is the Type of the one event DecodeEntry gives a line that
-// holds facts and no content: a tag, a system message, a context edit, an
-// assistant message with neither text nor a tool call.
+// holds facts and no content: a tag, a system message, a context edit, a
+// compaction, a model change, an assistant message with neither text nor a
+// tool call, ….
 const EventEntry = "entry"
 
 // Entry is what a session line says beyond its events. FollowSession
@@ -31,8 +32,9 @@ type Entry struct {
 	// message's role (user, assistant, toolResult, system).
 	Type, Role string
 	// ID and ParentID are the entry's id and its parent's. A session is a
-	// tree: an input's tag is its user message's parent, or its grandparent
-	// through the system message pi writes when the system prompt changed.
+	// tree: an input's tag is an ancestor of its user message, through the
+	// entries pi writes between them (a system message when the system prompt
+	// changed, a compaction).
 	ID, ParentID string
 	// Tag is the input tag a custom entry of TagType carries.
 	Tag string
@@ -117,13 +119,12 @@ func blocks(content json.RawMessage) []block {
 //   - a user message's text;
 //   - an assistant message's text blocks and tool calls;
 //   - a tool result's output;
-//   - one event of Type EventEntry for a line that holds facts and no
-//     content: an input's tag, a system message, a context edit, and an
-//     assistant message with neither text nor a tool call (a failed or
-//     aborted one, say).
+//   - one event of Type EventEntry for every other entry, whose facts are
+//     its Entry: an input's tag, a system message, a context edit, a
+//     compaction, a model change, an assistant message with neither text
+//     nor a tool call (a failed or aborted one, say), ….
 //
-// The header and pi's other entries (model and thinking-level changes,
-// usage, labels, …) have no events.
+// The header has no events, and neither has a line with no id.
 func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 	var ln sessionLine
 	if err := json.Unmarshal(record, &ln); err != nil {
@@ -139,26 +140,28 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		return transcript.BlockEvent{Block: i, Event: ev, Meta: e}
 	}
 	entry := []transcript.BlockEvent{one(0, transcript.Event{Type: EventEntry})}
+	if ln.ID == "" {
+		return nil, nil
+	}
 	switch ln.Type {
 	case "custom":
 		e.Role = "custom"
-		if ln.CustomType != TagType {
-			return nil, nil
+		if ln.CustomType == TagType {
+			var d struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(ln.Data, &d)
+			e.Tag = d.ID
 		}
-		var d struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(ln.Data, &d)
-		e.Tag = d.ID
 		return entry, nil
-	case "context_edit":
-		return entry, nil
+	case "session":
+		return nil, nil
 	case "message":
 	default:
-		return nil, nil
+		return entry, nil
 	}
 	if ln.Message == nil {
-		return nil, nil
+		return entry, nil
 	}
 	m := ln.Message
 	e.Role, e.StopReason, e.ErrorMessage = m.Role, m.StopReason, m.ErrorMessage
@@ -200,10 +203,8 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		out = append(out, one(0, transcript.Event{
 			Role: transcript.RoleTool, Type: transcript.EventToolResult, ToolName: m.ToolName, ToolUseID: m.ToolCallID, Output: strings.Join(text, ""),
 		}))
-	case "system":
-		return entry, nil
 	default:
-		return nil, nil
+		return entry, nil
 	}
 	if len(out) == 0 {
 		return entry, nil
