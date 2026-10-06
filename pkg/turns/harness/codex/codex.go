@@ -41,6 +41,7 @@ import (
 	transcriptcodex "github.com/olesho/harness-wrapper/pkg/transcript/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
+	"github.com/olesho/harness-wrapper/pkg/turns/internal/inputtrack"
 )
 
 // tokenUsageRE matches the per-turn Token usage footer Codex printed when a turn
@@ -78,8 +79,7 @@ type Adapter struct {
 
 	mu              sync.Mutex
 	lastFingerprint string
-	lastInputID     string
-	lastInput       *turns.InputRequest
+	inputs          inputtrack.Tracker
 }
 
 // New constructs a Codex adapter.
@@ -116,36 +116,14 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	// classified here as KindApproval and is excluded from auto-dismiss by kind
 	// (AutoDismissKeys' default arm; tryAutoDismissCodex in pkg/chat/input.go),
 	// so it is surfaced to the client and never auto-confirmed.
-	if req, ok := DetectInput(snap.Text); ok {
-		if req.ID != a.lastInputID {
-			// A different interstitial replaced the one we were tracking without
-			// an intervening dialog-free frame (e.g. the update notice giving way
-			// to a model-migration or notice screen). Resolve the previous one
-			// first so every InputRequested is balanced by an InputResolved and
-			// the chat layer's currentInput is not silently overwritten — which
-			// would drop the prior request's identity/kind (a client subscribed
-			// from the start would otherwise see the replacement's kind on the
-			// eventual resolve).
-			if a.lastInputID != "" {
-				prev := a.lastInput
-				if prev == nil {
-					prev = &turns.InputRequest{ID: a.lastInputID}
-				}
-				out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "codex: input resolved", Input: prev})
-			}
-			a.lastInputID = req.ID
-			a.lastInput = req
-			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: "codex: " + req.Prompt, Input: req})
-		}
-	} else if a.lastInputID != "" {
-		resolved := a.lastInput
-		if resolved == nil {
-			resolved = &turns.InputRequest{ID: a.lastInputID}
-		}
-		a.lastInputID = ""
-		a.lastInput = nil
-		out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "codex: input resolved", Input: resolved})
+	// A different interstitial replacing the tracked one without a dialog-free
+	// frame (e.g. the update notice giving way to a migration screen) first
+	// resolves the previous one — see inputtrack.Tracker.
+	req, ok := DetectInput(snap.Text)
+	if !ok {
+		req = nil
 	}
+	out = append(out, a.inputs.Observe(req, "codex: ")...)
 
 	return out
 }

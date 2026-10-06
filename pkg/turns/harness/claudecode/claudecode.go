@@ -70,6 +70,7 @@ import (
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
+	"github.com/olesho/harness-wrapper/pkg/turns/internal/inputtrack"
 	"github.com/olesho/harness-wrapper/pkg/turns/internal/menu"
 )
 
@@ -212,11 +213,9 @@ type Adapter struct {
 	mu              sync.Mutex
 	lastFingerprint string
 
-	// lastInputID is the ID of the blocking dialog currently on screen, or
-	// "" when none. lastInput retains the full request so InputResolved can
-	// name what cleared.
-	lastInputID string
-	lastInput   *turns.InputRequest
+	// inputs tracks the blocking dialog currently on screen and retains the
+	// full request so InputResolved can name what cleared.
+	inputs inputtrack.Tracker
 
 	// lastUnparseableFingerprint dedups the unrecognized-dialog Errored event
 	// across redraws of the SAME unreadable dialog, and is cleared whenever the
@@ -262,25 +261,15 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 	}
 
 	// Blocking interactive prompt (trust dialog, bypass acceptance, …) —
-	// transition on the request ID. A new dialog (or a different one
-	// replacing the current) emits InputRequested; the dialog clearing
-	// emits InputResolved.
+	// transition on the request ID. A new dialog emits InputRequested; it
+	// clearing emits InputResolved; a different dialog replacing it with no
+	// dialog-free frame between resolves the previous one first, so the chat
+	// layer's pending request is never overwritten.
 	req, det := DetectInputDetail(snap.Text)
-	if det == DetectOK {
-		if req.ID != a.lastInputID {
-			a.lastInputID = req.ID
-			a.lastInput = req
-			out = append(out, turns.Event{Kind: turns.InputRequested, Reason: reasonPrefix + req.Prompt, Input: req})
-		}
-	} else if a.lastInputID != "" {
-		resolved := a.lastInput
-		if resolved == nil {
-			resolved = &turns.InputRequest{ID: a.lastInputID}
-		}
-		a.lastInputID = ""
-		a.lastInput = nil
-		out = append(out, turns.Event{Kind: turns.InputResolved, Reason: "claude-code: input resolved", Input: resolved})
+	if det != DetectOK {
+		req = nil
 	}
+	out = append(out, a.inputs.Observe(req, reasonPrefix)...)
 	out = append(out, a.unparseableEvents(snap.Text, det)...)
 
 	return out
@@ -291,7 +280,7 @@ func (a *Adapter) OnScreen(snap screen.Snapshot) []turns.Event {
 // fingerprint of both so a redraw does not spam it. Caller holds a.mu.
 //
 // Two things it deliberately does NOT do. It never synthesizes an InputResolved,
-// and never touches lastInputID/lastInput: no InputRequested was emitted for
+// and never touches the input tracker: no InputRequested was emitted for
 // this screen, so there is no transition to close. And it is not the primary
 // signal — handleTurnsEvent drops non-Input events while there is no
 // currentTurn, so at startup (exactly when the folder-trust dialog fires) this
