@@ -268,17 +268,30 @@ var spoolCrash = func(string) error { return nil }
 // supervisor outlives its harness — reads with ReadSpool and acknowledges
 // with AckSpool after its own durable commit, and never calls DrainSpool.
 //
-// Files are drained in chronological order (compareSpoolNames).
+// Files are drained in chronological order (compareSpoolNames). The spool is
+// read as ReadSpool reads it — confined to the directory, never through a
+// symlink, never blocking on a FIFO and never past MaxSpoolFileBytes — since
+// the hook subprocess that writes it may be less trusted than the reader.
 //
-// A missing spool dir is not an error (no hooks fired). A single unreadable /
-// unparseable file is skipped (left in place) and collected into err, but does
-// not abort the drain of the rest.
+// A missing spool dir is not an error (no hooks fired). A single unreadable,
+// untrusted or unparseable file is skipped (left in place) and collected into
+// err, but does not abort the drain of the rest.
 func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
-	entries, err := os.ReadDir(spoolDir)
+	root, err := openSpool(spoolDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	dir, err := root.Open(".")
+	if err != nil {
+		return nil, fmt.Errorf("harness: open spool dir: %w", err)
+	}
+	entries, err := dir.ReadDir(-1)
+	_ = dir.Close()
+	if err != nil {
 		return nil, fmt.Errorf("harness: read spool dir: %w", err)
 	}
 	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return compareSpoolNames(a.Name(), b.Name()) })
@@ -291,19 +304,28 @@ func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 		if e.IsDir() || !strings.HasSuffix(name, ".json") {
 			continue // skip dirs and in-flight *.json.tmp files
 		}
-		path := filepath.Join(spoolDir, name)
-		data, rerr := os.ReadFile(path) //nolint:gosec // path is inside the wrapper-owned spool dir
-		if rerr != nil {
-			errs = append(errs, rerr.Error())
+		fi, lerr := root.Lstat(name)
+		if lerr != nil {
+			if !errors.Is(lerr, fs.ErrNotExist) {
+				errs = append(errs, fmt.Sprintf("%s: %v", name, lerr))
+			}
 			continue
 		}
-		evs, uerr := transcript.UnmarshalParsedEvents(data)
-		if uerr != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", name, uerr))
-			continue // leave malformed file in place for inspection
+		if reason := untrustedSpoolFile(name, fi); reason != "" {
+			errs = append(errs, fmt.Sprintf("%s: %s", name, reason))
+			continue
 		}
-		out = append(out, evs...)
-		_ = os.Remove(path) // consumed; dedup-by-ID covers a failed remove
+		batch, _, reason, rerr := readSpoolFile(root, name, fi)
+		switch {
+		case rerr != nil:
+			errs = append(errs, fmt.Sprintf("%s: %v", name, rerr))
+			continue
+		case reason != "":
+			errs = append(errs, fmt.Sprintf("%s: %s", name, reason))
+			continue // leave the file in place for inspection
+		}
+		out = append(out, batch.Events...)
+		_ = root.Remove(name) // consumed; dedup-by-ID covers a failed remove
 	}
 	if len(errs) > 0 {
 		return out, fmt.Errorf("harness: spool drain skipped %d file(s): %s", len(errs), strings.Join(errs, "; "))
