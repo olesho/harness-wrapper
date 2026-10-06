@@ -715,7 +715,8 @@ func (l *Launch) Release() {
 
 // Finish ends the session's process tree after the harness leader has been
 // reaped and releases its private resources. Under supervision it SIGTERMs
-// the harness's process group (unless termination already did), waits until
+// the harness's process group (unless termination already did, or no member
+// of the group is left in the cgroup), waits until
 // the cgroup is empty or deadline passes, SIGKILLs everything left with
 // cgroup.kill, waits for "populated 0", removes the cgroup, and deletes
 // ephemeral state. Without supervision it SIGKILLs, best effort, whatever is
@@ -736,7 +737,10 @@ func (l *Launch) Finish(pgid int, termSent bool, deadline time.Time) string {
 	}
 	defer l.cg.closeFD()
 	if pop, err := populated(l.cg.path); err == nil && pop {
-		if !termSent && pgid > 1 {
+		// The leader is reaped, so pgid is pinned only while a member of the
+		// group lives; signal it only when one is in this cgroup, never a
+		// group that has since reused the number.
+		if !termSent && pgid > 1 && groupInCgroup(l.cg.path, pgid) {
 			_ = syscall.Kill(-pgid, syscall.SIGTERM)
 		}
 		if wait := time.Until(deadline); wait > 0 {
@@ -814,6 +818,26 @@ func killSession(sid int) int {
 		}
 	}
 	return len(killed)
+}
+
+// groupInCgroup reports whether a process listed in the cgroup's cgroup.procs
+// belongs to process group pgid. While one does, the group id cannot be
+// reallocated, so signalling -pgid reaches this session's group.
+func groupInCgroup(path string, pgid int) bool {
+	b, err := os.ReadFile(path + "/cgroup.procs")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Fields(string(b)) {
+		pid, err := strconv.Atoi(line)
+		if err != nil {
+			continue
+		}
+		if g, err := unix.Getpgid(pid); err == nil && g == pgid {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionMembers lists the live processes whose session id is sid, read from
