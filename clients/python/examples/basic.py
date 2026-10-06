@@ -19,9 +19,10 @@ def main() -> None:
     print(f"opened conversation {conv.id}")
     try:
         with conv.control():
+            events = conv.events()  # subscribe BEFORE send: events are not replayed
             turn_id = conv.send("hello")
             print(f"sent turn {turn_id}")
-            for ev in conv.events():
+            for ev in events:
                 if ev.type != "turn" or ev.turn is None:
                     continue
                 print(f"  event: turn={ev.turn.id} state={ev.turn.state}")

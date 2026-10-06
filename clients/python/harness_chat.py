@@ -8,8 +8,9 @@ Stdlib only. Usage:
     conv = client.open(harness="codex", binary_path="/usr/local/bin/codex")
     try:
         with conv.control():
+            events = conv.events()  # subscribe BEFORE send: events are not replayed
             turn_id = conv.send("summarize this project")
-            for ev in conv.events():
+            for ev in events:
                 if ev.type != "turn" or ev.turn is None:
                     continue
                 if ev.turn.id == turn_id and ev.turn.state == "complete":
@@ -234,14 +235,14 @@ class Client:
         1. ``effort`` is validated and hard-fails; ``model`` is not validated at
            all. A non-enum effort is rejected, as is any effort on a harness
            that does not support it. ``model`` on an unsupported harness is
-           silently ignored -- so ``model`` on "pi" is a SILENT NO-OP while
-           ``effort`` on "pi" is an ERROR.
+           silently ignored -- so ``model`` on "opencode" is a SILENT NO-OP
+           while ``effort`` on "opencode" is an ERROR.
         2. On the harness-chatd gateway the effort-capable harness names are
            exactly "codex" and "claude-code", case-sensitively. ``effort``
-           against "opencode", "pi" or "generic"/"" is a 400 ``invalid_options``
-           -- the exact opposite of ``model``'s behavior on those same harnesses
+           against "opencode" or "generic"/"" is a 400 ``invalid_config`` --
+           the exact opposite of ``model``'s behavior on those same harnesses
            (silent no-op, see 1); do not assume symmetry. The gateway accepts
-           only "codex", "claude-code", "opencode", "pi" and "generic"/"": plain
+           only "codex", "claude-code", "opencode" and "generic"/"": plain
            "claude" is a 400 ``unknown_harness`` before effort is even
            considered, and so is "Codex" (the gateway does not normalize case).
         3. An explicit flag already present in ``args`` wins over the typed
@@ -257,7 +258,7 @@ class Client:
         1. Like ``effort`` and unlike ``model``, it is validated and hard-fails:
            an unknown mode, a native spelling belonging to the *other* harness,
            or any mode at all on a harness with no permission axis ("opencode",
-           "pi", "generic"/"") is a 400 ``invalid_config`` before launch. A mode
+           "generic"/"") is a 400 ``invalid_config`` before launch. A mode
            the caller believes restricts the harness is never dropped.
         2. "plan" is REJECTED on codex -- codex has no launch-time flag for the
            plan rung, and a no-op would launch it unrestricted. Codex plan mode
@@ -274,9 +275,10 @@ class Client:
            prompts are auto-approved -- only the -s sandbox axis still binds.
         5. "bypass" over the gateway carries no IS_SANDBOX=1 (chatd has no
            --sandbox-defaults), so pass IS_SANDBOX=1 in ``env`` or an
-           ``input_policy`` with by_kind {"trust_prompt": ...}; otherwise
-           claude-code stops on its acceptance screen as a trust_prompt input
-           request and root is disallowed.
+           ``input_policy`` with by_kind {"bypass_acceptance": ...}; otherwise
+           claude-code stops on its acceptance screen as a bypass_acceptance
+           input request and root is disallowed. A policy that answers only
+           "trust_prompt" (the folder-trust dialog) does not cover it.
 
         containment (Landlock, Linux) is fixed for the conversation's life. It
         is sent only after GET /v1/capabilities lists its kind -- against an
@@ -410,20 +412,30 @@ class Conversation:
                 raise
 
     def events(self) -> Iterator[TurnEvent]:
-        """SSE stream of turn events. Caller must break out to stop."""
+        """SSE stream of turn events. Caller must break out to stop.
+
+        The connection is opened by this call, not on first iteration, and the
+        server does not replay events. Call it BEFORE ``send()``, or a fast
+        turn can finish before the subscription exists and the loop never ends.
+        """
         url = f"{self.client.base_url}/v1/conversations/{self.id}/events"
         req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
         # Long-lived: no urlopen timeout.
-        with urllib.request.urlopen(req) as resp:
-            buf: list[str] = []
-            for raw in resp:
-                line = raw.decode("utf-8", "replace").rstrip("\n").rstrip("\r")
-                if line == "":
-                    data = _parse_sse_block(buf)
-                    buf.clear()
-                    if data is not None:
-                        yield TurnEvent.from_json(json.loads(data))
-                    continue
-                if line.startswith(":"):  # comment / heartbeat
-                    continue
-                buf.append(line)
+        return _iter_sse(urllib.request.urlopen(req))
+
+
+def _iter_sse(resp: Any) -> Iterator[TurnEvent]:
+    """Yield the TurnEvents of an open SSE response, closing it when done."""
+    with resp:
+        buf: list[str] = []
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").rstrip("\n").rstrip("\r")
+            if line == "":
+                data = _parse_sse_block(buf)
+                buf.clear()
+                if data is not None:
+                    yield TurnEvent.from_json(json.loads(data))
+                continue
+            if line.startswith(":"):  # comment / heartbeat
+                continue
+            buf.append(line)

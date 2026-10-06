@@ -194,7 +194,7 @@ export interface OpenOptions {
    * 2. On the harness-chatd gateway the effort-capable harness names are
    *    exactly `"codex"` and `"claude-code"`, case-sensitively. Every other
    *    accepted harness name — `"opencode"`, `"generic"`/`""` —
-   *    rejects `effort` outright with a 400 `invalid_options`. That is the
+   *    rejects `effort` outright with a 400 `invalid_config`. That is the
    *    exact opposite of `model`, which is a silent no-op on those same
    *    harnesses: do not assume the two knobs behave symmetrically. Note also
    *    that plain `"claude"` and `"Codex"` are 400 `unknown_harness` (the
@@ -217,7 +217,7 @@ export interface OpenOptions {
    * 2. Injection happens only for claude / claude-code (`--model <v>`) and
    *    codex (`-c model="<v>"`). On `"opencode"` and
    *    `"generic"`/`""` it is a SILENT NO-OP — whereas `effort` on those same
-   *    harnesses is a 400 `invalid_options`. The two knobs are not symmetric.
+   *    harnesses is a 400 `invalid_config`. The two knobs are not symmetric.
    * 3. An explicit `--model` (claude / claude-code) or `-c model=…` (codex)
    *    already in `args` wins over this field, silently.
    * 4. Only `effort` is remapped per harness (codex `"max"` → `"xhigh"`); the
@@ -248,9 +248,10 @@ export interface OpenOptions {
    *    sandbox axis still binds).
    * 5. `"bypass"` over the gateway carries no `IS_SANDBOX=1` (chatd has no
    *    `--sandbox-defaults`), so pass `IS_SANDBOX=1` in `env` or an
-   *    `input_policy` with `by_kind: {"trust_prompt": …}` — otherwise
-   *    claude-code stops on its acceptance screen as a `trust_prompt` input
-   *    request.
+   *    `input_policy` with `by_kind: {"bypass_acceptance": …}` — otherwise
+   *    claude-code stops on its acceptance screen as a `bypass_acceptance`
+   *    input request. A policy that answers only `trust_prompt` (the
+   *    folder-trust dialog) does not cover it.
    */
   permissionMode?: PermissionMode;
   /**
@@ -463,7 +464,21 @@ export class Conversation {
     }
   }
 
+  /**
+   * SSE stream of turn events. The connection opens on first iteration, so a
+   * caller that sends before iterating can miss a fast turn's events (the
+   * server does not replay). Prefer `openEvents()`, which resolves once the
+   * stream is live, and send after awaiting it.
+   */
   async *events(signal?: AbortSignal): AsyncIterable<TurnEvent> {
+    yield* await this.openEvents(signal);
+  }
+
+  /**
+   * Open the SSE stream and resolve once the server has accepted the
+   * subscription. Await this BEFORE `send()`: events are not replayed.
+   */
+  async openEvents(signal?: AbortSignal): Promise<AsyncIterable<TurnEvent>> {
     const res = await fetch(`${this.client.baseURL()}/v1/conversations/${this.id}/events`, {
       headers: { Accept: "text/event-stream" },
       signal,
@@ -471,19 +486,24 @@ export class Conversation {
     if (!res.ok || !res.body) {
       throw new HarnessChatError(res.status, "stream_failed", res.statusText);
     }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buf += decoder.decode(value, { stream: true });
-        buf = yield* drainSSEFrames(buf);
-      }
-    } finally {
-      reader.cancel().catch(() => {});
+    return readSSE(res.body);
+  }
+}
+
+/** Yield the TurnEvents of an open SSE body, cancelling it when done. */
+async function* readSSE(body: ReadableStream<Uint8Array>): AsyncIterable<TurnEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buf += decoder.decode(value, { stream: true });
+      buf = yield* drainSSEFrames(buf);
     }
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }
 

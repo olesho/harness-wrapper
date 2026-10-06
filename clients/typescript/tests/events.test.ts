@@ -25,3 +25,21 @@ test("input_request frames carry no turn; turn frames do", async () => {
     await stub.close();
   }
 });
+
+test("openEvents subscribes before resolving, so a following send cannot race it", async () => {
+  let subscribed = false;
+  const stub = await startStub((_req, res) => {
+    subscribed = true;
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.end('data: {"type":"turn","turn":{"id":"t1","state":"complete"}}\n\n');
+  });
+  try {
+    const events = await new Conversation(new Client(stub.url), "c1").openEvents();
+    assert.equal(subscribed, true, "the stream request must reach the server before openEvents resolves");
+    const evs: TurnEvent[] = [];
+    for await (const ev of events) evs.push(ev);
+    assert.equal(evs[0].turn?.id, "t1");
+  } finally {
+    await stub.close();
+  }
+});
