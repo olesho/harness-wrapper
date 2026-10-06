@@ -206,3 +206,23 @@ func TestLocalHostAliasIdentity(t *testing.T) {
 		t.Fatalf("local host alias should be identity: %q", got)
 	}
 }
+
+// Create's crash recovery RemoveAlls the workspace dir, so a name that does
+// not resolve to a single child of root must be refused before anything is
+// deleted.
+func TestLocalCreateRejectsUnsafeNames(t *testing.T) {
+	root := t.TempDir()
+	sibling := filepath.Join(root, "other-run")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := Local(root)
+	for _, name := range []string{"", ".", "..", "../escape", "a/b", "/abs"} {
+		if _, err := p.Create(context.Background(), WorkspaceSpec{Name: name}); err == nil {
+			t.Errorf("Create(Name=%q) succeeded, want error", name)
+		}
+	}
+	if _, err := os.Stat(sibling); err != nil {
+		t.Errorf("sibling workspace was removed: %v", err)
+	}
+}

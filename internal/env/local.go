@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -191,6 +192,12 @@ func (p *localProvisioner) Preflight(_ context.Context) error {
 }
 
 func (p *localProvisioner) Create(_ context.Context, spec WorkspaceSpec) (Workspace, error) {
+	// spec.Name must name exactly one directory under root: crash recovery
+	// below RemoveAlls it, so "" (root itself) or "../x" (outside root)
+	// would delete far more than this workspace.
+	if spec.Name == "" || spec.Name == "." || !filepath.IsLocal(spec.Name) || strings.ContainsRune(spec.Name, filepath.Separator) {
+		return nil, fmt.Errorf("local.create: invalid workspace name %q: must be a single path element", spec.Name)
+	}
 	base := filepath.Join(p.root, spec.Name)
 	// Crash recovery: a leftover from a crashed run under the SAME deterministic
 	// name is removed before recreate (orche sandboxName pattern).
