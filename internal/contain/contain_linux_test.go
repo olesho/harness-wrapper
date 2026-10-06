@@ -1093,3 +1093,41 @@ func TestAppliedPolicyCarriesNoValues(t *testing.T) {
 		t.Fatalf("env names = %v", applied.Env)
 	}
 }
+
+// The unsupervised sweep finds a session's members and kills them, but never
+// touches the caller's own session.
+func TestKillSessionSweepsOnlyTheSession(t *testing.T) {
+	own, err := unix.Getsid(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(sessionMembers(own), os.Getpid()) {
+		t.Fatalf("sessionMembers(%d) misses this process", own)
+	}
+	if n := killSession(own); n != 0 {
+		t.Fatalf("killSession(own session) signalled %d processes", n)
+	}
+
+	// A child in its own session, with a grandchild that inherits it.
+	cmd := exec.Command("sh", "-c", "sleep 60 & wait")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	sid := cmd.Process.Pid
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sessionMembers(sid)) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := killSession(sid); n < 2 {
+		t.Errorf("killSession signalled %d, want the shell and its sleep", n)
+	}
+	_ = cmd.Wait()
+	deadline = time.Now().Add(5 * time.Second)
+	for len(sessionMembers(sid)) > 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if left := sessionMembers(sid); len(left) > 0 {
+		t.Errorf("session %d still has %v", sid, left)
+	}
+}

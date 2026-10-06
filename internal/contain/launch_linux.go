@@ -44,6 +44,9 @@ type Launch struct {
 	cg        *sessionCgroup
 
 	started bool
+	// pid is the started harness. It was spawned with setsid, so it is also
+	// the id of the session its descendants inherit.
+	pid int
 }
 
 type grantEntry struct {
@@ -655,6 +658,7 @@ func (l *Launch) Start(slave int) (int, error) {
 		}
 	}
 	l.started = true
+	l.pid = r.pid
 	if rec, err := l.state.readLifecycle(); err == nil && rec.Launch != nil {
 		rec.Launch.PID = r.pid
 		_ = l.state.writeLifecycle(rec)
@@ -714,12 +718,18 @@ func (l *Launch) Release() {
 // the harness's process group (unless termination already did), waits until
 // the cgroup is empty or deadline passes, SIGKILLs everything left with
 // cgroup.kill, waits for "populated 0", removes the cgroup, and deletes
-// ephemeral state. Without supervision nothing can prove the tree gone, so the
-// state is kept for the caller to remove and the cleanup is reported
-// incomplete. It returns the cleanup outcome recorded in the applied policy.
+// ephemeral state. Without supervision it SIGKILLs, best effort, whatever is
+// left in the harness's session (see killSession); nothing can prove the tree
+// gone, so the state is kept for the caller to remove and the cleanup is
+// reported incomplete. It returns the cleanup outcome recorded in the applied
+// policy.
 func (l *Launch) Finish(pgid int, termSent bool, deadline time.Time) string {
 	if l.cg == nil {
-		cleanup := "incomplete: no cgroup supervision; private state kept at " + l.state.Root()
+		sweep := "session sweep skipped"
+		if l.started {
+			sweep = fmt.Sprintf("session sweep killed %d", killSession(l.pid))
+		}
+		cleanup := "incomplete: no cgroup supervision; " + sweep + "; private state kept at " + l.state.Root()
 		l.state.endLaunch(cleanup)
 		l.releaseState()
 		return cleanup
@@ -772,6 +782,72 @@ func (l *Launch) releaseState() {
 	} else {
 		l.state.unlock()
 	}
+}
+
+// killSession SIGKILLs every process whose session id is sid, best effort,
+// and reports how many it signalled. It stands in for cgroup.kill when there
+// is no cgroup: the harness was spawned with setsid, so its descendants share
+// its session unless one deliberately left it (setsid again), which this
+// cannot catch. A session id stays allocated while any member holds it, so a
+// match cannot be an unrelated process reusing the number. pid 1, this
+// process and this process's own session are never touched. A few passes pick
+// up children forked while the previous pass ran.
+func killSession(sid int) int {
+	self := os.Getpid()
+	if own, err := unix.Getsid(0); sid <= 1 || sid == self || (err == nil && sid == own) {
+		return 0
+	}
+	killed := map[int]bool{}
+	for range 3 {
+		fresh := false
+		for _, pid := range sessionMembers(sid) {
+			if pid <= 1 || pid == self || killed[pid] {
+				continue
+			}
+			if syscall.Kill(pid, syscall.SIGKILL) == nil {
+				killed[pid] = true
+				fresh = true
+			}
+		}
+		if !fresh {
+			break
+		}
+	}
+	return len(killed)
+}
+
+// sessionMembers lists the live processes whose session id is sid, read from
+// /proc/<pid>/stat. Zombies are skipped: they are already dead.
+func sessionMembers(sid int) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile("/proc/" + e.Name() + "/stat")
+		if err != nil {
+			continue // exited meanwhile
+		}
+		// "pid (comm) state ppid pgrp session …": comm may hold spaces and
+		// parentheses, so fields are counted from the last ')'.
+		i := strings.LastIndexByte(string(b), ')')
+		if i < 0 {
+			continue
+		}
+		f := strings.Fields(string(b[i+1:]))
+		if len(f) < 4 || f[0] == "Z" {
+			continue
+		}
+		if s, err := strconv.Atoi(f[3]); err == nil && s == sid {
+			out = append(out, pid)
+		}
+	}
+	return out
 }
 
 // sweepStale removes ephemeral state whose launch is gone: its lock is free
