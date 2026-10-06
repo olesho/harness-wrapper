@@ -99,6 +99,14 @@ filtered (glibc falls back to DNS over UDP port 53); `connect_tcp: [443]` allows
 not just the model provider. Credentials you deliberately provision stay readable to the harness and its
 tools.
 
+The working directory is granted **read-write**, and what the harness writes there outlives the
+session and runs **outside** containment the next time you (or your tools) touch the checkout: it can
+plant `.git/hooks/*`, set `core.hooksPath` or `core.fsmonitor` in `.git/config`, write
+`.claude/settings*.json` or other harness configuration with hooks, add an `.envrc`, or edit build
+scripts and `Makefile`s. Review those before running anything in the tree, and run untrusted work in a
+**disposable checkout** (a fresh clone or `git worktree`) that you throw away rather than one you use
+day to day.
+
 ## Refused, never downgraded
 
 A request that cannot be honoured as asked fails **before the harness starts** — never an
@@ -313,7 +321,10 @@ deleted.
 
 Without delegation (a login-session scope, a read-only cgroupfs) the launch still proceeds and says so:
 `supervision: none`, and the private state is **kept**, reported as `cleanup: incomplete`, for you to
-remove — nothing can prove the harness's detached descendants are gone.
+remove — nothing can prove the harness's detached descendants are gone. As a best effort, once the
+harness has exited every process still in its **session** (the harness starts one; descendants inherit
+it) is sent SIGKILL, and the cleanup outcome reports how many (`session sweep killed N`). A descendant
+that started a session of its own escapes the sweep.
 
 ## Stored conversations
 
