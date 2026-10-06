@@ -615,8 +615,9 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(Input) (*Launch, error)`
-Prepare reports ErrUnsupported: Landlock containment is Linux-only.
+#### `func Prepare(in Input) (l *Launch, err error)`
+Prepare turns in into a Launch, or refuses it before anything runs. On
+refusal it releases whatever it acquired, including ephemeral state.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -1588,21 +1589,13 @@ On platforms other than Linux every entry point returns ErrUnsupported.
 ### Exported Types & Functions
 
 #### `func ABI() (int, error)`
-ABI returns the kernel's Landlock ABI version. It distinguishes the reasons
-Landlock can be missing, because the fix differs: ENOSYS means the syscalls
-are absent or filtered by seccomp, EOPNOTSUPP that Landlock is built in but
-left out of the boot-time LSM list.
+ABI reports ErrUnsupported: Landlock is Linux-only.
 
 #### `func Errata() int`
-Errata returns the kernel's errata bitmask for its ABI, or 0 when the kernel
-cannot report one.
+Errata reports 0.
 
-#### `func Probe(minABI int) (int, error)`
-Probe reports whether the kernel can enforce a ruleset created with
-Config{MinABI: minABI}: it returns the ABI and a non-nil error when that ABI
-is below the one minABI demands (zero: ResolveUnixABI) or Landlock is
-unavailable. It is advisory — ruleset creation and enforcement remain
-authoritative, and every contained launch performs both.
+#### `func Probe(int) (int, error)`
+Probe reports ErrUnsupported.
 
 #### `type AccessFS`
 AccessFS is a set of Landlock filesystem rights (LANDLOCK_ACCESS_FS_*).
@@ -1625,12 +1618,8 @@ and the rights to allow beneath it.
 #### `type Ruleset`
 Ruleset is never created on this platform.
 
-#### `func New(cfg Config) (*Ruleset, error)`
-New creates a ruleset handling HandledFSFor(kernel ABI), both IPC scopes
-and, when cfg.RestrictTCP is set, TCP bind and connect. It fails with
-ErrUnavailable when the kernel's ABI is below the one cfg.MinABI demands:
-kernel availability alone is not enough, every handled field must be
-accepted.
+#### `func New(Config) (*Ruleset, error)`
+New reports ErrUnsupported.
 
 #### `type Scope`
 Scope is a set of Landlock IPC scopes (LANDLOCK_SCOPE_*).
@@ -1700,16 +1689,16 @@ group.
 ### Exported Types & Functions
 
 #### `func Empty(cmd *exec.Cmd) bool`
-Empty reports whether cmd's process ended.
+Empty reports whether no process is left in cmd's group.
 
-#### `func ExitSignal(*os.ProcessState) string`
-ExitSignal is always "".
+#### `func ExitSignal(ps *os.ProcessState) string`
+ExitSignal names the signal that ended a process, "" when none.
 
-#### `func Set(*exec.Cmd)`
-Set does nothing: there are no process groups.
+#### `func Set(cmd *exec.Cmd)`
+Set makes cmd start in a process group of its own.
 
-#### `func Signal(cmd *exec.Cmd, _ bool)`
-Signal kills cmd's process.
+#### `func Signal(cmd *exec.Cmd, kill bool)`
+Signal sends SIGTERM, or SIGKILL when kill, to cmd's group.
 
 ## Module: resettime (`internal/resettime`)
 

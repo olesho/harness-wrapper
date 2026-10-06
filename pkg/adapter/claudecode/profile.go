@@ -47,6 +47,11 @@ type Profile struct{}
 
 func init() { adapter.Register(Name, Profile{}) }
 
+// MaxSessions is how many Sessions of one agent the profile runs side by
+// side: the most the kit's concurrency scenarios have passed with the pinned
+// claude (TestClaudeConforms), run again whenever the pin moves.
+const MaxSessions = 8
+
 // efforts are the efforts claude's --effort takes.
 var efforts = []string{"low", "medium", "high", "xhigh", "max"}
 
@@ -63,7 +68,7 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible, contract.CapBackgroundTurns,
-			contract.CapSessionLoad, contract.CapBrokeredCredentials,
+			contract.CapSessionLoad, contract.CapBrokeredCredentials, contract.CapConcurrentSessions,
 		},
 		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		Egress: &contract.Egress{
@@ -82,6 +87,6 @@ func (Profile) Describe() contract.Descriptor {
 			PermissionPostures: []string{contract.PostureBypass},
 			InputContent:       []string{contract.ContentText},
 		},
-		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
+		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes, MaxSessions: MaxSessions},
 	}
 }

@@ -31,6 +31,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-019](adr-019-pin-codex-0-160.md) | The codex pin moves to 0.160.0 (claude stays at 2.1.283: 2.1.289 takes a pasted prompt as content); the old pin stays a load source; a loaded thread gets back the name its session_index.jsonl gives, since codex 0.160 answers names from a database no archive carries; codex reads connector headers through http_headers_helper | Accepted 2026-10-05 | 4, 6 |
 | [ADR-020](adr-020-placeholder-model.md) | Interface 1.5 gives Placeholder the agent's model, so one credential kind can serve several providers: a harness narrows each swap to the provider the model names, and refuses a model it cannot place | Accepted 2026-10-06 | 3, 6 |
 | [ADR-021](adr-021-pi-profile.md) | The Pi profile drives pi over its RPC mode: a tag extension names each input in pi's session, the record proves each run's end or leaves it unknown, and one `api_key` kind serves every provider in the profile's table | Accepted 2026-10-06 | 4, 2 · also 3, 7 |
+| [ADR-022](adr-022-sessions-side-by-side.md) | Interface 1.6 adds concurrent_sessions: several Sessions of one agent open at once, up to Limits.MaxSessions — the most the adapter's real-harness conformance has run; a Host holds its Session while its harness runs (session_in_use), claude's hooks spool per Session, codex's starts take turns, and the marker store is made whole | Accepted 2026-10-06 | 6, 2 · also 3, 7 |
 
 ## Intent coverage
 
