@@ -105,6 +105,11 @@ type Session struct {
 	stopRequest  chan struct{}
 	classifierCh chan classification
 	classifierOn chan struct{}
+	// classifierDone is closed when runSessionClassifier returns, on every
+	// path including a recovered Classifier panic. The supervisor waits on
+	// it before closing events: the classifier goroutine emits status
+	// changes, and a send on a closed channel panics.
+	classifierDone chan struct{}
 
 	doneCh chan struct{}
 
@@ -326,23 +331,24 @@ func newSession(cfg Config, ptmx *os.File, pid int, startedAt time.Time, term *g
 		onEvent = delivery.New(delivery.Limits(cfg.EventQueue), sessionEventSize, cfg.OnEvent)
 	}
 	return &Session{
-		onEvent:      onEvent,
-		cfg:          cfg,
-		ptmx:         ptmx,
-		pid:          pid,
-		startedAt:    startedAt,
-		classifier:   resolveClassifier(cfg),
-		lastOutput:   &atomic.Int64{},
-		recentOutput: newRecentOutput(64 * 1024),
-		termState:    termState,
-		events:       make(chan SessionEvent, 16),
-		stopRequest:  make(chan struct{}),
-		classifierCh: make(chan classification, 1),
-		classifierOn: make(chan struct{}),
-		failed:       make(chan struct{}),
-		doneCh:       make(chan struct{}),
-		fanout:       newOutputFanout(cfg.Stdout),
-		term:         term,
+		onEvent:        onEvent,
+		cfg:            cfg,
+		ptmx:           ptmx,
+		pid:            pid,
+		startedAt:      startedAt,
+		classifier:     resolveClassifier(cfg),
+		lastOutput:     &atomic.Int64{},
+		recentOutput:   newRecentOutput(64 * 1024),
+		termState:      termState,
+		events:         make(chan SessionEvent, 16),
+		stopRequest:    make(chan struct{}),
+		classifierCh:   make(chan classification, 1),
+		classifierOn:   make(chan struct{}),
+		classifierDone: make(chan struct{}),
+		failed:         make(chan struct{}),
+		doneCh:         make(chan struct{}),
+		fanout:         newOutputFanout(cfg.Stdout),
+		term:           term,
 	}
 }
 
@@ -421,6 +427,10 @@ func (s *Session) supervise(ctx context.Context) {
 	}
 
 	close(s.classifierOn)
+	// Join the classifier before anything closes events: it may be mid-way
+	// through a status change (emitThresholdTraces -> recordStatusChange ->
+	// emitEvent), and close(s.events) runs on the way out of supervise.
+	<-s.classifierDone
 	// Everything the harness wrote before exiting is still in the PTY. Read it
 	// to the end before closing the master: on Linux a process can exit with
 	// its last output unread, and closing the master discards it — the exit
@@ -755,6 +765,7 @@ func (s *Session) terminateAndWait(waitCh <-chan waitResult) (time.Time, error) 
 // events for parity with the original idle classifier. A Classifier that
 // panics ends the polling and, through fail, the run.
 func runSessionClassifier(ctx context.Context, s *Session) {
+	defer close(s.classifierDone)
 	cfg := s.cfg
 	tick := max(cfg.IdleQuiet/3, 100*time.Millisecond)
 	ticker := time.NewTicker(tick)

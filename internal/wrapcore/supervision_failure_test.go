@@ -82,12 +82,52 @@ func TestClassifierPanicEndsTheRun(t *testing.T) {
 			if stack, _ := log.fields(t, "classifier_panic")["stack"].(string); !strings.Contains(stack, "panickingClassifier") && !strings.Contains(stack, "supervision_failure_test.go") {
 				t.Errorf("classifier_panic stack does not show the panicking classifier:\n%s", stack)
 			}
+			assertClassifierJoined(t, s)
 			// Every call returns the same value.
 			if res2, err2 := s.Wait(); res2 != res || !errors.Is(err2, ErrClassifierPanic) {
 				t.Errorf("second Wait = (%+v, %v), want (%+v, %v)", res2, err2, res, err)
 			}
 		})
 	}
+}
+
+// assertClassifierJoined fails the test unless the classifier goroutine has
+// returned by the time Wait does: the supervisor closes Events on its way
+// out, and a classifier still running could send a status change on it.
+func assertClassifierJoined(t *testing.T, s *Session) {
+	t.Helper()
+	select {
+	case <-s.classifierDone:
+	default:
+		t.Error("Wait returned before the classifier goroutine did")
+	}
+}
+
+// The supervisor joins the classifier goroutine before Events closes, however
+// the run ends: here the harness exits on its own while the classifier is
+// polling and emitting stale status changes.
+func TestSupervisorJoinsClassifierBeforeClosingEvents(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Config{
+		BinaryPath:     "/bin/sh",
+		Args:           []string{"-c", "echo working; sleep 0.5"},
+		Stdout:         io.Discard,
+		Classifier:     ClassifierFunc(func(ClassifierInput) Classification { return Classification{} }),
+		IdleQuiet:      30 * time.Millisecond,
+		IdleClassify:   60 * time.Millisecond,
+		StaleThreshold: 90 * time.Millisecond,
+		WaitDelay:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for range s.Events() {
+	}
+	if _, err := waitWithin(t, s, 10*time.Second); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	assertClassifierJoined(t, s)
 }
 
 // A Classifier that panics in the exit pass, after the harness exited on its
