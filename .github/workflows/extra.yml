@@ -1,0 +1,73 @@
+# Checks that veracity ci (ci.yml, veracity-managed — do not edit it) does not
+# run: the race detector the Makefile/README promise, the nested Go modules,
+# the reference clients, and the corpus manifest drift checks. The real-harness
+# profile runs live in harness-adapter.yml and the Landlock cells in
+# landlock-security.yml; neither is repeated here.
+#
+# Not run here, because they need a sibling checkout: scripts/sync-versions.sh
+# --check and scripts/check-conformance-corpus.sh (meta-harness).
+name: extra
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  race:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go test -race
+        run: go test -race -short ./...
+
+  nested-modules:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: screenbench (vet + test)
+        working-directory: internal/screenbench
+        run: |
+          go vet -tags screenbench ./...
+          go test -tags screenbench ./...
+      - name: docs generator (vet + build)
+        working-directory: docs/gen
+        run: |
+          go vet ./...
+          go build -o /dev/null ./...
+
+  clients:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: TS + Python client suites
+        run: make test-clients
+
+  corpus-manifests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: corpus manifests are current
+        run: |
+          set -euo pipefail
+          scripts/sync-apierror-corpus.sh --check
+          scripts/sync-auth-corpus.sh --check
+          scripts/sync-models-corpus.sh --check
+          scripts/sync-permission-mode-corpus.sh --check

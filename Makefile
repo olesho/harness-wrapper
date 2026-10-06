@@ -192,7 +192,8 @@ rebake-corpus-all:
 		exit 1; \
 	fi; \
 	echo "▶ all scenarios recorded; running adapter regression..."; \
-	go test -race ./pkg/turns/harness/... ./internal/screenbench/scenario/ || { \
+	{ go test -race ./pkg/turns/harness/... && \
+	  ( cd internal/screenbench && go test -race -tags screenbench ./scenario/ ); } || { \
 		echo "✗ adapter tests failed against fresh corpus — TUI marker likely shifted."; \
 		echo "  See docs/md/internal/versions-drift.md."; \
 		exit 1; \
