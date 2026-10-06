@@ -82,6 +82,10 @@ func (e *convEntry) releaseAll() {
 	}
 }
 
+// closeTimeout bounds DELETE /conversations/{id}: the harness gets this long
+// to stop gracefully before Close gives up waiting on it.
+const closeTimeout = 10 * time.Second
+
 type Server struct {
 	mu    sync.RWMutex
 	convs map[string]*convEntry
@@ -316,7 +320,12 @@ func (s *Server) closeConv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry.releaseAll()
-	_ = entry.conv.Close(r.Context())
+	// Detached from the request: the conversation is already unregistered, so
+	// a client that hangs up mid-DELETE must not cut the harness's graceful
+	// stop short and leave it to be killed.
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), closeTimeout)
+	defer cancel()
+	_ = entry.conv.Close(closeCtx)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -328,6 +337,13 @@ func (s *Server) acquireControl(w http.ResponseWriter, r *http.Request) {
 	release, err := entry.conv.AcquireControl(r.Context())
 	if err != nil {
 		writeChatError(w, err)
+		return
+	}
+	// The grant can land just as the client gives up waiting. Nobody would
+	// ever learn the token, so the conversation would stay locked until it
+	// is deleted; hand the token straight on instead.
+	if r.Context().Err() != nil {
+		release()
 		return
 	}
 	tok := entry.acquireToken(release)
@@ -443,14 +459,16 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "no_flush", "streaming unsupported")
 		return
 	}
+	// Subscribe before the headers go out: a client may treat the 200 as
+	// "stream is live" and Send immediately, and events are not replayed.
+	sub, unsub := entry.fan.subscribe()
+	defer unsub()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	sub, unsub := entry.fan.subscribe()
-	defer unsub()
 
 	ping := time.NewTicker(15 * time.Second)
 	defer ping.Stop()

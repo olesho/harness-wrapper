@@ -43,7 +43,11 @@ func (q *controlQueue) Acquire(ctx context.Context) (release func(), err error) 
 
 	select {
 	case <-waiter:
-		// We received the token; releaseFunc will pass it on.
+		// Either we received the token (releaseFunc will pass it on) or
+		// Close woke every waiter.
+		if q.isClosed() {
+			return nil, ErrClosed
+		}
 		return q.releaseFunc(), nil
 	case <-ctx.Done():
 		q.mu.Lock()
@@ -52,6 +56,10 @@ func (q *controlQueue) Acquire(ctx context.Context) (release func(), err error) 
 		// to pass the token on. Check both states.
 		select {
 		case <-waiter:
+			if q.closed {
+				q.mu.Unlock()
+				return nil, ErrClosed
+			}
 			q.mu.Unlock()
 			// Hand off immediately.
 			r := q.releaseFunc()
@@ -79,15 +87,22 @@ func (q *controlQueue) Held() bool {
 }
 
 // Close marks the queue closed. Subsequent Acquire calls return
-// ErrClosed. In-flight Acquires waiting in the queue are released
-// with ErrClosed by closing every waiter; their goroutines will
-// observe ctx.Err() vs. nil and handle accordingly via the select
-// above. (For v1 we keep semantics simple: callers should Close
-// only after all waiters have unwound on their own ctx cancellation.)
+// ErrClosed, and Acquires waiting in the queue are woken and return
+// ErrClosed instead of blocking until their own ctx ends.
 func (q *controlQueue) Close() {
 	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.closed = true
-	q.mu.Unlock()
+	for _, w := range q.queue {
+		close(w)
+	}
+	q.queue = nil
+}
+
+func (q *controlQueue) isClosed() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.closed
 }
 
 func (q *controlQueue) releaseFunc() func() {

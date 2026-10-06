@@ -107,3 +107,44 @@ func TestControlQueueClosedRejectsAcquire(t *testing.T) {
 		t.Fatalf("expected ErrClosed, got %v", err)
 	}
 }
+
+// TestControlQueue_CloseReleasesWaiters: Close must wake queued Acquires with
+// ErrClosed rather than leave them (and the HTTP handlers behind them) blocked
+// until their own ctx ends.
+func TestControlQueue_CloseReleasesWaiters(t *testing.T) {
+	q := newControlQueue()
+	release, err := q.Acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	errc := make(chan error, 1)
+	go func() {
+		_, err := q.Acquire(context.Background())
+		errc <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		q.mu.Lock()
+		n := len(q.queue)
+		q.mu.Unlock()
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("precondition: the waiter never enqueued")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	q.Close()
+	select {
+	case err := <-errc:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("waiter err = %v, want ErrClosed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waiter still blocked after Close")
+	}
+}
