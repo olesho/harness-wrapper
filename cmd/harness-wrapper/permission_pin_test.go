@@ -67,8 +67,8 @@ func resolveUnderPolicy(p *chat.InputPolicy, req *turns.InputRequest) *turns.Inp
 // folder-trust one. The screen's first option carries Alias "proceed" ("Yes, I
 // accept"), which is what the entry resolves to.
 //
-// This is the SECOND, independent copy of that policy; pkg/oneshot.turnConfig
-// holds the other (pinned in pkg/oneshot/permission_pin_test.go), and
+// The policy is oneshot.UnattendedInputPolicy, shared with
+// pkg/oneshot.turnConfig (pinned in pkg/oneshot/permission_pin_test.go), and
 // pkg/harness.TurnConfig.InputPolicy restates it as prose.
 //
 // BROKEN DELIBERATELY, AND FIXED, BY PUPPET-507 (child of PUPPET-495): this

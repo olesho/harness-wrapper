@@ -194,8 +194,8 @@ func validateConfig(cfg Config) error {
 // could tell the two apart. The kinds are split now; naming both here keeps this
 // config's unattended behaviour unchanged, and makes accepting the bypass screen
 // a choice on the record. Pinned by TestTurnConfig_BypassAcceptanceAutoAnswered.
-// cmd/harness-wrapper's inputHandling holds a SECOND, independent copy of this
-// policy — change both.
+// The policy is UnattendedInputPolicy, which cmd/harness-wrapper's
+// unattended inputHandling uses too, so the two paths cannot drift apart.
 //
 // Two further limits of what this config enforces, both pinned in
 // permission_pin_test.go: claude's per-tool permission dialog is not detected at
@@ -220,13 +220,24 @@ func turnConfig(cfg Config) harness.TurnConfig {
 		// Headless: no live client to answer Codex's update menu, so auto-Skip it
 		// rather than wedge the run on the pending prompt.
 		AutoSkipCodexUpdateNotice: true,
-		InputPolicy: &chat.InputPolicy{
-			ByKind: map[string]chat.Disposition{
-				claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-				claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-			},
+		InputPolicy:               UnattendedInputPolicy(),
+		OnInputRequest:            AutoAcceptAnswer,
+	}
+}
+
+// UnattendedInputPolicy is the dialog policy for a run with no human to ask:
+// accept claude-code's folder-trust dialog and its bypass-permissions
+// acceptance screen. The two are distinct kinds on purpose — naming both
+// makes accepting the bypass screen a recorded choice rather than a side
+// effect of trusting the folder. Shared by this package and the CLI's
+// unattended `run`, so the two cannot drift apart. Each call returns a fresh
+// policy the caller may modify.
+func UnattendedInputPolicy() *chat.InputPolicy {
+	return &chat.InputPolicy{
+		ByKind: map[string]chat.Disposition{
+			claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 		},
-		OnInputRequest: AutoAcceptAnswer,
 	}
 }
 

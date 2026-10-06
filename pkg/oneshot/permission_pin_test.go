@@ -99,8 +99,8 @@ func pinConfig() Config {
 //
 // turnConfig is the copy used by `structured-run` and therefore by
 // pkg/env.RunStructuredTurn — the containerized guest path, where a reachable
-// `bypass` rung matters most. cmd/harness-wrapper's inputHandling holds the
-// second, independent copy of the same policy (pinned there).
+// `bypass` rung matters most. Its policy is UnattendedInputPolicy, which
+// cmd/harness-wrapper's unattended inputHandling shares (pinned there).
 //
 // BROKEN DELIBERATELY, AND FIXED, BY PUPPET-507 (child of PUPPET-495): this test
 // used to assert Kind == "trust_prompt" for the bypass screen and existed to go

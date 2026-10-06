@@ -14,7 +14,6 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
-	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"golang.org/x/term"
 )
 
@@ -203,8 +202,8 @@ func cleanedEnv() []string { return harnessenv.Cleaned() }
 //     record rather than a side effect. Pinned by
 //     TestInputHandling_UnattendedAutoAcceptsBypassAcceptance, with
 //     TestPolicy_CanTrustFolderWithoutAcceptingBypass guarding the separation
-//     itself. pkg/oneshot.turnConfig holds a SECOND, independent copy of this
-//     same policy — change both together.
+//     itself. The policy itself is oneshot.UnattendedInputPolicy, the one
+//     pkg/oneshot.turnConfig uses too, so the two paths cannot drift apart.
 //     Note also what this callback does NOT gate: claude's per-tool permission
 //     dialog is not detected at all, so restrictive --permission-mode rungs
 //     stall an unattended turn to the deadline (exit 124), and codex's
@@ -219,13 +218,7 @@ func inputHandling(ctx context.Context, interactive bool, tty *os.File) (*chat.I
 			return oneshot.AutoAcceptAnswer(req)
 		}
 	}
-	policy := &chat.InputPolicy{
-		ByKind: map[string]chat.Disposition{
-			claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-			claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
-		},
-	}
-	return policy, func(req chat.InputRequest) (chat.InputAnswer, bool) {
+	return oneshot.UnattendedInputPolicy(), func(req chat.InputRequest) (chat.InputAnswer, bool) {
 		return oneshot.AutoAcceptAnswer(req)
 	}
 }
