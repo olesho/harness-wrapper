@@ -721,7 +721,7 @@ func (l *Launch) Finish(pgid int, termSent bool, deadline time.Time) string {
 	if l.cg == nil {
 		cleanup := "incomplete: no cgroup supervision; private state kept at " + l.state.Root()
 		l.state.endLaunch(cleanup)
-		l.state.unlock()
+		l.releaseState()
 		return cleanup
 	}
 	defer l.cg.closeFD()
@@ -757,9 +757,21 @@ func (l *Launch) Finish(pgid int, termSent bool, deadline time.Time) string {
 		}
 		l.state.Close()
 	} else {
-		l.state.unlock()
+		l.releaseState()
 	}
 	return cleanup
+}
+
+// releaseState lets go of the state when Finish keeps it on disk: a state the
+// launch created is closed — its lock and pinned descriptors would otherwise
+// leak for every session — while a caller's state is only unlocked, its
+// descriptors staying with the caller.
+func (l *Launch) releaseState() {
+	if l.ownsState {
+		l.state.Close()
+	} else {
+		l.state.unlock()
+	}
 }
 
 // sweepStale removes ephemeral state whose launch is gone: its lock is free
