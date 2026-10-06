@@ -18,7 +18,8 @@
 // behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 5
 // gives Placeholder the agent's model (PlaceholderRequest.Model), so a
 // credential kind that serves several providers keeps each credential on its
-// own provider's hosts.
+// own provider's hosts. Minor 6 lets several Sessions of one agent be open at
+// once (concurrent_sessions: Limits.MaxSessions).
 //
 // Two callers use an Adapter:
 //
@@ -26,8 +27,9 @@
 //     Provision — the pure rendering of a harness-neutral Agent Spec into the
 //     harness's files, argv and environment, which the Supervisor writes —
 //     and, for a credential it keeps from the harness, Placeholder;
-//   - the Host, one per agent and inside the agent's isolation, opens Sessions
-//     (NewSession, then Open … Close) and record handles (OpenRecord).
+//   - the Host, inside the agent's isolation — one per agent, or with
+//     concurrent_sessions one per Session — opens Sessions (NewSession, then
+//     Open … Close) and record handles (OpenRecord).
 //
 // An Adapter registers itself under its harness's name (Register), in its
 // package's init; a runtime links the harnesses it offers through one file of
@@ -44,7 +46,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.5"
+const Version = "harness-adapter/1.6"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -52,7 +54,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 5
+	Minor = 6
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

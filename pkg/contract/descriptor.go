@@ -88,7 +88,7 @@ func (d Descriptor) Has(c Capability) bool {
 // or the observations never appear. The set is closed within a minor version;
 // 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
 // login_keeper, 1.3 background_turns (its background_tasks observation in
-// 1.4).
+// 1.4), 1.6 concurrent_sessions.
 type Capability string
 
 // Capabilities.
@@ -150,6 +150,13 @@ const (
 	// device code, has the harness's own client refresh the login, and lends
 	// its credential as the kind the Descriptor's Keeper names.
 	CapLoginKeeper Capability = "login_keeper"
+	// CapConcurrentSessions: several Sessions of one agent may be open at
+	// once, from one Host or a Host each, over one Layout and one staged
+	// credential — at most Limits.MaxSessions of them. Each keeps its own
+	// inputs, turn, record, observations and checkpoint; what one does
+	// reaches no other; and a record handle on one may be open while others
+	// run. Without it, one Session of an agent is open at a time.
+	CapConcurrentSessions Capability = "concurrent_sessions"
 )
 
 // Values lists the set.
@@ -157,6 +164,7 @@ func (Capability) Values() []string {
 	return []string{
 		"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible",
 		"session_load", "autonomous_turns", "brokered_credentials", "login_keeper", "background_turns",
+		"concurrent_sessions",
 	}
 }
 
@@ -238,6 +246,32 @@ func (m *Models) UnmarshalJSON(b []byte) error {
 type Limits struct {
 	// MaxInputBytes bounds one Send's content, at most MaxInputBytes.
 	MaxInputBytes int `json:"max_input_bytes"`
+	// MaxSessions is how many Sessions of one agent may be open at once
+	// (capability concurrent_sessions), at least 2: the most the adapter's
+	// concurrency conformance has passed with the real harness at the version
+	// it pins — never a number it has not run. 0 without the capability.
+	MaxSessions int `json:"max_sessions,omitempty"`
+}
+
+// Sessions is how many Sessions of one agent may be open at once:
+// Limits.MaxSessions with capability concurrent_sessions, 1 without.
+func (d Descriptor) Sessions() int {
+	if d.Has(CapConcurrentSessions) && d.Limits.MaxSessions > 1 {
+		return d.Limits.MaxSessions
+	}
+	return 1
+}
+
+// CheckSessions refuses a Descriptor whose Session limit is malformed: the
+// capability with fewer than 2 Sessions, or a limit without it.
+func CheckSessions(d Descriptor) error {
+	switch n := d.Limits.MaxSessions; {
+	case d.Has(CapConcurrentSessions) && n < 2:
+		return &Error{Code: CodeProtocol, Field: "limits.max_sessions", Message: fmt.Sprintf("%d with %s, want at least 2", n, CapConcurrentSessions)}
+	case !d.Has(CapConcurrentSessions) && n != 0:
+		return &Error{Code: CodeProtocol, Field: "limits.max_sessions", Message: fmt.Sprintf("%d declared without capability %s", n, CapConcurrentSessions)}
+	}
+	return nil
 }
 
 // Supports reports whether values holds v.

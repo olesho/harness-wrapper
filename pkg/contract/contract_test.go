@@ -51,6 +51,31 @@ func TestModelsJSON(t *testing.T) {
 	}
 }
 
+// An agent has as many Sessions open at once as the Descriptor's limit with
+// concurrent_sessions, and one without; a limit is declared with the
+// capability alone, and is at least 2.
+func TestCheckSessions(t *testing.T) {
+	side := Descriptor{Capabilities: []Capability{CapConcurrentSessions}, Limits: Limits{MaxSessions: 8}}
+	if err := CheckSessions(side); err != nil || side.Sessions() != 8 {
+		t.Errorf("8 side by side: %v, %d Sessions", err, side.Sessions())
+	}
+	if err := CheckSessions(Descriptor{}); err != nil || (Descriptor{}).Sessions() != 1 {
+		t.Errorf("no capability, no limit: %v, %d Sessions", err, (Descriptor{}).Sessions())
+	}
+	for name, d := range map[string]Descriptor{
+		"no limit":           {Capabilities: []Capability{CapConcurrentSessions}},
+		"one":                {Capabilities: []Capability{CapConcurrentSessions}, Limits: Limits{MaxSessions: 1}},
+		"without capability": {Limits: Limits{MaxSessions: 4}},
+	} {
+		if err := CheckSessions(d); CodeOf(err) != CodeProtocol {
+			t.Errorf("%s: %v, want protocol", name, err)
+		}
+		if d.Sessions() != 1 {
+			t.Errorf("%s: %d Sessions, want 1", name, d.Sessions())
+		}
+	}
+}
+
 func testDescriptor() Descriptor {
 	return Descriptor{
 		Contract: Version, Harness: HarnessInfo{Name: "h", Version: "1", Adapter: "a"},

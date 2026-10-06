@@ -77,6 +77,9 @@ func describe(c *check) {
 	if err := contract.CheckKeeper(d); err != nil {
 		c.fail("describe.keeper", "%v", err)
 	}
+	if err := contract.CheckSessions(d); err != nil {
+		c.fail("describe.sessions", "%v", err)
+	}
 	switch l := d.Load; {
 	case !c.has(contract.CapSessionLoad):
 		if l != nil {
