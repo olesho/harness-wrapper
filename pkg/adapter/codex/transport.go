@@ -256,6 +256,14 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		exited: make(chan struct{}), readerEnd: make(chan struct{}),
 		stderr: newTailBuffer(stderrTail),
 	}
+	release, err := startLock(ctx, req.Layout.Scratch)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, openFailed(contract.OpenConfigInvalid, "waiting to start: %v", err)
+	}
+	defer release()
 	if err := t.start(cfg.Binary, cfg.WorkingDir, env); err != nil {
 		return nil, openFailed(contract.OpenBinaryNotFound, "start %s: %v", cfg.Binary, err)
 	}
@@ -272,9 +280,11 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	}
 	ictx, cancel := context.WithTimeout(ctx, initWait)
 	defer cancel()
-	if _, err := t.call(ictx, "initialize", map[string]any{
+	_, err = t.call(ictx, "initialize", map[string]any{
 		"clientInfo": map[string]string{"name": "harness-wrapper", "title": "harness-wrapper", "version": adapter.Name()},
-	}); err != nil {
+	})
+	release() // codex has initialized the home: the next start may go
+	if err != nil {
 		return fail(contract.OpenConfigInvalid, fmt.Errorf("initialize: %w", err))
 	}
 	if err := t.notify("initialized", nil); err != nil {

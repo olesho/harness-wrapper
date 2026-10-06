@@ -276,7 +276,10 @@ whose death would leave the native process holding the thread.
   its refresh token, as a `codex_chatgpt_login`. `TestCodexKeeperLive` signs in against ChatGPT for
   a person who approves it.
 - **Transport:** `codex app-server`, JSON-RPC 2.0 on stdio, one process per Session in a process group
-  of its own. codex chooses a thread's id, so a fresh Session opens without one (no
+  of its own. Its starts in one environment take turns until each has answered `initialize`, at a
+  lock in the scratch root: app-servers started together on a fresh `CODEX_HOME` fail to initialize
+  its state database ([openai/codex#50290](https://github.com/openai/codex/issues/50290)), and a pin
+  move migrates the databases as codex starts. codex chooses a thread's id, so a fresh Session opens without one (no
   `assign_session_id`); a reopen resumes the thread (`thread/resume`), or starts a new one when codex
   never wrote the thread's rollout. An input is a `turn/start` whose `clientUserMessageId` is its native
   id; the response is the receipt, and the rollout records the id with the input. codex folds an input
