@@ -174,10 +174,18 @@ func startContainedSession(ctx context.Context, cfg Config) (*Session, error) {
 		proc, err = os.FindProcess(pid) // pidfd_open, on an ordinary thread
 	}
 	if err != nil {
-		// Cannot happen for a fresh file and an unreaped child; kill it
-		// through the cgroup.
+		// Cannot happen for a fresh file and an unreaped child. Kill and reap
+		// the harness here — without supervision Finish cannot — then let
+		// Finish end the rest of the tree.
 		_ = ptmx.Close()
 		_ = syscall.Close(wake)
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		var ws syscall.WaitStatus
+		for {
+			if _, err := syscall.Wait4(pid, &ws, 0, nil); err != syscall.EINTR {
+				break
+			}
+		}
 		launch.Finish(pid, false, time.Now())
 		return nil, containmentStartError(cfg, "start", fmt.Errorf("%w: open process handle: %v", ErrPTYAllocation, err))
 	}
