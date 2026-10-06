@@ -131,7 +131,10 @@ func Run(t T, f Fixture) {
 				return
 			}
 			c := &check{t: t, f: f, desc: f.Adapter.Describe(), sent: map[string]bool{}}
-			defer c.cleanup()
+			defer func() {
+				c.cleanup()
+				c.checkHosts()
+			}()
 			func() {
 				defer func() {
 					if r := recover(); r != nil && r != errStop {
@@ -164,11 +167,28 @@ type check struct {
 	// spec, when set, is the Agent Spec the scenario's agents take in place
 	// of the fixture's.
 	spec *contract.AgentSpec
+	// hosts are the scenario's observing hosts, checked once halted.
+	hosts []*host
 }
 
 func (c *check) cleanup() {
 	for i := len(c.cleanups) - 1; i >= 0; i-- {
 		c.cleanups[i]()
+	}
+}
+
+// checkHosts fails the scenario if any of its hosts had an Observe or Ack
+// refused: the host only observes and acknowledges what it was delivered, so
+// a refusal is the adapter's fault. Call it after cleanup has halted them.
+func (c *check) checkHosts() {
+	c.t.Helper()
+	for _, h := range c.hosts {
+		h.mu.Lock()
+		errs := h.errs
+		h.mu.Unlock()
+		if len(errs) > 0 {
+			c.fail("observe.host", "%d Observe/Ack call(s) failed; first: %v", len(errs), errs[0])
+		}
 	}
 }
 
@@ -335,6 +355,7 @@ func (c *check) watch(o observer) *host {
 	h := &host{c: c, obs: o, stop: make(chan struct{}), done: make(chan struct{}), wake: make(chan struct{}), byID: map[string]contract.Observation{}}
 	go h.pump()
 	c.cleanups = append(c.cleanups, h.halt)
+	c.hosts = append(c.hosts, h)
 	return h
 }
 

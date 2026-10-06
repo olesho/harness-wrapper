@@ -107,6 +107,7 @@ var Breaks = []string{
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
+	"ack-fails",
 }
 
 // Adapter is the fake harness's adapter.
@@ -731,7 +732,15 @@ func (c *cursor) buildLocked(maxBytes int, s store) (contract.Batch, error) {
 }
 
 // ack acknowledges the outstanding batch.
-func (c *cursor) ack(batchID string) error {
+func (c *cursor) ack(batchID string) (err error) {
+	if c.adapter.breaks("ack-fails") {
+		// The acknowledgement takes effect, but every call reports failure.
+		defer func() {
+			if err == nil {
+				err = contract.Errorf(contract.CodeInternal, "acknowledgement store unavailable")
+			}
+		}()
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.outstanding != nil && c.outstanding.BatchID == batchID {
