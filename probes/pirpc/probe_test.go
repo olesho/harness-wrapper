@@ -113,7 +113,23 @@ func newAgent(t *testing.T, mock *mockapi.Server, model string) *agent {
 		"anthropic": map[string]any{"type": "api_key", "key": anthropicKey},
 		"openai":    map[string]any{"type": "api_key", "key": openaiKey},
 	})
+	if keep := os.Getenv("HW_PIRPC_KEEP"); keep != "" {
+		t.Cleanup(func() { a.keep(filepath.Join(keep, a.id)) })
+	}
 	return a
+}
+
+// keep copies the agent's session files to dir: HW_PIRPC_KEEP keeps every
+// test's, for a reader's test data.
+func (a *agent) keep(dir string) {
+	for _, f := range a.sessionFiles() {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		_ = os.MkdirAll(dir, 0o755)
+		_ = os.WriteFile(filepath.Join(dir, filepath.Base(f)), b, 0o644)
+	}
 }
 
 // sessionID is a session id pi takes, made from a test's name: letters,

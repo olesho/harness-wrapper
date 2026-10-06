@@ -566,21 +566,11 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() (restore func())`
-DisableSupervisionForTest makes every launch see a host that delegates no
-cgroup, until the returned function runs. Tests only.
+#### `func DisableSupervisionForTest() func()`
+DisableSupervisionForTest does nothing here.
 
-#### `func OpenPTYPair() (master, slave int, err error)`
-OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
-O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
-than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
-Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
-pty.Open — and the caller wraps the master in an *os.File only after the
-spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
-
-It runs on an ordinary thread: Landlock fixes a file's rights when the file
-is opened, so a master opened on the restricted thread would deny the
-wrapper's later resize calls.
+#### `func OpenPTYPair() (int, int, error)`
+OpenPTYPair reports ErrUnsupported.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -594,7 +584,9 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent reports ErrUnsupported.
+StateParent returns the directory beneath which managed state lives:
+$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
+~/.local/state/harness-wrapper/contain.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -613,9 +605,8 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(in Input) (l *Launch, err error)`
-Prepare turns in into a Launch, or refuses it before anything runs. On
-refusal it releases whatever it acquired, including ephemeral state.
+#### `func Prepare(Input) (*Launch, error)`
+Prepare reports ErrUnsupported: Landlock containment is Linux-only.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -660,11 +651,13 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(bool) (*State, error)`
-NewState reports ErrUnsupported.
+#### `func NewState(persistent bool) (*State, error)`
+NewState allocates new managed state. Persistent state survives its
+launches until Remove; ephemeral state is deleted by the launch that
+created it once that launch's cgroup is empty.
 
-#### `func OpenState(string) (*State, error)`
-OpenState reports ErrUnsupported.
+#### `func OpenState(id string) (*State, error)`
+OpenState opens existing managed state by id.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -1695,16 +1688,16 @@ group.
 ### Exported Types & Functions
 
 #### `func Empty(cmd *exec.Cmd) bool`
-Empty reports whether no process is left in cmd's group.
+Empty reports whether cmd's process ended.
 
-#### `func ExitSignal(ps *os.ProcessState) string`
-ExitSignal names the signal that ended a process, "" when none.
+#### `func ExitSignal(*os.ProcessState) string`
+ExitSignal is always "".
 
-#### `func Set(cmd *exec.Cmd)`
-Set makes cmd start in a process group of its own.
+#### `func Set(*exec.Cmd)`
+Set does nothing: there are no process groups.
 
-#### `func Signal(cmd *exec.Cmd, kill bool)`
-Signal sends SIGTERM, or SIGKILL when kill, to cmd's group.
+#### `func Signal(cmd *exec.Cmd, _ bool)`
+Signal kills cmd's process.
 
 ## Module: resettime (`internal/resettime`)
 
@@ -4764,7 +4757,40 @@ Schema notes — pi session format v3:
     ([{"type":"text","text":"…"}, {"type":"image",…}, …]). The reader
     accepts both and concatenates the text blocks.
 
+FollowSession (follow.go) reads a session as pi writes it, line by line,
+for the Harness Adapter's Pi profile: pi 1.x's system messages, input
+tags, tool calls and results, and context edits included.
+
 ### Exported Types & Functions
+
+#### `func DecodeEntry(record []byte) ([]transcript.BlockEvent, error)`
+DecodeEntry decodes one session line into its events, each with the
+line's *Entry as Meta, and the entry's id as each event's UUID, so the
+follower knows an event by pi's own id:
+
+  - a user message's text;
+  - an assistant message's text blocks and tool calls;
+  - a tool result's output;
+  - one event of Type EventEntry for a line that holds facts and no
+    content: an input's tag, a system message, a context edit, and an
+    assistant message with neither text nor a tool call (a failed or
+    aborted one, say).
+
+The header and pi's other entries (model and thinking-level changes,
+usage, labels, …) have no events.
+
+#### `func FollowSession(path, sessionID string, from transcript.Checkpoint) (*transcript.Follower, error)`
+FollowSession follows the session file at path from a checkpoint, with
+DecodeEntry: every event carries its line's *Entry as Meta.
+
+#### `func SessionFile(dir, sessionID string) (string, error)`
+SessionFile is session sessionID's file in dir, the --session-dir pi ran
+with: <dir>/<timestamp>_<id>.jsonl, confirmed by its header. It is
+fs.ErrNotExist until pi writes it, with the session's first user message.
+
+#### `type Entry`
+Entry is what a session line says beyond its events. FollowSession
+attaches one to each of a line's events as its Meta.
 
 #### `type Reader`
 Reader implements transcript.Reader for the pi coding agent.

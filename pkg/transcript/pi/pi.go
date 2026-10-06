@@ -26,6 +26,10 @@
 //     either a plain string or an array of typed blocks
 //     ([{"type":"text","text":"…"}, {"type":"image",…}, …]). The reader
 //     accepts both and concatenates the text blocks.
+//
+// FollowSession (follow.go) reads a session as pi writes it, line by line,
+// for the Harness Adapter's Pi profile: pi 1.x's system messages, input
+// tags, tool calls and results, and context edits included.
 package pi
 
 import (
