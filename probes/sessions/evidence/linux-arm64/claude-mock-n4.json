@@ -1,0 +1,462 @@
+{
+  "harness": "claude-code",
+  "version": "2.1.283",
+  "mode": "mock",
+  "platform": "linux-arm64",
+  "sessions": 4,
+  "duration": "30m0s",
+  "took": "30m31s",
+  "criteria": [
+    {
+      "name": "no start hangs",
+      "pass": true,
+      "detail": "a control Session alone, 4 at once, one at the end; the slowest open took 4.707s. "
+    },
+    {
+      "name": ".claude.json parses after every write and keeps what was rendered",
+      "pass": true,
+      "detail": "1 states read: 0 torn, 0 corrupt, 0 missing a rendered entry, 0 reads found no file"
+    },
+    {
+      "name": "every hook event lands in its own Session's spool",
+      "pass": true,
+      "detail": "12707 hook payloads: 0 in another Session's spool; 0 tool events a Session reported for another's tool use; 0 tool uses with no hook event"
+    },
+    {
+      "name": "every transcript parses and holds only its own Session",
+      "pass": true,
+      "detail": "6 transcripts read. "
+    },
+    {
+      "name": "a connector's headersHelper still runs at the end",
+      "pass": true,
+      "detail": "the Session opened last sent the header from its file: true; 30 of the MCP server's 30 requests carried it"
+    },
+    {
+      "name": "every turn completed",
+      "pass": false,
+      "detail": "3628 turns, 1 failed"
+    }
+  ],
+  "per_session": [
+    {
+      "name": "control",
+      "id": "d8128e72-715e-4270-9591-c54bc42b1d70",
+      "open_ms": 338,
+      "turns": {
+        "PING": {
+          "sent": 1,
+          "completed": 1,
+          "failed": 0
+        }
+      },
+      "own_turns": 0,
+      "tool_uses": 0,
+      "tool_started": 0,
+      "tool_finished": 0,
+      "subagents_started": 0,
+      "subagents_stopped": 0,
+      "peak_rss": "0 MiB",
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s0",
+      "id": "be1cbe0e-f8c6-410c-bbc7-67a3199b35ce",
+      "open_ms": 416,
+      "turns": {
+        "AGENT": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "BG own turn": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 152,
+          "completed": 152,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 152,
+          "completed": 152,
+          "failed": 0
+        }
+      },
+      "own_turns": 151,
+      "tool_uses": 454,
+      "tool_started": 454,
+      "tool_finished": 454,
+      "subagents_started": 151,
+      "subagents_stopped": 151,
+      "peak_rss": "468 MiB",
+      "notes": [
+        "waited 1.02s for idle",
+        "waited 1.82s for idle",
+        "waited 1.76s for idle",
+        "waited 7.44s for idle",
+        "waited 1.14s for idle",
+        "waited 1.02s for idle",
+        "waited 1.29s for idle",
+        "waited 1.12s for idle",
+        "waited 1.35s for idle",
+        "waited 1.69s for idle",
+        "waited 5.88s for idle",
+        "waited 1.48s for idle",
+        "waited 1.51s for idle",
+        "waited 1.64s for idle",
+        "waited 1.1s for idle",
+        "waited 1.14s for idle",
+        "waited 3.11s for idle",
+        "waited 4.35s for idle",
+        "waited 1.18s for idle",
+        "waited 1.86s for idle",
+        "waited 3.65s for idle",
+        "waited 2.55s for idle",
+        "waited 4.18s for idle",
+        "waited 1.31s for idle",
+        "waited 1.51s for idle",
+        "waited 4.62s for idle",
+        "waited 1.23s for idle",
+        "waited 1.84s for idle",
+        "waited 1.14s for idle",
+        "waited 1.82s for idle",
+        "waited 1.54s for idle"
+      ],
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s1",
+      "id": "f4012186-3dc8-4302-8648-66b57a3a68e1",
+      "open_ms": 294,
+      "turns": {
+        "AGENT": {
+          "sent": 153,
+          "completed": 153,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 153,
+          "completed": 153,
+          "failed": 0
+        },
+        "BG own turn": {
+          "sent": 153,
+          "completed": 153,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 153,
+          "completed": 153,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 152,
+          "completed": 152,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 153,
+          "completed": 153,
+          "failed": 0
+        }
+      },
+      "own_turns": 153,
+      "tool_uses": 459,
+      "tool_started": 459,
+      "tool_finished": 459,
+      "subagents_started": 153,
+      "subagents_stopped": 153,
+      "peak_rss": "490 MiB",
+      "notes": [
+        "waited 1.14s for idle",
+        "waited 1.15s for idle",
+        "waited 1.93s for idle",
+        "waited 7.34s for idle",
+        "waited 3.6s for idle",
+        "waited 1.45s for idle",
+        "waited 1.09s for idle",
+        "waited 1.33s for idle",
+        "waited 1.34s for idle",
+        "waited 1.55s for idle",
+        "waited 1.18s for idle",
+        "waited 1.65s for idle",
+        "waited 4.69s for idle",
+        "waited 1.05s for idle",
+        "waited 1.12s for idle",
+        "waited 2.84s for idle",
+        "waited 2.46s for idle",
+        "waited 1.51s for idle",
+        "waited 1.93s for idle",
+        "waited 2.66s for idle",
+        "waited 1.38s for idle",
+        "waited 1.76s for idle",
+        "waited 2.32s for idle",
+        "waited 3.43s for idle",
+        "waited 2.06s for idle",
+        "waited 1.65s for idle",
+        "waited 3.64s for idle",
+        "waited 1.37s for idle",
+        "waited 1.17s for idle",
+        "waited 2.94s for idle",
+        "waited 1.15s for idle",
+        "waited 1.14s for idle",
+        "waited 1.64s for idle",
+        "waited 1.07s for idle"
+      ],
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s2",
+      "id": "7447ec45-f8a1-4e5d-9682-53f88ce0e7f2",
+      "open_ms": 372,
+      "turns": {
+        "AGENT": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "BG own turn": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 152,
+          "completed": 152,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 151,
+          "completed": 151,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 152,
+          "completed": 152,
+          "failed": 0
+        }
+      },
+      "own_turns": 151,
+      "tool_uses": 454,
+      "tool_started": 454,
+      "tool_finished": 454,
+      "subagents_started": 151,
+      "subagents_stopped": 151,
+      "peak_rss": "462 MiB",
+      "notes": [
+        "waited 1.46s for idle",
+        "waited 1.07s for idle",
+        "waited 2.72s for idle",
+        "waited 6.6s for idle",
+        "waited 2.55s for idle",
+        "waited 1.33s for idle",
+        "waited 1.55s for idle",
+        "waited 1.43s for idle",
+        "waited 1.38s for idle",
+        "waited 1.91s for idle",
+        "waited 1.03s for idle",
+        "waited 2.36s for idle",
+        "waited 3.1s for idle",
+        "waited 4.35s for idle",
+        "waited 1.54s for idle",
+        "waited 1.44s for idle",
+        "waited 3.42s for idle",
+        "waited 1.6s for idle",
+        "waited 3.78s for idle",
+        "waited 1.04s for idle",
+        "waited 1.78s for idle",
+        "waited 1.88s for idle",
+        "waited 4.8s for idle",
+        "waited 2.01s for idle",
+        "waited 5.01s for idle",
+        "waited 2.39s for idle",
+        "waited 5.4s for idle",
+        "waited 1.08s for idle",
+        "waited 1.17s for idle",
+        "waited 1.39s for idle",
+        "waited 3.35s for idle",
+        "waited 1.44s for idle"
+      ],
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s3",
+      "id": "98be7594-46b2-4906-b3cc-fd128df6cac9",
+      "open_ms": 327,
+      "turns": {
+        "AGENT": {
+          "sent": 149,
+          "completed": 149,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 149,
+          "completed": 149,
+          "failed": 0
+        },
+        "BG own turn": {
+          "sent": 149,
+          "completed": 148,
+          "failed": 1,
+          "failures": [
+            "the turn did not end in time"
+          ]
+        },
+        "PING": {
+          "sent": 149,
+          "completed": 149,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 148,
+          "completed": 148,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 149,
+          "completed": 149,
+          "failed": 0
+        }
+      },
+      "own_turns": 148,
+      "tool_uses": 447,
+      "tool_started": 447,
+      "tool_finished": 447,
+      "subagents_started": 149,
+      "subagents_stopped": 149,
+      "peak_rss": "460 MiB",
+      "notes": [
+        "waited 1.09s for idle",
+        "waited 2.54s for idle",
+        "waited 1.03s for idle",
+        "waited 5.93s for idle",
+        "waited 2.61s for idle",
+        "waited 1.8s for idle",
+        "waited 1.07s for idle",
+        "waited 1.33s for idle",
+        "waited 1.96s for idle",
+        "waited 1.82s for idle",
+        "waited 4.78s for idle",
+        "waited 1.28s for idle",
+        "waited 1.04s for idle",
+        "waited 3.07s for idle",
+        "waited 2.36s for idle",
+        "waited 2.28s for idle",
+        "waited 1.5s for idle",
+        "waited 2.4s for idle",
+        "waited 2.55s for idle",
+        "waited 3.11s for idle",
+        "waited 2.25s for idle",
+        "waited 2.48s for idle",
+        "waited 1.23s for idle",
+        "waited 2.85s for idle",
+        "waited 1.52s for idle",
+        "waited 3.3s for idle",
+        "waited 1.51s for idle",
+        "waited 2.05s for idle",
+        "waited 1.72s for idle",
+        "waited 1.28s for idle",
+        "waited 1.54s for idle"
+      ],
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "final",
+      "id": "d92f47d1-3550-4791-bf06-b5b85642f1d4",
+      "open_ms": 4706,
+      "turns": {
+        "PING": {
+          "sent": 1,
+          "completed": 1,
+          "failed": 0
+        }
+      },
+      "own_turns": 0,
+      "tool_uses": 0,
+      "tool_started": 0,
+      "tool_finished": 0,
+      "subagents_started": 0,
+      "subagents_stopped": 0,
+      "peak_rss": "231 MiB",
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    }
+  ],
+  "claude_json": {
+    "changes": 1,
+    "torn": 0,
+    "corrupt": 0,
+    "lost": 0,
+    "missing": 0
+  },
+  "claude_changes_alone": [
+    "bypassPermissionsModeAccepted: rendered true, then \u003cnil\u003e",
+    "projects › /tmp/sp/work/20261006-133946/env/workspace › hasCompletedProjectOnboarding: rendered true, then \u003cnil\u003e"
+  ],
+  "peak_all_rss": "1877 MiB",
+  "rss_samples": 914,
+  "hook_events_by_spool": {
+    "control": 4,
+    "final": 4,
+    "s0": 3179,
+    "s1": 3213,
+    "s2": 3179,
+    "s3": 3128
+  },
+  "hook_events_by_kind": {
+    "PostToolUse": 2418,
+    "PreToolUse": 1814,
+    "SessionEnd": 6,
+    "SessionStart": 6,
+    "Stop": 3627,
+    "SubagentStart": 604,
+    "SubagentStop": 604,
+    "UserPromptSubmit": 3628
+  },
+  "transcripts": {
+    "control": "17 lines, 0 not JSON, 0 of another Session",
+    "final": "17 lines, 0 not JSON, 0 of another Session",
+    "s0": "6930 lines, 0 not JSON, 0 of another Session",
+    "s1": "6999 lines, 0 not JSON, 0 of another Session",
+    "s2": "6930 lines, 0 not JSON, 0 of another Session",
+    "s3": "6815 lines, 0 not JSON, 0 of another Session"
+  },
+  "mcp_requests_with_header": 30,
+  "mcp_requests": 30,
+  "model_requests": 6045
+}

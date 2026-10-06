@@ -39,6 +39,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,6 +62,12 @@ const (
 	// envWork names a directory the run's environment is built in and left
 	// in, for a look afterwards; a temporary one otherwise.
 	envWork = "HW_SESSIONS_WORK"
+	// envHeap names a file the run writes a heap profile of its own process
+	// to, while every Session is still open: what the Hosts' side holds.
+	envHeap = "HW_SESSIONS_HEAP"
+	// envDump names a directory each Session's observations are written to,
+	// one JSON line each, as they arrive.
+	envDump = "HW_SESSIONS_DUMP"
 )
 
 type mode string
@@ -204,6 +211,10 @@ func (s *session) note(format string, args ...any) {
 // commits it, and then acknowledged. It runs until ctx ends.
 func (s *session) observe(ctx context.Context) {
 	for ctx.Err() == nil {
+		if s.s.State().Phase == contract.PhaseUnopened {
+			time.Sleep(50 * time.Millisecond) // Open has not started
+			continue
+		}
 		b, err := s.s.Observe(ctx, time.Second, 4<<20)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -228,6 +239,15 @@ func (s *session) observe(ctx context.Context) {
 func (s *session) record(b contract.Batch) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if dir := os.Getenv(envDump); dir != "" && len(b.Items) > 0 {
+		if f, err := os.OpenFile(filepath.Join(dir, s.name+".jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			for _, o := range b.Items {
+				line, _ := json.Marshal(o)
+				_, _ = f.Write(append(line, '\n'))
+			}
+			_ = f.Close()
+		}
+	}
 	for _, f := range b.Faults {
 		s.faults = append(s.faults, f.Kind+": "+f.Detail)
 	}
@@ -242,6 +262,11 @@ func (s *session) record(b contract.Batch) {
 			var d contract.TurnEndedData
 			_ = o.Decode(&d)
 			if o.InputID != "" {
+				// claude reports a turn's end live, with its text, and
+				// again from its record, without it: keep the text.
+				if prev, ok := s.ended[o.InputID]; ok && d.Text == "" {
+					d.Text = prev.Text
+				}
 				s.ended[o.InputID] = d
 			} else {
 				s.own[o.TurnID] = d
@@ -825,6 +850,26 @@ func writeEvidence(t *testing.T, name string, rep any, md string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, name+".md"), []byte(md), 0o644); err != nil {
 		t.Errorf("evidence: %v", err)
+	}
+}
+
+// heapProfile writes this process's heap profile to the file envHeap
+// names, if it names one.
+func heapProfile(t *testing.T) {
+	t.Helper()
+	path := os.Getenv(envHeap)
+	if path == "" {
+		return
+	}
+	runtime.GC()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Errorf("heap profile: %v", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	if err := pprof.WriteHeapProfile(f); err != nil {
+		t.Errorf("heap profile: %v", err)
 	}
 }
 
