@@ -13,12 +13,16 @@ Every hook payload, transcript record, OTel log record and debug-log line lands
 in <workdir>/<scenario>/timeline.jsonl with its arrival time; a digest is printed.
 
 Usage: gaps.py <workdir> [scenario ...]
+Scenarios: retry exhaust stall early midtext midtool queue background (default: all).
+Each run appends one verdict line per scenario to <workdir>/results.jsonl and prints it.
+CLAUDE_BIN picks the claude binary (default: claude on PATH).
 Start the mock first: python3 mockapi.py 18712 <workdir>/mock
 Needs pyte.
 """
 import json
 import os
 import re
+import subprocess
 import uuid
 import sys
 import threading
@@ -205,6 +209,107 @@ def run_midtext(work):
     return s
 
 
+def run_midtool(work):
+    s = fresh(work, "midtool")
+
+    def esc(t0):
+        s.wait_hook("PreToolUse", t0, 10)
+        time.sleep(1.0)
+        s.esc()
+    probe.turn(s, "esc-mid-tool", "TOOL sleep 30", esc, timeout=6)
+    pids = subprocess.run(["pgrep", "-f", "sleep 30"], capture_output=True, text=True).stdout.split()
+    s.note("sleep-30-left", pids=pids)
+    s.write(b"\x15", "ctrl-u")
+    time.sleep(0.3)
+    s.close()
+    return s
+
+
+def run_queue(work):
+    s = fresh(work, "queue")
+    s.note("scenario", label="send-while-busy")
+    t = time.time()
+    s.type("SLOW 8")
+    s.wait_hook("UserPromptSubmit", t, 10)
+    time.sleep(1.5)
+    s.type("PING 6")
+    s.wait_hook("Stop", t, 40, pred=lambda p: "PONG 6" in (p.get("last_assistant_message") or ""))
+    time.sleep(1.0)
+    s.snap("send-while-busy")
+    s.close()
+    return s
+
+
+def run_background(work):
+    s = fresh(work, "background")
+    s.note("scenario", label="background-command")
+    t = time.time()
+    s.type("BG sleep 3; echo bg-done")
+    s.wait_hook("Stop", t, 30)
+    s.wait_hook("Stop", t, 40, pred=lambda p: "BG DONE" in (p.get("last_assistant_message") or ""))
+    time.sleep(1.0)
+    s.snap("background-command")
+    s.close()
+    return s
+
+
+def evaluate(s, name):
+    """One verdict per scenario, from the timeline alone."""
+    tl = sorted(s.timeline, key=lambda r: r["t"])
+    dbg = [(r["t"], r["line"]) for r in tl if r["src"] == "debug"]
+    hooks = [r for r in tl if r["src"] == "hook"]
+    recs = [r["rec"] for r in tl if r["src"] == "transcript"]
+    esc = next((r["t"] for r in tl if r["src"] == "action" and r["what"] == "esc"), None)
+    first = lambda pat: next((t for t, l in dbg if re.search(pat, l)), None)
+    ms = lambda t: None if t is None or esc is None else int(round((t - esc) * 1000))
+    ends = [re.search(r"turn (\d+) end .*stop=(\S+)", l) for t, l in dbg if "[engine] turn" in l and " end " in l]
+    v = {"scenario": name}
+    if name in ("stall", "early", "midtext", "midtool"):
+        end1 = first(r"\[engine\] turn 1 end")
+        v.update({
+            "onCancel_ms": ms(first(r"\[onCancel\]")),
+            "turn_end_ms": ms(end1),
+            "stop": ends[0].group(2) if ends and ends[0] else None,
+            "interrupt_record": any("[Request interrupted" in json.dumps(r) for r in recs),
+        })
+        # stop is null when a reply was cut, tool_use when a running tool was stopped
+        v["settled"] = v["onCancel_ms"] is not None and v["turn_end_ms"] is not None and v["turn_end_ms"] < 1500
+        if name == "midtool":
+            note = next((r for r in tl if r["src"] == "action" and r["what"] == "sleep-30-left"), {})
+            v["sleep_left"] = len(note.get("pids", []))
+    elif name in ("retry", "exhaust"):
+        v.update({
+            "attempts": [re.search(r"attempt (\d+/\d+)", l).group(1) for t, l in dbg if "API error (attempt" in l],
+            "stop": ends[0].group(2) if ends and ends[0] else None,
+            "Stop": any(h["event"] == "Stop" for h in hooks),
+            "StopFailure": any(h["event"] == "StopFailure" for h in hooks),
+        })
+        want = ("end_turn", True, False) if name == "retry" else ("stop_sequence", False, True)
+        v["settled"] = bool(v["attempts"]) and (v["stop"], v["Stop"], v["StopFailure"]) == want
+    elif name == "queue":
+        subs = [h for h in hooks if h["event"] == "UserPromptSubmit"]
+        v.update({
+            "submits": [(h["payload"].get("prompt"), (h.get("prompt_id") or "")[:8]) for h in subs],
+            "engine_turns": sum(1 for t, l in dbg if re.search(r"\[engine\] turn \d+ start", l)),
+            "stops": [h["payload"].get("last_assistant_message", "")[:20] for h in hooks if h["event"] == "Stop"],
+            "queue_operation": any(r.get("type") == "queue-operation" for r in recs),
+        })
+        # Both turns end. Their Stop hooks (and debug lines) may arrive in either order: each
+        # hook carries its prompt_id, so order is reported, not required.
+        v["stops_in_order"] = bool(v["stops"]) and "PONG 6" in v["stops"][-1]
+        v["settled"] = v["engine_turns"] == 2 and len(v["stops"]) == 2 and any("PONG 6" in x for x in v["stops"])
+    elif name == "background":
+        subs = [h for h in hooks if h["event"] == "UserPromptSubmit"]
+        v.update({
+            "submits": [(h["payload"].get("prompt", "")[:30], h["payload"].get("source")) for h in subs],
+            "engine_turns": sum(1 for t, l in dbg if re.search(r"\[engine\] turn \d+ start", l)),
+            "stops": [h["payload"].get("last_assistant_message", "")[:20] for h in hooks if h["event"] == "Stop"],
+            "notification_record": any("task-notification" in json.dumps(r) for r in recs if r.get("type") == "user"),
+        })
+        v["settled"] = v["engine_turns"] >= 2 and any("BG DONE" in x for x in v["stops"])
+    return v
+
+
 def digest(s):
     print("\n######## %s  sid=%s" % (os.path.basename(s.base), s.sid))
     for r in sorted(s.timeline, key=lambda r: r["t"]):
@@ -239,7 +344,18 @@ def digest(s):
 
 if __name__ == "__main__":
     work = os.path.abspath(sys.argv[1])
+    os.makedirs(work, exist_ok=True)
     OTLP_SERVER = OTLP()
-    runs = {"retry": run_retry, "exhaust": run_exhaust, "stall": run_stall, "early": run_early, "midtext": run_midtext}
+    binary = os.environ.get("CLAUDE_BIN", "claude")
+    version = subprocess.run([binary, "--version"], capture_output=True, text=True).stdout.split()[0]
+    runs = {"retry": run_retry, "exhaust": run_exhaust, "stall": run_stall, "early": run_early,
+            "midtext": run_midtext, "midtool": run_midtool, "queue": run_queue, "background": run_background}
     for name in sys.argv[2:] or list(runs):
-        digest(runs[name](work))
+        s = runs[name](work)
+        if os.environ.get("DIGEST"):
+            digest(s)
+        v = evaluate(s, name)
+        v["claude"] = version
+        with open(os.path.join(work, "results.jsonl"), "a") as f:
+            f.write(json.dumps(v) + "\n")
+        print(json.dumps(v), flush=True)

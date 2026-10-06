@@ -77,7 +77,7 @@ class Session:
         self.raw = open(os.path.join(self.base, "pty.raw"), "wb")
         master, slave = os.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
-        argv = ["claude", "--session-id", self.sid, "--dangerously-skip-permissions",
+        argv = [os.environ.get("CLAUDE_BIN", "claude"), "--session-id", self.sid, "--dangerously-skip-permissions",
                 "--model", "claude-haiku-4-5"] + list(args)
         self.proc = subprocess.Popen(argv, cwd=self.cwd, env=env, stdin=slave, stdout=slave,
                                      stderr=slave, start_new_session=True)

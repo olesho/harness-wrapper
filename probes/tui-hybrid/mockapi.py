@@ -8,6 +8,9 @@ append trailing system reminders; tool results continue the scenario):
   SLOW <n>         reply "slow" in <n> chunks, 0.5 s apart (default 40)
   STALL <s>        send message_start, then nothing for <s> seconds (default 60)
   TOOL <command>   a Bash tool_use running <command>; after its result, "TOOL DONE"
+  BG <command>     a Bash tool_use running <command> in the background; after its result,
+                   "TOOL DONE", and once claude reports the command finished (a
+                   <task-notification>), "BG DONE" (as harness-wrapper's internal/mockapi)
   MCP              a tool_use of mcp__probe__echo; after its result, "MCP DONE"
   ERR <code> <k>   answer HTTP <code> the first <k> times this text is seen
                    (529 -> overloaded_error, 429 -> rate_limit_error), then "RECOVERED"
@@ -75,10 +78,14 @@ def route(body):
     # share a message with the result of a tool its turn interrupted, so a
     # keyword wins over a tool result.
     t = text_of(c)
+    # claude tells the model a background task ended in a message of its own:
+    # the turn it starts for that answers it.
+    if "<task-notification>" in t:
+        return "TASK-NOTIFICATION", None
     lines = [l for l in t.splitlines() if l.strip() and not l.startswith("<")]
     for l in reversed(lines):
         w = l.strip().split()
-        if w and w[0] in ("PING", "SLOW", "STALL", "TOOL", "MCP", "ERR", "BIG", "LOOP"):
+        if w and w[0] in ("PING", "SLOW", "STALL", "TOOL", "BG", "MCP", "ERR", "BIG", "LOOP"):
             return l.strip(), None
     if isinstance(c, list):
         results = [b for b in c if b.get("type") == "tool_result"]
@@ -189,6 +196,11 @@ class H(BaseHTTPRequestHandler):
         if w and w[0] == "TOOL":
             cmd = scen[len("TOOL "):]
             return self.reply(body, tool=("Bash", {"command": cmd, "description": "probe"}))
+        if w and w[0] == "BG":
+            cmd = scen[len("BG "):]
+            return self.reply(body, tool=("Bash", {"command": cmd, "description": "probe bg", "run_in_background": True}))
+        if w and w[0] == "TASK-NOTIFICATION":
+            return self.reply(body, text="BG DONE")
         if w and w[0] == "MCP":
             return self.reply(body, tool=("mcp__probe__echo", {"text": "hello-mcp"}))
         if w and w[0] == "BIG":
@@ -207,7 +219,7 @@ class H(BaseHTTPRequestHandler):
                 continue
             t = text_of(m.get("content"))
             for l in t.splitlines():
-                if l.strip().split()[:1] and l.strip().split()[0] in ("MCP", "TOOL", "LOOP"):
+                if l.strip().split()[:1] and l.strip().split()[0] in ("MCP", "TOOL", "BG", "LOOP"):
                     return l.strip()
         return ""
 

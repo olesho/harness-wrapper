@@ -6,11 +6,15 @@ agentd `probes/p11`; placeholder token). Interactive `claude --session-id <uuid>
 registered in `$CLAUDE_CONFIG_DIR/settings.json` and logged by `hook.py`; the transcript
 JSONL is tailed every 20 ms. Keys: text then `\r`; interrupt a lone `\x1b`.
 
-**Gaps re-probed:** claude 2.1.284, 2026-10-06, with `gaps.py`, which adds claude's debug log
-(`--debug-file`) and OpenTelemetry logs as side channels (*Closing the gaps*).
+**Gaps re-probed:** claude 2.1.283 (hw's pin) and 2.1.284, on macOS arm64 and Ubuntu 26.04 arm64
+(Lima), 2026-10-06, with `gaps.py`,
+which adds claude's debug log (`--debug-file`) and OpenTelemetry logs as side channels
+(*Closing the gaps*, *Test matrix*).
 
 Rerun: `python3 mockapi.py 18712 <w>/mock &`, then `python probe.py <w> main exhaust stall early retry queue`
-and `python gaps.py <w> retry exhaust stall early midtext` (both need `pyte`). Timelines land in
+and `python gaps.py <w>` (all eight scenarios; both need `pyte`). `CLAUDE_BIN` picks the claude
+binary, `gaps.py` appends one verdict per scenario to `<w>/results.jsonl`, and `DIGEST=1` prints each
+timeline. Timelines land in
 `<w>/<session>/timeline.jsonl`.
 
 Question: can a TUI-driven claude report turn state without reading the screen?
@@ -82,8 +86,9 @@ Compared with stream-json:
 
 ## Closing the gaps: claude's debug log
 
-**Re-probed:** claude 2.1.284, 2026-10-06, with `gaps.py`. Each scenario ran in a fresh session,
-three times. Two side channels were added:
+**Re-probed:** claude 2.1.283 (hw's pin) and 2.1.284, on macOS arm64 and Ubuntu 26.04 arm64,
+2026-10-06, with `gaps.py`. Each scenario ran in a fresh session, three times per version and
+platform; *Test matrix* has every run. Both versions log the same lines on both platforms. Two side channels were added:
 - `--debug-file <path>`, tailed as it is written;
 - OpenTelemetry logs (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, exported as OTLP/HTTP JSON to a local
   receiver).
@@ -95,26 +100,32 @@ through (it logs `yield system/init`, as the SDK protocol does):
 |---|---|
 | `[engine] turn N start` | A turn began |
 | `[ERROR] API error (attempt k/N): <status> <body>` | One model request failed, and the turn stays open. `N` is the retry limit plus one |
-| `[onCancel] source=local streamMode=…` | claude processed an interrupt |
+| `[onCancel] source=local streamMode=…` | claude processed an interrupt. `streamMode` is `responding`, or `tool-use` while a tool runs |
 | `[ERROR] Error in API request: Request was aborted.` | The interrupt aborted a request in flight |
-| `[engine] turn N end (… stop=<reason> resultLen=<n>)` | The turn ended. `stop` is `end_turn`, `stop_sequence` (an API error) or `null` (interrupted) |
+| `[engine] turn N end (… stop=<reason> resultLen=<n>)` | The turn ended. `stop` is `end_turn`, `stop_sequence` (an API error), `null` (a reply interrupted) or `tool_use` (a running tool interrupted) |
 | `[ERROR] [engine] turn ended in error: <message>` | An errored or interrupted end, with claude's message |
 
-**Interrupts.**
-- Before the first token (3 runs): `[onCancel]` 80–95 ms after Esc, with `[engine] turn 1 end … stop=null` in the same moment, and no interrupt record.
-- 50 ms after Enter, and mid-text (6 runs): `[onCancel]` 65–212 ms after Esc, the turn's end within 212 ms, and an interrupt record every time.
+**Interrupts** (12 runs each: two versions, two platforms):
+- Before the first token: `[onCancel]` 53–108 ms after Esc, `[engine] turn 1 end … stop=null` within 109 ms, and no interrupt record.
+- 50 ms after Enter: the turn's end within 249 ms. Whether claude had received the first chunk, and so writes an interrupt record, depends on timing (9 of 12 did).
+- Mid-text: the turn's end within 163 ms, with an interrupt record.
+- Mid-tool (`sleep 30`): `[onCancel]` 58–107 ms after Esc with `streamMode=tool-use`, the turn's end 75–796 ms after Esc (339–796 ms on macOS, 75–152 ms on Linux) with `stop=tool_use`, an interrupt record, and no `sleep` left running.
 
 So every interrupt now settles on positive evidence:
 - turn end with an interrupt record: `interrupted`, and the partial reply stays in the conversation;
 - turn end without one: also `interrupted`, since the request may have reached the model. claude has withdrawn the prompt from the conversation and put it back in the composer, and the adapter clears it with Ctrl-U.
 
-**Retries** (3 runs each): every failed request is logged as it happens.
+**Retries** (12 runs each): every failed request is logged as it happens.
 - A turn that recovers: `1/11, 1/11`, then `stop=end_turn` and `Stop`.
 - A turn that exhausts its retries (`CLAUDE_CODE_MAX_RETRIES=2`): `1/3, 1/3, 2/3, 3/3`, then `stop=stop_sequence` and `StopFailure`.
 
 claude retries its first failure at once without advancing its counter, hence the repeated `1/N`. The log carries no retry delay, so a `retrying` observation has `attempt`, `max` and `http_status`, but no `delay_ms`.
 
-**Correlation.** Debug lines carry no prompt or session id. The adapter attributes them by order, which holds because it keeps one input in flight and the log belongs to one process. A turn claude starts on its own, after background work, also logs `[engine] turn N start`; the adapter would attribute it by its `UserPromptSubmit`, or report a turn without an input. That case is not probed yet.
+**Correlation.** Debug lines carry no prompt or session id. The adapter attributes them by order, which holds because the log belongs to one process and every turn logs its own start and end:
+- **A prompt sent while a turn runs** (12 runs): its `UserPromptSubmit` fires at once, with the running turn's `prompt_id`, and the transcript records a `queue-operation`. The debug log then shows the running turn's end and a second `[engine] turn N start` for the queued prompt, each ending in its own `Stop`.
+  - In 1 of 12 runs (Linux, claude 2.1.283) the two turns finished out of order on every channel: the queued prompt's `Stop` arrived before the running turn's, and the debug log wrote `turn 2 end` before `turn 1 end`, and `turn 2 start` after both, by its own clock.
+  - Hooks carry `prompt_id`, so they stay attributable; the debug log's turn lines do not. The adapter therefore never sends while a turn runs, as the interface already requires, and attributes debug lines only while a single turn is in flight.
+- **A turn claude starts after background work** (`BG sleep 3; echo bg-done`, 12 runs): the input's turn ends (`Stop`, `TOOL DONE`); when the command finishes, claude starts a turn of its own. It logs `[engine] turn 2 start`, fires `UserPromptSubmit` with the notification as its prompt (`<task-notification>…`), and records the notification as a user entry. Its `Stop` carries the answer (`BG DONE`). The prompt's `<task-notification>` prefix is how the adapter tells such a turn from an input's.
 
 **Operating the log.**
 - **Rotation:** claude reopens the path for each write. After a rename, new lines go to a fresh file at the same path, so the adapter can rotate: rename, read the old file to its end, continue on the new one.
@@ -123,6 +134,24 @@ claude retries its first failure at once without advancing its counter, hence th
 - **Banner:** the TUI shows "Debug mode enabled · logging to …".
 
 **OpenTelemetry** corroborates but can't replace the log. `user_prompt` and `api_request` carry `prompt.id`, but `api_error` arrived for some failed attempts only (attempts 1 and 3 of 3, never 2), followed by `api_retries_exhausted`. No event marks a cancel.
+
+## Test matrix
+
+2026-10-06, against `mockapi.py`; three runs per scenario, version and platform, each in a fresh session. A run passes when its turn settles on the evidence above. Linux is Ubuntu 26.04 arm64 in Lima (`agentd-ubuntu`).
+
+| Scenario | macOS, 2.1.283 | macOS, 2.1.284 | Linux, 2.1.283 | Linux, 2.1.284 |
+|---|---|---|---|---|
+| Interrupt before the first token (`STALL`) | 3/3 | 3/3 | 3/3 | 3/3 |
+| Interrupt 50 ms after Enter | 3/3 | 3/3 | 3/3 | 3/3 |
+| Interrupt mid-text | 3/3 | 3/3 | 3/3 | 3/3 |
+| Interrupt mid-tool | 3/3 | 3/3 | 3/3 | 3/3 |
+| Retry that recovers | 3/3 | 3/3 | 3/3 | 3/3 |
+| Retries exhausted | 3/3 | 3/3 | 3/3 | 3/3 |
+| Prompt sent while a turn runs | 3/3 | 3/3 | 3/3, one out of order | 3/3 |
+| Turn claude starts after background work | 3/3 | 3/3 | 3/3 | 3/3 |
+| `probe.py`'s isolated sessions (exhaust, stall, early, retry, queue) | the September findings hold | the same | the same | the same |
+
+Not run: a real account.
 
 ## Costs and risks
 
