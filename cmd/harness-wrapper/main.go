@@ -6,7 +6,8 @@
 //
 //	harness-wrapper [wrapper-flags] <name> -- <harness args>
 //
-// Supported harness names: codex, claude.
+// Supported harness names: claude, codex, opencode (see supportedHarnesses).
+// Run with --help for the full usage text.
 package main
 
 import (
@@ -225,6 +226,12 @@ func emitCLIExitTrace(emitter trace.Emitter, res wrapper.Result, runErr error) {
 	})
 }
 
+// noCleanup is a trace-emitter cleanup that releases nothing (stderr/discard
+// emitters own no closable resource; the error path has nothing to undo).
+func noCleanup() {
+	// Nothing to close.
+}
+
 // openTraceEmitter returns a trace.Emitter for the parsed CLI flags.
 //
 // Default behavior: trace events are dropped (trace.Discard). This is
@@ -235,12 +242,6 @@ func emitCLIExitTrace(emitter trace.Emitter, res wrapper.Result, runErr error) {
 // Opt-in: --trace-file PATH or --trace-stderr.
 //
 // The returned closer is always non-nil.
-// noCleanup is a trace-emitter cleanup that releases nothing (stderr/discard
-// emitters own no closable resource; the error path has nothing to undo).
-func noCleanup() {
-	// Nothing to close.
-}
-
 func openTraceEmitter(args harnessWrapperArgs) (trace.Emitter, func(), error) {
 	switch {
 	case args.TraceFile != "":
@@ -286,6 +287,8 @@ func exitCodeFor(res wrapper.Result) int {
 func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "usage: harness-wrapper [wrapper-flags] <name> -- <harness args>")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper run [wrapper-flags] <name> -- <harness args>   (prompt on stdin)")
+	_, _ = fmt.Fprintln(w, "       harness-wrapper structured-run [--prompt-file PATH] [wrapper-flags] <name> -- <harness args>")
+	_, _ = fmt.Fprintln(w, "                          one turn; prints one StructuredTurnResult JSON line")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper attach <session>")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper status <session> [--json]")
 	_, _ = fmt.Fprintln(w, "       harness-wrapper kill <session>")
@@ -343,7 +346,7 @@ func printUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "detected (the turn stalls to the deadline) and codex's approval prompts are")
 	_, _ = fmt.Fprintln(w, "auto-approved (only the `-s` sandbox axis still binds).")
 	_, _ = fmt.Fprintln(w, "")
-	_, _ = fmt.Fprintln(w, "supported harness names: claude, codex, opencode, pi")
+	_, _ = fmt.Fprintln(w, "supported harness names: "+supportedHarnessNames())
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "By default trace events are dropped, since stderr would corrupt an")
 	_, _ = fmt.Fprintln(w, "interactive harness TUI. Pass --trace-file or --trace-stderr to enable.")

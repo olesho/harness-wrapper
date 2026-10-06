@@ -207,7 +207,7 @@ catches drift before users do:
 ```sh
 make check-versions        # offline pinned-vs-latest check via the npm registry (~2s, free)
 make rebake-corpus HARNESS=<name> SCENARIO=<name>   # refresh one scenario
-make rebake-corpus-all     # refresh all 18 scenarios (paid for codex/claude)
+make rebake-corpus-all     # refresh all 12 scenarios (paid for codex/claude)
 ```
 
 `pkg/versions/versions.json` pins each harness to the upstream version its adapter was last verified

@@ -1,5 +1,7 @@
 usage: harness-wrapper [wrapper-flags] <name> -- <harness args>
        harness-wrapper run [wrapper-flags] <name> -- <harness args>   (prompt on stdin)
+       harness-wrapper structured-run [--prompt-file PATH] [wrapper-flags] <name> -- <harness args>
+                          one turn; prints one StructuredTurnResult JSON line
        harness-wrapper attach <session>
        harness-wrapper status <session> [--json]
        harness-wrapper kill <session>
@@ -57,7 +59,7 @@ human is at the TUI (passthrough, or `run` from a terminal for codex). Under
 detected (the turn stalls to the deadline) and codex's approval prompts are
 auto-approved (only the `-s` sandbox axis still binds).
 
-supported harness names: claude, codex, opencode, pi
+supported harness names: claude, codex, opencode
 
 By default trace events are dropped, since stderr would corrupt an
 interactive harness TUI. Pass --trace-file or --trace-stderr to enable.

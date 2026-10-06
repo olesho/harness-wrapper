@@ -2,24 +2,23 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strings"
 )
 
-// harnessSpec describes how to invoke a single harness. Phase 1 only
-// uses Bin (the executable name to look up via PATH); future phases
-// will likely add per-harness defaults like prompt patterns and
-// command-line shape, at which point this will move into a
-// harness-specific package.
+// harnessSpec describes how to invoke a single harness from the CLI: only
+// Bin, the executable name to look up via PATH. Per-harness behavior
+// (classifier patterns, argv shape) lives in internal/wrapcore/harness/<name>.
 type harnessSpec struct {
 	Bin string
 }
 
-// supportedHarnesses is the Phase 1 inline registry. When a third
-// harness lands or per-harness behavior diverges, this should graduate
-// to internal/wrapper/harness/<name>/ packages.
+// supportedHarnesses is the CLI's registry of harness short names and their
+// binaries. Per-harness behavior lives in internal/wrapcore/harness/<name>;
+// this map only names what the CLI accepts.
 var supportedHarnesses = map[string]harnessSpec{
 	"codex":    {Bin: "codex"},
 	"claude":   {Bin: "claude"},
@@ -59,18 +58,8 @@ func harnessBinaryOverride(name string) string {
 	return os.Getenv("HARNESS_BINARY")
 }
 
+// supportedHarnessNames lists the registry's names, sorted and comma-separated,
+// for error messages and the usage text.
 func supportedHarnessNames() string {
-	names := make([]string, 0, len(supportedHarnesses))
-	for name := range supportedHarnesses {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := ""
-	for i, n := range names {
-		if i > 0 {
-			out += ", "
-		}
-		out += n
-	}
-	return out
+	return strings.Join(slices.Sorted(maps.Keys(supportedHarnesses)), ", ")
 }
