@@ -154,8 +154,10 @@ type check struct {
 	desc     contract.Descriptor
 	cleanups []func()
 	// sent is every input the scenario sent: a turn of none of them is one
-	// the harness started itself.
-	sent map[string]bool
+	// the harness started itself. Sends to Sessions side by side mark it at
+	// once, under sentMu.
+	sentMu sync.Mutex
+	sent   map[string]bool
 	// base, when set, is where the scenario's one agent has its roots; its
 	// agents each take a temporary directory otherwise.
 	base string
@@ -524,10 +526,24 @@ func (c *check) openWatch(s contract.Session, rule string) (contract.Session, *h
 	return s, h
 }
 
+// mark notes an input the scenario sends.
+func (c *check) mark(in string) {
+	c.sentMu.Lock()
+	defer c.sentMu.Unlock()
+	c.sent[in] = true
+}
+
+// sentOne reports whether the scenario sent input in.
+func (c *check) sentOne(in string) bool {
+	c.sentMu.Lock()
+	defer c.sentMu.Unlock()
+	return c.sent[in]
+}
+
 // send submits text and requires the receipt.
 func (c *check) send(s contract.Session, text string) string {
 	in := newInputID()
-	c.sent[in] = true
+	c.mark(in)
 	ctx, cancel := c.ctx()
 	defer cancel()
 	res, err := s.Send(ctx, contract.Text(in, text))

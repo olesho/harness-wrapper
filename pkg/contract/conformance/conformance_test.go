@@ -137,6 +137,14 @@ var broken = map[string]struct{ rule, scenario string }{
 	"keeper-lends-unbrokerable":   {"keeper.lend", "keeper"},
 	"keeper-signout-keeps":        {"keeper.sign-out", "keeper"},
 	"sessions-without-capability": {"describe.sessions", "describe"},
+	"open-race":                   {"concurrent.open", "concurrent-open"},
+	"open-twice":                  {"concurrent.one-host", "concurrent-open"},
+	"cross-deliver":               {"concurrent.isolated", "concurrent-turns"},
+	"interrupt-siblings":          {"concurrent.interrupt", "concurrent-interrupt"},
+	"close-siblings":              {"concurrent.close", "concurrent-close"},
+	"crash-siblings":              {"concurrent.crash", "concurrent-crash"},
+	"record-reads-siblings":       {"concurrent.record", "concurrent-record"},
+	"load-mixes-sessions":         {"concurrent.load-history", "concurrent-load"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule

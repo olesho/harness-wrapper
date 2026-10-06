@@ -105,7 +105,8 @@ var Breaks = []string{
 	"auto-no-record-end",
 	"egress-without-capability", "impure-placeholder", "placeholder-ignores-nonce", "placeholder-holds-secret",
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
-	"sessions-without-capability",
+	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
+	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
 }
 
 // Adapter is the fake harness's adapter.
@@ -134,7 +135,8 @@ const Version = "1.0.0"
 // ArchiveFormat is the archive format the fake's load recipe is written for.
 const ArchiveFormat = 2
 
-// Describe describes the fake: every capability, every spec field.
+// Describe describes the fake: every capability, every spec field, and
+// MaxSessions Sessions of an agent side by side.
 func (a *Adapter) Describe() contract.Descriptor {
 	return contract.Descriptor{
 		Contract:     contract.Version,
@@ -163,11 +165,7 @@ func (a *Adapter) Describe() contract.Descriptor {
 }
 
 func (a *Adapter) limits() contract.Limits {
-	l := contract.Limits{MaxInputBytes: contract.MaxInputBytes}
-	if a.breaks("sessions-without-capability") {
-		l.MaxSessions = 4
-	}
-	return l
+	return contract.Limits{MaxInputBytes: contract.MaxInputBytes, MaxSessions: MaxSessions}
 }
 
 func (a *Adapter) capabilities() []contract.Capability {
@@ -178,7 +176,11 @@ func (a *Adapter) capabilities() []contract.Capability {
 	if !a.breaks("egress-without-capability") {
 		caps = append(caps, contract.CapBrokeredCredentials)
 	}
-	return append(caps, contract.CapLoginKeeper)
+	caps = append(caps, contract.CapLoginKeeper)
+	if !a.breaks("sessions-without-capability") {
+		caps = append(caps, contract.CapConcurrentSessions)
+	}
+	return caps
 }
 
 // Placeholder renders the fake token's placeholder: "fake-" and 32 hex digits
@@ -334,6 +336,14 @@ func (a *Adapter) OpenRecord(_ context.Context, req contract.RecordRequest) (con
 	r := &record{adapter: a, store: st, cursor: newCursor(a)}
 	if err := r.cursor.load(st, req.Checkpoint); err != nil {
 		return nil, err
+	}
+	if a.breaks("record-reads-siblings") {
+		for _, other := range workspaceRecords(st) {
+			lines, _, _ := other.readRecord(0)
+			for _, l := range lines {
+				r.cursor.push(item{obs: l.obs})
+			}
+		}
 	}
 	return r, nil
 }

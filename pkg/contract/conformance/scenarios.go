@@ -42,6 +42,13 @@ var scenarios = []scenario{
 	{"background", background},
 	{"placeholder", placeholderScenario},
 	{"keeper", keeperScenario},
+	{"concurrent-open", concurrentOpen},
+	{"concurrent-turns", concurrentTurns},
+	{"concurrent-interrupt", concurrentInterrupt},
+	{"concurrent-close", concurrentClose},
+	{"concurrent-crash", concurrentCrash},
+	{"concurrent-record", concurrentRecord},
+	{"concurrent-load", concurrentLoad},
 }
 
 // describe: the Descriptor is well formed.
@@ -895,7 +902,7 @@ func removeFile(p string) error { return removeFunc(p) }
 // own reports whether o is of a turn the harness started itself: a turn, and
 // of no input the scenario sent.
 func (c *check) own(o contract.Observation) bool {
-	return (o.TurnID != "" || o.Kind == contract.KindTurnStarted || o.Kind == contract.KindTurnEnded) && !c.sent[o.InputID]
+	return (o.TurnID != "" || o.Kind == contract.KindTurnStarted || o.Kind == contract.KindTurnEnded) && !c.sentOne(o.InputID)
 }
 
 // ownStarted waits for the start of a turn the harness started itself, other
@@ -969,7 +976,7 @@ func autonomous(c *check) {
 
 	// An input does not wait for the harness's own work: that turn yields.
 	in := newInputID()
-	c.sent[in] = true
+	c.mark(in)
 	if _, err := s.Send(ctx, contract.Text(in, "PING 31")); err != nil {
 		c.stop("auto.send", "Send while the harness is on a turn of its own: %v, want it taken", err)
 	}
