@@ -59,6 +59,9 @@ type session struct {
 	exited    chan struct{}
 	opening   bool
 	openErr   error
+	// beforeIdle, when set, runs in Open once the Session's directory is
+	// held and before it turns idle: a test's way into that window.
+	beforeIdle func()
 }
 
 // turn is the turn in flight.
@@ -223,7 +226,18 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenSessionInUse, Message: id + " is open in another Host"})
 	}
 
+	if s.beforeIdle != nil {
+		s.beforeIdle()
+	}
+
 	s.mu.Lock()
+	if s.closing || s.phase == contract.PhaseExited {
+		// A Close (or crash) landed after the check above: the Session must
+		// not come up idle holding its directory for good.
+		s.mu.Unlock()
+		s.letGo(st.dir)
+		return fail(&contract.Error{Code: contract.CodeClosed})
+	}
 	s.store = st
 	s.sessionID = id
 	s.proc = int(time.Now().UnixNano() % 1e9)
