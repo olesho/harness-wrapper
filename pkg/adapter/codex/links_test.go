@@ -19,7 +19,7 @@ func TestLinks_CodexOnly(t *testing.T) {
 	exact := []string{"pkg/chat", "internal/chatcore", "pkg/wrapper", "internal/wrapcore", "pkg/harness", "pkg/screen", "pkg/turns"}
 	suffixes := []string{
 		"adapter/claudecode", "harness/claude", "transcript/claudecode", "harness/codex",
-		"harness/pi", "transcript/pi", "harness/opencode", "harness/cursor",
+		"transcript/pi", "adapter/pi", "harness/opencode", "harness/cursor",
 	}
 	out, err := exec.Command(goTool, "list", "-deps", mod+"pkg/adapter/codex").Output()
 	if err != nil {

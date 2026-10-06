@@ -23,13 +23,13 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/screen` | vt100 emulator wrapper turning PTY bytes into a queryable snapshot | [Screen](screen.md) |
 | `pkg/turns` | The per-harness `Adapter` contract, capability interfaces, and the `Watcher` | [Turns & Adapters](turns.md) |
 | `pkg/turns/generic` | The status-only fallback adapter every other adapter embeds | [Adapter Matrix](../guide/adapters.md#generic) |
-| `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode`, `pi` | [Adapter Matrix](../guide/adapters.md) |
+| `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode` | [Adapter Matrix](../guide/adapters.md) |
 | `pkg/chat` | The `Conversation` API: control, send, events, history, interactive input, permission switching. `internal/chatcore` plus every built-in screen adapter | [Chat API](../guide/chat.md) |
 | `pkg/chat/memstore` | The in-memory `Store` implementation, written against the chat core so it links no harness | [Store interface](../guide/chat.md#store-interface) |
 | `pkg/transcript` | Read-only parsers for harness-owned JSONL logs — whole-file readers and a checkpointed follower — and the canonical `Event` | [Transcripts](transcript.md) |
 | `pkg/transcript/*` | Per-harness readers: `claudecode`, `codex`, `pi` | [Transcripts](transcript.md#per-harness-logs) |
 | `pkg/harness` | Per-harness **capability profiles**, hook installation, transcript acquisition, and `RunTurn` | [Harness profiles & runs](harness.md) |
-| `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`, `pi`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |
+| `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |
 | `pkg/oneshot` | One typed turn, headless, with an auto-accept policy | [One-shot turns](oneshot.md) |
 | `pkg/turnproto` | The frozen structured-turn wire format and its exit codes | [Structured turn protocol](turnproto.md) |
 | `pkg/env` | Host-side client for running a structured turn inside a workspace | [Execution environments](env.md#running-a-turn-in-a-workspace) |
@@ -42,6 +42,7 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/adapter` | hw's Harness Adapter: sessions, the observe/ack cursor, submission markers and record access over a per-harness profile | [Harness Adapter](contract.md#harness-wrappers-harness-adapter) |
 | `pkg/adapter/claudecode` | The Claude Code profile: stream-json transport, `Provision`, the transcript and hook spool as the record | [Claude Code profile](contract.md#the-claude-code-profile) |
 | `pkg/adapter/codex` | The Codex profile: app-server transport, `Provision`, the thread's rollout as the record | [Codex profile](contract.md#the-codex-profile) |
+| `pkg/adapter/pi` | The Pi profile: RPC transport, `Provision`, the session's file as the record, one `api_key` across providers | [Pi profile](contract.md#the-pi-profile) |
 
 ## Internal packages
 
@@ -50,7 +51,7 @@ Where everything lives, what depends on what, and which page documents it.
 | `internal/wrapcore` | `pkg/wrapper` without any classifier patterns; `harness/*` holds each harness's patterns, `detector` their matcher | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
 | `internal/chatcore` | `pkg/chat` without any screen adapter: a harness is whatever adapter is registered under its name | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [ADR-012](decisions/adr-012-harness-adapter-interface.md) |
 | `internal/harnesscore` | `pkg/harness` without `Run` and `RunTurn`: the profile registry, hook specs, the hook handler and its spool, the settings.json merge. The per-harness hook profiles build on it, so they link no chat | [Architecture](architecture.md#cores-that-link-one-harness-at-a-time) · [Harness profiles & runs](harness.md) |
-| `internal/mockapi` | A mock of a harness's model API — the Messages API, a Go port of agentd's P11 mock, and the Responses API — for driving a real claude or codex through scripted scenarios | [Claude Code profile](contract.md#the-claude-code-profile) · [Codex profile](contract.md#the-codex-profile) |
+| `internal/mockapi` | A mock of a harness's model API — the Messages API, a Go port of agentd's P11 mock, and the Responses API — for driving a real claude, codex or pi through scripted scenarios | [Claude Code profile](contract.md#the-claude-code-profile) · [Codex profile](contract.md#the-codex-profile) · [Pi profile](contract.md#the-pi-profile) |
 | `internal/procgroup` | Starts a harness in a process group of its own, signals the group, and tells when it is empty | [Harness Adapter](contract.md#harness-wrappers-harness-adapter) |
 | `internal/facadegen` | Writes `pkg/chat`'s, `pkg/wrapper`'s and `pkg/harness`'s forwarding declarations from their cores (`go generate`) | — |
 | `internal/env` | The environment core: provisioners, containments, `Workspace`, `Compose`, lifecycle, retention | [Execution environments](env.md) · [ADR-003](decisions/adr-003-env-visibility.md) |
@@ -83,6 +84,7 @@ pkg/harness  →  internal/harnesscore · pkg/chat · pkg/wrapper
 pkg/harness/*  →  internal/harnesscore · pkg/transcript/*                (a hook profile links no chat)
 pkg/adapter/claudecode  →  pkg/adapter · internal/harnesscore · pkg/harness/claude · pkg/transcript/claudecode
 pkg/adapter/codex       →  pkg/adapter · pkg/transcript/codex
+pkg/adapter/pi          →  pkg/adapter · pkg/transcript/pi
 pkg/turns  →  pkg/transcript          (for the reader capability's return type)
 pkg/env    →  internal/env · pkg/turnproto
 ```

@@ -38,7 +38,6 @@ import (
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/codex"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/cursor"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/opencode"
-	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/pi"
 )
 
 // The built-in harnesses' classifier patterns, under the names Config.Harness
@@ -48,5 +47,4 @@ func init() {
 	wrapcore.RegisterPatterns(codex.Patterns, "codex")
 	wrapcore.RegisterPatterns(cursor.Patterns, "cursor")
 	wrapcore.RegisterPatterns(opencode.Patterns, "opencode")
-	wrapcore.RegisterPatterns(pi.Patterns, "pi")
 }

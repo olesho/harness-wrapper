@@ -19,9 +19,18 @@ type Placeholderer interface {
 	Placeholder(kind string, credential, nonce []byte) (contract.PlaceholderResult, error)
 }
 
+// ModelPlaceholderer is a Placeholderer whose placeholders follow the agent's
+// model (contract 1.5): a credential kind that serves several providers, each
+// swap narrowed to the provider the model names. A model it cannot place
+// fails with CodeInvalidSpec on field model.
+type ModelPlaceholderer interface {
+	PlaceholderFor(kind, model string, credential, nonce []byte) (contract.PlaceholderResult, error)
+}
+
 // Placeholder renders what stands in for a credential: the request checked
-// against the Descriptor, the profile's rendering, and the result checked
-// against the kind's route.
+// against the Descriptor, the profile's rendering — with the agent's model,
+// for a profile that reads it — and the result checked against the kind's
+// route.
 func (a *harnessAdapter) Placeholder(req contract.PlaceholderRequest) (contract.PlaceholderResult, error) {
 	if err := checkVersion(req.Contract); err != nil {
 		return contract.PlaceholderResult{}, err
@@ -39,11 +48,16 @@ func (a *harnessAdapter) Placeholder(req contract.PlaceholderRequest) (contract.
 	if len(req.Credential) == 0 {
 		return contract.PlaceholderResult{}, &contract.Error{Code: contract.CodeInvalidSpec, Field: "credential", Message: "empty"}
 	}
-	p, ok := a.p.(Placeholderer)
-	if !ok {
+	var res contract.PlaceholderResult
+	var err error
+	switch p := a.p.(type) {
+	case ModelPlaceholderer:
+		res, err = p.PlaceholderFor(req.Kind, req.Model, req.Credential, req.Nonce)
+	case Placeholderer:
+		res, err = p.Placeholder(req.Kind, req.Credential, req.Nonce)
+	default:
 		return contract.PlaceholderResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile declares " + string(contract.CapBrokeredCredentials) + " and renders no placeholder"}
 	}
-	res, err := p.Placeholder(req.Kind, req.Credential, req.Nonce)
 	if err != nil {
 		return contract.PlaceholderResult{}, err
 	}

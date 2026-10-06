@@ -24,7 +24,6 @@ var supportedHarnesses = map[string]harnessSpec{
 	"codex":    {Bin: "codex"},
 	"claude":   {Bin: "claude"},
 	"opencode": {Bin: "opencode"},
-	"pi":       {Bin: "pi"},
 }
 
 // resolveHarness looks up a harness by short name and returns the

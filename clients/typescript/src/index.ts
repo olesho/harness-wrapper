@@ -193,7 +193,7 @@ export interface OpenOptions {
    *    never validated — see its doc.)
    * 2. On the harness-chatd gateway the effort-capable harness names are
    *    exactly `"codex"` and `"claude-code"`, case-sensitively. Every other
-   *    accepted harness name — `"opencode"`, `"pi"`, `"generic"`/`""` —
+   *    accepted harness name — `"opencode"`, `"generic"`/`""` —
    *    rejects `effort` outright with a 400 `invalid_options`. That is the
    *    exact opposite of `model`, which is a silent no-op on those same
    *    harnesses: do not assume the two knobs behave symmetrically. Note also
@@ -215,7 +215,7 @@ export interface OpenOptions {
    *    rather than erroring, so a typo'd model name reaches the harness (or is
    *    dropped) without any client- or gateway-side complaint.
    * 2. Injection happens only for claude / claude-code (`--model <v>`) and
-   *    codex (`-c model="<v>"`). On `"opencode"`, `"pi"` and
+   *    codex (`-c model="<v>"`). On `"opencode"` and
    *    `"generic"`/`""` it is a SILENT NO-OP — whereas `effort` on those same
    *    harnesses is a 400 `invalid_options`. The two knobs are not symmetric.
    * 3. An explicit `--model` (claude / claude-code) or `-c model=…` (codex)
@@ -231,7 +231,7 @@ export interface OpenOptions {
    *
    * 1. An unknown mode, a native spelling belonging to the *other* harness, or
    *    any mode at all on a harness with no permission axis (`"opencode"`,
-   *    `"pi"`, `"generic"`/`""`) is a 400 `invalid_config` before launch.
+   *    `"generic"`/`""`) is a 400 `invalid_config` before launch.
    * 2. `"plan"` is rejected on codex: codex has **no launch-time flag** for the
    *    plan rung, and a no-op would launch it unrestricted. Plan mode on codex
    *    is only reachable in-band, by sending `/plan` after the conversation is

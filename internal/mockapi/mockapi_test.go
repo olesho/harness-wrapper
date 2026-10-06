@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -96,6 +97,48 @@ func TestScenarios(t *testing.T) {
 	reqs := s.Requests()
 	if len(reqs) == 0 || reqs[0].Scenario != "PING 7" || reqs[0].System != "PERSONA" {
 		t.Errorf("requests: %+v", reqs)
+	}
+}
+
+// TOOL runs its command in claude's Bash, or in pi's bash when the request
+// offers that one and no Bash.
+func TestToolIsTheShellTheRequestOffers(t *testing.T) {
+	s := Start()
+	defer s.Close()
+	for _, c := range []struct {
+		tools []string
+		name  string
+		input map[string]any
+	}{
+		{nil, "Bash", map[string]any{"command": "echo hi", "description": "mock"}},
+		{[]string{"read", "bash"}, "bash", map[string]any{"command": "echo hi"}},
+	} {
+		tools := []map[string]string{}
+		for _, n := range c.tools {
+			tools = append(tools, map[string]string{"name": n})
+		}
+		b, _ := json.Marshal(map[string]any{
+			"model": "m", "tools": tools,
+			"messages": []any{map[string]any{"role": "user", "content": "TOOL echo hi"}},
+		})
+		resp, err := http.Post(s.URL()+"/v1/messages", "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var msg struct {
+			Content []struct {
+				Name  string         `json:"name"`
+				Input map[string]any `json:"input"`
+			} `json:"content"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&msg)
+		_ = resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msg.Content) != 1 || msg.Content[0].Name != c.name || !reflect.DeepEqual(msg.Content[0].Input, c.input) {
+			t.Errorf("tools %v: %+v, want %s %v", c.tools, msg.Content, c.name, c.input)
+		}
 	}
 }
 

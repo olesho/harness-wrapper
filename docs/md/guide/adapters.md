@@ -10,7 +10,6 @@ mapped. This page is the honest, code-grounded snapshot of **what works today**.
 | **codex** | ✅ | ✅ `Token usage:` footer | ✅ | ✅ `~/.codex/sessions/` | ✅ startup interstitials | ✅ ¹ | ✅ ² |
 | **claude-code** | ✅ | ✅ `✻ <verb> for Ns` | ✅ | ✅ `~/.claude/projects/` | ✅ trust / bypass | ✅ | ✅ |
 | **opencode** | ✅ | ⏳ via `waiting_for_input` | ⏳ | ❌ format in flux | — | — | — |
-| **pi** | ✅ | ⏳ idle + `Busy` | ✅ assigned | ✅ `~/.pi/agent/sessions/` | ✅ submit + `/quit` | — | — |
 | **generic** | ✅ | — maps wrapper status | — | — | — | — | — |
 
 **Legend** — ✅ implemented · ⏳ partial / pending a real on-screen marker (turn completion falls back
@@ -34,9 +33,11 @@ CLI's harness registry in [cli.md](cli.md) (which takes `claude`, not `claude-co
 gateway's adapter lookup in [gateway.md](gateway.md) (which requires `claude-code`).
 
 Pinned & verified upstream versions live in [`versions.json`](../internal/versions-drift.md): codex
-`0.144.5` (verified 2026-07-22), claude-code `2.1.283` (verified 2026-09-26), pi `0.76.0`
-(verified 2026-06-27).
+`0.144.5` (verified 2026-07-22), claude-code `2.1.283` (verified 2026-09-26).
 opencode is unpinned pending corpus capture.
+
+pi has no row: it is no harness of this layer. The Harness Adapter's
+[Pi profile](../internal/contract.md#the-pi-profile) drives it over its RPC mode, at pi `1.0.4`.
 
 ## codex
 
@@ -73,30 +74,13 @@ The most fully-featured adapter.
   first token; the adapter reads which, per turn, and chat ends the turn `interrupted`
   ([Interrupting a turn](chat.md#interrupting-a-turn)). No other adapter can interrupt yet.
 
-## opencode, pi
+## opencode
 
-These adapters detect **status** (via the wrapper's cost/quota/prompt/API patterns) and, where the
-on-disk format is stable, **read transcripts** — but they do not yet have a confirmed on-screen
-turn-completion marker, so turn boundaries currently fall back to the wrapper's `waiting_for_input`
-signal (lower fidelity: no intermediate work detection).
-
-- **opencode** — transcript reading is **deferred**: the on-disk store is migrating from per-message
-  JSON files to SQLite, and shipping a reader that silently breaks across that migration is worse than
-  none.
-- **pi** — verified live against **0.76.0** (cerebras/gpt-oss-120b). Interactive turns work
-  end-to-end: Send is gated on a readiness marker (`pi.PromptReady` — the idle status line, past
-  pi's network-touching startup), the composer is submitted with a carriage return (`\r`; pi does
-  **not** use the kitty keyboard protocol), a `BusyDetector` keys on the `Working...` / `Thinking...`
-  spinner so the busy-aware idle fallback completes the turn without cutting it short, and a
-  `turns.Quitter` sends `/quit\r` for a clean exit. Transcript reader implemented (JSONL v3 under
-  `~/.pi/agent/sessions/`), and the interactive session id is assigned at launch
-  (`--session-id <uuid>`), so the reader works from the first turn. A headless [`harness.Profile`](../internal/turns.md) (`pkg/harness/pi`)
-  supplies **session-ID + resume + stream**: `pi --mode json`'s `{"type":"session",…,"id":…}` header
-  yields the id, resume uses `--session <id>`, and a `StreamParser` maps the per-`message_end` events
-  (text / `toolCall` / `toolResult`) to canonical transcript events. Still pending (seed captures in
-  [`test/corpus/pi/`](https://github.com/olesho/harness-wrapper/tree/main/test/corpus/pi)): a formal
-  screenbench golden recording (prerequisite for pinning the version), a screen-derived end-of-turn
-  marker + `MessageExtractor` for clean one-shot `Turn.Text`.
+This adapter detects **status** (via the wrapper's cost/quota/prompt/API patterns), but it has no
+confirmed on-screen turn-completion marker yet, so turn boundaries fall back to the wrapper's
+`waiting_for_input` signal (lower fidelity: no intermediate work detection). Transcript reading is
+**deferred**: the on-disk store is migrating from per-message JSON files to SQLite, and shipping a
+reader that silently breaks across that migration is worse than none.
 
 ## generic
 

@@ -311,7 +311,6 @@ func TestPermissionMode_AdapterConsult(t *testing.T) {
 		{chatClaudeCode, []string{"Claude Code", "", "❯ "}, "", false},
 		{"codex", codexModeScreen(codexCollabPlan), codexCollabPlan, true},
 		{"codex", codexModeScreen(codexCollabDefault), codexCollabDefault, true},
-		{"pi", claudeModeScreen("plan"), "", false},
 		{"opencode", claudeModeScreen("plan"), "", false},
 		{"generic", claudeModeScreen("plan"), "", false},
 	} {
@@ -676,7 +675,6 @@ func TestSetPermissionMode_TargetGates(t *testing.T) {
 		{"codex", "bypass", ErrPermissionModeUnreachable},
 		// harnesses with no permission-mode cycle at all.
 		{"opencode", "plan", ErrPermissionModeUnsupported},
-		{"pi", "plan", ErrPermissionModeUnsupported},
 		{"generic", "plan", ErrPermissionModeUnsupported},
 	} {
 		t.Run(tc.harness+"/"+tc.target, func(t *testing.T) {
@@ -707,7 +705,6 @@ func TestPermissionModeCapabilities(t *testing.T) {
 		{"  Claude-Code  ", wrapper.PermissionRungs(), true},
 		{"codex", []string{"plan", "default"}, true},
 		{"opencode", nil, false},
-		{"pi", nil, false},
 		{"generic", nil, false},
 		{"", nil, false},
 	} {
@@ -1542,7 +1539,6 @@ func TestPermissionPosture_FallbackShim(t *testing.T) {
 	}{
 		{"codex", codexModeScreen(codexCollabPlan), turns.PermissionPosture{Rung: codexCollabPlan, OnRing: true}, true},
 		{"codex", codexModeScreen(codexCollabDefault), turns.PermissionPosture{Rung: codexCollabDefault, OnRing: true}, true},
-		{"pi", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
 		{"opencode", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
 		{"generic", claudeModeScreen("plan"), turns.PermissionPosture{}, false},
 	} {

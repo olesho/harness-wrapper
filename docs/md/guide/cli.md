@@ -9,7 +9,7 @@ sibling **`structured-run`**, and a **tmux-backed** detached path with `attach` 
 go install github.com/olesho/harness-wrapper/cmd/harness-wrapper@latest
 ```
 
-Supported harness names today: `codex`, `claude`, `opencode`, `pi`.
+Supported harness names today: `codex`, `claude`, `opencode`.
 
 ## Transparent passthrough
 
@@ -152,7 +152,7 @@ Wrapper flags go *before* the harness name:
 | `--model ID` | Model id for harnesses that support it (`claude --model`, `codex -c model`). |
 | `--auto-accept` | `run` only: auto-answer blocking prompts (affirmative) even with a terminal attached, instead of asking the human. |
 | `--sandbox-defaults` | `run` and `structured-run` only; **dangerous**. For `claude`, injects `--dangerously-skip-permissions` into the harness args and sets `IS_SANDBOX=1` in the harness env (parity with meta-harness; see the [wrapper spec note](../internal/wrapper.md#sandbox-defaults-injection)). No-op for every other harness. The default passthrough mode **rejects** it with an error — an interactive session should make that policy call in the harness itself. |
-| `--permission-mode RUNG` | Launch-time permission posture for `claude` / `codex`: `plan`, `manual`, `ask`, `auto`, `bypass` (per-harness native spellings also pass through). Accepted in **every** mode **including passthrough**, unlike `--sandbox-defaults` — see the composition rule below. `plan` is **rejected** for `codex` (no launch-time flag exists; use `/plan` after launch). Unsupported for `opencode` and `pi`. |
+| `--permission-mode RUNG` | Launch-time permission posture for `claude` / `codex`: `plan`, `manual`, `ask`, `auto`, `bypass` (per-harness native spellings also pass through). Accepted in **every** mode **including passthrough**, unlike `--sandbox-defaults` — see the composition rule below. `plan` is **rejected** for `codex` (no launch-time flag exists; use `/plan` after launch). Unsupported for `opencode`. |
 | `--contain landlock` and `--contain-*` | Optional [Landlock containment](containment.md) (Linux); see [Containment flags](#containment-flags). |
 
 `--effort` / `--model` reach the same per-harness translation as the gateway's `effort` / `model`
@@ -161,7 +161,7 @@ fields (via `wrapper.Start` / `wrapper.Run`), so behaviors 1, 3 and 4 of
 verbatim: `--effort` and `--model` both hard-fail on a harness that has no such flag (and
 `--effort` on a level outside the enum), an explicit `--effort`/`--model` (or codex `-c` key) in the
 harness args wins over the flag, and codex remaps `max` → `xhigh`. **Behavior 2 differs**: this
-CLI's harness registry is `codex`, `claude`, `opencode`, `pi`, and it rejects `claude-code` outright
+CLI's harness registry is `codex`, `claude`, `opencode`, and it rejects `claude-code` outright
 — so its effort- and model-capable names are `codex` and `claude`, not the gateway's `codex` and
 `claude-code`. (`run` maps `claude` →
 `claude-code` internally before `chat.Open` sees it, so the two never disagree about which harness

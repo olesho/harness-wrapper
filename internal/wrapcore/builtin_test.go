@@ -5,7 +5,6 @@ import (
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/codex"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/cursor"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/opencode"
-	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/pi"
 )
 
 // The tests here exercise the built-in classifiers, which pkg/wrapper
@@ -15,5 +14,4 @@ func init() {
 	RegisterPatterns(codex.Patterns, "codex")
 	RegisterPatterns(cursor.Patterns, "cursor")
 	RegisterPatterns(opencode.Patterns, "opencode")
-	RegisterPatterns(pi.Patterns, "pi")
 }

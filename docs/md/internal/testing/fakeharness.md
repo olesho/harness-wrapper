@@ -99,6 +99,6 @@ CSI-13u gate. If a future test needs the mock to consume a real submit, make its
 submit-key-agnostic (keep `OPOST` so its `fmt.Println` output isn't staircased) or migrate that test to
 `internal/fakeharness`.
 
-The builder covers claude-code and codex. opencode / pi have [stub adapters](../../guide/adapters.md)
-(no screen markers yet); when their detection lands, add their glyph vocabulary and scenarios the same
+The builder covers claude-code and codex. opencode has a [stub adapter](../../guide/adapters.md)
+(no screen markers yet); when its detection lands, add its glyph vocabulary and scenarios the same
 way.

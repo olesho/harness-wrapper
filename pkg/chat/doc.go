@@ -33,7 +33,7 @@
 //
 // The implementation lives in internal/chatcore, which names no harness; every
 // exported identifier here is the identical one there. This package registers
-// the built-in harness adapters — codex, claude-code, opencode, pi and generic —
+// the built-in harness adapters — codex, claude-code, opencode and generic —
 // so Options.Harness resolves exactly the names it always has.
 package chat
 
@@ -46,7 +46,6 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
-	"github.com/olesho/harness-wrapper/pkg/turns/harness/pi"
 	// The built-in harnesses' classifier patterns: a TUI conversation's
 	// supervisor classifies its harness's output with them.
 	_ "github.com/olesho/harness-wrapper/pkg/wrapper"
@@ -58,7 +57,6 @@ func init() {
 	chatcore.RegisterAdapter("codex", func() turns.Adapter { return codex.New() })
 	chatcore.RegisterAdapter("claude-code", func() turns.Adapter { return claudecode.New() })
 	chatcore.RegisterAdapter("opencode", func() turns.Adapter { return opencode.New() })
-	chatcore.RegisterAdapter("pi", func() turns.Adapter { return pi.New() })
 	chatcore.RegisterAdapter("generic", func() turns.Adapter { return generic.New() })
 	chatcore.RegisterAdapter("", func() turns.Adapter { return generic.New() })
 }

@@ -119,7 +119,7 @@ func TestAuthAnchors_HarnessSelection(t *testing.T) {
 	if len(all) != len(AuthAnchors(chatClaudeCode))+len(AuthAnchors("codex")) {
 		t.Errorf("AuthAnchors(\"\") = %d anchors, want claude + codex", len(all))
 	}
-	for _, h := range []string{"opencode", "pi", "nonesuch"} {
+	for _, h := range []string{"opencode", "nonesuch"} {
 		if got := AuthAnchors(h); got != nil {
 			t.Errorf("AuthAnchors(%q) = %v, want nil", h, got)
 		}

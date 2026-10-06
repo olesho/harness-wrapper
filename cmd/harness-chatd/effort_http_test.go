@@ -45,11 +45,11 @@ func TestEffort_InvalidRejectedWith400(t *testing.T) {
 			},
 		},
 		{
-			// "high" is a valid rung, but pi has no effort axis at all.
+			// "high" is a valid rung, but opencode has no effort axis at all.
 			name: "open/harness-without-effort-axis",
 			path: "/v1/conversations",
 			body: openRequest{
-				Harness:    "pi",
+				Harness:    "opencode",
 				BinaryPath: "/nonexistent",
 				Effort:     "high",
 			},

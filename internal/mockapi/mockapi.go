@@ -1,21 +1,23 @@
 // Package mockapi is a local stand-in for a harness's model API, for driving a
 // real harness binary through scripted scenarios with no account and no
-// network: the Anthropic Messages API, for claude, and the OpenAI Responses
-// API, for codex (responses.go). It began as a Go port of agentd's P11
-// mockapi.py. The Messages API routes on the text of the last user message
-// that carries text (claude appends system reminders as separate blocks; tool
-// results continue a scenario):
+// network: the Anthropic Messages API, for claude and pi, and the OpenAI
+// Responses API, for codex and pi (responses.go). It began as a Go port of
+// agentd's P11 mockapi.py. The Messages API routes on the text of the last
+// user message that carries text (claude appends system reminders as separate
+// blocks; tool results continue a scenario):
 //
 //	PING <n>        reply "PONG <n>"
 //	SLOW <n>        reply "slow<i> " in <n> chunks, Server.ChunkDelay apart (default 40)
 //	STALL <s>       send message_start, then only pings for <s> seconds (default 60)
-//	TOOL <command>  a Bash tool_use running <command>; after its result, "TOOL DONE: <output>"
+//	TOOL <command>  a tool_use running <command> in a shell, after its result "TOOL DONE:
+//	                <output>": claude's Bash, or pi's bash when the request offers that one
 //	AGENT <prompt>  an Agent tool_use running a general-purpose subagent on <prompt>, in the
 //	                foreground; the subagent's own request routes on <prompt>, and after its
 //	                result, "TOOL DONE: <output>"
 //	BG <command>    a Bash tool_use running <command> in the background; after its result,
 //	                "TOOL DONE: <output>", and once claude reports the command finished (a
-//	                <task-notification>), "BG DONE"
+//	                <task-notification>), "BG DONE". pi's bash has no background: it runs
+//	                <command> as TOOL does
 //	ERR <code> <k>  answer HTTP <code> the first <k> times this text is seen
 //	                (529 overloaded_error, 429 rate_limit_error, else api_error),
 //	                then "RECOVERED"
@@ -122,6 +124,26 @@ type body struct {
 	Stream   bool            `json:"stream"`
 	System   json.RawMessage `json:"system"`
 	Messages []message       `json:"messages"`
+	Tools    []struct {
+		Name string `json:"name"`
+	} `json:"tools"`
+}
+
+// shell is the tool_use that runs command: pi's bash when the request offers
+// it and no Bash, else claude's Bash, in the background when asked.
+func shell(b body, command string, background bool) *tool {
+	offered := map[string]bool{}
+	for _, t := range b.Tools {
+		offered[t.Name] = true
+	}
+	if offered["bash"] && !offered["Bash"] {
+		return &tool{name: "bash", input: map[string]any{"command": command}}
+	}
+	input := map[string]any{"command": command, "description": "mock"}
+	if background {
+		input["run_in_background"] = true
+	}
+	return &tool{name: "Bash", input: input}
 }
 
 func textOf(raw json.RawMessage) string {
@@ -282,10 +304,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.reply(w, b, reply{text: "after stall", stall: time.Duration(arg(1, 60)) * time.Second})
 	case words[0] == "TOOL":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
-		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]any{"command": cmd, "description": "mock"}}})
+		s.reply(w, b, reply{tool: shell(b, cmd, false)})
 	case words[0] == "BG":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "BG"))
-		s.reply(w, b, reply{tool: &tool{name: "Bash", input: map[string]any{"command": cmd, "description": "mock", "run_in_background": true}}})
+		s.reply(w, b, reply{tool: shell(b, cmd, true)})
 	case words[0] == "TASK-NOTIFICATION":
 		s.reply(w, b, reply{text: "BG DONE"})
 	case words[0] == "AGENT":

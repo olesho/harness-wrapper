@@ -16,7 +16,7 @@
 //	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
 //	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
 //	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
-//	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
+//	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "1.0.4",   "verified_at": "2026-10-06"}
 //	}
 //
 // An empty pinned/verified_at string is allowed and means "not yet

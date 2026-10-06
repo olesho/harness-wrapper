@@ -19,7 +19,7 @@ fires an event; `History` reads the harness's own transcript.
 ```go
 ctx := context.Background()
 conv, err := chat.Open(ctx, chat.Options{
-	Harness:    "codex", // "claude-code" | "opencode" | "pi" | "generic"
+	Harness:    "codex", // "claude-code" | "opencode" | "generic"
 	BinaryPath: "/usr/local/bin/codex",
 	WorkingDir: "/path/to/project",
 	Store:      memstore.New(),
@@ -47,13 +47,13 @@ history, _ := conv.History(ctx)
 
 ```go
 type Options struct {
-	Harness     string   // "codex" | "claude-code" | "opencode" | "pi" | "generic"  (required)
+	Harness     string   // "codex" | "claude-code" | "opencode" | "generic"  (required)
 	BinaryPath  string   // harness executable                                                  (required)
 	Args        []string // passed verbatim to the harness
 	Resume      string   // harness session id to resume; Args must not carry any flag the
 	                     // adapter reserves via turns.SessionControlFlags
-	HarnessSessionID string // id for a FRESH session, where the adapter takes one (claude-code,
-	                     // pi); minted when empty — see History below
+	HarnessSessionID string // id for a FRESH session, where the adapter takes one
+	                     // (claude-code); minted when empty — see History below
 	Transport   Transport // TransportTUI (default) | TransportStreamJSON (claude-code) — see below
 	WorkingDir  string
 	Env         []string
@@ -173,15 +173,14 @@ keyboard protocol where a bare carriage return only inserts a newline:
 | Harness | Submit key |
 |---|---|
 | claude-code, codex | `CSI 13u` (`\x1b[13u`) |
-| pi | `\r` |
 | anything else | `\n` |
 
 ### Readiness: what `Send` waits for
 
-For harnesses whose composer is detectable (claude-code, codex, pi), `Send` blocks until the screen
+For harnesses whose composer is detectable (claude-code, codex), `Send` blocks until the screen
 shows a ready prompt. This is what keeps a prompt from being typed into a boot screen or a modal and
 silently lost. A harness keeps its composer painted while it works, so where the adapter can tell it
-is busy (claude-code, pi) `Send` also waits until it has been idle for the end-of-turn confirmation
+is busy (claude-code) `Send` also waits until it has been idle for the end-of-turn confirmation
 window — nothing is ever typed into a turn that is still running, whoever started it. claude-code's
 busy reading is its live status region only: the status line above the composer box (the spinner, or
 the retry countdown while it backs off) and the footer below it, so a reply that quotes those markers
@@ -251,7 +250,7 @@ Three routes end a pending turn:
    `waiting_for_input` — is mapped to a turn event by the [generic adapter](adapters.md#generic) that
    every adapter embeds.
 
-In a [keep-alive](#open) conversation whose adapter reads the harness's transcript (claude-code, pi),
+In a [keep-alive](#open) conversation whose adapter reads the harness's transcript (claude-code),
 a cost/quota or API-error transition does **not** end the turn: the harness may still be retrying. It
 records `HTTPCode` and `RetryAfter` on the turn and holds it until the harness ends it by route 1, 2 or
 its exit — and then the harness's own record decides: a tagged entry errors the turn with its tag, a
@@ -438,8 +437,8 @@ exactly what the model said, not what the TUI rendered. See [Transcripts](../int
 for the on-disk paths. Otherwise — and while the harness has not written its transcript yet — it
 falls back to the `Store`'s recorded turns.
 
-Harness session IDs are **assigned at launch** where the harness takes one. claude-code and pi
-implement `turns.SessionAssigner`, so every fresh `Open` starts them with `--session-id <uuid>` —
+Harness session IDs are **assigned at launch** where the harness takes one. claude-code
+implements `turns.SessionAssigner`, so every fresh `Open` starts them with `--session-id <uuid>` —
 `Options.HarnessSessionID`, or a minted UUID when that is empty — and the stored `Session` carries the
 id before the first turn. Everything that reads the harness's own record (`History`, the API-error
 verdicts, the swallowed-prompt check) therefore works from turn 1. `Open` refuses an

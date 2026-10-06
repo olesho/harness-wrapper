@@ -118,6 +118,17 @@ func TestResponsesScenarios(t *testing.T) {
 	if text, _ := replyOf(events); text != "TOOL DONE: hi" {
 		t.Errorf("after the tool: %q", text)
 	}
+	// pi offers its own bash, which takes the command as it is.
+	_, _, events = respond(t, s, []string{"read", "bash"}, user("TOOL echo hi"))
+	fc = nil
+	for _, ev := range events {
+		if item, ok := ev["item"].(map[string]any); ok && ev["type"] == "response.output_item.done" && item["type"] == "function_call" {
+			fc = item
+		}
+	}
+	if fc == nil || fc["name"] != "bash" || fc["arguments"] != `{"command":"echo hi"}` {
+		t.Fatalf("TOOL for pi: %v", fc)
+	}
 }
 
 // A goal's scenarios: MKGOAL has the model make a goal, and the goal's

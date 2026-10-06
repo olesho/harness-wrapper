@@ -105,7 +105,7 @@ func TestValidateConfig_ClaudeCodeEffort(t *testing.T) {
 // default model while the caller believed it had chosen one. It is refused
 // now, as an Effort on such a harness is.
 func TestValidateConfig_ModelNeedsAModelFlag(t *testing.T) {
-	for _, harness := range []string{"opencode", "pi", "cursor", "generic", ""} {
+	for _, harness := range []string{"opencode", "cursor", "generic", ""} {
 		err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: harness, Model: "gpt-5"})
 		if !errors.Is(err, ErrInvalidConfig) {
 			t.Errorf("harness %q with a Model: validateConfig() = %v, want ErrInvalidConfig", harness, err)

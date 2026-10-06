@@ -67,7 +67,6 @@ func TestOpen_AssignsMintedSessionID(t *testing.T) {
 		script fakeharness.Script
 	}{
 		{"claude-code", fakeharness.New("claude-code").Idle().StayAliveUntilStopped().Build()},
-		{"pi", fakeharness.New("pi").PiIdle().StayAliveUntilStopped().Build()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conv, argv, store := openAssigned(t, tc.script, nil)
@@ -124,7 +123,6 @@ func TestOpen_RefusesBeforeLaunch(t *testing.T) {
 		{"--continue in Args", "claude-code", func(o *chat.Options) { o.Args = []string{"--continue"} }},
 		{"--fork-session in Args", "claude-code", func(o *chat.Options) { o.Args = []string{"--fork-session"} }},
 		{"--no-session-persistence in Args", "claude-code", func(o *chat.Options) { o.Args = []string{"--no-session-persistence"} }},
-		{"pi --session in Args", "pi", func(o *chat.Options) { o.Args = []string{"--session", uuid} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

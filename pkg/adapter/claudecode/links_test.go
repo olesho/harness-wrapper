@@ -17,7 +17,7 @@ func TestLinks_ClaudeOnly(t *testing.T) {
 	const mod = "github.com/olesho/harness-wrapper/"
 	// Packages linked by exact path, and each other harness's by suffix.
 	exact := []string{"pkg/chat", "internal/chatcore", "pkg/wrapper", "internal/wrapcore", "pkg/harness", "pkg/screen", "pkg/turns"}
-	suffixes := []string{"harness/codex", "transcript/codex", "harness/pi", "transcript/pi", "harness/opencode", "harness/cursor"}
+	suffixes := []string{"harness/codex", "transcript/codex", "transcript/pi", "adapter/pi", "harness/opencode", "harness/cursor"}
 	for _, pkgs := range [][]string{
 		{mod + "pkg/adapter"},
 		{mod + "pkg/adapter/claudecode"},

@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.4`.
+package is its normative form, contract version `harness-adapter/1.5`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -106,6 +106,9 @@ credential belongs. An adapter with `brokered_credentials` says what only it kno
   the Supervisor's, and its result holds the credential's secrets: the Supervisor gives them to the
   broker alone and never journals or logs them (`Swap` prints without its secret).
   `PlaceholderResult.Validate` keeps each swap within its route and every secret out of the file.
+  Since 1.5 the request names the agent's model: a harness whose kind serves several providers
+  narrows each swap to the provider the model names, and refuses a model it cannot place
+  (`invalid_spec` on field `model`) ([ADR-020](decisions/adr-020-placeholder-model.md)).
 - The runtime gives every harness the broker's address in `HTTPS_PROXY` and the certificates to
   trust in `SSL_CERT_FILE`, through `HW_HARNESS_ENV`; a profile hands the certificates to its
   harness however it reads them.
@@ -290,6 +293,71 @@ Responses API when `HW_REAL_CODEX` names the pinned binary; the other `TestCodex
 own turns, the fallbacks, and the name and goal of a loaded thread, and `TestCodexLoadsSavedThreads`
 loads the thread each source version saved (`testdata/load`). The `harness-adapter` workflow runs
 them on Linux with the pinned codex it downloads and verifies.
+
+## The Pi profile
+
+`pkg/adapter/pi` registers `pi` ([ADR-021](decisions/adr-021-pi-profile.md)). Its harness
+distribution, under `harness_root`, is the pinned pi's release executable and the `package.json`
+beside it (`bin/pi`, `bin/package.json`; alone, the executable reports version `0.0.0`), and the tag
+extension (`hw-tag.ts`, which the profile embeds as `Extension`). The rest of a release serves pi's
+TUI, its docs and images ([the probe](../../../probes/pirpc/FINDINGS.md)).
+
+- **Provision** renders the agent dir, `PI_CODING_AGENT_DIR`, in the config root: `settings.json`
+  — retries on, three of them, no prompt-cache warming (each warming is a billed call), no install
+  telemetry — `APPEND_SYSTEM.md` with the persona and where the memory directory is, `mcp.json` with a
+  server per connector, its tools declared to the model (`"exposure": "direct"`; a header from a file
+  is `!cat <file>`, which pi runs each time it connects), the skills and the memory's files; and the
+  workspace's `AGENTS.md`. pi runs offline (`PI_OFFLINE=1`: its model catalog is the one it ships)
+  and without telemetry, with `--no-mcp` when there is no connector. The model names its provider —
+  `anthropic/claude-…`, `openai/gpt-…` — one of about thirty in the profile's table (`providers.go`),
+  each with fixed hosts and its key in a header; a model of another is refused (`invalid_spec`,
+  field `model`). The one credential kind, `api_key`, is that provider's API key, which the transport
+  writes into `auth.json` under the provider at every launch; a subscription's token
+  (`sk-ant-oat…`) is refused.
+- **Behind a broker** the kind's route is every provider's hosts and the headers their keys travel in
+  (`x-api-key`, `Authorization`, `x-goog-api-key`). A key's placeholder is a key of its shape, and its
+  swap is narrowed to the hosts and header of the provider the agent's model names
+  ([ADR-020](decisions/adr-020-placeholder-model.md)), so the key goes into no other provider's
+  requests. pi reaches nothing else: it takes the broker as `HTTPS_PROXY`, and its certificate
+  authority from `NODE_EXTRA_CA_CERTS` or `SSL_CERT_FILE`.
+- **Transport:** `pi --mode rpc`, JSON lines on stdio, one process per Session in a process group of
+  its own, under the Session's id (`--session-id`, `--session-dir`); pi resumes the session's file
+  when it is there. Start waits for `get_state` to name the session and for `get_commands` to list
+  the tag extension's command. An input is a `prompt` whose message leads with its tag,
+  `<!--hw:NATIVE-->`: the extension's `input` hook takes the tag off and writes it into the session
+  as a `custom` entry (`hw.input`) before the user message. pi answers `started` — the receipt — or
+  refuses (a run is busy: `busy`, not submitted); a run ends at `agent_settled`, its outcome the
+  run's last assistant message: `stop` completes it, `aborted` interrupts it, `error` fails it,
+  classed by its text (`classify.go`: Anthropic's API reads `<status> {json}`, OpenAI's
+  `OpenAI API error (<status>): {json}`; a usage wall is OpenAI's `usage_limit_reached`, which says
+  when it resets), and `length` is `max_output`. `auto_retry_start` is a retry. An interrupt is
+  `abort`; pi records an abort mid-tool as an error, `The operation was aborted.`, so the transport
+  first notes, durably, that it interrupted the input (`scratch/pi-interrupts/<native>`). An abort
+  while pi waits to retry ends the wait (`auto_retry_end`, `Retry cancelled`) and interrupts the run. An
+  extension's dialog is answered `cancelled`: the profile raises no prompts. `Close` closes an idle
+  pi's stdin, then sends the group SIGTERM, on which pi also ends the tool commands it runs in
+  sessions of their own, and SIGKILL once the grace ends.
+- **Record:** the session's file, `<session dir>/<timestamp>_<id>.jsonl`, followed from the
+  checkpoint once pi writes it with the first user message (`pkg/transcript/pi`). An input's run
+  begins at its user message, whose nearest ancestor since the conversation's last message is the
+  tag's entry: pi writes the tag, then may compact the context or write a system message, then the
+  user message. The pairing is by `parentId`, because pi writes the tag of an input it refuses too,
+  with no user message after it. Entries become `user_input`, `assistant_text`, `tool_use` and `tool_started`,
+  `tool_result` and `tool_finished`, keyed by the entry's id (and block) or the tool call's id. The
+  run's end is a record-origin `turn_ended`: an answer that stops or is aborted, an abort mid-tool the
+  profile noted, or a failure pi gives up on — a class it never retries, or its last attempt — or one
+  that anything but pi's retry (a `context_edit` dropping the failed answer) follows. A run left at
+  a dropped failure ends at the next input's user message: interrupted when the profile noted it, and
+  with no end otherwise.
+- **Recover** finds the tag's user message, then the run's end: without either — pi never took the
+  input in, or crashed before the run ended — `unknown`.
+
+`TestPiConforms` runs the conformance kit against a real pi driving `internal/mockapi`'s Responses
+API, and `TestPiConformsOnAnthropic` its Messages API (all but `usage-limit`: under an API key,
+Anthropic's 429 is a rate limit), when `HW_REAL_PI` names the pinned release's executable
+(`probes/pirpc/fetch.sh`). The record's tests read sessions the pinned pi wrote
+(`pkg/transcript/pi/testdata`). The `harness-adapter` workflow runs the kit on Linux with the pinned
+release it downloads and verifies.
 
 ## Running the kit
 

@@ -51,7 +51,7 @@ change of effect. The route there is also worth knowing: reaching `manual` from 
 ring and can pass **through** `auto` on the way, exactly as an ordinary `ask` → `manual` drive already
 does.
 
-`opencode` and `pi` have no permission axis; any mode against them is an error rather than a silent
+`opencode` has no permission axis; any mode against it is an error rather than a silent
 no-op.
 
 ### Why codex has no launch-time `plan`

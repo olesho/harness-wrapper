@@ -971,6 +971,9 @@
         "kind": {
           "type": "string"
         },
+        "model": {
+          "type": "string"
+        },
         "nonce": {
           "contentEncoding": "base64",
           "type": "string"
@@ -1685,5 +1688,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.4"
+  "title": "Harness Adapter Interface harness-adapter/1.5"
 }

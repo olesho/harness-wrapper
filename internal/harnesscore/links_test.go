@@ -19,7 +19,7 @@ func TestLinks_NoChatOneHarness(t *testing.T) {
 	perHarness := map[string][]string{
 		"claude-code": {"harness/claude", "harness/claudecode", "transcript/claudecode", "wrapcore/harness/claude"},
 		"codex":       {"harness/codex", "transcript/codex", "wrapcore/harness/codex"},
-		"pi":          {"harness/pi", "transcript/pi", "wrapcore/harness/pi"},
+		"pi":          {"transcript/pi", "adapter/pi"},
 		"opencode":    {"harness/opencode", "wrapcore/harness/opencode"},
 		"cursor":      {"wrapcore/harness/cursor"},
 	}

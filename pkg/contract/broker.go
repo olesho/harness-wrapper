@@ -66,6 +66,12 @@ type PlaceholderRequest struct {
 	Contract string `json:"contract"`
 	// Kind is the credential's kind: one the Descriptor's egress routes.
 	Kind string `json:"kind"`
+	// Model is the agent's model as its Agent Spec names it, or empty (1.5).
+	// A harness whose credential kind serves several providers narrows each
+	// swap to the hosts and headers of the provider the model names, and
+	// refuses a model it cannot place (CodeInvalidSpec, field model); a harness
+	// whose kinds serve one provider each need not read it.
+	Model string `json:"model,omitempty"`
 	// Credential is the credential, as the Runtime would otherwise stage it.
 	Credential []byte `json:"credential"`
 	// Nonce is at least MinNonceBytes random bytes from the Runtime. The

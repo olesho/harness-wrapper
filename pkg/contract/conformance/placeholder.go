@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,7 +13,9 @@ import (
 // placeholderScenario: what stands in for the fixture's credential
 // (capability brokered_credentials) is a function of its request, holds to
 // its kind's route and keeps the secret out of the file, and a Session opens
-// and runs a turn on it, as on the credential. Without the capability,
+// and runs a turn on it, as on the credential. The request names the
+// fixture's model; a model the harness cannot place is refused on field
+// model, or answered within the route all the same. Without the capability,
 // Placeholder is unsupported.
 func placeholderScenario(c *check) {
 	nonce := func(seed byte) []byte {
@@ -43,7 +46,7 @@ func placeholderScenario(c *check) {
 	if err != nil {
 		c.stop("setup", "reading the staged credential: %v", err)
 	}
-	req := contract.PlaceholderRequest{Contract: contract.Version, Kind: a.cred.Kind, Credential: cred, Nonce: nonce(1)}
+	req := contract.PlaceholderRequest{Contract: contract.Version, Kind: a.cred.Kind, Model: c.f.Spec.Model, Credential: cred, Nonce: nonce(1)}
 	got, err := c.f.Adapter.Placeholder(req)
 	if err != nil {
 		c.stop("placeholder.valid", "Placeholder: %v", err)
@@ -58,6 +61,18 @@ func placeholderScenario(c *check) {
 	if other, err := c.f.Adapter.Placeholder(req); err != nil || len(other.Swaps) == 0 || other.Swaps[0].Placeholder == got.Swaps[0].Placeholder {
 		c.fail("placeholder.nonce", "another nonce rendered the same placeholder (%v)", err)
 	}
+	// A model narrows the swaps, or goes unread: one the harness cannot place
+	// is refused on field model, and never widens a swap past the route.
+	req.Model = "nonesuch/conformance-unknown-model"
+	if other, err := c.f.Adapter.Placeholder(req); err != nil {
+		var ce *contract.Error
+		if !errors.As(err, &ce) || ce.Code != contract.CodeInvalidSpec || ce.Field != "model" {
+			c.fail("placeholder.model", "a model the harness cannot place: %v, want invalid_spec on field model", err)
+		}
+	} else if err := other.Validate(route); err != nil {
+		c.fail("placeholder.model", "a model the harness cannot place: %v", err)
+	}
+	req.Model = c.f.Spec.Model
 	req.Nonce = nonce(1)[:contract.MinNonceBytes-1]
 	if _, err := c.f.Adapter.Placeholder(req); codeOf(err) != contract.CodeProtocol {
 		c.fail("placeholder.nonce", "a nonce of %d bytes: %v, want protocol", len(req.Nonce), err)

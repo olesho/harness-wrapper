@@ -119,7 +119,7 @@ func TestEchoBound_StaysInsideTheIdleWindow(t *testing.T) {
 // Harnesses with no composer to echo into keep the single combined write; the
 // echo path must not be imposed on them.
 func TestRequiresPromptReadiness_GatesTheEchoPath(t *testing.T) {
-	for _, h := range []string{chatClaudeCode, "codex", "pi"} {
+	for _, h := range []string{chatClaudeCode, "codex"} {
 		if !requiresPromptReadiness(h) {
 			t.Fatalf("requiresPromptReadiness(%q) = false, want true", h)
 		}
@@ -290,14 +290,14 @@ func TestPasteWrapForHarness_OnlyMeasuredHarnesses(t *testing.T) {
 			t.Fatalf("pasteWrapForHarness(%q) = (%q, %q), want the CSI 200/201 pair", h, prefix, suffix)
 		}
 	}
-	for _, h := range []string{"pi", "opencode", "generic", ""} {
+	for _, h := range []string{"opencode", "generic", ""} {
 		if prefix, suffix := pasteWrapForHarness(h); prefix != nil || suffix != nil {
 			t.Fatalf("pasteWrapForHarness(%q) = (%q, %q), want nil — unmeasured harnesses keep today's write", h, prefix, suffix)
 		}
 	}
 	// And an unwrapped harness is never framed, however large the payload.
-	if _, _, framed := shouldPaste("pi", largeText(4*pasteThreshold)); framed {
-		t.Fatal("pi was framed; its composer has never been measured against a large prompt")
+	if _, _, framed := shouldPaste("opencode", largeText(4*pasteThreshold)); framed {
+		t.Fatal("opencode was framed; its composer has never been measured against a large prompt")
 	}
 }
 
