@@ -477,8 +477,11 @@ func observe(c *check) {
 	if again.BatchID != first.BatchID || !reflect.DeepEqual(again.Items, first.Items) {
 		c.fail("observe.replay", "an unacknowledged batch came back as %q with %d items, want %q with %d", again.BatchID, len(again.Items), first.BatchID, len(first.Items))
 	}
-	// Observe is safe to call concurrently: Observes racing each other while
-	// the batch is outstanding each return it again.
+	// Observe is safe to call concurrently. While the batch is outstanding,
+	// each racing Observe either returns that same batch again or is refused
+	// as unexpected (an adapter may serve one Observe at a time, as
+	// pkg/adapter's cursor does); any other error, or a different batch, is
+	// a replay violation.
 	var wg sync.WaitGroup
 	racing := make([]contract.Batch, 4)
 	racingErr := make([]error, len(racing))
@@ -494,9 +497,12 @@ func observe(c *check) {
 	close(gate)
 	wg.Wait()
 	for i, b := range racing {
-		if racingErr[i] != nil {
+		switch {
+		case racingErr[i] != nil && codeOf(racingErr[i]) == contract.CodeUnexpected:
+			// One Observe at a time: a refused overlap is allowed.
+		case racingErr[i] != nil:
 			c.fail("observe.replay", "concurrent Observe while %q is outstanding: %v", first.BatchID, racingErr[i])
-		} else if b.BatchID != first.BatchID {
+		case b.BatchID != first.BatchID:
 			c.fail("observe.replay", "concurrent Observe while %q is outstanding returned %q", first.BatchID, b.BatchID)
 		}
 	}
