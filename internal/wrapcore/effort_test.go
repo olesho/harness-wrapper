@@ -84,3 +84,25 @@ func TestIsSupportedEffort(t *testing.T) {
 		t.Fatal("isSupportedEffort(\"ultra\") = true, want false")
 	}
 }
+
+// An explicit flag in the caller's argv wins over the injected knob, in the
+// attached "--flag=value" spelling too; matching only the bare token injected
+// a second, conflicting --model ahead of the caller's.
+func TestExplicitAttachedFlagSuppressesInjection(t *testing.T) {
+	if got := argsWithHarnessModel("claude", []string{"--model=opus"}, "sonnet"); !reflect.DeepEqual(got, []string{"--model=opus"}) {
+		t.Errorf("model injected despite --model=opus: %q", got)
+	}
+	if got := argsWithHarnessEffort("claude", []string{"--effort=low"}, "high"); !reflect.DeepEqual(got, []string{"--effort=low"}) {
+		t.Errorf("effort injected despite --effort=low: %q", got)
+	}
+}
+
+// Codex -c values are TOML strings: a model name carrying a quote or
+// backslash is escaped rather than breaking out of the string.
+func TestCodexConfigValuesAreQuoted(t *testing.T) {
+	got := argsWithHarnessModel("codex", nil, `gpt"5\x`)
+	want := []string{"-c", `model="gpt\"5\\x"`}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("argsWithHarnessModel = %q, want %q", got, want)
+	}
+}

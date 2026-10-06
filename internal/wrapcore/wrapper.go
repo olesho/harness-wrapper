@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -557,7 +558,7 @@ func argsWithHarnessEffort(harness string, args []string, effort string) []strin
 	}
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode:
-		if argsContainFlag(args, "--effort") {
+		if argsContainAnyFlag(args, "--effort") {
 			return args
 		}
 		return prependArgs(args, "--effort", effort)
@@ -565,7 +566,7 @@ func argsWithHarnessEffort(harness string, args []string, effort string) []strin
 		if argsContainConfigKey(args, "model_reasoning_effort") {
 			return args
 		}
-		return prependArgs(args, "-c", "model_reasoning_effort=\""+codexEffort(effort)+"\"")
+		return prependArgs(args, "-c", "model_reasoning_effort="+strconv.Quote(codexEffort(effort)))
 	default:
 		return args
 	}
@@ -587,7 +588,7 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 	}
 	switch normHarness(harness) {
 	case "claude", harnessClaudeCode:
-		if argsContainFlag(args, "--model") {
+		if argsContainAnyFlag(args, "--model") {
 			return args
 		}
 		return prependArgs(args, "--model", model)
@@ -595,7 +596,7 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 		if argsContainConfigKey(args, "model") {
 			return args
 		}
-		return prependArgs(args, "-c", "model=\""+model+"\"")
+		return prependArgs(args, "-c", "model="+strconv.Quote(model))
 	default:
 		return args
 	}
@@ -1069,20 +1070,10 @@ func prependArgs(args []string, prefix ...string) []string {
 	return out
 }
 
-func argsContainFlag(args []string, flag string) bool {
-	for _, arg := range args {
-		if arg == flag {
-			return true
-		}
-	}
-	return false
-}
-
 // argsContainAnyFlag reports whether args already carry any of flags, in any of
 // the three spellings a caller can write: the bare token ("-s"), the attached
 // long form ("--sandbox=read-only"), and clap's attached SHORT form
-// ("-sread-only"). Sibling of argsContainFlag, which matches the exact token
-// only.
+// ("-sread-only").
 //
 // The attached-short-form rule is a PREFIX match, so it also matches any
 // hypothetical single-dash token that merely begins with "-s"/"-a" (e.g.
