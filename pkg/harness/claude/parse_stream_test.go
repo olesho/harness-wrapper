@@ -118,3 +118,30 @@ func TestResolvePopulatesStream(t *testing.T) {
 		t.Fatalf("resolved Stream.ParseStreamLine = %+v, want one text event 'hi'", evs)
 	}
 }
+
+// User messages carry no message.id. Keying text ids on it alone gave every
+// user text block "live:text::0", so consumer dedup kept only the first.
+func TestParseStreamLineUserTextIDsAreDistinct(t *testing.T) {
+	p := streamParser{}
+	a := p.ParseStreamLine(`{"type":"user","session_id":"s","uuid":"u-1","message":{"role":"user","content":[{"type":"text","text":"first"}]}}`)
+	b := p.ParseStreamLine(`{"type":"user","session_id":"s","uuid":"u-2","message":{"role":"user","content":[{"type":"text","text":"second"}]}}`)
+	c := p.ParseStreamLine(`{"type":"user","session_id":"s","message":{"role":"user","content":[{"type":"text","text":"third"}]}}`)
+	if len(a) != 1 || len(b) != 1 || len(c) != 1 {
+		t.Fatalf("events = %d/%d/%d, want 1 each", len(a), len(b), len(c))
+	}
+	if got := a[0].Event.NativeID; got != "live:text:uuid:u-1:0" {
+		t.Errorf("user text NativeID = %q, want live:text:uuid:u-1:0", got)
+	}
+	if got := c[0].Event.NativeID; got != "" {
+		t.Errorf("id-less user text NativeID = %q, want \"\" (content hash)", got)
+	}
+	ids := map[string]bool{a[0].Event.ID(): true, b[0].Event.ID(): true, c[0].Event.ID(): true}
+	if len(ids) != 3 {
+		t.Fatalf("user text ids collide: %q %q %q", a[0].Event.ID(), b[0].Event.ID(), c[0].Event.ID())
+	}
+	// An assistant message still keys on its message id, over the uuid.
+	d := p.ParseStreamLine(`{"type":"assistant","session_id":"s","uuid":"u-3","message":{"id":"msg_d","content":[{"type":"text","text":"x"}]}}`)
+	if len(d) != 1 || d[0].Event.NativeID != "live:text:msg_d:0" {
+		t.Errorf("assistant text = %+v, want NativeID live:text:msg_d:0", d)
+	}
+}

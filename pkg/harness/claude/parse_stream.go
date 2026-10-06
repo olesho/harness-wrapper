@@ -28,6 +28,7 @@ type streamParser struct{}
 type streamLine struct {
 	Type      string         `json:"type"`
 	SessionID string         `json:"session_id"`
+	UUID      string         `json:"uuid"` // per-record id; the only one user messages carry
 	Message   *streamMessage `json:"message"`
 }
 
@@ -89,7 +90,7 @@ func blockEvents(sl streamLine, defaultRole string) []transcript.ParsedEvent {
 			}
 			out = append(out, parsed(sl.SessionID, transcript.Event{
 				Seq: i, Role: defaultRole, Type: transcript.EventText, Text: text,
-				Source: transcript.SourceLive, NativeID: liveTextNativeID(sl.Message.ID, i),
+				Source: transcript.SourceLive, NativeID: liveTextNativeID(sl, i),
 			}))
 		case "tool_use":
 			out = append(out, parsed(sl.SessionID, transcript.Event{
@@ -116,9 +117,20 @@ func parsed(sessionID string, e transcript.Event) transcript.ParsedEvent {
 }
 
 // liveTextNativeID builds the source-prefixed identity for a live text block.
-// msgID disambiguates across messages; idx across blocks within a message.
-func liveTextNativeID(msgID string, idx int) string {
-	return transcript.SourceLive + ":text:" + msgID + ":" + strconv.Itoa(idx)
+// The message id (assistant messages) or else the record uuid disambiguates
+// across messages; idx across blocks within a message. User messages carry no
+// message.id, so keying on it alone gave every user text block the same id
+// ("live:text::0") and consumer dedup dropped all but the first. With neither
+// id, "" defers to Event.ID()'s content hash rather than a shared constant.
+func liveTextNativeID(sl streamLine, idx int) string {
+	id := sl.Message.ID
+	if id == "" && sl.UUID != "" {
+		id = "uuid:" + sl.UUID
+	}
+	if id == "" {
+		return ""
+	}
+	return transcript.SourceLive + ":text:" + id + ":" + strconv.Itoa(idx)
 }
 
 // streamToolResultText pulls the text out of a tool_result block's content,
