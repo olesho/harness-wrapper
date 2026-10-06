@@ -111,6 +111,12 @@ func (m *Markers) intact() error {
 
 // Write records mk durably: when it returns nil, the marker survives a crash.
 // A marker already there for the input id is ErrMarked, and changes nothing.
+//
+// The claim is exclusive across processes and across Markers instances on
+// one store (each Session opens its own, so m.mu alone guards nothing between
+// them): the synced temp file is published with link(2), which fails with
+// EEXIST when the name is taken, never with rename(2), which would replace a
+// marker another writer published between the check and the rename.
 func (m *Markers) Write(mk Marker) error {
 	if !contract.ValidID(mk.InputID) || mk.Native == "" {
 		return fmt.Errorf("adapter: marker for %q (native %q) is malformed", mk.InputID, mk.Native)
@@ -130,12 +136,10 @@ func (m *Markers) Write(mk Marker) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("adapter: marker: %w", err)
 	}
-	tmp := final + ".tmp-" + randomHex(8)
-	if err := writeSynced(tmp, data); err != nil {
-		return fmt.Errorf("adapter: marker: %w", err)
-	}
-	if err := os.Rename(tmp, final); err != nil {
-		_ = os.Remove(tmp)
+	if err := publishExclusive(final, data); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return ErrMarked
+		}
 		return fmt.Errorf("adapter: marker: %w", err)
 	}
 	if err := syncDir(m.dir); err != nil {
@@ -237,6 +241,26 @@ func (m *Markers) loadLocked() {
 		}
 		m.byNative[mk.Native] = mk
 	}
+}
+
+// publishExclusive makes final hold data, synced, unless something is already
+// at final, which it reports as an error wrapping fs.ErrExist. data is written
+// and synced to a temp file first and linked to final, so a reader never sees
+// a partial marker; the temp is removed either way. The caller syncs the
+// directory. A filesystem without hard links falls back to creating final
+// itself with O_EXCL, exclusive too, though a reader may then see it partly
+// written.
+func publishExclusive(final string, data []byte) error {
+	tmp := final + ".tmp-" + randomHex(8)
+	if err := writeSynced(tmp, data); err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	err := os.Link(tmp, final)
+	if errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.EPERM) {
+		return writeSynced(final, data)
+	}
+	return err
 }
 
 // writeSynced creates path holding data, synced. O_EXCL: nothing already at
