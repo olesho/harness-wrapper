@@ -255,9 +255,11 @@ func TestClaudeObservations(t *testing.T) {
 		t.Errorf("Close = %+v %v", res, err)
 	}
 	cfg, _ := parseOpenConfig(ag.result.OpenConfig)
-	left, _ := filepath.Glob(filepath.Join(cfg.Spool, "*.json"))
-	if len(left) > 0 {
-		t.Errorf("spool files left after a drained close: %v", left)
+	for _, dir := range []string{cfg.Spool, sessionSpool(cfg.Spool, opened.SessionID)} {
+		left, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+		if len(left) > 0 {
+			t.Errorf("spool files left after a drained close: %v", left)
+		}
 	}
 	if opened.SessionID == "" {
 		t.Error("Open returned no session id")
