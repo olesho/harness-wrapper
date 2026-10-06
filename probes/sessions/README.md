@@ -84,6 +84,8 @@ HW_SESSIONS_CLAUDE_TOKEN_FILE=~/.config/agentd-smoke/token HW_SESSIONS_N=4 HW_SE
 | `HW_SESSIONS_DURATION` | How long they take turns, as a Go duration; 2m when unset. |
 | `HW_SESSIONS_EVIDENCE=DIR` | Writes each run's report to `DIR/<harness>-<mode>-n<N>.json` and `.md`. |
 | `HW_SESSIONS_WORK=DIR` | Builds the environments under `DIR` and leaves them there. Not for a live run: they hold the credential. |
+| `HW_SESSIONS_DUMP=DIR` | Writes every observation each Session receives to `DIR/<session>.jsonl`, as it arrives. |
+| `HW_SESSIONS_HEAP=FILE` | Writes a heap profile of the probe's process to `FILE` while every Session is still open. |
 | `HW_CLAUDE_CODE_HOOK` | A built hook helper; otherwise it is built from this tree. |
 | `HW_SESSIONS_CLAUDE_TOKEN_FILE` | A `claude setup-token` token: the live run's credential. |
 | `HW_SESSIONS_CLAUDE_MODEL` | The live run's model; haiku when unset. |

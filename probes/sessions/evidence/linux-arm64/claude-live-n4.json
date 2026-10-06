@@ -1,0 +1,347 @@
+{
+  "harness": "claude-code",
+  "version": "2.1.283",
+  "mode": "live",
+  "platform": "linux-arm64",
+  "sessions": 4,
+  "duration": "5m0s",
+  "took": "5m6s",
+  "criteria": [
+    {
+      "name": "no start hangs",
+      "pass": true,
+      "detail": "a control Session alone, 4 at once, one at the end; the slowest open took 524ms. "
+    },
+    {
+      "name": ".claude.json parses after every write and keeps what was rendered",
+      "pass": true,
+      "detail": "1 states read: 0 torn, 0 corrupt, 0 missing a rendered entry, 0 reads found no file"
+    },
+    {
+      "name": "every hook event lands in its own Session's spool",
+      "pass": true,
+      "detail": "1736 hook payloads: 0 in another Session's spool; 0 tool events a Session reported for another's tool use; 0 tool uses with no hook event"
+    },
+    {
+      "name": "every transcript parses and holds only its own Session",
+      "pass": true,
+      "detail": "6 transcripts read. "
+    },
+    {
+      "name": "a connector's headersHelper still runs at the end",
+      "pass": true,
+      "detail": "the Session opened last sent the header from its file: true; 30 of the MCP server's 30 requests carried it"
+    },
+    {
+      "name": "every turn completed",
+      "pass": false,
+      "detail": "412 input turns, 1 failed; after 81 background commands claude took a turn of its own within the wait, but for 0"
+    }
+  ],
+  "per_session": [
+    {
+      "name": "control",
+      "id": "3fb17e7c-7ad0-49dc-b7df-ee9e88c20d24",
+      "open_ms": 524,
+      "turns": {
+        "PING": {
+          "sent": 1,
+          "completed": 1,
+          "failed": 0
+        }
+      },
+      "own_turns": 0,
+      "tool_uses": 0,
+      "tool_started": 0,
+      "tool_finished": 0,
+      "subagents_started": 0,
+      "subagents_stopped": 0,
+      "peak_rss": "0 MiB",
+      "batches": 5,
+      "items": 7,
+      "peak_batches_per_second": 4,
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s0",
+      "id": "e0006a4a-c4f3-4e97-9a20-6e7c8cde6693",
+      "open_ms": 318,
+      "turns": {
+        "AGENT": {
+          "sent": 22,
+          "completed": 22,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 21,
+          "completed": 21,
+          "failed": 0
+        },
+        "BG, then a turn of the harness's own": {
+          "sent": 21,
+          "completed": 21,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 22,
+          "completed": 22,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 21,
+          "completed": 21,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 22,
+          "completed": 22,
+          "failed": 0
+        }
+      },
+      "own_turns": 21,
+      "tool_uses": 65,
+      "tool_started": 65,
+      "tool_finished": 65,
+      "subagents_started": 22,
+      "subagents_stopped": 22,
+      "peak_rss": "368 MiB",
+      "batches": 530,
+      "items": 973,
+      "peak_batches_per_second": 6,
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s1",
+      "id": "fe199cb9-268f-44fc-a54b-d55be25f3671",
+      "open_ms": 293,
+      "turns": {
+        "AGENT": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "BG, then a turn of the harness's own": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        }
+      },
+      "own_turns": 20,
+      "tool_uses": 60,
+      "tool_started": 60,
+      "tool_finished": 60,
+      "subagents_started": 20,
+      "subagents_stopped": 20,
+      "peak_rss": "365 MiB",
+      "batches": 496,
+      "items": 904,
+      "peak_batches_per_second": 6,
+      "notes": [
+        "waited 4.91s for idle"
+      ],
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s2",
+      "id": "9e56fb22-9b39-4b4f-bb0a-abff789d441e",
+      "open_ms": 312,
+      "turns": {
+        "AGENT": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "BG": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "BG, then a turn of the harness's own": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        }
+      },
+      "own_turns": 20,
+      "tool_uses": 60,
+      "tool_started": 60,
+      "tool_finished": 60,
+      "subagents_started": 20,
+      "subagents_stopped": 20,
+      "peak_rss": "350 MiB",
+      "batches": 495,
+      "items": 903,
+      "peak_batches_per_second": 5,
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "s3",
+      "id": "f1b7fa09-003f-4216-a83d-2260d76db665",
+      "open_ms": 334,
+      "turns": {
+        "AGENT": {
+          "sent": 20,
+          "completed": 19,
+          "failed": 1,
+          "failures": [
+            "reply \"\", want \"SUB-s3-62\""
+          ]
+        },
+        "BG": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "BG, then a turn of the harness's own": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "PING": {
+          "sent": 21,
+          "completed": 21,
+          "failed": 0
+        },
+        "SLOW": {
+          "sent": 20,
+          "completed": 20,
+          "failed": 0
+        },
+        "TOOL": {
+          "sent": 21,
+          "completed": 21,
+          "failed": 0
+        }
+      },
+      "own_turns": 20,
+      "tool_uses": 61,
+      "tool_started": 61,
+      "tool_finished": 61,
+      "subagents_started": 20,
+      "subagents_stopped": 20,
+      "peak_rss": "359 MiB",
+      "batches": 502,
+      "items": 919,
+      "peak_batches_per_second": 7,
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    },
+    {
+      "name": "final",
+      "id": "2a074d81-1225-4008-b301-71697f8b7f2b",
+      "open_ms": 202,
+      "turns": {
+        "PING": {
+          "sent": 1,
+          "completed": 1,
+          "failed": 0
+        }
+      },
+      "own_turns": 0,
+      "tool_uses": 0,
+      "tool_started": 0,
+      "tool_finished": 0,
+      "subagents_started": 0,
+      "subagents_stopped": 0,
+      "peak_rss": "266 MiB",
+      "batches": 5,
+      "items": 7,
+      "peak_batches_per_second": 3,
+      "closed": {
+        "stopped": true,
+        "drained": true
+      }
+    }
+  ],
+  "claude_json": {
+    "changes": 1,
+    "torn": 0,
+    "corrupt": 0,
+    "lost": 0,
+    "missing": 0
+  },
+  "claude_changes_alone": [
+    "bypassPermissionsModeAccepted: rendered true, then \u003cnil\u003e",
+    "projects › /tmp/TestClaudeSessionsLive2431209988/001/env/workspace › hasCompletedProjectOnboarding: rendered true, then \u003cnil\u003e"
+  ],
+  "host_peak_rss": "18 MiB",
+  "peak_all_rss": "1600 MiB",
+  "rss_samples": 154,
+  "hook_events_by_spool": {
+    "control": 4,
+    "final": 4,
+    "s0": 456,
+    "s1": 422,
+    "s2": 422,
+    "s3": 428
+  },
+  "hook_events_by_kind": {
+    "PostToolUse": 328,
+    "PreToolUse": 246,
+    "SessionEnd": 6,
+    "SessionStart": 6,
+    "Stop": 493,
+    "SubagentStart": 82,
+    "SubagentStop": 82,
+    "UserPromptSubmit": 493
+  },
+  "transcripts": {
+    "control": "19 lines, 0 not JSON, 0 of another Session",
+    "final": "19 lines, 0 not JSON, 0 of another Session",
+    "s0": "1235 lines, 0 not JSON, 0 of another Session",
+    "s1": "1149 lines, 0 not JSON, 0 of another Session",
+    "s2": "1147 lines, 0 not JSON, 0 of another Session",
+    "s3": "1168 lines, 0 not JSON, 0 of another Session"
+  },
+  "mcp_requests_with_header": 30,
+  "mcp_requests": 30
+}

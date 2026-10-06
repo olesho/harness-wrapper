@@ -1,0 +1,322 @@
+# claude-code 2.1.283: 8 Sessions side by side (mock)
+
+linux-arm64, turns for 30m0s; the run took 30m16s. Peak memory of every Session's harness tree together: 3292 MiB (908 samples); of the probe's own process, which hosts every Session's adapter and the mock: 145 MiB.
+
+| Criterion | Result | Detail |
+|---|---|---|
+| no start hangs | pass | a control Session alone, 8 at once, one at the end; the slowest open took 6.336s.  |
+| .claude.json parses after every write and keeps what was rendered | pass | 1 states read: 0 torn, 0 corrupt, 0 missing a rendered entry, 0 reads found no file |
+| every hook event lands in its own Session's spool | pass | 13004 hook payloads: 0 in another Session's spool; 0 tool events a Session reported for another's tool use; 0 tool uses with no hook event |
+| every transcript parses and holds only its own Session | pass | 10 transcripts read.  |
+| a connector's headersHelper still runs at the end | pass | the Session opened last sent the header from its file: true; 50 of the MCP server's 50 requests carried it |
+| every turn completed | pass | 3091 input turns, 0 failed; after 618 background commands claude took a turn of its own within the wait, but for 3 |
+
+| Session | Open | Turns completed / sent | Own turns | Tool uses / started / finished | Subagents | Peak memory | Batches (peak a second) |
+|---|---|---|---|---|---|---|---|
+| control | 1918 ms | 1 / 1 | 0 | 0 / 0 / 0 | 0 | 217 MiB | 4 (4) |
+| s0 | 4524 ms | 466 / 467 | 77 | 234 / 234 / 234 | 78 | 428 MiB | 2884 (13) |
+| s1 | 4841 ms | 473 / 473 | 79 | 237 / 237 / 237 | 79 | 428 MiB | 2913 (14) |
+| s2 | 4933 ms | 462 / 462 | 77 | 231 / 231 / 231 | 77 | 417 MiB | 2871 (14) |
+| s3 | 4644 ms | 468 / 468 | 78 | 234 / 234 / 234 | 78 | 416 MiB | 2865 (13) |
+| s4 | 4582 ms | 441 / 443 | 72 | 222 / 222 / 222 | 74 | 434 MiB | 2740 (13) |
+| s5 | 6336 ms | 467 / 467 | 78 | 234 / 234 / 234 | 78 | 442 MiB | 2871 (13) |
+| s6 | 4835 ms | 465 / 465 | 77 | 233 / 233 / 233 | 78 | 423 MiB | 2865 (14) |
+| s7 | 4668 ms | 462 / 462 | 77 | 231 / 231 / 231 | 77 | 414 MiB | 2812 (14) |
+| final | 1510 ms | 1 / 1 | 0 | 0 / 0 / 0 | 0 | 237 MiB | 4 (4) |
+
+.claude.json: 1 states read, 0 torn, 0 corrupt, 0 missing a rendered entry. What claude changed of it alone, in the control Session, is not held against the run:
+- alone: bypassPermissionsModeAccepted: rendered true, then <nil>
+- alone: projects › /tmp/sp/work/20261006-141357/env/workspace › hasCompletedProjectOnboarding: rendered true, then <nil>
+
+Hook payloads by event: PostToolUse 2475, PreToolUse 1856, SessionEnd 10, SessionStart 10, Stop 3706, SubagentStart 619, SubagentStop 619, UserPromptSubmit 3709.
+- control: observe: unexpected: observe before open
+- s0: waited 1.35s for idle
+- s0: waited 1.69s for idle
+- s0: waited 1.03s for idle
+- s0: waited 1.2s for idle
+- s0: waited 1.17s for idle
+- s0: waited 1.18s for idle
+- s0: waited 1.65s for idle
+- s0: waited 1.72s for idle
+- s0: waited 1.97s for idle
+- s0: waited 1.13s for idle
+- s0: waited 1.15s for idle
+- s0: waited 2.32s for idle
+- s0: waited 2.15s for idle
+- s0: waited 1.02s for idle
+- s0: waited 1.43s for idle
+- s0: waited 1.35s for idle
+- s0: waited 1.98s for idle
+- s0: waited 1.18s for idle
+- s0: waited 1s for idle
+- s0: waited 1.47s for idle
+- s0: waited 1.17s for idle
+- s0: waited 1.03s for idle
+- s0: waited 1.04s for idle
+- s0: waited 1.23s for idle
+- s0: waited 2.35s for idle
+- s0: waited 1.15s for idle
+- s0: waited 1.47s for idle
+- s0: waited 1.79s for idle
+- s0: waited 1.39s for idle
+- s0: waited 1.17s for idle
+- s0: waited 1.37s for idle
+- s0: waited 2.26s for idle
+- s0: waited 1.17s for idle
+- s0: waited 1.82s for idle
+- s0: waited 3.57s for idle
+- s0: waited 1.76s for idle
+- s0: waited 1.02s for idle
+- s0 BG, then a turn of the harness's own failed: the turn did not end in time
+- s1: waited 1.88s for idle
+- s1: waited 2.65s for idle
+- s1: waited 1.72s for idle
+- s1: waited 1.08s for idle
+- s1: waited 1.59s for idle
+- s1: waited 1.25s for idle
+- s1: waited 1.62s for idle
+- s1: waited 1.76s for idle
+- s1: waited 2.4s for idle
+- s1: waited 1.38s for idle
+- s1: waited 1.19s for idle
+- s1: waited 3.34s for idle
+- s1: waited 1.65s for idle
+- s1: waited 1.51s for idle
+- s1: waited 1.32s for idle
+- s1: waited 1.63s for idle
+- s1: waited 1.38s for idle
+- s1: waited 1.3s for idle
+- s1: waited 1.66s for idle
+- s1: waited 1.94s for idle
+- s1: waited 1.83s for idle
+- s1: waited 1.24s for idle
+- s1: waited 1.54s for idle
+- s1: waited 1.17s for idle
+- s1: waited 1.28s for idle
+- s1: waited 1.61s for idle
+- s1: waited 1.48s for idle
+- s1: waited 2.03s for idle
+- s1: waited 1.91s for idle
+- s1: waited 1.06s for idle
+- s1: waited 1.22s for idle
+- s2: waited 2.11s for idle
+- s2: waited 2.7s for idle
+- s2: waited 4.18s for idle
+- s2: waited 1.63s for idle
+- s2: waited 1.09s for idle
+- s2: waited 1.9s for idle
+- s2: waited 1.72s for idle
+- s2: waited 1.36s for idle
+- s2: waited 1.99s for idle
+- s2: waited 1.86s for idle
+- s2: waited 2s for idle
+- s2: waited 1.79s for idle
+- s2: waited 2.07s for idle
+- s2: waited 1.76s for idle
+- s2: waited 1.36s for idle
+- s2: waited 1.67s for idle
+- s2: waited 4.71s for idle
+- s2: waited 1.47s for idle
+- s2: waited 1.11s for idle
+- s2: waited 1.18s for idle
+- s2: waited 1.36s for idle
+- s2: waited 1.25s for idle
+- s2: waited 1.15s for idle
+- s2: waited 1.82s for idle
+- s2: waited 1.34s for idle
+- s2: waited 2.55s for idle
+- s2: waited 1.24s for idle
+- s2: waited 1.24s for idle
+- s2: waited 1.19s for idle
+- s2: waited 1.25s for idle
+- s2: waited 1.17s for idle
+- s2: waited 2.21s for idle
+- s2: waited 1.37s for idle
+- s2: waited 1.04s for idle
+- s2: waited 1.42s for idle
+- s2: waited 1.15s for idle
+- s3: waited 4.33s for idle
+- s3: waited 1.84s for idle
+- s3: waited 3.14s for idle
+- s3: waited 1.29s for idle
+- s3: waited 1.8s for idle
+- s3: waited 1.19s for idle
+- s3: waited 1.53s for idle
+- s3: waited 1.07s for idle
+- s3: waited 1.09s for idle
+- s3: waited 1.53s for idle
+- s3: waited 4.56s for idle
+- s3: waited 2.74s for idle
+- s3: waited 1.48s for idle
+- s3: waited 1.43s for idle
+- s3: waited 1.34s for idle
+- s3: waited 1.14s for idle
+- s3: waited 1.04s for idle
+- s3: waited 1.61s for idle
+- s3: waited 1.4s for idle
+- s3: waited 1.18s for idle
+- s3: waited 1.09s for idle
+- s3: waited 1.24s for idle
+- s3: waited 1.34s for idle
+- s3: waited 1.41s for idle
+- s3: waited 1.1s for idle
+- s3: waited 3.08s for idle
+- s3: waited 1.23s for idle
+- s3: waited 1.1s for idle
+- s3: waited 1.26s for idle
+- s3: waited 1.23s for idle
+- s3: waited 1.24s for idle
+- s3: waited 1.63s for idle
+- s4: waited 4.85s for idle
+- s4: waited 1.57s for idle
+- s4: waited 3.43s for idle
+- s4: waited 1.19s for idle
+- s4: waited 1.03s for idle
+- s4: waited 1.2s for idle
+- s4: waited 1.26s for idle
+- s4: waited 1.58s for idle
+- s4: waited 1.32s for idle
+- s4: waited 2.23s for idle
+- s4: waited 3.29s for idle
+- s4: waited 2.52s for idle
+- s4: waited 1.32s for idle
+- s4: waited 2.12s for idle
+- s4: waited 1.76s for idle
+- s4: waited 1.22s for idle
+- s4: waited 8.27s for idle
+- s4: waited 1.31s for idle
+- s4: waited 1.43s for idle
+- s4: waited 1.28s for idle
+- s4: waited 1.84s for idle
+- s4: waited 1.19s for idle
+- s4: waited 1.93s for idle
+- s4: waited 1.46s for idle
+- s4: waited 2.35s for idle
+- s4: waited 1.1s for idle
+- s4: waited 1.39s for idle
+- s4: waited 2.57s for idle
+- s4: waited 3.38s for idle
+- s4: waited 2.53s for idle
+- s4: waited 1.36s for idle
+- s4: waited 1.09s for idle
+- s4: waited 1.03s for idle
+- s4: waited 1.43s for idle
+- s4: waited 1.23s for idle
+- s4: waited 1.38s for idle
+- s4: waited 1.17s for idle
+- s4: waited 1.95s for idle
+- s4 BG, then a turn of the harness's own failed: the turn did not end in time
+- s4 BG, then a turn of the harness's own failed: the turn did not end in time
+- s5: waited 4.45s for idle
+- s5: waited 1.29s for idle
+- s5: waited 2.26s for idle
+- s5: waited 3s for idle
+- s5: waited 1.75s for idle
+- s5: waited 2.48s for idle
+- s5: waited 3.91s for idle
+- s5: waited 2.34s for idle
+- s5: waited 1.03s for idle
+- s5: waited 3.21s for idle
+- s5: waited 1.03s for idle
+- s5: waited 1.25s for idle
+- s5: waited 1.5s for idle
+- s5: waited 1.03s for idle
+- s5: waited 1.02s for idle
+- s5: waited 1.06s for idle
+- s5: waited 1.14s for idle
+- s5: waited 1.14s for idle
+- s5: waited 1.14s for idle
+- s5: waited 2.26s for idle
+- s5: waited 1.34s for idle
+- s5: waited 1.25s for idle
+- s5: waited 1.54s for idle
+- s5: waited 1.24s for idle
+- s5: waited 1.4s for idle
+- s5: waited 2.58s for idle
+- s5: waited 1.33s for idle
+- s5: waited 1.06s for idle
+- s5: waited 1.04s for idle
+- s5: waited 1.59s for idle
+- s5: waited 1.09s for idle
+- s5: waited 1.11s for idle
+- s6: waited 1.05s for idle
+- s6: waited 2.72s for idle
+- s6: waited 3.6s for idle
+- s6: waited 1.5s for idle
+- s6: waited 1.73s for idle
+- s6: waited 1.76s for idle
+- s6: waited 1.08s for idle
+- s6: waited 2.08s for idle
+- s6: waited 1.68s for idle
+- s6: waited 4.3s for idle
+- s6: waited 1.99s for idle
+- s6: waited 1.09s for idle
+- s6: waited 1.6s for idle
+- s6: waited 1.19s for idle
+- s6: waited 1.31s for idle
+- s6: waited 1.8s for idle
+- s6: waited 1.37s for idle
+- s6: waited 1.18s for idle
+- s6: waited 2.26s for idle
+- s6: waited 1.3s for idle
+- s6: waited 1.44s for idle
+- s6: waited 1.84s for idle
+- s6: waited 1.22s for idle
+- s6: waited 1.07s for idle
+- s6: waited 1.73s for idle
+- s6: waited 1.39s for idle
+- s6: waited 1.71s for idle
+- s6: waited 2.62s for idle
+- s6: waited 1.18s for idle
+- s6: waited 1.24s for idle
+- s6: waited 1.11s for idle
+- s6: waited 1.23s for idle
+- s6: waited 1.02s for idle
+- s6: waited 1s for idle
+- s6: waited 1.54s for idle
+- s6: waited 1.58s for idle
+- s7: waited 1.15s for idle
+- s7: waited 1.1s for idle
+- s7: waited 1.03s for idle
+- s7: waited 2.44s for idle
+- s7: waited 1.86s for idle
+- s7: waited 1.35s for idle
+- s7: waited 2.24s for idle
+- s7: waited 2.42s for idle
+- s7: waited 1.09s for idle
+- s7: waited 2.53s for idle
+- s7: waited 1s for idle
+- s7: waited 1.11s for idle
+- s7: waited 2.63s for idle
+- s7: waited 1.75s for idle
+- s7: waited 2.33s for idle
+- s7: waited 1.3s for idle
+- s7: waited 1.22s for idle
+- s7: waited 2.75s for idle
+- s7: waited 1.09s for idle
+- s7: waited 1.15s for idle
+- s7: waited 1.62s for idle
+- s7: waited 1.25s for idle
+- s7: waited 1.2s for idle
+- s7: waited 2.17s for idle
+- s7: waited 1s for idle
+- s7: waited 1.39s for idle
+- s7: waited 17.21s for idle
+- s7: waited 1.16s for idle
+- s7: waited 1.18s for idle
+- s7: waited 1.1s for idle
+- s7: waited 2.33s for idle
+- s7: waited 1.23s for idle
+- s7: waited 1.09s for idle
+- s7: waited 1.21s for idle
+- s7: waited 1.07s for idle
+- s7: waited 1.1s for idle
+- s7: waited 2.28s for idle
+- s7: waited 1.13s for idle
+- s7: waited 1.15s for idle
+- s7: waited 1.36s for idle
+- s7: waited 1.18s for idle
+- s7: waited 1.98s for idle
+- s7: waited 1.02s for idle
+- s7: waited 1.08s for idle
+- final: observe: unexpected: observe before open

@@ -53,7 +53,7 @@ func TestCodexSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock := mockapi.Start()
-	mock.KeepRequests = 1000 // each request is kept with codex's instructions
+	mock.KeepRequests = 64 // each request is kept with its whole conversation: codex resends it every time
 	defer mock.Close()
 	ad := adapter.New(codex.Profile{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -99,6 +99,7 @@ func TestCodexSessions(t *testing.T) {
 	wg.Wait()
 	everyone := append([]*session{control}, sessions...)
 	procs.sample()
+	heapProfile(t)
 	closeAll(ctx, everyone)
 	cancel()
 

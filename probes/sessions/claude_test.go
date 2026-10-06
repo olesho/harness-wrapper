@@ -74,7 +74,7 @@ func liveSteps() []step {
 	return []step{
 		{scenario: "PING", text: "Reply with exactly PONG-%[1]s and nothing else.", want: "PONG-%[1]s"},
 		{scenario: "TOOL", text: "Use the Bash tool to run exactly this command: echo %[1]s | tee -a probe-%[1]s.txt — then reply with the command's output and nothing else.", want: "%[1]s"},
-		{scenario: "AGENT", text: "Use the Agent tool, subagent_type general-purpose, to ask a subagent to reply with exactly SUB-%[1]s and nothing else. Then reply with exactly what it answered.", want: "SUB-%[1]s"},
+		{scenario: "AGENT", text: "Use the Agent tool, subagent_type general-purpose, with run_in_background false, to ask a subagent to reply with exactly SUB-%[1]s and nothing else. Wait for its answer, then reply with exactly what it answered.", want: "SUB-%[1]s"},
 		{scenario: "BG", text: "Use the Bash tool with run_in_background set to true to run exactly this command: sleep 2; echo bg-%[1]s — then reply with exactly STARTED and nothing else.", want: "STARTED", own: true},
 		{scenario: "SLOW", text: "Count from 1 to 20, one number per line, and nothing else.", want: "20"},
 	}
@@ -217,6 +217,7 @@ func runClaude(t *testing.T, m mode) {
 	initialHeaders, mcpAll := mcp.heard(0, "Authorization", header)
 
 	r.rss.sample()
+	heapProfile(t)
 	closeAll(ctx, append(append([]*session(nil), sessions...), final))
 	time.Sleep(time.Second) // the watcher's last look at .claude.json
 	cancel()
