@@ -9,15 +9,16 @@ import (
 	"time"
 )
 
-// The OpenAI Responses API (POST /v1/responses, streamed), which codex speaks
-// to a model provider. The scenarios are the Messages API's, as a codex
+// The OpenAI Responses API (POST /v1/responses, streamed), which codex and pi
+// speak to a model provider. The scenarios are the Messages API's, as a codex
 // reports them:
 //
 //	PING <n>        reply "PONG <n>"
 //	SLOW <n>        reply "slow<i> " in <n> deltas, Server.ChunkDelay apart
 //	STALL <s>       open the response, then send nothing for <s> seconds
-//	TOOL <command>  an exec_command call running <command>; after its output,
-//	                "TOOL DONE: <output>"
+//	TOOL <command>  a call running <command> in a shell, after its output "TOOL
+//	                DONE: <output>": codex's exec_command, pi's bash, or else a
+//	                shell call, whichever the request offers
 //	ERR <code> <k>  fail the response the first <k> times this text is seen,
 //	                with a server error codex retries; for 529, the attempt
 //	                after Server.RetryBudget such failures in a row answers
@@ -77,7 +78,8 @@ func responsesText(raw json.RawMessage) string {
 
 // routeResponses finds the scenario: the output of the tool call the input
 // ends with, or else the keyword line of the last user message. codex adds
-// context of its own as user messages in tags, which never route.
+// context of its own as user messages in tags, which never route. A message
+// may leave out its type, as pi's do (the API's easy input message).
 func routeResponses(b responsesBody) (scenario string, toolResult *string) {
 	if n := len(b.Input); n > 0 {
 		var last responsesItem
@@ -92,7 +94,7 @@ func routeResponses(b responsesBody) (scenario string, toolResult *string) {
 	}
 	for i := len(b.Input) - 1; i >= 0; i-- {
 		var it responsesItem
-		if json.Unmarshal(b.Input[i], &it) != nil || it.Type != "message" || it.Role != "user" {
+		if json.Unmarshal(b.Input[i], &it) != nil || (it.Type != "message" && it.Type != "") || it.Role != "user" {
 			continue
 		}
 		var lines []string
@@ -189,8 +191,11 @@ func (s *Server) serveResponses(w http.ResponseWriter, raw []byte, auth string) 
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
 		fc := &call{name: "shell", args: map[string]any{"command": []string{"bash", "-lc", cmd}}}
 		for _, t := range b.Tools {
-			if t.Name == "exec_command" {
+			switch t.Name {
+			case "exec_command":
 				fc = &call{name: "exec_command", args: map[string]any{"cmd": cmd, "yield_time_ms": 5000}}
+			case "bash":
+				fc = &call{name: "bash", args: map[string]any{"command": cmd}}
 			}
 		}
 		s.stream(w, response{call: fc})
