@@ -1484,19 +1484,6 @@ func (c *Conversation) harnessIDSaveFailure() error {
 	return fmt.Errorf("%w: %s: %w", ErrHarnessSessionIDNotSaved, c.session.HarnessID(), c.harnessIDSaveErr)
 }
 
-// History returns the conversation history for this Conversation.
-//
-// When the adapter supports turns.TranscriptReader and the harness
-// session ID is known, History reads the harness's own JSONL log and
-// returns its parsed contents — this is the higher-fidelity source
-// because the harness records exactly what the model said, not what
-// the TUI rendered.
-//
-// When transcript reading isn't possible (adapter has no reader, the
-// harness session ID is not known, or the harness has not written its
-// transcript yet), History falls back to the Store's recorded turns. The fallback only contains the
-// user-side text and any screen-derived assistant text the watcher
-// captured at TurnComplete.
 // assistantText returns the clean assistant reply for a completed turn: when
 // the adapter implements turns.MessageExtractor (e.g. claude-code) and can
 // isolate the message from the rendered TUI, that cleaned text is used;
@@ -1644,6 +1631,19 @@ func resumeAtFrom(wall string) time.Time {
 	return at
 }
 
+// History returns the conversation history for this Conversation.
+//
+// When the adapter supports turns.TranscriptReader and the harness
+// session ID is known, History reads the harness's own JSONL log and
+// returns its parsed contents — this is the higher-fidelity source
+// because the harness records exactly what the model said, not what
+// the TUI rendered.
+//
+// When transcript reading isn't possible (adapter has no reader, the
+// harness session ID is not known, or the harness has not written its
+// transcript yet), History falls back to the Store's recorded turns. The
+// fallback only contains the user-side text and any screen-derived assistant
+// text the watcher captured at TurnComplete.
 func (c *Conversation) History(ctx context.Context) ([]Turn, error) {
 	out, _, err := c.HistoryWithSource(ctx)
 	return out, err
