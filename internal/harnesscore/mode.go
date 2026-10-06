@@ -18,8 +18,10 @@ const (
 
 	// TranscriptHooks drives acquisition from the harness's hook mechanism (the
 	// on-disk transcript file is authoritative for the parent; the live stream
-	// contributes only session-id/usage). Requires a resolved HookProvider;
-	// implemented in P3c. Until then it degrades to the StreamParse floor.
+	// contributes only session-id/usage). It needs a resolved HookProvider;
+	// with none it degrades to the StreamParse floor when the harness has a
+	// StreamParser, and to no acquisition when it has neither. With hooks, the
+	// live stream is buffered as a fallback for a run in which no hook fired.
 	TranscriptHooks
 
 	// TranscriptAuto uses Hooks when installable for the run, else StreamParse.

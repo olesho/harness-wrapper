@@ -546,8 +546,6 @@ func (t *transport) onLifecycle(uuid, state string) {
 	}
 }
 
-// onInit checks, once, that claude has what the transport relies on. A
-// claude that lacks it is stopped: the turn it was on errors.
 // onForeign stops a claude that runs a session other than the Session's: a
 // copy, which claude may start of a session another process holds. Nothing
 // it does is the Session's. A turn it was on ends errored; before it
@@ -580,6 +578,8 @@ func (t *transport) foreignID() string {
 	return t.foreign
 }
 
+// onInit checks, once, that claude has what the transport relies on. A
+// claude that lacks it is stopped: the turn it was on errors.
 func (t *transport) onInit(f *frame) {
 	t.mu.Lock()
 	done := t.capsDone
