@@ -93,3 +93,57 @@ func TestSend_TurnInFlightRejectedBeforeReadiness(t *testing.T) {
 			"(the readiness wait must be what blocks)", err)
 	}
 }
+
+// TestSend_ReservationCoversTheReadinessWait pins the check-then-act fix: Send
+// and SetPermissionMode used to check for an in-flight turn, wait seconds for a
+// ready prompt, and only then claim the conversation, so two callers sharing a
+// control token could both pass the check and interleave keystrokes. The claim
+// is now taken with the check, so while one Send waits for readiness every
+// other write is refused at once.
+func TestSend_ReservationCoversTheReadinessWait(t *testing.T) {
+	script := fakeharness.New("claude-code").Build()
+	script.Steps = append(script.Steps, fakeharness.Step{
+		Frame: &fakeharness.Frame{DelayMs: 20, Screen: notReadyScreen},
+	})
+	conv := openFake(t, script)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	release, err := conv.AcquireControl(ctx)
+	if err != nil {
+		t.Fatalf("AcquireControl: %v", err)
+	}
+	defer release()
+
+	// The first Send parks in waitReadyForSend: the screen never gets ready.
+	firstCtx, cancelFirst := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelFirst()
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := conv.Send(firstCtx, "first")
+		firstDone <- err
+	}()
+	// Give it time to pass its checks and enter the readiness wait.
+	time.Sleep(300 * time.Millisecond)
+
+	short, cancelShort := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancelShort()
+	if _, err := conv.Send(short, "second"); !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("second Send while the first waits = %v, want ErrTurnInFlight "+
+			"(a DeadlineExceeded means both passed the check)", err)
+	}
+	if _, err := conv.SetPermissionMode(short, "plan"); !errors.Is(err, ErrTurnInFlight) {
+		t.Fatalf("SetPermissionMode while a Send waits = %v, want ErrTurnInFlight", err)
+	}
+
+	cancelFirst()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Send = %v, want context.Canceled", err)
+	}
+	conv.mu.Lock()
+	reserved := conv.writeReserved
+	conv.mu.Unlock()
+	if reserved {
+		t.Fatal("the write slot stayed claimed after the first Send returned")
+	}
+}

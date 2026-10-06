@@ -36,16 +36,20 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 		return "", ErrNoControl
 	}
 
+	// Claim the write slot before anything waits: the readiness wait below
+	// takes seconds, and a check that is not also a claim lets two callers
+	// sharing a control token both pass it and interleave keystrokes.
 	c.mu.Lock()
-	switch {
-	case c.currentTurn != nil:
-		c.mu.Unlock()
-		return "", ErrTurnInFlight
-	case c.exit != nil:
-		c.mu.Unlock()
-		return "", ErrExited
+	err = c.reserveHarnessWriteLocked()
+	if err == nil && c.exit != nil {
+		c.writeReserved = false
+		err = ErrExited
 	}
 	c.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	defer c.releaseHarnessWrite()
 
 	if c.stream != nil {
 		return c.streamSend(ctx, text)
@@ -119,12 +123,37 @@ func (c *Conversation) Send(ctx context.Context, text string) (turnID string, er
 	return assistantTurn.ID, nil
 }
 
+// reserveHarnessWriteLocked claims the conversation for one prompt or
+// permission-mode write, failing with ErrTurnInFlight when a turn is in flight
+// or another write already holds the claim. c.mu must be held: the check and
+// the claim are one step. The claimant calls releaseHarnessWrite once its
+// harness writes are done; a Send's own currentTurn keeps later callers out
+// after that.
+func (c *Conversation) reserveHarnessWriteLocked() error {
+	if c.currentTurn != nil || c.writeReserved {
+		return ErrTurnInFlight
+	}
+	c.writeReserved = true
+	return nil
+}
+
+// releaseHarnessWrite drops the claim reserveHarnessWriteLocked took.
+func (c *Conversation) releaseHarnessWrite() {
+	c.mu.Lock()
+	c.writeReserved = false
+	c.mu.Unlock()
+}
+
 // beginTurn records the turn a Send is about to submit and announces it — the
 // user's turn, then the assistant's, pending — and makes the assistant's the
 // turn in flight. It runs before the prompt reaches the harness: nothing can
 // end a turn that has not been submitted, so no terminal event can precede
 // its pending one (ADR-008). The announcements wait for room in the event
 // queue, so they go out holding no lock; EventExited waits for them.
+//
+// The caller holds the write claim (reserveHarnessWriteLocked), so the claim
+// itself is no reason to refuse here; the re-checks below catch only a turn or
+// an exit that arrived while the caller waited.
 func (c *Conversation) beginTurn(ctx context.Context, text string) (Turn, error) {
 	c.mu.Lock()
 	switch {

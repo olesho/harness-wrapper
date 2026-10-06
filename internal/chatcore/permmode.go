@@ -411,12 +411,14 @@ func (c *Conversation) SetPermissionMode(ctx context.Context, target string) (st
 		return "", ErrNoControl
 	}
 
+	// Claimed, not merely checked, before the readiness wait: see Send.
 	c.mu.Lock()
-	inFlight := c.currentTurn != nil
+	err := c.reserveHarnessWriteLocked()
 	c.mu.Unlock()
-	if inFlight {
-		return "", ErrTurnInFlight
+	if err != nil {
+		return "", err
 	}
+	defer c.releaseHarnessWrite()
 	if c.stream != nil {
 		return c.streamSetPermissionMode(ctx, target)
 	}

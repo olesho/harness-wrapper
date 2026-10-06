@@ -247,6 +247,9 @@ type Conversation struct {
 
 	mu          sync.Mutex
 	currentTurn *Turn // pending/streaming assistant turn, if any
+	// writeReserved is set while a Send or SetPermissionMode is between its
+	// in-flight check and its last harness write (see reserveHarnessWriteLocked).
+	writeReserved bool
 
 	// harnessIDUnsaved is set while the harness session id in session has not
 	// reached the Store: its write failed, or has not finished. It is written
