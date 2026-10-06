@@ -263,6 +263,37 @@ export interface OpenOptions {
    * the applied policy is verified too: an open response without it throws.
    */
   containment?: Containment;
+  /**
+   * Answers blocking dialogs server-side, e.g.
+   * `{ by_kind: { trust_prompt: { kind: "answer", option_id: "proceed" } } }`.
+   * Dialogs it leaves to the client arrive as `input_request` events for
+   * `Conversation.answer()`.
+   */
+  inputPolicy?: InputPolicy;
+  /** Keep codex's choice-free startup notices from being dismissed for you. */
+  disableCodexAutoDismiss?: boolean;
+  /** Skip codex's "Update available!" menu instead of surfacing it. */
+  autoSkipCodexUpdateNotice?: boolean;
+}
+
+/** What an input policy does with a dialog kind. */
+export type DispositionKind = "ask" | "answer" | "deny" | (string & {});
+
+/** Server-side dialog handling; see `OpenOptions.inputPolicy`. */
+export interface InputPolicy {
+  /** Applies to kinds `by_kind` does not name; empty means "ask". */
+  default?: DispositionKind;
+  by_kind?: Record<string, { kind: DispositionKind; option_id?: string; text?: string }>;
+}
+
+/** The harness's rendered terminal at one moment (`Conversation.screen()`). */
+export interface ScreenSnapshot {
+  text: string;
+  cols: number;
+  rows: number;
+  cursor_col: number;
+  cursor_row: number;
+  generation: number;
 }
 
 export class HarnessChatError extends Error {
@@ -324,6 +355,10 @@ export class Client {
       model: opts.model,
       permission_mode: opts.permissionMode,
       containment: opts.containment ? containmentBody(opts.containment) : undefined,
+      input_policy: opts.inputPolicy,
+      // `|| undefined` keeps a false flag out of the body entirely.
+      disable_codex_auto_dismiss: opts.disableCodexAutoDismiss || undefined,
+      auto_skip_codex_update_notice: opts.autoSkipCodexUpdateNotice || undefined,
     };
     const res = await this.request<{ id: string; containment?: AppliedContainment }>(
       "POST",
@@ -343,7 +378,13 @@ export class Client {
   }
 
   async list(): Promise<
-    Array<{ id: string; harness: string; session_id?: string; containment?: AppliedContainment }>
+    Array<{
+      id: string;
+      harness: string;
+      session_id?: string;
+      permission_mode?: string;
+      containment?: AppliedContainment;
+    }>
   > {
     return (await this.request("GET", "/v1/conversations")) as any;
   }
@@ -445,6 +486,32 @@ export class Conversation {
    */
   async interrupt(): Promise<{ result: "stopped" | "cancelled" | "too_late" | "no_turn" | (string & {}); error?: string }> {
     return this.client.request("POST", `/v1/conversations/${this.id}/interrupt`);
+  }
+
+  /**
+   * Answer an `input_request` event (a dialog the input policy left to the
+   * client): `optionId` (an option id or alias such as "proceed"),
+   * `optionIds` for a multi-select request, or `text` for a free-text prompt.
+   * An empty `requestId` targets whatever prompt is pending. Requires
+   * control, like `send()`.
+   */
+  async answer(
+    requestId: string,
+    answer: { optionId?: string; optionIds?: string[]; text?: string },
+  ): Promise<void> {
+    if (!this.token) throw new HarnessChatError(409, "no_control", "acquire control before answer()");
+    await this.client.request("POST", `/v1/conversations/${this.id}/input`, {
+      token: this.token,
+      request_id: requestId || undefined,
+      option_id: answer.optionId,
+      option_ids: answer.optionIds,
+      text: answer.text,
+    });
+  }
+
+  /** The harness's rendered terminal right now. A pure read; needs no control. */
+  async screen(): Promise<ScreenSnapshot> {
+    return this.client.request<ScreenSnapshot>("GET", `/v1/conversations/${this.id}/screen`);
   }
 
   async history(): Promise<Turn[]> {

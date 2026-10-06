@@ -69,6 +69,34 @@ class OpenBodyTest(unittest.TestCase):
         self.client.open(harness="codex", binary_path="/x", permission_mode="")
         self.assertEqual(self.server.captured["permission_mode"], "")
 
+    def test_dialog_options_at_defaults_are_omitted(self):
+        self.client.open(
+            harness="codex",
+            binary_path="/x",
+            input_policy=None,
+            disable_codex_auto_dismiss=False,
+            auto_skip_codex_update_notice=False,
+        )
+        self.assertEqual(set(self.server.captured), BASE_KEYS)
+
+    def test_dialog_options_are_sent_when_set(self):
+        policy = {"by_kind": {"trust_prompt": {"kind": "answer", "option_id": "proceed"}}}
+        self.client.open(
+            harness="codex",
+            binary_path="/x",
+            input_policy=policy,
+            disable_codex_auto_dismiss=True,
+            auto_skip_codex_update_notice=True,
+        )
+        body = self.server.captured
+        self.assertEqual(
+            set(body),
+            BASE_KEYS | {"input_policy", "disable_codex_auto_dismiss", "auto_skip_codex_update_notice"},
+        )
+        self.assertEqual(body["input_policy"], policy)
+        self.assertIs(body["disable_codex_auto_dismiss"], True)
+        self.assertIs(body["auto_skip_codex_update_notice"], True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,3 +69,28 @@ test("an explicit empty permissionMode is sent as \"\" (presence, not truthiness
   });
   assert.equal(body.permission_mode, "");
 });
+
+test("dialog options are posted only when set", async () => {
+  const none = await openBody({
+    harness: "codex",
+    binaryPath: "/bin/codex",
+    disableCodexAutoDismiss: false,
+    autoSkipCodexUpdateNotice: false,
+  });
+  assert.deepEqual(Object.keys(none).sort(), BASE_KEYS);
+  const policy = { by_kind: { trust_prompt: { kind: "answer", option_id: "proceed" } } };
+  const body = await openBody({
+    harness: "codex",
+    binaryPath: "/bin/codex",
+    inputPolicy: policy,
+    disableCodexAutoDismiss: true,
+    autoSkipCodexUpdateNotice: true,
+  });
+  assert.deepEqual(
+    Object.keys(body).sort(),
+    [...BASE_KEYS, "auto_skip_codex_update_notice", "disable_codex_auto_dismiss", "input_policy"].sort(),
+  );
+  assert.deepEqual(body.input_policy, policy);
+  assert.equal(body.disable_codex_auto_dismiss, true);
+  assert.equal(body.auto_skip_codex_update_notice, true);
+});

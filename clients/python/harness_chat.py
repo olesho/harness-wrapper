@@ -225,10 +225,24 @@ class Client:
         model: str | None = None,
         permission_mode: PermissionMode | None = None,
         containment: Containment | None = None,
+        input_policy: dict[str, Any] | None = None,
+        disable_codex_auto_dismiss: bool = False,
+        auto_skip_codex_update_notice: bool = False,
     ) -> "Conversation":
         """Open a conversation. ``effort``, ``model`` and ``permission_mode``
         are optional knobs translated per-harness by the server; all three are
         omitted from the request body entirely when left as None.
+
+        ``input_policy`` answers blocking dialogs server-side, e.g.
+        ``{"by_kind": {"trust_prompt": {"kind": "answer", "option_id": "proceed"}}}``
+        (disposition kinds: "ask", "answer", "deny"; ``default`` applies to
+        kinds ``by_kind`` does not name). Dialogs it leaves to the client arrive
+        as ``input_request`` events for :meth:`Conversation.answer`.
+        ``disable_codex_auto_dismiss`` keeps codex's choice-free startup
+        notices from being dismissed for you; ``auto_skip_codex_update_notice``
+        skips codex's "Update available!" menu instead of surfacing it. All
+        three are omitted from the body when left at their defaults, so a
+        request that does not use them is byte-identical to before.
 
         effort/model behavior (server-side, pkg/wrapper/wrapper.go):
 
@@ -310,6 +324,12 @@ class Client:
             body["permission_mode"] = permission_mode
         if containment is not None:
             body["containment"] = containment.to_json()
+        if input_policy is not None:
+            body["input_policy"] = input_policy
+        if disable_codex_auto_dismiss:
+            body["disable_codex_auto_dismiss"] = True
+        if auto_skip_codex_update_notice:
+            body["auto_skip_codex_update_notice"] = True
         resp = self._request("POST", "/v1/conversations", body)
         conv = Conversation(self, resp["id"], resp.get("containment"))
         if containment is not None and not resp.get("containment"):
@@ -400,9 +420,41 @@ class Conversation:
         "interrupted"."""
         return self.client._request("POST", f"/v1/conversations/{self.id}/interrupt")
 
+    def answer(
+        self,
+        request_id: str,
+        *,
+        option_id: str | None = None,
+        option_ids: list[str] | None = None,
+        text: str | None = None,
+    ) -> None:
+        """Answer an ``input_request`` event (a dialog the input policy left to
+        the client). Pass ``option_id`` (an option id or alias such as
+        "proceed"), ``option_ids`` for a multi-select request, or ``text`` for
+        a free-text prompt. An empty ``request_id`` targets whatever prompt is
+        pending. Requires control, like :meth:`send`."""
+        if self._token is None:
+            raise HarnessChatError(409, "no_control", "acquire control before answer()")
+        body: dict[str, Any] = {"token": self._token}
+        if request_id:
+            body["request_id"] = request_id
+        if option_id is not None:
+            body["option_id"] = option_id
+        if option_ids is not None:
+            body["option_ids"] = option_ids
+        if text is not None:
+            body["text"] = text
+        self.client._request("POST", f"/v1/conversations/{self.id}/input", body)
+
     def history(self) -> list[Turn]:
         resp = self.client._request("GET", f"/v1/conversations/{self.id}/history")
         return [Turn.from_json(t) for t in resp.get("turns", [])]
+
+    def screen(self) -> dict[str, Any]:
+        """The harness's rendered terminal right now: ``text``, ``cols``,
+        ``rows``, ``cursor_col``, ``cursor_row``, ``generation``. A pure read;
+        needs no control token."""
+        return self.client._request("GET", f"/v1/conversations/{self.id}/screen")
 
     def close(self) -> None:
         try:
