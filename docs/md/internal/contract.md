@@ -140,7 +140,8 @@ a Host each, over one Layout and one staged credential. Each keeps its own input
 observations and checkpoint, and what one does reaches no other: an interrupt, a close or a crash
 of one ends nothing of the rest, and a record handle on one may be open while the others run.
 
-- `Descriptor.limits.max_sessions` says how many may be open at once, at least 2: the most the
+- `Descriptor.limits.max_sessions` says how many may be open at once, at least 2
+  ([ADR-022](decisions/adr-022-sessions-side-by-side.md)): the most the
   adapter's concurrency conformance has passed with the real harness at the version it pins. Like
   `load.sources`, it names nothing the adapter has not run, and it is run again whenever the pin
   moves. `contract.CheckSessions` holds the form; `Descriptor.Sessions` is the number, 1 without the
@@ -244,6 +245,9 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
 - **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
   traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
   token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.
+- **Sessions side by side:** up to `MaxSessions` (8), the most `TestClaudeConforms` has run with the
+  pinned claude: a claude process, a spool and a transcript each, over the agent's one config root
+  and workspace ([ADR-022](decisions/adr-022-sessions-side-by-side.md)).
 - **Load:** the history is `config/projects` and `config/memory`. claude names a working directory's
   transcripts for its resolved path, so one relocation moves `config/projects/<source workspace>` to
   `config/projects/<new workspace>` — a subagent's transcript, beneath it, with it — and nothing
@@ -320,6 +324,9 @@ whose death would leave the native process holding the thread.
   A turn with no user message is codex's own: its items and its end name the turn and no input.
 - **Recover** finds the input's user message by the marker's native id, then its turn's end: without an
   end that proves an outcome, `unknown`.
+- **Sessions side by side:** up to `MaxSessions` (8), the most `TestCodexConforms` has run with the
+  pinned codex: an app-server and a thread each, over the agent's one `CODEX_HOME`, whose databases
+  they share ([ADR-022](decisions/adr-022-sessions-side-by-side.md)).
 - **Load:** the history is the rollouts and the memory, and what codex keeps of a thread outside its
   rollout: `session_index.jsonl` (its name), `goals_1.sqlite` and `goals_1.sqlite-wal` (its goal:
   codex can exit with the goal's row in the log alone). A thread resumes by its id in any working directory, so
@@ -392,6 +399,8 @@ TUI, its docs and images ([the probe](../../../probes/pirpc/FINDINGS.md)).
   with no end otherwise.
 - **Recover** finds the tag's user message, then the run's end: without either — pi never took the
   input in, or crashed before the run ended — `unknown`.
+- **One Session of an agent at a time:** no `concurrent_sessions`, until a probe of pi's own shows
+  its Sessions side by side keep apart ([ADR-022](decisions/adr-022-sessions-side-by-side.md)).
 
 `TestPiConforms` runs the conformance kit against a real pi driving `internal/mockapi`'s Responses
 API, and `TestPiConformsOnAnthropic` its Messages API (all but `usage-limit`: under an API key,

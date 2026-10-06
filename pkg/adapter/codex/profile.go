@@ -57,6 +57,11 @@ type Profile struct{}
 
 func init() { adapter.Register(Name, Profile{}) }
 
+// MaxSessions is how many Sessions of one agent the profile runs side by
+// side: the most the kit's concurrency scenarios have passed with the pinned
+// codex (TestCodexConforms), run again whenever the pin moves.
+const MaxSessions = 8
+
 // efforts are the reasoning efforts codex takes (model_reasoning_effort).
 var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 
@@ -77,6 +82,7 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
 			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials, contract.CapLoginKeeper,
+			contract.CapConcurrentSessions,
 		},
 		// The versions whose saved threads the pinned codex continues: each
 		// one's kept in testdata/load and loaded by TestCodexLoadsSavedThreads.
@@ -100,6 +106,6 @@ func (Profile) Describe() contract.Descriptor {
 			PermissionPostures: []string{contract.PostureBypass},
 			InputContent:       []string{contract.ContentText},
 		},
-		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
+		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes, MaxSessions: MaxSessions},
 	}
 }
