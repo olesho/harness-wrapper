@@ -584,9 +584,7 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent returns the directory beneath which managed state lives:
-$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
-~/.local/state/harness-wrapper/contain.
+StateParent reports ErrUnsupported.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -651,13 +649,11 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(persistent bool) (*State, error)`
-NewState allocates new managed state. Persistent state survives its
-launches until Remove; ephemeral state is deleted by the launch that
-created it once that launch's cgroup is empty.
+#### `func NewState(bool) (*State, error)`
+NewState reports ErrUnsupported.
 
-#### `func OpenState(id string) (*State, error)`
-OpenState opens existing managed state by id.
+#### `func OpenState(string) (*State, error)`
+OpenState reports ErrUnsupported.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -2541,6 +2537,15 @@ login for a runtime (capability login_keeper).
 
 - `Keep(req contract.KeeperRequest) (contract.Keeper, error)`
 
+#### `ModelPlaceholderer`
+
+> ModelPlaceholderer is a Placeholderer whose placeholders follow the agent's
+model (contract 1.5): a credential kind that serves several providers, each
+swap narrowed to the provider the model names. A model it cannot place
+fails with CodeInvalidSpec on field model.
+
+- `PlaceholderFor(kind, model string, credential, nonce []byte) (contract.PlaceholderResult, error)`
+
 #### `NativeNamer`
 
 > Native ids are the profile's to choose: a Transport that names them
@@ -2641,6 +2646,39 @@ BinaryPath is codex's path in the harness distribution rooted at root.
 
 #### `type Profile`
 Profile is the Codex profile. It keeps no state.
+
+## Module: pi (`pkg/adapter/pi`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package pi is the Harness Adapter's Pi profile: the pi coding agent
+(@earendil-works/pi-coding-agent) driven over its RPC mode (pi --mode rpc:
+JSON lines on stdio), one process per Session, with the session's file as
+its record. Importing it registers the Harness Adapter under "pi", and
+links no other harness.
+
+pi records no id a client chooses for an input, so the profile's tag
+extension (hwtag.ts, loaded with -e) takes a tag off each input and writes
+it into the session as a custom entry, the parent of the input's user
+message, or its grandparent through the system message pi writes when the
+system prompt changed (probes/pirpc).
+
+The harness distribution under harness_root holds the pinned pi release's
+executable and the package.json it reads its version from (BinaryPath),
+and the tag extension (ExtensionPath).
+
+### Exported Types & Functions
+
+#### `func BinaryPath(root string) string`
+BinaryPath is pi's path in the harness distribution rooted at root: the
+release's executable, beside the release's package.json, which it reads
+its version from.
+
+#### `func ExtensionPath(root string) string`
+ExtensionPath is the tag extension's path in the distribution.
+
+#### `type Profile`
+Profile is the Pi profile. It keeps no state.
 
 ## Module: chat (`pkg/chat`)
 
@@ -4771,13 +4809,12 @@ follower knows an event by pi's own id:
   - a user message's text;
   - an assistant message's text blocks and tool calls;
   - a tool result's output;
-  - one event of Type EventEntry for a line that holds facts and no
-    content: an input's tag, a system message, a context edit, and an
-    assistant message with neither text nor a tool call (a failed or
-    aborted one, say).
+  - one event of Type EventEntry for every other entry, whose facts are
+    its Entry: an input's tag, a system message, a context edit, a
+    compaction, a model change, an assistant message with neither text
+    nor a tool call (a failed or aborted one, say), ….
 
-The header and pi's other entries (model and thinking-level changes,
-usage, labels, …) have no events.
+The header has no events, and neither has a line with no id.
 
 #### `func FollowSession(path, sessionID string, from transcript.Checkpoint) (*transcript.Follower, error)`
 FollowSession follows the session file at path from a checkpoint, with

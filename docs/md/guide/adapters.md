@@ -36,6 +36,9 @@ Pinned & verified upstream versions live in [`versions.json`](../internal/versio
 `0.144.5` (verified 2026-07-22), claude-code `2.1.283` (verified 2026-09-26).
 opencode is unpinned pending corpus capture.
 
+pi has no row: it is no harness of this layer. The Harness Adapter's
+[Pi profile](../internal/contract.md#the-pi-profile) drives it over its RPC mode, at pi `1.0.4`.
+
 ## codex
 
 - **Turn detection** keys on the end-of-turn `Token usage: total=… input=… (+ … cached) output=…`
