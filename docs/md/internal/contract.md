@@ -159,6 +159,11 @@ It is the shared part, and names no harness:
   A turn the transport reports as the harness's own (`adapter.SelfStarter`) is a turn with no input:
   the Session is busy while it runs, admits a `Send` — the transport stops that turn before it
   submits — and interrupts it by its turn id (`adapter.AutoTurnID` of the harness's id for it).
+- **One Host per Session.** While a Session's harness runs, its Host holds a lock on the Session
+  under `layout.scratch/sessions`, and an `Open` of it in another Host fails with `session_in_use`
+  before a second harness starts: two harness processes on one Session write its record from two
+  sides. The lock goes with the Host's process; a harness that outlives its Host is the runtime's
+  to end.
 - **Loads.** `Provision` checks a request's `load` against the Descriptor (`contract.CheckLoad`) and
   the profile's relocations against the result. An open with `loaded` that comes back under another
   id than the saved one fails with `session_not_found`.

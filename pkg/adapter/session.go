@@ -58,11 +58,13 @@ type session struct {
 	t         Transport
 	markers   *Markers
 	sessionID string
-	instance  string
-	counter   int
-	turns     map[string]*turn // by input id
-	byNative  map[string]*turn
-	current   *turn // the input's turn the harness is on, nil when none
+	// lock is the Session's lock while its harness runs, nil once it exited.
+	lock     *sessionLock
+	instance string
+	counter  int
+	turns    map[string]*turn // by input id
+	byNative map[string]*turn
+	current  *turn // the input's turn the harness is on, nil when none
 	// auto is the turn the harness started itself and is on, nil when none;
 	// autos holds such turns by native id.
 	auto       *autoTurn
@@ -162,17 +164,38 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	if err != nil {
 		return fail(err)
 	}
+	var lk *sessionLock
+	if id := s.req.SessionID; id != "" {
+		// Before the harness starts: a Session another Host holds is
+		// refused, never run twice.
+		if lk, err = lockSession(s.req.Layout.Scratch, id); err != nil {
+			return fail(err)
+		}
+	}
 	t, err := s.a.p.Start(octx, Start{
 		Mode: s.req.Mode, SessionID: s.req.SessionID, OpenConfig: s.req.OpenConfig,
 		Layout: s.req.Layout, Credential: s.req.Credential, Loaded: s.req.Loaded, Report: s.report,
 	})
 	if err != nil {
+		lk.release()
 		return fail(err)
+	}
+	stop := func() {
+		t.Stop(context.Background(), 0)
+		lk.release()
+	}
+	if lk == nil {
+		// The harness chose the id, which no other Host holds yet; held, it
+		// is refused to one that reopens it while this harness runs.
+		if lk, err = lockSession(s.req.Layout.Scratch, t.SessionID()); err != nil {
+			t.Stop(context.Background(), 0)
+			return fail(err)
+		}
 	}
 	if s.req.Loaded && t.SessionID() != s.req.SessionID {
 		// A loaded Session continues under its saved id, or not at all.
 		got := t.SessionID()
-		t.Stop(context.Background(), 0)
+		stop()
 		return fail(&contract.Error{
 			Code: contract.CodeOpenFailed, Reason: contract.OpenSessionNotFound,
 			Message: fmt.Sprintf("the harness opened session %q, not the loaded %q", got, s.req.SessionID),
@@ -180,13 +203,20 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	}
 	s.mu.Lock()
 	s.t, s.markers, s.sessionID = t, m, t.SessionID()
+	select {
+	case <-s.exited:
+		// The harness ended before Open got this far.
+		lk.release()
+	default:
+		s.lock = lk
+	}
 	s.mu.Unlock()
 	r, err := s.a.p.Record(RecordSource{
 		SessionID: t.SessionID(), OpenConfig: s.req.OpenConfig, Layout: s.req.Layout,
 		Checkpoint: s.req.Checkpoint, Markers: m,
 	})
 	if err != nil {
-		t.Stop(context.Background(), 0)
+		stop()
 		return fail(err)
 	}
 	s.cur.readerMu.Lock()
@@ -312,6 +342,8 @@ func (s *session) report(ev Event) {
 			if s.gateTimer != nil {
 				s.gateTimer.Stop()
 			}
+			s.lock.release()
+			s.lock = nil
 			close(s.exited)
 		})
 	}
