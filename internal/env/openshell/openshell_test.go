@@ -268,7 +268,7 @@ func TestLayer_ExecWrapEnvPrefix(t *testing.T) {
 	})
 	want := []string{
 		"openshell", "sandbox", "exec", "-n", "openshell-test", "--no-tty", "--workdir", "/work", "--",
-		"env", "A=1", "B=2", "echo", "hi",
+		"env", "A=1", "B=2", "--", "echo", "hi",
 	}
 	if strings.Join(argv, " ") != strings.Join(want, " ") {
 		t.Errorf("ExecWrap argv = %v, want %v", argv, want)

@@ -11,16 +11,19 @@ import (
 //
 // Any place a prompt or user string crosses an exec boundary that is
 // shell-interpreted (e.g. a containment's in-guest `env K=V <argv>` prefix), the
-// argv must be reassembled with STRICT single-quoting so no metacharacter,
-// newline, or leading dash can break out of its token.
+// argv must be reassembled with STRICT single-quoting so no metacharacter or
+// newline can break out of its token.
 
 // ShQuote single-quotes one argument for POSIX sh.
 //
 // The empty string becomes ”. Otherwise the argument is wrapped in single
 // quotes and any embedded single quote is escaped via the '\” idiom
 // (close-quote, escaped-quote, re-open). Nothing inside single quotes is special
-// to the shell, so quotes, $, backticks, ;, newlines, and a leading - are all
-// inert.
+// to the shell, so quotes, $, backticks, ;, and newlines are inert. Quoting is
+// a shell-level guarantee only: a token with a leading - still reaches the
+// command it is passed to as that command's option, so a caller placing a
+// token where a utility parses options (e.g. `env`) must guard that itself —
+// see EnvPrefixedShell.
 func ShQuote(arg string) string {
 	if arg == "" {
 		return "''"
@@ -42,6 +45,10 @@ func ArgvToShell(argv []string) string {
 // portable environment variable name.
 var ErrInvalidEnvName = errors.New("env: invalid environment variable name")
 
+// ErrInvalidEnvCommand is returned by EnvPrefixedShell when argv[0] contains
+// '=': `env` would take it as one more assignment, not as the command.
+var ErrInvalidEnvCommand = errors.New("env: command name contains '='")
+
 // EnvPrefixedShell builds an in-guest `env K=V … <argv>` prefix as a shell-safe
 // argv-string. Both the assignments' values and the command tokens are
 // single-quoted. Keys are emitted in sorted order for determinism. Used by
@@ -54,9 +61,20 @@ var ErrInvalidEnvName = errors.New("env: invalid environment variable name")
 // or underscore, then letters, digits and underscores — or the whole command
 // is refused with ErrInvalidEnvName: a key such as "X;id #" would otherwise be
 // shell syntax in the command it builds.
+//
+// Shell quoting does not stop `env` itself from parsing the command: a
+// command word starting with '-' would be read as an env option, and one
+// containing '=' as another assignment. The assignments are therefore
+// terminated with `--` (end of options for GNU coreutils, BusyBox and BSD
+// env alike, all getopt-based per the POSIX utility syntax guidelines), and an
+// argv[0] containing '=' — which `--` does not protect, since assignments are
+// operands — is refused with ErrInvalidEnvCommand.
 func EnvPrefixedShell(env map[string]string, argv []string) (string, error) {
 	if len(env) == 0 {
 		return ArgvToShell(argv), nil
+	}
+	if len(argv) > 0 && strings.ContainsRune(argv[0], '=') {
+		return "", fmt.Errorf("%w: %q", ErrInvalidEnvCommand, argv[0])
 	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
@@ -67,12 +85,13 @@ func EnvPrefixedShell(env map[string]string, argv []string) (string, error) {
 	}
 	sort.Strings(keys)
 
-	parts := make([]string, 0, 1+len(keys)+len(argv))
+	parts := make([]string, 0, 2+len(keys)+len(argv))
 	parts = append(parts, "env")
 	for _, k := range keys {
 		// The key is a valid identifier (checked above); the value is fully quoted.
 		parts = append(parts, k+"="+ShQuote(env[k]))
 	}
+	parts = append(parts, "--")
 	for _, a := range argv {
 		parts = append(parts, ShQuote(a))
 	}

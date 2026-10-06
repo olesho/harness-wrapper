@@ -74,7 +74,7 @@ func TestEnvPrefixedShell(t *testing.T) {
 	t.Run("keys emitted in sorted order and values quoted", func(t *testing.T) {
 		env := map[string]string{"ZED": "last", "ABC": "a b", "MID": "$x"}
 		got, err := EnvPrefixedShell(env, []string{"run", "cmd arg"})
-		want := "env ABC='a b' MID='$x' ZED='last' 'run' 'cmd arg'"
+		want := "env ABC='a b' MID='$x' ZED='last' -- 'run' 'cmd arg'"
 		if err != nil || got != want {
 			t.Fatalf("got (%q, %v), want (%q, nil)", got, err, want)
 		}
@@ -83,7 +83,7 @@ func TestEnvPrefixedShell(t *testing.T) {
 	t.Run("hostile value cannot break out", func(t *testing.T) {
 		env := map[string]string{"K": "'; rm -rf / #"}
 		got, err := EnvPrefixedShell(env, []string{"true"})
-		want := `env K=''\''; rm -rf / #' 'true'`
+		want := `env K=''\''; rm -rf / #' -- 'true'`
 		if err != nil || got != want {
 			t.Fatalf("got (%q, %v), want (%q, nil)", got, err, want)
 		}
@@ -105,5 +105,26 @@ func TestEnvPrefixedShellRefusesInvalidKeys(t *testing.T) {
 	got, err := EnvPrefixedShell(map[string]string{"_A1": "x", "b_2": "y"}, []string{"true"})
 	if err != nil || !strings.HasPrefix(got, "env _A1='x' b_2='y' ") {
 		t.Fatalf("valid keys: EnvPrefixedShell = (%q, %v)", got, err)
+	}
+}
+
+// `env` parses the command word itself: a leading '-' would be an env option
+// and an '=' another assignment. The prefix ends options with `--`, and an
+// argv[0] containing '=' is refused.
+func TestEnvPrefixedShellGuardsCommandWord(t *testing.T) {
+	got, err := EnvPrefixedShell(map[string]string{"K": "v"}, []string{"-i", "x"})
+	want := "env K='v' -- '-i' 'x'"
+	if err != nil || got != want {
+		t.Fatalf("leading dash: got (%q, %v), want (%q, nil)", got, err, want)
+	}
+	for _, argv0 := range []string{"A=B", "=", "./x=y"} {
+		got, err := EnvPrefixedShell(map[string]string{"K": "v"}, []string{argv0, "arg"})
+		if !errors.Is(err, ErrInvalidEnvCommand) || got != "" {
+			t.Errorf("argv0 %q: got (%q, %v), want ErrInvalidEnvCommand", argv0, got, err)
+		}
+	}
+	// Without env no `env` prefix is emitted, so '=' is just a quoted word.
+	if got, err := EnvPrefixedShell(nil, []string{"A=B"}); err != nil || got != "'A=B'" {
+		t.Errorf("no env: got (%q, %v)", got, err)
 	}
 }

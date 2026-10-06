@@ -570,12 +570,14 @@ func envPrefix(m map[string]string) []string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	out := make([]string, 0, 1+len(keys))
+	out := make([]string, 0, 2+len(keys))
 	out = append(out, "env")
 	for _, k := range keys {
 		out = append(out, k+"="+m[k])
 	}
-	return out
+	// `--` ends env's options, so a command word starting with '-' is run,
+	// not parsed as an env flag.
+	return append(out, "--")
 }
 
 func (l *openShellLayer) CrossUpload(stagingPath, guestPath string) []string {
