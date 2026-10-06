@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -363,5 +364,37 @@ func TestSemverRe_MatchesVariousShapes(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("semverRe(%q): want %q, got %q", tc.in, tc.want, got)
 		}
+	}
+}
+
+// flakyProbe fails its first call, then reports a version.
+type flakyProbe struct{ calls int }
+
+func (p *flakyProbe) Detect(context.Context, string) (string, error) {
+	p.calls++
+	if p.calls == 1 {
+		return "", errors.New("probe timed out")
+	}
+	return "1.2.3", nil
+}
+
+// A failed probe (often just a timeout under load) must not be cached until
+// the binary changes, or a long-running process reports "unknown version"
+// forever. Successes are still cached.
+func TestCachedDetect_DoesNotCacheFailures(t *testing.T) {
+	t.Cleanup(ResetCache)
+	bin := filepath.Join(t.TempDir(), "harness")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := &flakyProbe{}
+	if _, err := cachedDetect(p, bin); err == nil {
+		t.Fatal("first probe: want the error")
+	}
+	if v, err := cachedDetect(p, bin); err != nil || v != "1.2.3" {
+		t.Fatalf("second probe = (%q, %v), want a fresh successful probe", v, err)
+	}
+	if _, _ = cachedDetect(p, bin); p.calls != 2 {
+		t.Errorf("probe calls = %d, want 2 (success cached)", p.calls)
 	}
 }

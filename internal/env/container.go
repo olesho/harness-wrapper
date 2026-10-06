@@ -48,15 +48,22 @@ func NewContainerWorkspace(runtime, containerID, tmpDir string) *ContainerWorksp
 func (c *ContainerWorkspace) Exec(ctx context.Context, argv []string, opts *ExecOpts) (ExecResult, error) {
 	cwd := "/repo"
 	var env map[string]string
+	var stdin *string
 	if opts != nil {
 		if opts.Cwd != "" {
 			cwd = opts.Cwd
 		}
 		env = opts.Env
+		stdin = opts.Stdin
 	}
 
-	// Build the docker/podman exec command with env vars.
+	// Build the docker/podman exec command with env vars. -i keeps the exec's
+	// stdin open; without it opts.Stdin never reaches the process (e.g.
+	// OpenShell's policy staging would write an empty file).
 	args := []string{"exec", "-w", cwd}
+	if stdin != nil {
+		args = append(args, "-i")
+	}
 	for k, v := range env {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
@@ -64,6 +71,9 @@ func (c *ContainerWorkspace) Exec(ctx context.Context, argv []string, opts *Exec
 	args = append(args, argv...)
 
 	cmd := exec.CommandContext(ctx, c.runtime, args...)
+	if stdin != nil {
+		cmd.Stdin = strings.NewReader(*stdin)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

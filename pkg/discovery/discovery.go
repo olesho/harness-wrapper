@@ -97,7 +97,6 @@ var (
 type cacheEntry struct {
 	mtime   time.Time
 	version string
-	err     error
 }
 
 // RegisterProbe associates a version probe with a canonical harness
@@ -239,7 +238,7 @@ func cachedDetect(p Probe, path string) (string, error) {
 	if raw, ok := cache.Load(path); ok {
 		entry := raw.(*cacheEntry)
 		if entry.mtime.Equal(mtime) {
-			return entry.version, entry.err
+			return entry.version, nil
 		}
 	}
 
@@ -247,6 +246,11 @@ func cachedDetect(p Probe, path string) (string, error) {
 	defer cancel()
 
 	version, perr := p.Detect(ctx, path)
-	cache.Store(path, &cacheEntry{mtime: mtime, version: version, err: perr})
+	// Only successes are cached. A failure is often transient (a probe that
+	// timed out under load), and caching it until the binary changes would
+	// pin a long-running supervisor to "unknown version" for good.
+	if perr == nil {
+		cache.Store(path, &cacheEntry{mtime: mtime, version: version})
+	}
 	return version, perr
 }
