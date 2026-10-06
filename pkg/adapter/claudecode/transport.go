@@ -77,9 +77,12 @@ type transport struct {
 	// own is the turn claude started itself to take up background work that
 	// ended (background_turns), nil when none; task is the task the latest
 	// task_notification named, which the next such turn is named after.
-	own       *turnState
-	task      string
-	capsDone  bool
+	own      *turnState
+	task     string
+	capsDone bool
+	// foreign is a session id other than the Session's that claude spoke
+	// for: it runs another session, and is stopped.
+	foreign   string
 	stopping  bool
 	killed    bool
 	exited    chan struct{} // closed once the process ended and Exited was reported
@@ -103,6 +106,8 @@ type controlResult struct {
 type frame struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
+	// SessionID is the session claude runs, on a system frame.
+	SessionID string `json:"session_id"`
 
 	// system/init
 	Capabilities []string `json:"capabilities"`
@@ -217,6 +222,11 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	ictx, cancel := context.WithTimeout(ctx, initWait)
 	_, err = t.request(ictx, map[string]any{"subtype": "initialize", "hooks": nil})
 	cancel()
+	if foreign := t.foreignID(); foreign != "" {
+		t.Stop(context.Background(), 0)
+		<-t.exited
+		return nil, openFailed(contract.OpenSessionInUse, "claude opened session %s, not %s: a copy, as of a session another process holds", foreign, id)
+	}
 	if err != nil {
 		t.Stop(context.Background(), 0)
 		<-t.exited
@@ -393,6 +403,10 @@ func readBoundedLine(r *bufio.Reader, max int) ([]byte, error) {
 }
 
 func (t *transport) onFrame(f *frame, raw []byte) {
+	if f.Type == "system" && f.SessionID != "" && !strings.EqualFold(f.SessionID, t.id) {
+		t.onForeign(f.SessionID)
+		return
+	}
 	switch f.Type {
 	case "command_lifecycle":
 		t.onLifecycle(f.CommandUUID, f.State)
@@ -529,6 +543,38 @@ func (t *transport) onLifecycle(uuid, state string) {
 
 // onInit checks, once, that claude has what the transport relies on. A
 // claude that lacks it is stopped: the turn it was on errors.
+// onForeign stops a claude that runs a session other than the Session's: a
+// copy, which claude may start of a session another process holds. Nothing
+// it does is the Session's. A turn it was on ends errored; before it
+// answered its initialize request, Start fails with session_in_use.
+func (t *transport) onForeign(id string) {
+	t.mu.Lock()
+	first := t.foreign == ""
+	if first {
+		t.foreign = id
+	}
+	ts := t.turn
+	if first {
+		t.turn = nil
+	}
+	t.mu.Unlock()
+	if !first {
+		return
+	}
+	if ts != nil {
+		t.report(adapter.Event{Kind: adapter.Ended, Native: ts.native, Outcome: contract.TurnErrored, Error: &contract.TurnError{Class: contract.ErrorInternal}})
+	}
+	_, _ = fmt.Fprintf(t.stderr, "claude runs session %s, not %s: stopped\n", id, t.id)
+	go t.Stop(context.Background(), quitWait)
+}
+
+// foreignID is the other session claude spoke for, "" when none.
+func (t *transport) foreignID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.foreign
+}
+
 func (t *transport) onInit(f *frame) {
 	t.mu.Lock()
 	done := t.capsDone
