@@ -93,22 +93,38 @@ func loadSettingsJSON(data []byte) (settings, hooks map[string]json.RawMessage, 
 	return settings, hooks, nil
 }
 
-// upsertSettingsHooks replaces all loom-owned matchers for nativeEvent with the
-// fresh loomMatchers, preserving every non-loom (user) matcher.
+// upsertSettingsHooks replaces all loom-owned commands for nativeEvent with the
+// fresh loomMatchers, preserving every non-loom (user) entry.
+//
+// Matcher groups are handled as raw JSON, never decoded into
+// SettingsHookMatcher: a round-trip through that struct would silently drop
+// every field it does not model (timeout, async, statusMessage, …). A group
+// with no loom command is kept byte-for-byte; a mixed group loses only its
+// loom commands; a group is dropped only when nothing is left in it.
 func upsertSettingsHooks(hooks map[string]json.RawMessage, nativeEvent string, loomMatchers []SettingsHookMatcher) error {
-	var matchers []SettingsHookMatcher
+	var groups []json.RawMessage
 	if raw, ok := hooks[nativeEvent]; ok {
-		if err := json.Unmarshal(raw, &matchers); err != nil {
+		if err := json.Unmarshal(raw, &groups); err != nil {
 			return fmt.Errorf("hooks: parse %s entries: %w", nativeEvent, err)
 		}
 	}
-	kept := matchers[:0]
-	for _, m := range matchers {
-		if !matcherIsLoomOwned(m) {
-			kept = append(kept, m)
+	kept := make([]json.RawMessage, 0, len(groups)+len(loomMatchers))
+	for _, g := range groups {
+		ng, keep, err := stripLoomCommands(g)
+		if err != nil {
+			return fmt.Errorf("hooks: rewrite %s entry: %w", nativeEvent, err)
+		}
+		if keep {
+			kept = append(kept, ng)
 		}
 	}
-	kept = append(kept, loomMatchers...)
+	for _, m := range loomMatchers {
+		data, err := json.Marshal(m)
+		if err != nil {
+			return fmt.Errorf("hooks: marshal %s entries: %w", nativeEvent, err)
+		}
+		kept = append(kept, data)
+	}
 	data, err := json.Marshal(kept)
 	if err != nil {
 		return fmt.Errorf("hooks: marshal %s entries: %w", nativeEvent, err)
@@ -117,15 +133,43 @@ func upsertSettingsHooks(hooks map[string]json.RawMessage, nativeEvent string, l
 	return nil
 }
 
-// matcherIsLoomOwned reports whether a matcher group contains a loom-managed
-// command (so it is replaced on re-ensure).
-func matcherIsLoomOwned(m SettingsHookMatcher) bool {
-	for _, e := range m.Hooks {
-		if IsManagedHookCommand(e.Command) {
-			return true
-		}
+// stripLoomCommands removes the loom-managed commands from one matcher group.
+// A group with no loom command comes back unchanged; one left with no command
+// at all is dropped (keep=false); otherwise the group is re-encoded with only
+// the user's commands and every other field untouched. A shape this code does
+// not recognise is kept as-is rather than rejected.
+func stripLoomCommands(group json.RawMessage) (out json.RawMessage, keep bool, err error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(group, &fields) != nil {
+		return group, true, nil
 	}
-	return false
+	var cmds []json.RawMessage
+	if raw, ok := fields["hooks"]; !ok || json.Unmarshal(raw, &cmds) != nil {
+		return group, true, nil
+	}
+	userCmds := make([]json.RawMessage, 0, len(cmds))
+	for _, c := range cmds {
+		var cmd struct {
+			Command string `json:"command"`
+		}
+		if json.Unmarshal(c, &cmd) == nil && IsManagedHookCommand(cmd.Command) {
+			continue
+		}
+		userCmds = append(userCmds, c)
+	}
+	switch {
+	case len(userCmds) == len(cmds):
+		return group, true, nil
+	case len(userCmds) == 0:
+		return nil, false, nil
+	}
+	if fields["hooks"], err = json.Marshal(userCmds); err != nil {
+		return nil, false, err
+	}
+	if out, err = json.Marshal(fields); err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
 }
 
 // marshalSettingsJSON writes hooks back under settings["hooks"] and renders the

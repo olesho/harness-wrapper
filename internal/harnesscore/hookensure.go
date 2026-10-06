@@ -89,14 +89,56 @@ func WithLockedFile(targetPath string, fn func(existing []byte) ([]byte, error))
 
 // atomicWriteFile writes data to a uniquely-named temp file in the target's
 // directory and renames it into place (atomic on the same filesystem).
+//
+// The target may be a file the user owns (a worktree's settings.json), so an
+// existing file keeps its permission bits, and a symlinked target is followed
+// and its destination replaced — renaming over the link itself would silently
+// turn it into a regular file (e.g. detaching a dotfiles-managed config). The
+// temp is created O_EXCL|O_NOFOLLOW, so nothing already at its name is written
+// through, and the file and then its directory are fsynced so a nil return
+// means the new content is durable.
 func atomicWriteFile(path string, data []byte) error {
+	mode := os.FileMode(0o600)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+		if fi, err := os.Stat(path); err == nil {
+			mode = fi.Mode().Perm()
+		}
+	}
 	tmp := fmt.Sprintf("%s.tmp-%d-%d", path, time.Now().UnixNano(), os.Getpid())
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := writeTempSynced(tmp, data, mode); err != nil {
 		return fmt.Errorf("harness: write temp %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("harness: commit %s: %w", path, err)
 	}
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("harness: sync dir of %s: %w", path, err)
+	}
 	return nil
+}
+
+// writeTempSynced creates path exclusively and never through a symlink,
+// writes data, sets mode exactly (the create mode is filtered by the umask)
+// and fsyncs. The file is removed again if any step fails.
+func writeTempSynced(path string, data []byte, mode os.FileMode) (err error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, mode) //nolint:gosec // temp beside a worktree config path
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err = f.Write(data); err == nil {
+		if err = f.Chmod(mode); err == nil {
+			err = f.Sync()
+		}
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
