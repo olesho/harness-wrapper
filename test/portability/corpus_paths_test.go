@@ -31,8 +31,6 @@ var historical = map[string]string{
 	"codex/short-reply":                   "codex 0.142.2 bake (c604b34); replaced only by a codex rebake",
 	"codex/approval-command":              "codex approval-dialog capture; replaced only by a codex rebake",
 	"codex/approval-patch":                "codex approval-dialog capture; replaced only by a codex rebake",
-	"pi/headless-json-simple.jsonl":       "pi headless JSON capture; its cwd field is the recording machine's",
-	"pi/headless-json-toolcall.jsonl":     "pi headless JSON capture; its cwd field is the recording machine's",
 	"permission-mode/claude-code":         "permission-mode footer captures (#46); the footer shows the recording cwd",
 	"permission-mode/codex":               "permission-mode footer captures; the footer shows the recording cwd",
 }

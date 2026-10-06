@@ -47,7 +47,7 @@ type Config struct {
 	WaitDelay      time.Duration // SIGTERM→SIGKILL grace on cancellation (default 5s)
 
 	Trace      trace.Emitter      // diagnostic events; observability only
-	Harness    string             // selects a built-in classifier ("claude", "codex", "opencode", "pi", …)
+	Harness    string             // selects a built-in classifier ("claude", "codex", "opencode", "cursor", …)
 	Effort     string             // reasoning effort ("low"|"medium"|"high"|"xhigh"|"max"; "" = default)
 	Model      string             // model for this run ("" = harness default); never validated
 	PermissionMode string         // launch-time permission rung ("" = harness default)
@@ -411,7 +411,7 @@ That env/args split is load-bearing and deliberate: the **arg** half must be rea
 root and must stay auditable in one CLI file, so it lives in `applySandboxDefaults` and nowhere else.
 For the same reason the compose path guards on the literal harness name `"claude"` with no
 `normHarness` normalization (unlike `pkg/wrapper`, which does normalize): the CLI's supported names
-are exactly `claude`, `codex`, `opencode`, `pi`, so the `claude-code` alias never reaches it from the
+are exactly `claude`, `codex`, `opencode`, so the `claude-code` alias never reaches it from the
 CLI, and normalizing would quietly widen the set of invocations receiving the root-enabling env half.
 
 ## Contained launches

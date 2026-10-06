@@ -67,7 +67,6 @@ func TestBypassEnablingFlags(t *testing.T) {
 		{"claude-code", []string{SkipPermissionsFlag}},
 		{"Claude-Code", []string{SkipPermissionsFlag}},
 		{"codex", []string{codexBypassFlag}},
-		{"pi", nil},
 		{"opencode", nil},
 		{"generic", nil},
 		{"", nil},
@@ -92,7 +91,6 @@ func TestBypassReachableFlags(t *testing.T) {
 		// codex has no separate unlock flag, so reachable == enabling there. The
 		// claude unlock flag must never leak into this arm.
 		{"codex", []string{codexBypassFlag}},
-		{"pi", nil},
 		{"opencode", nil},
 		{"generic", nil},
 		{"", nil},
@@ -129,7 +127,7 @@ func TestBypassEnablingFlagsNeverIncludesNonexistentFlag(t *testing.T) {
 	// adding it would turn the flag's own intended pairing with a restrictive
 	// --permission-mode into a hard ErrInvalidConfig. Ring membership is
 	// BypassReachableFlags' business instead.
-	for _, harness := range []string{"claude", "claude-code", "codex", "pi", ""} {
+	for _, harness := range []string{"claude", "claude-code", "codex", "opencode", ""} {
 		for _, flag := range BypassEnablingFlags(harness) {
 			if flag != SkipPermissionsFlag && flag != codexBypassFlag {
 				t.Fatalf("BypassEnablingFlags(%q) returned unknown flag %q", harness, flag)
@@ -208,7 +206,7 @@ func TestEffectiveLaunchRung(t *testing.T) {
 		{"codex argv attached-short approval only", "codex", []string{"-aon-request"}, "manual", ""},
 		{"codex argv duplicate sandbox last wins", "codex", []string{"-s", "read-only", "-s", "danger-full-access"}, "", "bypass"},
 
-		{"unsupported harness", "pi", []string{"--permission-mode", "bypassPermissions"}, "bypass", ""},
+		{"unsupported harness", "opencode", []string{"--permission-mode", "bypassPermissions"}, "bypass", ""},
 		{"empty harness", "", nil, "bypass", ""},
 	}
 	for _, tt := range tests {
@@ -279,7 +277,7 @@ func TestEffectiveLaunchRungIdempotentOverInjection(t *testing.T) {
 		{"codex", nil, "danger-full-access"},
 		{"codex", []string{"-s", "read-only"}, "bypass"},
 		{"codex", []string{codexBypassFlag}, "manual"},
-		{"pi", nil, "bypass"},
+		{"opencode", nil, "bypass"},
 	}
 	for _, tt := range tests {
 		raw := EffectiveLaunchRung(tt.harness, tt.args, tt.mode)

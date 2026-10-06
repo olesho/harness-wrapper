@@ -55,15 +55,15 @@ Both fields are accepted on `POST /v1/conversations` and `POST /v1/turns`, and b
 
 1. **Both hard-fail on a harness without the knob; only `effort`'s value is validated.**
    `wrapper.validateConfig` rejects *any* effort, and *any* model, on a harness the wrapper has no
-   flag for — `{"harness":"pi","model":"…"}` is a 400 `invalid_config` just as
-   `{"harness":"pi","effort":"…"}` is — and it rejects an effort outside the enum `low`, `medium`,
+   flag for — `{"harness":"opencode","model":"…"}` is a 400 `invalid_config` just as
+   `{"harness":"opencode","effort":"…"}` is — and it rejects an effort outside the enum `low`, `medium`,
    `high`, `xhigh`, `max`. A model id is passed to the harness as given. (A model on a harness
    without a model flag used to be accepted and silently dropped, leaving the harness on its
    default model.)
 2. **The effort- and model-capable harness names on this gateway are exactly `"codex"` and
-   `"claude-code"`, case-sensitively.** `effort` or `model` against `opencode`, `pi`, or
+   `"claude-code"`, case-sensitively.** `effort` or `model` against `opencode` or
    `generic`/`""` is rejected. The gateway resolves the
-   adapter by raw string match, so it accepts only `codex`, `claude-code`, `opencode`, `pi`, and
+   adapter by raw string match, so it accepts only `codex`, `claude-code`, `opencode` and
    `generic`/`""`: plain `"claude"` is a 400 `unknown_harness` *before* effort is ever considered
    (even though `pkg/wrapper` itself accepts that spelling), and `"Codex"` 400s as
    `unknown_harness` too, because the adapter lookup does not lowercase or trim. The CLI's name set

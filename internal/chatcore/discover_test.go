@@ -15,11 +15,11 @@ import (
 )
 
 // TestDiscoverModels_UnsupportedHarness pins the first arm of the error
-// contract: a harness with no parseable `/model` picker (pi/opencode/generic)
+// contract: a harness with no parseable `/model` picker (opencode/generic)
 // fast-fails with ErrPickerUnsupported BEFORE any session is launched — so it
 // needs no binary. Mirrors the TS `pickerHeader === null` throw.
 func TestDiscoverModels_UnsupportedHarness(t *testing.T) {
-	for _, h := range []string{"pi", "opencode", "generic", "", "unknown"} {
+	for _, h := range []string{"opencode", "generic", "", "unknown"} {
 		t.Run(h, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
@@ -47,7 +47,7 @@ func TestDiscoverModels_SupportedSet(t *testing.T) {
 			t.Errorf("pickerSupported(%q) = false, want true", h)
 		}
 	}
-	for _, h := range []string{"pi", "opencode", "generic", ""} {
+	for _, h := range []string{"opencode", "generic", ""} {
 		if pickerSupported(h) {
 			t.Errorf("pickerSupported(%q) = true, want false", h)
 		}

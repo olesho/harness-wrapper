@@ -57,6 +57,23 @@ clock at ~15s for the three currently-tracked harnesses.
 #### `type Row`
 Row is one harness's drift status. Exported for the JSON output.
 
+## Module: main (`cmd/claude-code-hook`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Command claude-code-hook is the Claude Code profile's hook helper: the
+command claude's settings.json runs for each hook, from the harness
+distribution (pkg/adapter/claudecode.HookPath). It hands the hook's payload
+to hw's claude hook handler, which writes the events it reports durably to
+the spool named by HW_EVENT_SPOOL, where the profile's record reader finds
+them.
+
+	claude-code-hook claude <hook>
+
+It exits 2 when the handler says to block the tool (its decision on
+stdout), and 0 otherwise: a failure is reported on stderr and never blocks
+claude.
+
 ## Module: main (`cmd/fakeharness`)
 
 _(summary pending — run the veracity-docs skill)_
@@ -553,17 +570,8 @@ every profile's effective version includes.
 DisableSupervisionForTest makes every launch see a host that delegates no
 cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (master, slave int, err error)`
-OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
-O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
-than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
-Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
-pty.Open — and the caller wraps the master in an *os.File only after the
-spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
-
-It runs on an ordinary thread: Landlock fixes a file's rights when the file
-is opened, so a master opened on the restricted thread would deny the
-wrapper's later resize calls.
+#### `func OpenPTYPair() (int, int, error)`
+OpenPTYPair reports ErrUnsupported.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -577,9 +585,7 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent returns the directory beneath which managed state lives:
-$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
-~/.local/state/harness-wrapper/contain.
+StateParent reports ErrUnsupported.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -598,9 +604,8 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(in Input) (l *Launch, err error)`
-Prepare turns in into a Launch, or refuses it before anything runs. On
-refusal it releases whatever it acquired, including ephemeral state.
+#### `func Prepare(Input) (*Launch, error)`
+Prepare reports ErrUnsupported: Landlock containment is Linux-only.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -628,10 +633,8 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(in Input) (*Preview, error)`
-PreviewLaunch runs the checks Prepare runs, collecting every problem
-instead of stopping at the first, and allocates nothing: no state, no
-cgroup, no ruleset. Only an invalid request is an error.
+#### `func PreviewLaunch(Input) (*Preview, error)`
+PreviewLaunch reports ErrUnsupported.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -647,13 +650,11 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(persistent bool) (*State, error)`
-NewState allocates new managed state. Persistent state survives its
-launches until Remove; ephemeral state is deleted by the launch that
-created it once that launch's cgroup is empty.
+#### `func NewState(bool) (*State, error)`
+NewState reports ErrUnsupported.
 
-#### `func OpenState(id string) (*State, error)`
-OpenState opens existing managed state by id.
+#### `func OpenState(string) (*State, error)`
+OpenState reports ErrUnsupported.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -1156,9 +1157,8 @@ future TUI drift updates fixtures and adapter patterns together.
 
 Methods chain; terminate with Build. The glyph helpers below cover
 claude-code (the harness whose completion timing these fixtures regression-
-lock) in most depth, but codex and pi each have a full turn vocabulary too:
-CodexWorking/CodexReply and PiWorking/PiReply drive a turn to completion, not
-just to readiness.
+lock) in most depth, but codex has a full turn vocabulary too:
+CodexWorking/CodexReply drive a turn to completion, not just to readiness.
 
 #### `func New(harness string) *Builder`
 New starts a Builder for the named harness with the default session ID.
@@ -1200,6 +1200,352 @@ harness's own record of a turn, e.g. a tagged API-error line.
 WaitInput blocks replay until the bytes the wrapper has typed match
 UntilRegex. Because the PTY slave is in raw mode, the match sees control
 bytes (the CSI-13u submit) directly, with no line buffering.
+
+## Module: harnesscore (`internal/harnesscore`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package harnesscore is pkg/harness without its runner: the per-harness
+Profile registry and capabilities, the hook specs, the hook handler and its
+spool, and the settings.json hook merge. pkg/harness forwards to it
+(forward.go) and adds Run and RunTurn, which drive a harness through
+pkg/chat and so link every built-in harness. A per-harness hook profile
+(pkg/harness/claude, …) and its hook helper import this package instead, so
+they link no other harness.
+
+### Exported Types & Functions
+
+#### `func AckSpool(spoolDir string, receipts ...SpoolReceipt) error`
+AckSpool deletes the spool files the receipts name, once the consumer has
+durably committed their events, and fsyncs the directory so that the
+deletions survive a crash. It deletes a file only while it is still exactly
+the one ReadSpool read. A receipt whose name is not a plain spool file name,
+or whose file changed or was replaced since, is refused — wrapped in
+ErrSpoolReceipt — and deletes nothing, so contents nobody committed are
+never lost: ReadSpool returns the changed file again under a new receipt.
+
+A receipt whose file is already gone counts as acknowledged, so repeating
+an acknowledgement, say after a crash, is safe; the directory is fsynced
+even then, which makes an earlier unsynced deletion durable. Until AckSpool
+returns nil, a crash can leave any of its files in place to be read again,
+and the consumer recognises them by receipt. The error joins every refusal
+and failure; the other receipts are still acknowledged.
+
+#### `func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error)`
+DrainSpool reads every COMPLETED spool file (`.json`, never the in-flight
+`.tmp`), returning all parsed events and removing each file it successfully
+consumed so a later drain does not re-emit them. Run calls it after the
+harness exits (the grace-window drain), then removes the per-run spool; the
+consumer additionally dedups by Event.ID(), so a file left behind by a delete
+failure is absorbed rather than duplicated.
+
+DrainSpool is destructive and not transactional: it deletes each file as
+soon as it has parsed it, before the caller has done anything with the
+events, so a crash in between loses them. That suits a consumer that lives
+and dies with the run. One that must not lose events — agentd, whose
+supervisor outlives its harness — reads with ReadSpool and acknowledges
+with AckSpool after its own durable commit, and never calls DrainSpool.
+
+A missing spool dir is not an error (no hooks fired). A single unreadable /
+unparseable file is skipped (left in place) and collected into err, but does
+not abort the drain of the rest.
+
+#### `func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []string, harnessName string) error`
+EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
+settings.json (the shared two-level hook format) at settingsPath, rendering each command from
+loomArgv via RenderHookCommand (harnessName is the token in the command). It
+preserves the user's hooks + unknown keys, marks loom's entries (owner), and
+refreshes the loom path each call (self-healing). flock-guarded + atomic.
+
+#### `func EnvLookup(env []string, key string) string`
+EnvLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
+if absent. The last occurrence wins (matching exec semantics). Exported so
+per-harness Profile packages — which cannot see this package's unexported
+helpers — read the launch env by exactly the same rule the hook subprocess
+does; see ConfigDirResolver.
+
+#### `func IsManagedHookCommand(command string) bool`
+IsManagedHookCommand reports whether a rendered hook command is one loom owns
+(by the marker), so a merge can replace/remove it idempotently.
+
+#### `func Register(name string, p Profile)`
+Register adds a Profile under name. Per-harness packages call this from their
+init(); panics on a duplicate to catch double-registration at startup.
+
+#### `func Registered() []string`
+Registered returns the sorted names of all registered profiles (for tests
+and diagnostics).
+
+#### `func RenderHookCommand(loomArgv []string, harnessName, arg, owner string) string`
+RenderHookCommand builds the hook command string written into a harness's
+config. It is ALWAYS a POSIX shell command with a pre-exec env guard so a
+left-in-place entry is inert on a non-wrapper run (review #5):
+
+	sh -c 'test -n "$HW_EVENT_SPOOL" || exit 0; exec <loomArgv> <harness> <arg>' # harness-wrapper-hook:<owner>
+
+With HW_EVENT_SPOOL unset the guard exits 0 WITHOUT touching the binary, so a
+stale/moved loom can never break someone else's run. loomArgv is the loom
+binary path + subcommand (e.g. {"/abs/loom","hooks"}); every interpolated
+value is POSIX-single-quoted, so spaces/quotes in the path are safe.
+
+#### `func RenderSettingsJSONHooks(existing []byte, spec *HookSpec, loomArgv []string, harnessName string) ([]byte, error)`
+RenderSettingsJSONHooks is EnsureSettingsJSONHooks without the file: it
+returns existing — a settings.json's bytes, nil for none — with spec's hooks
+installed, exactly as the ensure would write them. It does no I/O, so a
+renderer that must not touch the filesystem (a Harness Adapter's Provision)
+gets the same bytes.
+
+#### `func WithLockedFile(targetPath string, fn func(existing []byte) ([]byte, error)) error`
+WithLockedFile runs fn under an exclusive flock so concurrent same-worktree
+ensures don't clobber each other, then writes fn's result atomically.
+
+The flock is taken on a STABLE SIDECAR (`<targetPath>.lock`, never renamed) —
+flock is inode-based, so locking the file we then temp+rename-replace would
+drop the guard (the new inode is unlocked). fn receives the current file
+bytes (nil if absent) and returns the new content, or (nil, nil) to indicate
+"no change" (nothing is written). The target itself is written via temp+rename
+for torn-read safety.
+
+#### `type HookContext`
+HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
+HW_* env (never the subprocess cwd) — the authority for environment. It is
+distinct from ResolveContext (run-detection inputs) and ReadContext (the
+read/export environment).
+
+#### `type HookEntry`
+HookEntry maps one native hook event to its loom subcommand.
+
+#### `type HookOutcome`
+HookOutcome is the result of HandleHookEvent. For capture events it is the
+zero value. For the yield-guard control hook it may direct the caller to BLOCK
+the tool: print BlockOutput to stdout and exit with a non-zero code the harness
+interprets as "block" (Claude: exit 2).
+
+#### `func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (HookOutcome, error)`
+HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
+command delegates to. For capture events it parses the fired hook's stdin
+payload into events and writes them to the spool; for the yield-guard control
+event it returns a HookOutcome telling the caller whether to BLOCK the tool.
+
+It is INERT (zero outcome, writes nothing) when HW_EVENT_SPOOL is absent — so
+a leftover hook entry can never perturb a non-wrapper run (review #5; this is
+the runtime counterpart to the rendered shell guard). The subprocess does NOT
+call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
+main run's resolution already decided to install hooks.
+
+#### `type HookSpec`
+HookSpec describes the hook entries the orchestrator idempotently + atomically
+ensures in the harness's hook-config file. Per-harness variation is ONLY the
+config path + native event names + arg mapping — the shell+stdin-JSON contract
+is shared across Claude/Codex.
+
+#### `type Mode`
+Mode selects how the orchestrator acquires the transcript for a run. It is
+the F1 flag of the P3 rollout: default Off (no acquisition, no behavior
+change) until a caller opts in.
+
+#### `func For(name string) (Profile, bool)`
+For returns the registered Profile for the named harness. ok=false means the
+harness has no profile (caller degrades: resume→checkpoint, transcript→floor).
+The relevant pkg/harness/<name> package must be imported for its init() to
+run — blank-import pkg/harness/all to register all built-ins.
+
+#### `type ResolveContext`
+ResolveContext carries the RUN-DETECTION inputs Resolve needs — the binary,
+its args/env, the working dir, and config roots to probe. It is deliberately
+SEPARATE from HookContext (the hook-subprocess environment) and ReadContext
+(the transcript read/export environment), both introduced in later phases.
+
+#### `type ResolvedProfile`
+ResolvedProfile is the post-detection capability set for ONE run. A field is
+non-nil only when that capability is available this run. The orchestrator
+dispatches on these fields, never on the static Profile.
+
+P1 populates SessionID + Resume (Claude). Later phases add capability fields
+(StreamParser, HookProvider, TranscriptReader, Exporter) additively.
+
+#### `type SettingsHookCmd`
+SettingsHookCmd is a single command hook within a matcher group.
+
+#### `type SettingsHookMatcher`
+SettingsHookMatcher is one matcher group in a settings.json hook event.
+
+#### `type SpoolBatch`
+SpoolBatch is the events one spool file holds, with the receipt that
+acknowledges it.
+
+#### `type SpoolContents`
+SpoolContents is what one ReadSpool call found.
+
+#### `func ReadSpool(spoolDir string) (SpoolContents, error)`
+ReadSpool reads the completed spool files (`.json`, never an in-flight
+`.tmp`) without consuming them. Each batch carries a receipt, and its file
+stays in the spool until AckSpool is handed that receipt. A consumer commits
+a batch's events durably first and acknowledges it second, so a crash at any
+point loses nothing: ReadSpool returns every file not yet acknowledged again,
+under the same receipt, for the consumer to recognise as committed (or to
+dedup by Event.ID()).
+
+The spool is written by the hook subprocess, which may run as a less trusted
+user than the reader, so ReadSpool trusts nothing in it. It refuses a spool
+dir that is itself a symlink and confines every lookup to the directory. It
+reads only regular, singly linked files of at most MaxSpoolFileBytes, and it
+never follows a symlink or blocks on a FIFO. A file it cannot read as events
+— any other kind of file, an oversize or hard-linked one, an unsafe name, or
+contents that do not parse — is moved into SpoolQuarantineDir, or deleted
+once that holds MaxSpoolQuarantine files, and reported in Quarantined. It
+is never lost silently, and it cannot block the files behind it.
+
+One call handles a bounded amount of the spool and sets More when it leaves
+files for the next call. A spool has one consumer: ReadSpool takes no lock,
+so two concurrent readers would each return the same files. A missing spool
+dir is not an error (no hook fired). A file that cannot be read for any
+other reason stays where it is and is named in the error; the batches
+returned alongside an error are still valid.
+
+#### `type SpoolQuarantine`
+SpoolQuarantine reports a file ReadSpool took out of the spool without
+returning its events, because it could not trust or parse it.
+
+#### `type SpoolReceipt`
+SpoolReceipt identifies one spool file exactly as ReadSpool read it. A
+consumer hands it back to AckSpool once it has durably committed the file's
+events. It is comparable, so the consumer can record it in its own journal
+and recognise the file when a crash makes ReadSpool return it again.
+
+#### `type YieldControl`
+YieldControl is the caller's handle to request cooperative preemption of a
+running harness. The caller creates it, passes it in harness.Config.Yield
+(the orchestrator wires its path into the harness env as HW_YIELD_FILE), and
+calls Request mid-run to make the next tool block.
+
+It is safe to construct before the run and call from another goroutine while
+the run is in flight (Request/Clear are single filesystem ops).
+
+#### `func NewYieldControl() (*YieldControl, error)`
+NewYieldControl allocates a private yield file under a fresh temp dir. The
+caller owns the lifecycle and should Close it when the run is done.
+
+### Interfaces (Boundaries)
+
+#### `ConfigDirResolver`
+
+> ConfigDirResolver is an OPTIONAL interface a Profile implements when the
+harness takes its config ROOT from the launch environment (Claude Code's
+CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than from $HOME alone. It lets
+the harness-agnostic orchestrator forward that root to the hook subprocess as
+HW_HARNESS_CONFIG_DIR without knowing any harness's env-var vocabulary.
+
+Without it, a fired hook naming a per-profile transcript is rejected by
+validateTranscriptPath as "not under transcript root", because HookContext
+.ConfigDir is empty and the check falls back to <Home>/.claude.
+
+- `HarnessConfigDir(env []string) string`
+
+#### `HookProvider`
+
+> HookProvider is the capability for hook-driven transcript acquisition. A
+ResolvedProfile carries a non-nil Hooks only when hook support is confirmed
+for the run (statically firm for Claude; runtime-probed for Codex).
+
+The two methods serve the two sides of the hook lifecycle:
+  - HookSpec() describes WHAT to install (which native events map to which
+    `loom hooks <harness> <arg>` subcommand) so the orchestrator can
+    idempotently ensure the per-worktree hook config.
+  - ParseHookPayload() runs inside the fired hook SUBPROCESS: it parses the
+    harness's stdin payload (which HANDS OVER the transcript_path + session
+    id — no path reconstruction) and returns the canonical events, reading
+    the handed-over native transcript file on the file-bearing phases.
+
+ParseHookPayload is harness-STATIC (callable without Resolve): the hook
+subprocess is a fresh process that trusts it was invoked because the main
+run's resolution already passed, so it parses rather than re-detects.
+
+- `EnsureConfig(worktreePath string, loomArgv []string) error`
+- `HookSpec() *HookSpec`
+- `ParseHookPayload(ctx HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error)`
+
+#### `Profile`
+
+> Profile is the per-harness entry point. Implementations live in
+pkg/harness/<name> and self-register via Register in their init().
+
+- `Name() string`
+- `Resolve(ctx ResolveContext) ResolvedProfile`
+
+#### `Resumer`
+
+> Resumer produces the resume-specific CLI argument prefix for a given session
+id. The caller appends its own policy flags (output format, prompt, etc.).
+
+Intentionally separate from turns.SessionResumer (pkg/turns/turns.go): this
+one serves the headless pkg/harness registry (keyed e.g. "claude", not chat's
+"claude-code") and composes into headless invocations, whereas the turns
+counterpart is keyed the way chat looks adapters up and composes into the
+interactive TUI argv. See turns.SessionResumer's doc for why the two must not
+be merged.
+
+- `ResumeArgs(sessionID string) []string`
+
+#### `SessionIDExtractor`
+
+> SessionIDExtractor recovers the harness-assigned session UUID from a single
+line of the harness's headless stream output. Stateless and idempotent:
+callers invoke it per line and keep the first non-empty result.
+
+- `ExtractSessionID(line string) (string, bool)`
+
+#### `StaticHookProfile`
+
+> StaticHookProfile is an OPTIONAL interface a Profile implements when the
+harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
+the payload parser WITHOUT running Resolve: static hook availability is a
+harness fact, distinct from per-run capability resolution — which the
+subprocess must not re-run (it would re-probe; review #1). The main run still
+gates the DECISION to install/use hooks on the resolved ResolvedProfile.Hooks.
+
+- `StaticHookProvider() HookProvider`
+
+#### `StreamParser`
+
+> StreamParser parses a single line of the harness's headless stream output
+(e.g. `claude -p --output-format stream-json`) into canonical events. This is
+the generic "stdout floor" acquisition strategy: the orchestrator feeds it
+each raw line from the wrapper's durable line tap (wrapper.Config.OnLine) and
+concatenates the results.
+
+Contract: stateless and idempotent per line; one input line yields zero or
+more ParsedEvents (an assistant line can carry a text block AND a tool_use
+block). It MUST tolerate non-event lines — non-JSON, ANSI-polluted, or
+non-conversational (system/result) — by returning nil rather than erroring,
+because the tap delivers raw PTY bytes. Each returned event is tagged
+Source=live; the orchestrator stamps RunID/Harness and assigns the
+authoritative monotonic Seq from arrival order (stream lines carry no native
+per-line timestamp, so arrival order is the order).
+
+- `ParseStreamLine(line string) []transcript.ParsedEvent`
+
+#### `ToolHookProvider`
+
+> ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+harness can report every tool call through its hooks: one event when a tool
+starts, one when it finishes or fails. Its entries are not in HookSpec,
+because they run a hook subprocess on every tool call; a consumer that wants
+per-tool events — one reading the spool with ReadSpool — adds them to the
+spec it ensures:
+
+	spec := *hp.HookSpec()
+	if th, ok := hp.(ToolHookProvider); ok {
+		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+	}
+
+Each fired entry spools one event (transcript.SourceHook) in a spool file
+named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+file as well as by the event. The authority filter never admits these
+events to Run's OnEvent.
+
+- `ToolHookEntries() []HookEntry`
 
 ## Module: landlock (`internal/landlock`)
 
@@ -1277,6 +1623,78 @@ Scope is a set of Landlock IPC scopes (LANDLOCK_SCOPE_*).
 #### `func Scopes() Scope`
 Scopes returns the IPC scopes every ruleset sets: abstract UNIX sockets and
 signals outside the domain are always out of reach.
+
+## Module: mockapi (`internal/mockapi`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package mockapi is a local stand-in for a harness's model API, for driving a
+real harness binary through scripted scenarios with no account and no
+network: the Anthropic Messages API, for claude and pi, and the OpenAI
+Responses API, for codex and pi (responses.go). It began as a Go port of
+agentd's P11 mockapi.py. The Messages API routes on the text of the last
+user message that carries text (claude appends system reminders as separate
+blocks; tool results continue a scenario):
+
+	PING <n>        reply "PONG <n>"
+	SLOW <n>        reply "slow<i> " in <n> chunks, Server.ChunkDelay apart (default 40)
+	STALL <s>       send message_start, then only pings for <s> seconds (default 60)
+	TOOL <command>  a tool_use running <command> in a shell, after its result "TOOL DONE:
+	                <output>": claude's Bash, or pi's bash when the request offers that one
+	AGENT <prompt>  an Agent tool_use running a general-purpose subagent on <prompt>, in the
+	                foreground; the subagent's own request routes on <prompt>, and after its
+	                result, "TOOL DONE: <output>"
+	BG <command>    a Bash tool_use running <command> in the background; after its result,
+	                "TOOL DONE: <output>", and once claude reports the command finished (a
+	                <task-notification>), "BG DONE". pi's bash has no background: it runs
+	                <command> as TOOL does
+	ERR <code> <k>  answer HTTP <code> the first <k> times this text is seen
+	                (529 overloaded_error, 429 rate_limit_error, else api_error),
+	                then "RECOVERED"
+	LIMIT           a usage wall: 429 with the unified limiter's rejected status and
+	                a reset an hour away, every time. Under an OAuth token claude
+	                reports it at once, and does not retry.
+	BIG <kib>       reply with <kib> KiB of text, in 64 KiB deltas
+	anything else   reply "ok"
+
+Every successful reply carries the unified limiter's allowed status, so a
+claude under an OAuth token reports its usage.
+
+### Exported Types & Functions
+
+#### `type Request`
+Request is one request the mock answered.
+
+#### `type Server`
+Server is a running mock.
+
+#### `func Start() *Server`
+Start starts a mock on a loopback port.
+
+## Module: procgroup (`internal/procgroup`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package procgroup runs a harness in a process group of its own; where
+there are none, it reaches the harness's process alone.
+
+Package procgroup runs a harness in a process group of its own, so that
+stopping it reaches the processes it started too — those that stay in the
+group.
+
+### Exported Types & Functions
+
+#### `func Empty(cmd *exec.Cmd) bool`
+Empty reports whether cmd's process ended.
+
+#### `func ExitSignal(*os.ProcessState) string`
+ExitSignal is always "".
+
+#### `func Set(*exec.Cmd)`
+Set does nothing: there are no process groups.
+
+#### `func Signal(cmd *exec.Cmd, _ bool)`
+Signal kills cmd's process.
 
 ## Module: resettime (`internal/resettime`)
 
@@ -1980,23 +2398,246 @@ string lists carry the conservative cross-provider fingerprints
 instead. Patterns should be tightened (and an APIError matcher added)
 once a recorded corpus under test/corpus/opencode/ exists.
 
-## Module: pi (`internal/wrapcore/harness/pi`)
+## Module: adapter (`pkg/adapter`)
 
 _(summary pending — run the veracity-docs skill)_
 
-> Package pi holds the classifier patterns for the pi coding agent
-(@earendil-works/pi-coding-agent, binary "pi" —
-github.com/earendil-works/pi).
+> Package adapter is harness-wrapper's Harness Adapter: one implementation of
+the Harness Adapter Interface (pkg/contract), with a profile per harness.
+The Claude Code Adapter and the Codex Adapter are this adapter with its
+Claude Code and Codex profiles.
 
-pi is provider-agnostic: a single session can be backed by Anthropic,
-OpenAI, Google, local models, and others (its assistant messages carry
-the originating provider/model), so the error text it surfaces varies
-by provider. There is no single bracketed/anchored API-error format to
-key on the way Claude Code has, so APIError is left nil
-here and the Cost/Retry string lists carry the conservative
-cross-provider fingerprints instead. Patterns should be tightened (and
-an APIError matcher added) once a recorded corpus under
-test/corpus/pi/ exists.
+This package is the shared part, and names no harness:
+
+  - the Session: its states, the admission gate, one outstanding send, an
+    interrupt that names its input, answers, and Close with stopped and
+    drained; and the turns a harness starts with no input, which it
+    reports, lets a caller interrupt, and stops for an input;
+  - Observe and Ack: one cursor over the live events and the profile's
+    record, with the checkpoint on the batch that covers a chunk's last
+    item;
+  - submission markers, written and synced before an input reaches the
+    harness, and OpenRecord and Recover built on them and the profile's
+    record.
+
+A profile supplies what is its harness's own (Profile): the Descriptor,
+Provision, a Transport to a running harness, and a Reader of its record.
+Each profile registers itself under its harness's name with Register, in
+its package's init, so a runtime's harness list links one profile per
+harness it selects.
+
+### Exported Types & Functions
+
+#### `func AutoTurnID(native string) string`
+AutoTurnID is the turn id of a turn the harness started with no input, from
+the harness's own id for it: the same in the live Session and in every read
+of its record, and never an input's turn id.
+
+#### `func Drawn(nonce []byte, use string, n int) string`
+Drawn is n letters and digits drawn from nonce for use: the same nonce and
+use always give the same ones, and another use others.
+
+#### `func HeadersScript(name string, files map[string]string) string`
+HeadersScript is a shell script that prints the headers of MCP server name
+as a harness's headers helper answers them, a JSON object: each header's
+value read from its file in files, its newlines dropped and its
+backslashes, quotes and tabs escaped. It holds the files' paths and no
+value, and a file it cannot read fails it. A profile writes it as a file
+of its own under config, which the harness runs with /bin/sh each time it
+connects (no provisioned file is executable): a connector's headers_file.
+
+#### `func HostEnv() []string`
+HostEnv is the part of the Host's environment a harness process takes:
+PATH, LANG, LC_* and TZ, and the variables HW_HARNESS_ENV names. It is how a
+Supervisor gives every harness a setting Provision could not render — a
+test's model API, say — without knowing the harness. It must never carry a
+credential: a credential reaches the harness from its staged file.
+
+#### `func Name() string`
+Name is the adapter as a Descriptor names it: harness-wrapper and its
+release in this binary (its module's version as a dependency, "(devel)" in
+its own builds).
+
+#### `func New(p Profile) contract.Adapter`
+New is the Harness Adapter with profile p.
+
+#### `func Register(name string, p Profile)`
+Register registers a profile under its harness's name, as a Harness Adapter
+(contract.Register). A profile package calls it from its init.
+
+#### `func ShellQuote(s string) string`
+ShellQuote is s as one shell word.
+
+#### `func TokenPlaceholder(token string, nonce []byte) string`
+TokenPlaceholder is a placeholder shaped like token: token's lower-case
+prefix kept — "sk-ant-oat01-", "sk-proj-": the leading run of lower-case
+letters, digits and hyphens up to its last hyphen, within its first 16
+bytes — and the rest, as long as token's rest and at least 32 bytes, letters
+and digits drawn from nonce. A harness that tells credentials apart by their
+prefix takes it as the token it stands for, and the same token and nonce
+always give the same placeholder.
+
+#### `func TokenResult(credential, nonce []byte, route contract.CredentialRoute) (contract.PlaceholderResult, error)`
+TokenResult is the placeholder of a token credential — one line, sent as it
+is — presented in route: the placeholder token is the file, and the one swap
+covers the whole route.
+
+#### `func Truncate(s string) (string, bool)`
+Truncate cuts a text field to contract.MaxObservationText, at a rune
+boundary, and reports whether it cut.
+
+#### `func TurnID(inputID string) string`
+TurnID is the turn id of an input's turn: the same in the live Session and
+in every read of its record.
+
+#### `type Chunk`
+Chunk is one Read of a record.
+
+#### `type Event`
+Event is one thing a harness reported.
+
+#### `type EventKind`
+EventKind is what a harness reported.
+
+#### `type Marker`
+Marker is the evidence that an input was handed to its harness: Send writes
+and syncs it before the harness gets the input, so an input without one
+never ran.
+
+#### `type Markers`
+Markers is an agent's submission markers, in its scratch root: one file per
+input, written once. Absence of a marker proves an input never reached its
+harness only while the store is intact: Lookup reports an error, never
+absence, when it cannot tell.
+
+#### `func OpenMarkers(scratch string) (*Markers, error)`
+OpenMarkers opens the marker store under scratch, creating it the first
+time.
+
+#### `type RecordSource`
+RecordSource names one Session's record for Profile.Record.
+
+#### `type Start`
+Start is what Profile.Start launches a harness from.
+
+#### `type Submission`
+Submission is one input for the harness.
+
+#### `func TransportOf(s contract.Session) Transport`
+TransportOf is the transport of a Session this adapter opened: for a
+profile's own tests and tools, which may need to reach the harness behind
+the interface — to crash it, say. nil for any other Session, or before Open
+started one.
+
+### Interfaces (Boundaries)
+
+#### `Keeping`
+
+> Keeping is the part of a Profile that keeps its harness's subscription
+login for a runtime (capability login_keeper).
+
+- `Keep(req contract.KeeperRequest) (contract.Keeper, error)`
+
+#### `NativeNamer`
+
+> Native ids are the profile's to choose: a Transport that names them
+implements NativeNamer; any other takes a random one.
+
+- `NewNative(inputID string) string`
+
+#### `Placeholderer`
+
+> Placeholderer is the part of a Profile that renders placeholders for its
+harness's credentials (capability brokered_credentials).
+
+- `Placeholder(kind string, credential, nonce []byte) (contract.PlaceholderResult, error)`
+
+#### `Profile`
+
+> Profile is what one harness supplies.
+
+- `Describe() contract.Descriptor`
+- `Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error)`
+- `Record(src RecordSource) (Reader, error)`
+- `Start(ctx context.Context, req Start) (Transport, error)`
+
+#### `Reader`
+
+> Reader reads one Session's record: the items, in record order, each an
+observation of origin record whose id is stable across reads.
+
+- `Close() error`
+- `Commit(c Chunk) error`
+- `Read(ctx context.Context, max int) (Chunk, error)`
+- `Recover(ctx context.Context, m Marker) (contract.Recovered, error)`
+
+#### `SelfStarter`
+
+> SelfStarter is the Transport of a harness that starts turns with no input
+(capability autonomous_turns): it reports each as Started and Ended events
+whose Auto is the turn's native id.
+
+- `InterruptTurn(ctx context.Context, native string) error`
+
+#### `Transport`
+
+> Transport is a running harness.
+
+- `Answer(ctx context.Context, promptID string, c contract.Choice) error`
+- `Interrupt(ctx context.Context) error`
+- `SessionID() string`
+- `Stop(ctx context.Context, grace time.Duration) (stopped bool)`
+- `Submit(ctx context.Context, s Submission) error`
+
+## Module: claudecode (`pkg/adapter/claudecode`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package claudecode is the Harness Adapter's Claude Code profile: claude
+driven over its stream-json protocol, one process per Session, with the
+session transcript and the hook spool as its record. Importing it registers
+the Harness Adapter under "claude-code" (contract.Lookup), and links no
+other harness.
+
+The harness distribution under harness_root holds the pinned claude binary
+(BinaryPath) and this profile's hook helper, cmd/claude-code-hook
+(HookPath), which writes what claude's hooks report to the spool in
+layout.scratch.
+
+### Exported Types & Functions
+
+#### `func BinaryPath(root string) string`
+BinaryPath is claude's path in the harness distribution rooted at root.
+
+#### `func HookPath(root string) string`
+HookPath is the hook helper's path in the harness distribution rooted at
+root.
+
+#### `type Profile`
+Profile is the Claude Code profile. It keeps no state.
+
+## Module: codex (`pkg/adapter/codex`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package codex is the Harness Adapter's Codex profile: codex driven over its
+app-server protocol (JSON-RPC 2.0 on stdio, the protocol codex's own IDE
+extension speaks), one process per Session, with the thread's rollout as
+its record. Importing it registers the Harness Adapter under "codex", and
+links no other harness.
+
+The harness distribution under harness_root holds the pinned codex binary
+(BinaryPath): the native one from its npm package's vendor directory, never
+the node shim, whose death would leave the native process holding the
+thread.
+
+### Exported Types & Functions
+
+#### `func BinaryPath(root string) string`
+BinaryPath is codex's path in the harness distribution rooted at root.
+
+#### `type Profile`
+Profile is the Codex profile. It keeps no state.
 
 ## Module: chat (`pkg/chat`)
 
@@ -2037,7 +2678,7 @@ ErrNoControl.
 
 The implementation lives in internal/chatcore, which names no harness; every
 exported identifier here is the identical one there. This package registers
-the built-in harness adapters — codex, claude-code, opencode, pi and generic —
+the built-in harness adapters — codex, claude-code, opencode and generic —
 so Options.Harness resolves exactly the names it always has.
 
 ### Exported Types & Functions
@@ -2263,11 +2904,21 @@ package is its normative form. Every type has a JSON form with the field
 names the specification uses, generated as JSON Schema (schema.json), for
 where a type crosses a process boundary or is journaled.
 
+Minor 1 adds, each behind a capability: a saved Session loaded into a fresh
+environment (session_load: ProvisionRequest.Load, history_relocations and
+OpenRequest.Loaded), and the turns a harness starts with no input
+(autonomous_turns: turn_started and turn_ended naming a turn and no input,
+and an interrupt that names a turn). Minor 2 adds credentials kept from the
+harness by an egress broker (brokered_credentials: Descriptor.Egress and
+Placeholder), and a subscription login the runtime keeps itself and lends
+behind that broker (login_keeper: Descriptor.Keeper and Keep).
+
 Two callers use an Adapter:
 
   - the Supervisor, before any agent process exists, calls Describe and
     Provision — the pure rendering of a harness-neutral Agent Spec into the
-    harness's files, argv and environment, which the Supervisor writes;
+    harness's files, argv and environment, which the Supervisor writes —
+    and, for a credential it keeps from the harness, Placeholder;
   - the Host, one per agent and inside the agent's isolation, opens Sessions
     (NewSession, then Open … Close) and record handles (OpenRecord).
 
@@ -2279,6 +2930,22 @@ This package imports only the standard library, so importing it links
 nothing else of harness-wrapper.
 
 ### Exported Types & Functions
+
+#### `func CheckEgress(d Descriptor) error`
+CheckEgress refuses a Descriptor whose egress is malformed: one without the
+capability, a host that is not an exact lower-case name, a route for a kind
+the harness does not take or given twice, a route with no host or header,
+or a header that is not a field name.
+
+#### `func CheckKeeper(d Descriptor) error`
+CheckKeeper refuses a Descriptor whose keeper is malformed: one without the
+capability, or lending a kind the harness does not take or Egress does not
+route.
+
+#### `func CheckLoad(d Descriptor, l LoadSource) error`
+CheckLoad refuses a load d's adapter does not take, with CodeUnsupported
+naming what, or whose source is malformed, with CodeInvalidSpec. An
+adapter's Provision calls it for a request that loads.
 
 #### `func CheckRelPath(p string) error`
 CheckRelPath refuses a path that is not relative, clean and slash-separated,
@@ -2312,6 +2979,11 @@ importing its profile — one line of its harness list — and finds it with
 Lookup, never through a switch over known harnesses. Registering a name
 twice panics.
 
+#### `func ValidHost(h string) bool`
+ValidHost reports whether h is an exact host name: lower-case labels of
+letters, digits and inner hyphens, at least two of them, 253 bytes at most.
+No wildcard, no port, no address.
+
 #### `func ValidID(s string) bool`
 ValidID reports whether s is an id: 1–128 characters of [A-Za-z0-9._:-].
 
@@ -2328,6 +3000,18 @@ a field the harness's Descriptor does not name, with CodeUnsupported.
 #### `type AssistantTextData`
 AssistantTextData is assistant_text's payload.
 
+#### `type BackgroundKind`
+BackgroundKind is what a background task runs.
+
+#### `type BackgroundTask`
+BackgroundTask is one task the harness runs in the background.
+
+#### `type BackgroundTasksData`
+BackgroundTasksData is background_tasks' payload: every task the harness
+runs in the background now, each of which a turn of its own takes up when
+it ends (background_turns). Empty: none is left. It is reported whenever
+the set changes.
+
 #### `type Batch`
 Batch is one Observe result. A batch with items, a checkpoint, a reset, a
 rescan or faults has a BatchID and must be acknowledged; an empty poll has
@@ -2342,7 +3026,10 @@ BlockReason is why a Session refuses input.
 #### `type Capability`
 Capability is a named behaviour an adapter may offer. Each adds exactly
 what its constant says; without it, the operations answer CodeUnsupported,
-or the observations never appear. The set is closed in 1.0.
+or the observations never appear. The set is closed within a minor version;
+1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
+login_keeper, 1.3 background_turns (its background_tasks observation in
+1.4).
 
 #### `type Certainty`
 Certainty is whether a failed Send may have reached the harness.
@@ -2384,9 +3071,21 @@ CredentialFile is a staged credential: its kind, and the file holding it.
 #### `type CredentialRef`
 CredentialRef names a credential's kind.
 
+#### `type CredentialRoute`
+CredentialRoute is where a harness presents a credential kind: the hosts it
+sends it to, which it needs to reach, and the request headers that carry it
+there. A broker injects the credential there and nowhere else.
+
 #### `type Descriptor`
 Descriptor is what an adapter offers: Describe's result, and the entry a
 Runtime's descriptor lists for it verbatim.
+
+#### `type DeviceCode`
+DeviceCode is a device-code sign-in under way: the person the login
+belongs to opens URL and enters Code.
+
+#### `type Egress`
+Egress is the network a harness reaches.
 
 #### `type Error`
 Error is every error the interface returns.
@@ -2432,7 +3131,15 @@ Instructions are an agent's standing instructions.
 InterruptOutcome is what an interrupt did.
 
 #### `type InterruptRequest`
-InterruptRequest names the input whose turn to stop.
+InterruptRequest names the turn to stop: an input's, by InputID, or — with
+capability autonomous_turns — one the harness started itself, by TurnID.
+Exactly one of them is set.
+
+#### `type KeeperRequest`
+KeeperRequest opens a keeper.
+
+#### `type KeeperSupport`
+KeeperSupport is what a harness's keeper lends.
 
 #### `type Kind`
 Kind is an observation's kind. The set is closed in 1.0.
@@ -2442,8 +3149,26 @@ Layout is an agent's roots. They are distinct, absolute and clean, exist
 before the Host starts, and are writable only by the agent's workload
 identity.
 
+#### `type Lent`
+Lent is a kept login's credential, lent.
+
 #### `type Limits`
 Limits bounds what an adapter takes.
+
+#### `type LoadSource`
+LoadSource is where a saved Session comes from: what its archive's metadata
+says of the environment it was saved in.
+
+#### `type LoadSupport`
+LoadSupport is the saved Sessions an adapter loads: each entry a
+combination it has passed with a Session saved that way, never one inferred
+from an order of versions.
+
+#### `type LoginState`
+LoginState is where a kept login stands.
+
+#### `type LoginStatus`
+LoginStatus is a kept login's state. It holds no secret.
 
 #### `type Memory`
 Memory is an agent's memory directory, seeded with its files.
@@ -2460,13 +3185,18 @@ Observation is a fact an adapter reports.
 
 ID is "<kind>:<key>": unique within the Session, and stable — the same fact
 has the same id in every batch, process and adapter version. Keys by kind:
-turn_started and turn_ended, the input id; user_input and api_error, the
-record entry's id; assistant_text, the message id and block index; tool_*,
-the tool use id; subagent_*, the subagent id; prompt_*, the prompt id;
-text_delta, the message id and index; retrying, the input id and attempt;
-rate_limit, blocked, unblocked and session_exited, an id of the harness
-process instance and a counter. The Supervisor stores an observation under
-(agent, session, id): the same id in another Session is another fact.
+turn_started and turn_ended, the input id — or, for a turn the harness
+started with no input (capability autonomous_turns), its turn id, which no
+input id equals; user_input and assistant_text,
+the record entry's id and block index (for a record without entry ids,
+assistant_text's message id and block index); api_error, the record entry's
+id; tool_*, the tool use id; subagent_*, the subagent id; prompt_*, the
+prompt id; text_delta, the message id and index; retrying, the input id and
+attempt; rate_limit, blocked, unblocked and session_exited, an id of the
+harness process instance and a counter. A record entry with no id of its
+own is keyed by its place in the record. The Supervisor stores an
+observation under (agent, session, id): the same id in another Session is
+another fact.
 
 #### `func NewObservation(kind Kind, key string, origin Origin, at time.Time, data any) Observation`
 NewObservation is an observation of kind with key, carrying data.
@@ -2488,6 +3218,14 @@ Origin is where an observation came from.
 
 #### `type Phase`
 Phase is a Session's state.
+
+#### `type PlaceholderRequest`
+PlaceholderRequest asks an adapter for a credential's placeholder.
+
+#### `type PlaceholderResult`
+PlaceholderResult is what stands in for a credential. It holds the
+credential's secrets: the Runtime keeps it in memory, hands the secrets to
+its broker alone, and never journals or logs it.
 
 #### `type PromptInfo`
 PromptInfo is a prompt the harness raised, awaiting Answer.
@@ -2532,6 +3270,9 @@ Recovered is Recover's answer.
 #### `type RecoveredOutcome`
 RecoveredOutcome is what Recover found.
 
+#### `type Relocation`
+Relocation moves a saved path, and everything beneath it, to another.
+
 #### `type Rescan`
 Rescan says why the record was read again from its start.
 
@@ -2549,6 +3290,11 @@ Roots names a Layout's roots.
 
 #### `type RootPath`
 RootPath names a path beneath a root.
+
+#### `func Relocate(rules []Relocation, p RootPath) RootPath`
+Relocate is where the saved path p goes in a new environment under rules:
+moved by the rule whose source it is, or lies beneath, and itself when no
+rule names it.
 
 #### `type SendResult`
 SendResult is Send's result, returned once the adapter has handed the input
@@ -2569,13 +3315,18 @@ SpecSupport is the part of the Agent Spec a harness honours.
 
 #### `type State`
 State is a Session's snapshot. It is observational: nothing may be
-authorized from it.
+authorized from it. While a turn the harness started itself runs
+(capability autonomous_turns), it has that turn's TurnID and no InputID.
 
 #### `type StdioConnector`
 StdioConnector is a server the harness starts and speaks to on its pipes.
 
 #### `type SubagentData`
 SubagentData is subagent_started's and subagent_stopped's payload.
+
+#### `type Swap`
+Swap is one substitution: in the requests the harness sends to Hosts, the
+broker replaces Placeholder with Secret in Headers.
 
 #### `type TextData`
 TextData is user_input's payload.
@@ -2605,14 +3356,27 @@ TurnOutcome is how a turn ended.
 
 #### `Adapter`
 
-> Adapter is one harness, exposed through the interface. Describe and
-Provision are pure and serve the Supervisor; NewSession and OpenRecord serve
-the Host.
+> Adapter is one harness, exposed through the interface. Describe, Provision
+and Placeholder are pure and serve the Supervisor; NewSession and OpenRecord
+serve the Host; Keep serves the runtime's login keeper.
 
 - `Describe() Descriptor`
+- `Keep(KeeperRequest) (Keeper, error)`
 - `NewSession(OpenRequest) (Session, error)`
 - `OpenRecord(ctx context.Context, req RecordRequest) (Record, error)`
+- `Placeholder(PlaceholderRequest) (PlaceholderResult, error)`
 - `Provision(ProvisionRequest) (ProvisionResult, error)`
+
+#### `Keeper`
+
+> Keeper keeps one login. Its methods are safe to call concurrently.
+
+- `Close() error`
+- `Lend(ctx context.Context) (Lent, error)`
+- `Refresh(ctx context.Context) error`
+- `SignIn(ctx context.Context) (DeviceCode, error)`
+- `SignOut(ctx context.Context) error`
+- `Status(ctx context.Context) (LoginStatus, error)`
 
 #### `Record`
 
@@ -2647,10 +3411,15 @@ fake Agent Adapter — Supervisor and Host both — and scenarios that drive an
 adapter through the interface and check it keeps the contract.
 
 A scenario speaks the prompt language of agentd's P11 mock Messages API
-(PING, SLOW, STALL, TOOL, ERR, BIG, ASK; see fakeadapter), so it runs the
-same against the fake adapter as against a real harness that talks to that
-mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
+(PING, SLOW, STALL, TOOL, ERR, BIG, ASK, LIMIT for a usage wall, and MKGOAL
+and GOAL for work the harness does by itself; see fakeadapter), so it runs
+the same against the fake adapter as against a real harness that talks to
+such a mock. Each check is a rule, named in its failure ("[turn.one-outcome] …"),
 and every rule has a deliberately broken adapter that fails it.
+
+The kit plays the Supervisor's part too where a scenario needs one: Apply
+writes a Provision result, and Save and Restore move a Session's history
+from one agent's roots to another's, as an archive does.
 
 	func TestConformance(t *testing.T) {
 	    conformance.Run(conformance.Testing(t), conformance.Fixture{...})
@@ -2663,14 +3432,60 @@ Apply writes a ProvisionResult under a layout the way a Supervisor does:
 each file beneath its root, never through a symlink, with its mode. It
 validates the result first.
 
+#### `func LoadSaved(t T, f Fixture, saved SavedSession)`
+LoadSaved loads a Session saved earlier — by another version of the
+harness, say — into a fresh environment and runs the load scenario's checks
+on it: the record read with no harness, the strict open under the saved id,
+only new items, the saved conversation given to the model, and a reopen.
+
+#### `func Restore(l contract.Layout, r contract.ProvisionResult, s Saved) error`
+Restore writes saved files under a layout the way a Supervisor does before
+the harness is first opened there: each at the place r's relocations send
+it, which must be beneath one of r's history roots and outside its secret
+paths, and never through a symbolic link.
+
 #### `func Run(t T, f Fixture)`
 Run runs every scenario against the fixture, each as a subtest.
 
 #### `func Scenarios() []string`
 Scenarios lists the kit's scenarios, in the order Run runs them.
 
+#### `func WriteSavedSession(dir string, s SavedSession) error`
+WriteSavedSession writes s beneath dir: saved.json, and each file under
+files/<root>/<path>.
+
 #### `type Fixture`
 Fixture is the adapter under test and what the kit needs to drive it.
+
+#### `type Saved`
+Saved is what an archive keeps of an agent's Session: every file beneath
+its Provision result's history roots, less its secret paths, and the source
+a request that loads it names.
+
+#### `func Save(d contract.Descriptor, format int, l contract.Layout, r contract.ProvisionResult) (Saved, error)`
+Save reads an agent's history out of its layout the way a Supervisor does
+for an archive: the regular files beneath r's history roots, outside its
+secret paths, none reached through a symbolic link. The harness has stopped.
+
+#### `type SavedFile`
+SavedFile is one saved file, named the way the source's roots named it.
+
+#### `type SavedSession`
+SavedSession is a Session saved earlier, kept as files: what a load of it
+needs, and what the loaded Session must still know. It is how a harness
+version's saved Sessions are kept as fixtures, which a later version of the
+adapter must load before it may name that version a source (LoadSaved).
+
+#### `func ReadSavedSession(dir string) (SavedSession, error)`
+ReadSavedSession reads what WriteSavedSession wrote beneath dir.
+
+#### `func RecordSavedSession(t T, f Fixture, base string, prepare func(contract.Session)) (saved SavedSession, ok bool)`
+RecordSavedSession makes a saved Session with the fixture's adapter, for
+LoadSaved to load later: in roots beneath base — a path the saved files
+will name, so one that says nothing of the machine — it opens a Session,
+has two turns with it, lets prepare give it whatever else the harness
+keeps of a Session, parks it and saves it. base must not exist; it is
+removed again.
 
 #### `func Testing(t *testing.T) T`
 Testing adapts a *testing.T.
@@ -2706,23 +3521,50 @@ as against a real harness talking to that mock:
 	TOOL <command> a tool call running <command>, then "TOOL DONE"
 	ERR <code> <k> the model call fails with <code> <k> times, retried up to
 	               MaxRetries times: "RECOVERED" once it passes, else the turn
-	               errors (429: usage_limit, 401: auth, 402: billing, else
-	               overloaded); a usage, auth or billing error blocks the Session
+	               errors (529: overloaded, 401: auth, 402: billing, else api);
+	               an auth or billing error blocks the Session
+	LIMIT          the account's usage limit refuses the model call: the turn
+	               errors (usage_limit, resuming in an hour), and the Session
+	               blocks until then
 	BIG <kib>      reply with <kib> KiB of text
 	ASK            raise a prompt (yes/no); on its answer, "ANSWERED <choice>"
 	CRASH          the harness process dies mid-turn
+	MKGOAL <text>  give the Session a goal whose objective is <text>, and reply
+	               "TOOL DONE". From then on the harness works on the goal by
+	               itself: once a turn completes, it starts a turn of its own
+	               on the objective, which no input asked for
+	GOAL <n> <k>   a goal's objective: each of the first <n> turns the harness
+	               starts for it works <k> ticks and replies "goal step <i>";
+	               the next one completes the goal, and the harness rests
 	anything else  reply "ok"
 
+A turn the harness started itself is stopped by an input — it ends
+interrupted, and the input's turn follows — or by an interrupt that names
+it, after which the harness starts none until an input's turn ends or the
+Session is reopened.
+
 It keeps its record — every record-origin observation, one JSON line each —
-and its submission markers under the layout's scratch root, so a record
-handle, or a Session reopened by another Adapter value, reads what an
-earlier one left, as it would after a crash.
+its submission markers and its goal under the layout's scratch root, in a
+directory named for the workspace, so a record handle, or a Session reopened
+by another Adapter value, reads what an earlier one left, as it would after
+a crash. A Session saved in one environment is therefore loaded into another
+by moving that directory to the new workspace's name: the relocation
+Provision answers a request that loads with.
 
 ### Exported Types & Functions
+
+#### `func Approve(k contract.Keeper, code string) error`
+Approve completes the fake keeper's sign-in under way with code, as its
+user would on the device-code page.
 
 #### `func BinaryPath(harnessRoot string) string`
 BinaryPath is where Provision tells the fake harness's binary to be, under
 the harness root: Open refuses with binary_not_found when it is absent.
+
+#### `func Heard(s contract.Session) []string`
+Heard is the conversation the Session's harness last gave its model: every
+prompt, reply and tool result, in order, the input it was answering last.
+It is what a real harness's model API would have been sent.
 
 #### `func Kill(s contract.Session)`
 Kill crashes a Session's harness — the process dies without Close — for a
@@ -2930,91 +3772,40 @@ The ResolvedProfile starts (P1) with only the SessionID + Resume capabilities
 populated for Claude; later phases ADD fields (Stream/Hooks/Reader/Export) —
 an additive change, not a breaking re-migration of the Profile shape.
 
+Everything but Run and RunTurn lives in internal/harnesscore, and every
+exported identifier here that is not theirs is the identical one there. Run
+and RunTurn drive a harness through pkg/chat, which links every built-in
+harness; a per-harness hook profile imports the core, and links only its
+own harness.
+
 ### Exported Types & Functions
 
 #### `func AckSpool(spoolDir string, receipts ...SpoolReceipt) error`
-AckSpool deletes the spool files the receipts name, once the consumer has
-durably committed their events, and fsyncs the directory so that the
-deletions survive a crash. It deletes a file only while it is still exactly
-the one ReadSpool read. A receipt whose name is not a plain spool file name,
-or whose file changed or was replaced since, is refused — wrapped in
-ErrSpoolReceipt — and deletes nothing, so contents nobody committed are
-never lost: ReadSpool returns the changed file again under a new receipt.
-
-A receipt whose file is already gone counts as acknowledged, so repeating
-an acknowledgement, say after a crash, is safe; the directory is fsynced
-even then, which makes an earlier unsynced deletion durable. Until AckSpool
-returns nil, a crash can leave any of its files in place to be read again,
-and the consumer recognises them by receipt. The error joins every refusal
-and failure; the other receipts are still acknowledged.
+AckSpool calls harnesscore.AckSpool.
 
 #### `func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error)`
-DrainSpool reads every COMPLETED spool file (`.json`, never the in-flight
-`.tmp`), returning all parsed events and removing each file it successfully
-consumed so a later drain does not re-emit them. Run calls it after the
-harness exits (the grace-window drain), then removes the per-run spool; the
-consumer additionally dedups by Event.ID(), so a file left behind by a delete
-failure is absorbed rather than duplicated.
-
-DrainSpool is destructive and not transactional: it deletes each file as
-soon as it has parsed it, before the caller has done anything with the
-events, so a crash in between loses them. That suits a consumer that lives
-and dies with the run. One that must not lose events — agentd, whose
-supervisor outlives its harness — reads with ReadSpool and acknowledges
-with AckSpool after its own durable commit, and never calls DrainSpool.
-
-A missing spool dir is not an error (no hooks fired). A single unreadable /
-unparseable file is skipped (left in place) and collected into err, but does
-not abort the drain of the rest.
+DrainSpool calls harnesscore.DrainSpool.
 
 #### `func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []string, harnessName string) error`
-EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
-settings.json (the shared two-level hook format) at settingsPath, rendering each command from
-loomArgv via RenderHookCommand (harnessName is the token in the command). It
-preserves the user's hooks + unknown keys, marks loom's entries (owner), and
-refreshes the loom path each call (self-healing). flock-guarded + atomic.
+EnsureSettingsJSONHooks calls harnesscore.EnsureSettingsJSONHooks.
 
 #### `func EnvLookup(env []string, key string) string`
-EnvLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
-if absent. The last occurrence wins (matching exec semantics). Exported so
-per-harness Profile packages — which cannot see this package's unexported
-helpers — read the launch env by exactly the same rule the hook subprocess
-does; see ConfigDirResolver.
+EnvLookup calls harnesscore.EnvLookup.
 
 #### `func IsManagedHookCommand(command string) bool`
-IsManagedHookCommand reports whether a rendered hook command is one loom owns
-(by the marker), so a merge can replace/remove it idempotently.
+IsManagedHookCommand calls harnesscore.IsManagedHookCommand.
 
 #### `func Register(name string, p Profile)`
-Register adds a Profile under name. Per-harness packages call this from their
-init(); panics on a duplicate to catch double-registration at startup.
+Register calls harnesscore.Register.
 
 #### `func Registered() []string`
-Registered returns the sorted names of all registered profiles (for tests
-and diagnostics).
+Registered calls harnesscore.Registered.
 
-#### `func RenderHookCommand(loomArgv []string, harnessName, arg, owner string) string`
-RenderHookCommand builds the hook command string written into a harness's
-config. It is ALWAYS a POSIX shell command with a pre-exec env guard so a
-left-in-place entry is inert on a non-wrapper run (review #5):
-
-	sh -c 'test -n "$HW_EVENT_SPOOL" || exit 0; exec <loomArgv> <harness> <arg>' # harness-wrapper-hook:<owner>
-
-With HW_EVENT_SPOOL unset the guard exits 0 WITHOUT touching the binary, so a
-stale/moved loom can never break someone else's run. loomArgv is the loom
-binary path + subcommand (e.g. {"/abs/loom","hooks"}); every interpolated
-value is POSIX-single-quoted, so spaces/quotes in the path are safe.
+#### `func RenderHookCommand(loomArgv []string, harnessName string, arg string, owner string) string`
+RenderHookCommand calls harnesscore.RenderHookCommand.
 
 #### `func WithLockedFile(targetPath string, fn func(existing []byte) ([]byte, error)) error`
-WithLockedFile runs fn under an exclusive flock so concurrent same-worktree
-ensures don't clobber each other, then writes fn's result atomically.
-
-The flock is taken on a STABLE SIDECAR (`<targetPath>.lock`, never renamed) —
-flock is inode-based, so locking the file we then temp+rename-replace would
-drop the guard (the new inode is unlocked). fn receives the current file
-bytes (nil if absent) and returns the new content, or (nil, nil) to indicate
-"no change" (nothing is written). The target itself is written via temp+rename
-for torn-read safety.
+WithLockedFile calls harnesscore.WithLockedFile.
 
 #### `type Config`
 Config configures a single harness.Run. It embeds the low-level wrapper.Config
@@ -3024,63 +3815,41 @@ transcript API. This is loom's intended entrypoint (not wrapper.Run directly).
 harness.Run OWNS wrapper.Config.OnLine: any value the caller sets in
 Wrapper.OnLine is overwritten by the orchestrator's durable tap.
 
+#### `type ConfigDirResolver`
+ConfigDirResolver is harnesscore.ConfigDirResolver.
+
 #### `type HookContext`
-HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
-HW_* env (never the subprocess cwd) — the authority for environment. It is
-distinct from ResolveContext (run-detection inputs) and ReadContext (the
-read/export environment).
+HookContext is harnesscore.HookContext.
 
 #### `type HookEntry`
-HookEntry maps one native hook event to its loom subcommand.
+HookEntry is harnesscore.HookEntry.
 
 #### `type HookOutcome`
-HookOutcome is the result of HandleHookEvent. For capture events it is the
-zero value. For the yield-guard control hook it may direct the caller to BLOCK
-the tool: print BlockOutput to stdout and exit with a non-zero code the harness
-interprets as "block" (Claude: exit 2).
+HookOutcome is harnesscore.HookOutcome.
 
-#### `func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (HookOutcome, error)`
-HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
-command delegates to. For capture events it parses the fired hook's stdin
-payload into events and writes them to the spool; for the yield-guard control
-event it returns a HookOutcome telling the caller whether to BLOCK the tool.
+#### `func HandleHookEvent(harnessName string, event string, env []string, stdin []byte) (HookOutcome, error)`
+HandleHookEvent calls harnesscore.HandleHookEvent.
 
-It is INERT (zero outcome, writes nothing) when HW_EVENT_SPOOL is absent — so
-a leftover hook entry can never perturb a non-wrapper run (review #5; this is
-the runtime counterpart to the rendered shell guard). The subprocess does NOT
-call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
-main run's resolution already decided to install hooks.
+#### `type HookProvider`
+HookProvider is harnesscore.HookProvider.
 
 #### `type HookSpec`
-HookSpec describes the hook entries the orchestrator idempotently + atomically
-ensures in the harness's hook-config file. Per-harness variation is ONLY the
-config path + native event names + arg mapping — the shell+stdin-JSON contract
-is shared across Claude/Codex.
+HookSpec is harnesscore.HookSpec.
 
 #### `type Mode`
-Mode selects how the orchestrator acquires the transcript for a run. It is
-the F1 flag of the P3 rollout: default Off (no acquisition, no behavior
-change) until a caller opts in.
+Mode is harnesscore.Mode.
+
+#### `type Profile`
+Profile is harnesscore.Profile.
 
 #### `func For(name string) (Profile, bool)`
-For returns the registered Profile for the named harness. ok=false means the
-harness has no profile (caller degrades: resume→checkpoint, transcript→floor).
-The relevant pkg/harness/<name> package must be imported for its init() to
-run — blank-import pkg/harness/all to register all built-ins.
+For calls harnesscore.For.
 
 #### `type ResolveContext`
-ResolveContext carries the RUN-DETECTION inputs Resolve needs — the binary,
-its args/env, the working dir, and config roots to probe. It is deliberately
-SEPARATE from HookContext (the hook-subprocess environment) and ReadContext
-(the transcript read/export environment), both introduced in later phases.
+ResolveContext is harnesscore.ResolveContext.
 
 #### `type ResolvedProfile`
-ResolvedProfile is the post-detection capability set for ONE run. A field is
-non-nil only when that capability is available this run. The orchestrator
-dispatches on these fields, never on the static Profile.
-
-P1 populates SessionID + Resume (Claude). Later phases add capability fields
-(StreamParser, HookProvider, TranscriptReader, Exporter) additively.
+ResolvedProfile is harnesscore.ResolvedProfile.
 
 #### `type Result`
 Result wraps wrapper.Result with the transcript outcome.
@@ -3095,54 +3864,41 @@ wrapper joins (and flushes) before Run returns. So the session id / delivery
 error the tap records are read here AFTER wrapper.Run returns with an
 established happens-before — no locking needed.
 
+#### `type Resumer`
+Resumer is harnesscore.Resumer.
+
+#### `type SessionIDExtractor`
+SessionIDExtractor is harnesscore.SessionIDExtractor.
+
 #### `type SettingsHookCmd`
-SettingsHookCmd is a single command hook within a matcher group.
+SettingsHookCmd is harnesscore.SettingsHookCmd.
 
 #### `type SettingsHookMatcher`
-SettingsHookMatcher is one matcher group in a settings.json hook event.
+SettingsHookMatcher is harnesscore.SettingsHookMatcher.
 
 #### `type SpoolBatch`
-SpoolBatch is the events one spool file holds, with the receipt that
-acknowledges it.
+SpoolBatch is harnesscore.SpoolBatch.
 
 #### `type SpoolContents`
-SpoolContents is what one ReadSpool call found.
+SpoolContents is harnesscore.SpoolContents.
 
 #### `func ReadSpool(spoolDir string) (SpoolContents, error)`
-ReadSpool reads the completed spool files (`.json`, never an in-flight
-`.tmp`) without consuming them. Each batch carries a receipt, and its file
-stays in the spool until AckSpool is handed that receipt. A consumer commits
-a batch's events durably first and acknowledges it second, so a crash at any
-point loses nothing: ReadSpool returns every file not yet acknowledged again,
-under the same receipt, for the consumer to recognise as committed (or to
-dedup by Event.ID()).
-
-The spool is written by the hook subprocess, which may run as a less trusted
-user than the reader, so ReadSpool trusts nothing in it. It refuses a spool
-dir that is itself a symlink and confines every lookup to the directory. It
-reads only regular, singly linked files of at most MaxSpoolFileBytes, and it
-never follows a symlink or blocks on a FIFO. A file it cannot read as events
-— any other kind of file, an oversize or hard-linked one, an unsafe name, or
-contents that do not parse — is moved into SpoolQuarantineDir, or deleted
-once that holds MaxSpoolQuarantine files, and reported in Quarantined. It
-is never lost silently, and it cannot block the files behind it.
-
-One call handles a bounded amount of the spool and sets More when it leaves
-files for the next call. A spool has one consumer: ReadSpool takes no lock,
-so two concurrent readers would each return the same files. A missing spool
-dir is not an error (no hook fired). A file that cannot be read for any
-other reason stays where it is and is named in the error; the batches
-returned alongside an error are still valid.
+ReadSpool calls harnesscore.ReadSpool.
 
 #### `type SpoolQuarantine`
-SpoolQuarantine reports a file ReadSpool took out of the spool without
-returning its events, because it could not trust or parse it.
+SpoolQuarantine is harnesscore.SpoolQuarantine.
 
 #### `type SpoolReceipt`
-SpoolReceipt identifies one spool file exactly as ReadSpool read it. A
-consumer hands it back to AckSpool once it has durably committed the file's
-events. It is comparable, so the consumer can record it in its own journal
-and recognise the file when a crash makes ReadSpool return it again.
+SpoolReceipt is harnesscore.SpoolReceipt.
+
+#### `type StaticHookProfile`
+StaticHookProfile is harnesscore.StaticHookProfile.
+
+#### `type StreamParser`
+StreamParser is harnesscore.StreamParser.
+
+#### `type ToolHookProvider`
+ToolHookProvider is harnesscore.ToolHookProvider.
 
 #### `type TurnConfig`
 TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
@@ -3163,148 +3919,14 @@ RunTurn runs one interactive harness turn and returns when that turn reaches
 a completed or errored state.
 
 #### `type YieldControl`
-YieldControl is the caller's handle to request cooperative preemption of a
-running harness. The caller creates it, passes it in harness.Config.Yield
-(the orchestrator wires its path into the harness env as HW_YIELD_FILE), and
-calls Request mid-run to make the next tool block.
-
-It is safe to construct before the run and call from another goroutine while
-the run is in flight (Request/Clear are single filesystem ops).
+YieldControl is harnesscore.YieldControl.
 
 #### `func NewYieldControl() (*YieldControl, error)`
-NewYieldControl allocates a private yield file under a fresh temp dir. The
-caller owns the lifecycle and should Close it when the run is done.
-
-### Interfaces (Boundaries)
-
-#### `ConfigDirResolver`
-
-> ConfigDirResolver is an OPTIONAL interface a Profile implements when the
-harness takes its config ROOT from the launch environment (Claude Code's
-CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than from $HOME alone. It lets
-the harness-agnostic orchestrator forward that root to the hook subprocess as
-HW_HARNESS_CONFIG_DIR without knowing any harness's env-var vocabulary.
-
-Without it, a fired hook naming a per-profile transcript is rejected by
-validateTranscriptPath as "not under transcript root", because HookContext
-.ConfigDir is empty and the check falls back to <Home>/.claude.
-
-- `HarnessConfigDir(env []string) string`
-
-#### `HookProvider`
-The contract for a harness that can report events through its own hook mechanism: it declares the hook specification, installs that configuration into a worktree, and parses a hook subprocess's payload into transcript events.
-
-> HookProvider is the capability for hook-driven transcript acquisition. A
-ResolvedProfile carries a non-nil Hooks only when hook support is confirmed
-for the run (statically firm for Claude; runtime-probed for Codex).
-
-The two methods serve the two sides of the hook lifecycle:
-  - HookSpec() describes WHAT to install (which native events map to which
-    `loom hooks <harness> <arg>` subcommand) so the orchestrator can
-    idempotently ensure the per-worktree hook config.
-  - ParseHookPayload() runs inside the fired hook SUBPROCESS: it parses the
-    harness's stdin payload (which HANDS OVER the transcript_path + session
-    id — no path reconstruction) and returns the canonical events, reading
-    the handed-over native transcript file on the file-bearing phases.
-
-ParseHookPayload is harness-STATIC (callable without Resolve): the hook
-subprocess is a fresh process that trusts it was invoked because the main
-run's resolution already passed, so it parses rather than re-detects.
-
-- `EnsureConfig(worktreePath string, loomArgv []string) error`
-- `HookSpec() *HookSpec`
-- `ParseHookPayload(ctx HookContext, event string, stdin []byte) ([]transcript.ParsedEvent, error)`
-
-#### `Profile`
-A harness's capability descriptor. Resolve is called once per run with the concrete binary, arguments, environment and working directory, and returns only the capabilities confirmed for that run.
-
-> Profile is the per-harness entry point. Implementations live in
-pkg/harness/<name> and self-register via Register in their init().
-
-- `Name() string`
-- `Resolve(ctx ResolveContext) ResolvedProfile`
-
-#### `Resumer`
-Supplies the argument fragment that resumes an existing harness session for a given session id; an empty id yields no arguments.
-
-> Resumer produces the resume-specific CLI argument prefix for a given session
-id. The caller appends its own policy flags (output format, prompt, etc.).
-
-Intentionally separate from turns.SessionResumer (pkg/turns/turns.go): this
-one serves the headless pkg/harness registry (keyed e.g. "claude", not chat's
-"claude-code") and composes into headless invocations, whereas the turns
-counterpart is keyed the way chat looks adapters up and composes into the
-interactive TUI argv. See turns.SessionResumer's doc for why the two must not
-be merged.
-
-- `ResumeArgs(sessionID string) []string`
-
-#### `SessionIDExtractor`
-Recovers the harness-assigned session UUID from a single line of the harness's headless stream output; stateless and idempotent per line.
-
-> SessionIDExtractor recovers the harness-assigned session UUID from a single
-line of the harness's headless stream output. Stateless and idempotent:
-callers invoke it per line and keep the first non-empty result.
-
-- `ExtractSessionID(line string) (string, bool)`
-
-#### `StaticHookProfile`
-Optional Profile interface exposing the harness's static HookProvider so a fired-hook subprocess can obtain the payload parser without running Resolve.
-
-> StaticHookProfile is an OPTIONAL interface a Profile implements when the
-harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
-the payload parser WITHOUT running Resolve: static hook availability is a
-harness fact, distinct from per-run capability resolution — which the
-subprocess must not re-run (it would re-probe; review #1). The main run still
-gates the DECISION to install/use hooks on the resolved ResolvedProfile.Hooks.
-
-- `StaticHookProvider() HookProvider`
-
-#### `StreamParser`
-Parses a single line of the harness's headless stream output into zero or more canonical events; stateless, idempotent, and tolerant of non-event lines.
-
-> StreamParser parses a single line of the harness's headless stream output
-(e.g. `claude -p --output-format stream-json`) into canonical events. This is
-the generic "stdout floor" acquisition strategy: the orchestrator feeds it
-each raw line from the wrapper's durable line tap (wrapper.Config.OnLine) and
-concatenates the results.
-
-Contract: stateless and idempotent per line; one input line yields zero or
-more ParsedEvents (an assistant line can carry a text block AND a tool_use
-block). It MUST tolerate non-event lines — non-JSON, ANSI-polluted, or
-non-conversational (system/result) — by returning nil rather than erroring,
-because the tap delivers raw PTY bytes. Each returned event is tagged
-Source=live; the orchestrator stamps RunID/Harness and assigns the
-authoritative monotonic Seq from arrival order (stream lines carry no native
-per-line timestamp, so arrival order is the order).
-
-- `ParseStreamLine(line string) []transcript.ParsedEvent`
-
-#### `ToolHookProvider`
-
-> ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
-harness can report every tool call through its hooks: one event when a tool
-starts, one when it finishes or fails. Its entries are not in HookSpec,
-because they run a hook subprocess on every tool call; a consumer that wants
-per-tool events — one reading the spool with ReadSpool — adds them to the
-spec it ensures:
-
-	spec := *hp.HookSpec()
-	if th, ok := hp.(ToolHookProvider); ok {
-		spec.Events = append(spec.Events, th.ToolHookEntries()...)
-	}
-
-Each fired entry spools one event (transcript.SourceHook) in a spool file
-named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
-HookArgPostToolUseFailure — so a consumer tells a start from an end by the
-file as well as by the event. The authority filter never admits these
-events to Run's OnEvent.
-
-- `ToolHookEntries() []HookEntry`
+NewYieldControl calls harnesscore.NewYieldControl.
 
 ## Module: all (`pkg/harness/all`)
 
-A side-effect-only package that blank-imports every built-in harness profile so that lookups by name resolve them. Callers who need just one harness may blank-import that subpackage instead.
+_(summary pending — run the veracity-docs skill)_
 
 > Package all blank-imports every built-in harness profile so that
 harness.For(name) resolves them. Import it for its side effects:
@@ -3388,7 +4010,7 @@ Profile is the Codex CLI harness profile.
 
 ## Module: opencode (`pkg/harness/opencode`)
 
-harness.Profile for the OpenCode CLI: resume + session-id only; no shell hooks (in-process plugins) and stream/export deferred until validatable.
+_(summary pending — run the veracity-docs skill)_
 
 > Package opencode implements the harness.Profile for the OpenCode CLI.
 
@@ -3409,64 +4031,6 @@ Importing this package registers the "opencode" profile (see init).
 
 #### `type Profile`
 Profile is the OpenCode CLI harness profile.
-
-## Module: pi (`pkg/harness/pi`)
-
-harness.Profile for the pi coding agent: session-id, resume (--session), and a live --mode json stream parser validated against pi 0.76.0; no hooks (no shell-hook contract).
-
-> pi live `--mode json` → canonical event parser (the StreamParser capability).
-
-Validated against pi 0.76.0 (cerebras/gpt-oss-120b). The `pi -p --mode json`
-stream is a sequence of typed JSON lines:
-
-	session → agent_start → turn_start
-	  → message_start → message_update* → message_end   (one per message)
-	  → tool_execution_start → tool_execution_end        (per tool call)
-	  → turn_end → agent_end
-
-The parser keys on `message_end` ALONE, which carries the COMPLETE message:
-  - message_update lines are streaming deltas (partial) — skipped.
-  - turn_end carries a verbatim copy of the turn's final message_end — skipping
-    it is what prevents a doubled final message (the de-dup question that
-    gated this parser until a live capture settled it).
-  - tool_execution_* are redundant with the role:"toolResult" message_end,
-    which already carries the result text plus its toolCallId linkage.
-
-Message roles: "user", "assistant", "toolResult". Content blocks: "text"
-(kept), "thinking" (reasoning — dropped, matching the on-disk reader), and
-"toolCall" ({id,name,arguments} — an assistant tool invocation). The session
-id is NOT on message lines (it rides the session header, captured separately
-by sessionIDExtractor), so ParsedEvent.HarnessSessionID is left empty and the
-orchestrator backfills it from the captured header id.
-
-Lines that are not parseable message_end events (other types, ANSI-polluted,
-non-JSON) yield nil, because the durable line tap delivers RAW PTY bytes.
-
-Package pi implements the harness.Profile for the pi coding agent
-(@earendil-works/pi-coding-agent, binary "pi" — github.com/earendil-works/pi).
-
-Scope (session-id + resume + stream): pi's headless mode (`pi -p --mode json`)
-emits a JSON event stream whose FIRST stdout line is the session header
-
-	{"type":"session","version":3,"id":"<uuid>","timestamp":"…","cwd":"…"}
-
-so SessionID parses the assigned id from that line, Resume produces the
-`--session <id>` prefix that re-opens it, and Stream parses the per-message
-events into canonical transcript events (see parse_stream.go). All three are
-validated against pi 0.76.0 (cerebras/gpt-oss-120b live capture). This is
-DISTINCT from pkg/turns/harness/pi (the interactive TUI turn adapter).
-
-Hooks is deliberately NOT implemented: pi has no documented shell-hook
-contract (it uses an extension model), so no HookProvider is registered — the
-orchestrator never installs pi hooks on a guess.
-
-Importing this package registers the "pi" profile (see init); blank-import
-pkg/harness/all to register every built-in.
-
-### Exported Types & Functions
-
-#### `type Profile`
-Profile is the pi coding-agent harness profile.
 
 ## Module: harnessenv (`pkg/harnessenv`)
 
@@ -3998,6 +4562,12 @@ a line it could not read was unreadable, for the Follower.
 
 ### Exported Types & Functions
 
+#### `func DecodeEntry(record []byte) ([]transcript.BlockEvent, error)`
+DecodeEntry is Follow's decoder, with each event's Meta set to its *Entry.
+The events are exactly the ones Follow gives the entry, so their follower
+identities are the same; an entry with facts but no events gets one event
+of Type EventEntry.
+
 #### `func EncodedCWD(workingDir string) string`
 EncodedCWD returns the directory-name-encoding Claude Code uses for project
 paths: every non-alphanumeric character (including '/', '.', '_') becomes '-'
@@ -4022,6 +4592,9 @@ fs.ErrNotExist. Each entry becomes the events Read gives for it; an entry
 that is not JSON, or a user or assistant entry whose message cannot be read,
 becomes a SourceError instead.
 
+#### `func FollowEntries(sessionID, workingDir string, env []string, from transcript.Checkpoint) (*transcript.Follower, error)`
+FollowEntries is Follow with DecodeEntry: every event carries its entry.
+
 #### `func Locate(sessionID, workingDir string, env []string) (string, error)`
 Locate returns the path of the transcript Claude Code keeps for session
 sessionID when launched in workingDir with env, by the rules the launch
@@ -4035,6 +4608,10 @@ env is the harness's launch environment; nil means it inherited this
 process's, as exec treats a nil Env. A transcript that does not exist is an
 error wrapping fs.ErrNotExist.
 
+#### `func TaskID(text string) string`
+TaskID is the first task id a task notification's text names
+(<task-id>…</task-id>); "" for none.
+
 #### `func UsageFromJSONL(data []byte) (*transcript.Usage, error)`
 UsageFromJSONL sums per-API-call token usage across a Claude Code session's
 JSONL bytes, deduped by message id. Returns (nil, nil) when no line carried
@@ -4044,6 +4621,11 @@ Claude writes one JSONL line per content block, and multiple lines from ONE
 API call REPEAT the same message.usage. So we dedup by API call: the key is
 message.id when non-empty, else "line:"+Line.UUID; only the first line for a
 distinct key contributes its usage. A naive per-line sum would over-count.
+
+#### `type Entry`
+Entry is what a Claude Code transcript entry says beyond its events: the
+facts a turn's input and its end are read from. FollowEntries attaches one
+to each event as its Meta.
 
 #### `type Reader`
 Reader implements transcript.Reader for Claude Code.
@@ -4082,6 +4664,13 @@ loom can delegate to this without a serving regression.
 
 ### Exported Types & Functions
 
+#### `func DecodeEntry(record []byte) ([]transcript.BlockEvent, error)`
+DecodeEntry decodes one rollout line into its events, each with the line's
+*Entry as Meta: a user message sent with a client id, an assistant
+message's text blocks, a tool call and its output, and one event of Type
+EventEntry for a turn's start or end, and for the message codex starts a
+turn of its own with. Other lines have no events.
+
 #### `func Events(data []byte) ([]transcript.Event, error)`
 Events parses Codex rollout JSONL bytes into the canonical, tool-aware event
 stream. Only response_item entries are surfaced (message / function_call /
@@ -4089,6 +4678,15 @@ function_call_output / custom_tool_call / custom_tool_call_output); the rest
 are operational noise. custom_tool_call(_output) is the schema newer codex-cli
 (>= 0.144) records for its freeform `exec` tool, alongside the legacy
 function_call schema.
+
+#### `func FollowRollout(path, threadID string, from transcript.Checkpoint) (*transcript.Follower, error)`
+FollowRollout follows the rollout at path from a checkpoint, with
+DecodeEntry: every event carries its line's Entry.
+
+#### `func Rollout(codexHome, threadID string) (string, error)`
+Rollout is the path of a thread's rollout under codexHome, the CODEX_HOME
+codex ran with: sessions/<YYYY>/<MM>/<DD>/rollout-<timestamp>-<thread>.jsonl.
+It is fs.ErrNotExist until codex writes it, with the thread's first turn.
 
 #### `func UsageFromJSONL(data []byte) (*transcript.Usage, error)`
 UsageFromJSONL returns the last token_count event's cumulative token usage
@@ -4100,6 +4698,11 @@ payload.type == "token_count" envelopes, which Events deliberately skips.
 The aggregation contract is to keep the LAST token_count event whose
 info.total_token_usage is a non-null object (info is null on early events),
 using total_token_usage (the cumulative session total), not last_token_usage.
+
+#### `type Entry`
+Entry is what a rollout line says beyond its events: the facts a turn's
+input and its end are read from. FollowRollout attaches one to each event
+as its Meta.
 
 #### `type Envelope`
 Envelope is Codex's top-level rollout line: {timestamp, type, payload}.
@@ -4872,64 +5475,6 @@ corpus-driven markers land, override OnScreen here.
 #### `func New() *Adapter`
 New constructs an OpenCode adapter.
 
-## Module: pi (`pkg/turns/harness/pi`)
-
-_(summary pending — run the veracity-docs skill)_
-
-> Package pi provides a turn-detection adapter for the pi coding agent
-(@earendil-works/pi-coding-agent, binary "pi" —
-github.com/earendil-works/pi).
-
-Capability state (verified against pi 0.76.0 from the shipped docs/source;
-the interactive-screen signals still await a recorded corpus):
-
-  - Transcript reading: implemented. pi's on-disk session format is
-    documented and versioned (JSONL, format v3), so ReadTranscript is
-    wired to pkg/transcript/pi and fires as soon as a harness session ID
-    is known.
-
-  - Graceful quit: implemented. pi exposes a "/quit" slash command (see
-    core/slash-commands.js) that exits cleanly, flushing the session it
-    auto-saves — so QuitSequence sends it instead of leaving the chat layer
-    to SIGTERM the process. See QuitSequence for the submit-byte caveat.
-
-  - End-of-turn screen marker: NOT yet identified. The adapter embeds
-    generic.Adapter so turn-complete signals still flow through the
-    wrapper.StatusWaitingForInput path (driven by the per-harness prompt
-    patterns in internal/wrapcore/harness/pi/). Once a recording exists
-    under test/corpus/pi/, add an OnScreen-derived fingerprint here, mirroring
-    codex's Token-usage footer match or claude-code's "✻ <verb> for Ns" line
-    (and, with it, a BusyDetector + MessageExtractor).
-
-  - Session ID: assigned, not extracted. pi surfaces its session id only via
-    the "/session" command and the JSON header line of `pi --mode json`
-    (parsed by the headless pkg/harness/pi profile), never on the interactive
-    TUI, so the adapter implements turns.SessionAssigner instead: the chat
-    layer mints a UUID and launches pi with "--session-id <uuid>".
-
-Markers may shift across upstream versions; the golden-recording tests under
-test/corpus/pi/ will be the early-warning signal when they're added.
-
-### Exported Types & Functions
-
-#### `func PromptReady(text string) bool`
-PromptReady reports whether pi's composer is initialized and idle — ready to
-accept a submitted message: the status line is painted and no turn is in
-flight. The chat layer's readiness gate uses it so Send waits past pi's
-(noisy, network-touching) startup instead of writing into a composer that is
-not listening yet, and its idle-completion fallback uses it to avoid closing a
-turn while pi is still working.
-
-#### `type Adapter`
-Adapter implements turns.Adapter for the pi coding agent.
-
-It currently delegates OnScreen to the embedded generic.Adapter (no
-per-screen signals yet) and inherits OnWrapperStatus. Once
-corpus-driven markers land, override OnScreen here.
-
-#### `func New() *Adapter`
-New constructs a pi adapter.
-
 ## Module: versions (`pkg/versions`)
 
 _(summary pending — run the veracity-docs skill)_
@@ -4949,7 +5494,7 @@ meta.json.binary_version is free to trail the pin, and routinely does
 Schema:
 
 	{
-	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.144.5", "verified_at": "2026-07-22"},
+	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
 	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
 	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}

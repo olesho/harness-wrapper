@@ -32,7 +32,8 @@ Locating the file is harness-specific: claude-code encodes the working directory
 walks the `YYYY/MM/DD` tree for the uuid suffix (and can locate the *latest* session for a working
 directory, which is how a session id is recovered when the TUI stopped rendering the resume hint); pi
 does a slug lookup with a directory-walk fallback and confirms the match against an in-file ID header,
-guarding against shared-prefix false positives. **opencode** is deliberately omitted — its store is
+guarding against shared-prefix false positives, and its follower reads a session pi is still
+writing, as the Harness Adapter's Pi profile does. **opencode** is deliberately omitted — its store is
 mid-migration from per-message JSON files to SQLite, and a reader that silently breaks across that
 change is worse than none.
 

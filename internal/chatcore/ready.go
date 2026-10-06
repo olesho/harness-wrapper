@@ -538,14 +538,6 @@ func submitKeyForHarness(harness, screenText string) []byte {
 		// the unmodified Enter key in that mode (same as claude-code's enhanced TUI).
 		// 0.140.0 accepted "\n", but enhanced mode is unconditional now.
 		return []byte("\x1b[13u")
-	case "pi":
-		// pi's composer submits on a carriage return (the actual Enter byte); a bare
-		// "\n" (line feed) is NOT treated as submit — it leaves the typed prompt sitting
-		// in the composer unsent (verified live against pi 0.76.0: the prompt rendered
-		// in the input box but the turn never ran). pi does NOT enable the kitty keyboard
-		// protocol (only bracketed-paste / synchronized-output), so the enhanced CSI 13u
-		// that claude-code/codex need is unnecessary — a plain CR submits.
-		return []byte("\r")
 	default:
 		return []byte("\n")
 	}
@@ -600,12 +592,9 @@ func shiftTabForHarness(harness, screenText string) []byte {
 		// Verified live on 0.144.5: cycles the footer into "Plan mode".
 		return []byte(shiftTabCSI9_2u)
 	default:
-		// Unknown harnesses, and pi, get nil rather than a best-guess keystroke.
-		// pi has no permission-mode cycle to drive at all: verified live on
-		// 0.76.0 that Shift+Tab there reaches a *thinking* toggle ("Current
-		// model does not support thinking") and leaves no mode indicator
-		// changed. Returning nil lets the caller fail loudly on "this harness
-		// has no Shift+Tab contract" instead of writing bytes that quietly do
+		// Unknown harnesses get nil rather than a best-guess keystroke.
+		// Returning nil lets the caller fail loudly on "this harness has no
+		// Shift+Tab contract" instead of writing bytes that quietly do
 		// something unrelated.
 		return nil
 	}
@@ -655,9 +644,7 @@ const (
 // the framing is the protocol-correct way to say "this is one paste, do not act
 // on the newlines inside it", not a heuristic.
 //
-// pi is deliberately LEFT OUT even though it also enables the mode (see the
-// note at readyForInput): pi's composer has never been measured against a >2KB
-// prompt, and pi is not what the fleet runs. Unmeasured harnesses keep today's
+// Unmeasured harnesses keep today's
 // behaviour — that is the whole point of a per-harness table. codex is included
 // on the corpus evidence alone; if it ever proves wrong there, it comes out
 // here and nowhere else.

@@ -223,7 +223,7 @@ func TestFinishedOutput_LiveIsolation(t *testing.T) {
 		"prompt too long",
 	}
 	residualDriven := 0
-	for _, harness := range []string{"claude", "claude-code", "codex", "cursor", "opencode", "pi", ""} {
+	for _, harness := range []string{"claude", "claude-code", "codex", "cursor", "opencode", ""} {
 		for _, text := range prose {
 			fin := wrapper.ClassifyFinishedOutput(harness, text)
 			if !strings.HasPrefix(fin.Rule, "residual.") {
@@ -294,7 +294,7 @@ func normalizeResumeTime(s string) string {
 // adapter and never reaches the default, so a fallback placed there would have
 // been dead code for every harness that matters.
 func TestFinishedOutput_ResidualReachesKnownHarnesses(t *testing.T) {
-	for _, harness := range []string{"claude", "claude-code", "codex", "cursor", "opencode", "pi", "", "some-unknown-harness"} {
+	for _, harness := range []string{"claude", "claude-code", "codex", "cursor", "opencode", "", "some-unknown-harness"} {
 		got := wrapper.ClassifyFinishedOutput(harness, "fatal: 401 unauthorized")
 		if got.Rule != "residual.auth" || got.Class != wrapper.ErrAuth {
 			t.Errorf("harness %q: Rule/Class = %q/%v, want residual.auth/ErrAuth", harness, got.Rule, got.Class)

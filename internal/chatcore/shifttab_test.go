@@ -30,12 +30,6 @@ func TestShiftTabForHarness(t *testing.T) {
 		{"claude-code any screen", chatClaudeCode, "whatever is on screen", []byte(csi92u)},
 		{"codex", "codex", "›Find and fix a bug in @filename", []byte(csi92u)},
 		{"codex any screen", "codex", "whatever is on screen", []byte(csi92u)},
-		// pi enables no enhanced keyboard mode and exposes no permission-mode
-		// cycle (verified live on 0.76.0: Shift+Tab lands on a thinking toggle
-		// instead), so it gets the same nil as any unknown harness — callers
-		// must fail loudly rather than fire a keystroke that means something
-		// else entirely.
-		{"pi unsupported", "pi", "0.0%/131k (auto)", nil},
 		{"unknown unsupported", "someharness", "anything", nil},
 	}
 	for _, tt := range tests {
@@ -93,9 +87,5 @@ func TestSubmitKeyMatchesFakeharness(t *testing.T) {
 			t.Errorf("submitKeyForHarness(%q, …) = %q, want fakeharness.SubmitCSI13u %q",
 				harness, got, fakeharness.SubmitCSI13u)
 		}
-	}
-	if got := submitKeyForHarness("pi", ""); !bytes.Equal(got, []byte(fakeharness.SubmitCR)) {
-		t.Errorf("submitKeyForHarness(\"pi\", …) = %q, want fakeharness.SubmitCR %q",
-			got, fakeharness.SubmitCR)
 	}
 }

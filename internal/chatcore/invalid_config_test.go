@@ -32,7 +32,7 @@ func TestOpenClassifiesInvalidWrapperConfigAsInvalidOptions(t *testing.T) {
 		model   string
 	}{
 		{name: "unknown-effort", harness: "codex", effort: "hgih"},
-		{name: "harness-without-effort-axis", harness: "pi", effort: "high"},
+		{name: "harness-without-effort-axis", harness: "opencode", effort: "high"},
 		{name: "harness-without-model-flag", harness: "opencode", model: "gpt-5"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

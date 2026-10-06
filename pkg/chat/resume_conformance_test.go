@@ -199,31 +199,6 @@ func TestOpenResume_PrependsCodexArgs(t *testing.T) {
 	}
 }
 
-// TestOpenResume_PrependsPiArgs asserts the pi resume fragment
-// (`--session <id>`) leads argv.
-func TestOpenResume_PrependsPiArgs(t *testing.T) {
-	bin := buildFake(t)
-	argvPath := argvOutPath(t)
-	env := fakeLaunchEnv(t, fakeharness.New("pi").PiIdle().Build(), argvPath)
-
-	conv, err := chat.Open(context.Background(), chat.Options{
-		Harness:    "pi",
-		BinaryPath: bin,
-		Env:        env,
-		Store:      memstore.New(),
-		Resume:     uuid,
-	})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	trackClose(t, conv)
-
-	argv := readArgv(t, argvPath)
-	if len(argv) < 2 || argv[0] != "--session" || argv[1] != uuid {
-		t.Fatalf("argv[:2] = %#v, want [--session %s]", argv, uuid)
-	}
-}
-
 // TestOpenResume_OpencodeUnsupported: opencode has no SessionResumer, so Open
 // rejects with ErrResumeUnsupported BEFORE spawning any process.
 func TestOpenResume_OpencodeUnsupported(t *testing.T) {

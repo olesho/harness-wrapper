@@ -36,7 +36,7 @@ They are independent — neither calls the other.
 ## The profile registry
 
 A **Profile** is a harness's capability descriptor. Profiles self-register in `init()`; importing
-`pkg/harness/all` pulls in every built-in one (`claude`, `codex`, `opencode`, `pi`).
+`pkg/harness/all` pulls in every built-in one (`claude`, `codex`, `opencode`).
 
 ```go
 type Profile interface {
@@ -76,10 +76,9 @@ type ResolvedProfile struct {   // a non-nil field means "confirmed for THIS run
 | `claude` | ✅ | ✅ | ✅ | ✅ | `--resume <id>` |
 | `codex` | — | ✅ | — | — | `resume <id>` |
 | `opencode` | ✅ | ✅ | — | — | `--session <id>` |
-| `pi` | ✅ | ✅ | ✅ | — | `--session <id>` |
 
 Every `ResumeArgs` returns `nil` for an empty id. Session-id extraction reads the harness's own
-machine-readable line: claude's `system`/`init` record, pi's session header, opencode's session field
+machine-readable line: claude's `system`/`init` record, opencode's session field
 (either spelling).
 
 Claude uses positional `--resume` deliberately — its `--session-id` flag is rejected unless paired

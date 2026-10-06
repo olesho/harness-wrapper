@@ -35,9 +35,8 @@ binaries that import `pkg/chat`; this repo ships one such gateway,
    │  +harness/codex   │               │  +codex             │
    │  +harness/cc      │               │  +claudecode        │
    │  +harness/opencode│               │  +pi                │
-   │  +harness/pi      │               │ (read-only JSONL)   │
-   │  +generic         │               └─────────────────────┘
-   └────────┬──────────┘
+   │  +generic         │               │ (read-only JSONL)   │
+   └────────┬──────────┘               └─────────────────────┘
             │
    ┌────────▼──────────┐
    │ pkg/screen        │  vt10x emulator
@@ -156,7 +155,6 @@ for the endpoint reference and ready-to-run Python and TypeScript example client
 | codex       | ✅                | ✅ `Token usage:` footer   | ✅ `codex resume <uuid>`   | ✅ `~/.codex/sessions/`    |
 | claude-code | ✅                | ✅ `✻ <verb> for Ns` line  | ✅ assigned: `--session-id`| ✅ `~/.claude/projects/`   |
 | opencode    | ✅                | ⏳ via `waiting_for_input` | ⏳ (no on-screen UUID known) | ⏳ (on-disk store in flux: JSON → SQLite) |
-| pi          | ✅                | ⏳ idle + `Busy` spinner    | ✅ assigned: `--session-id`| ✅ `~/.pi/agent/sessions/` |
 | generic     | ✅ (fallback)     | ✅ via `waiting_for_input` | —                        | —                        |
 
 The per-harness detail and "adding a harness" workflow are in the

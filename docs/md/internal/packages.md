@@ -23,13 +23,13 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/screen` | vt100 emulator wrapper turning PTY bytes into a queryable snapshot | [Screen](screen.md) |
 | `pkg/turns` | The per-harness `Adapter` contract, capability interfaces, and the `Watcher` | [Turns & Adapters](turns.md) |
 | `pkg/turns/generic` | The status-only fallback adapter every other adapter embeds | [Adapter Matrix](../guide/adapters.md#generic) |
-| `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode`, `pi` | [Adapter Matrix](../guide/adapters.md) |
+| `pkg/turns/harness/*` | TUI adapters: `codex`, `claudecode`, `opencode` | [Adapter Matrix](../guide/adapters.md) |
 | `pkg/chat` | The `Conversation` API: control, send, events, history, interactive input, permission switching. `internal/chatcore` plus every built-in screen adapter | [Chat API](../guide/chat.md) |
 | `pkg/chat/memstore` | The in-memory `Store` implementation, written against the chat core so it links no harness | [Store interface](../guide/chat.md#store-interface) |
 | `pkg/transcript` | Read-only parsers for harness-owned JSONL logs — whole-file readers and a checkpointed follower — and the canonical `Event` | [Transcripts](transcript.md) |
 | `pkg/transcript/*` | Per-harness readers: `claudecode`, `codex`, `pi` | [Transcripts](transcript.md#per-harness-logs) |
 | `pkg/harness` | Per-harness **capability profiles**, hook installation, transcript acquisition, and `RunTurn` | [Harness profiles & runs](harness.md) |
-| `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`, `pi`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |
+| `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |
 | `pkg/oneshot` | One typed turn, headless, with an auto-accept policy | [One-shot turns](oneshot.md) |
 | `pkg/turnproto` | The frozen structured-turn wire format and its exit codes | [Structured turn protocol](turnproto.md) |
 | `pkg/env` | Host-side client for running a structured turn inside a workspace | [Execution environments](env.md#running-a-turn-in-a-workspace) |

@@ -33,13 +33,6 @@ const ArgvOutVar = "FAKEHARNESS_ARGV_OUT"
 // fails loudly.
 const SubmitCSI13u = "\x1b[13u"
 
-// SubmitCR is the byte chat.Send writes to submit a turn for pi: a bare carriage
-// return. pi does not enable the kitty keyboard protocol (unlike claude-code /
-// codex), so plain Enter submits. Scenarios wait for it via Builder.AwaitSubmitCR,
-// which pins the pi submit-key contract — if the wrapper stops sending exactly
-// this, the fake never advances and the test fails loudly.
-const SubmitCR = "\r"
-
 // ShiftTabCSI9_2u is the byte sequence chat writes to press Shift+Tab — the key
 // claude-code and codex bind to "cycle permission mode" — in the kitty /
 // enhanced keyboard protocol those TUIs enable at startup: CSI 9 ; 2 u (Tab
