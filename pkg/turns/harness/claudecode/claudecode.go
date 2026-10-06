@@ -70,6 +70,7 @@ import (
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
+	"github.com/olesho/harness-wrapper/pkg/turns/internal/menu"
 )
 
 // thinkingRE matches the end-of-turn thinking-summary line, anchored
@@ -489,26 +490,7 @@ func cleanLabel(s string) string {
 
 // aliasForLabel maps a menu label to a portable intent so policies can target
 // "proceed"/"deny" without knowing the concrete wording.
-func aliasForLabel(label string) string {
-	l := strings.ToLower(label)
-	switch {
-	case containsAny(l, "proceed", "accept", "trust", "yes", "continue"):
-		return "proceed"
-	case containsAny(l, "exit", "deny", "reject", "cancel", "no,", "no ", "don't", "do not"):
-		return "deny"
-	default:
-		return ""
-	}
-}
-
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
-}
+func aliasForLabel(label string) string { return menu.IntentAlias(label) }
 
 // inputID derives a stable id from the dialog's identity (kind + prompt +
 // option labels) so consecutive redraws of one dialog collapse to a single

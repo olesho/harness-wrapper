@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/olesho/harness-wrapper/pkg/turns"
+	"github.com/olesho/harness-wrapper/pkg/turns/internal/menu"
 )
 
 // Codex paints a few blocking startup interstitials that wait for a keypress
@@ -327,30 +328,12 @@ func aliasForLabel(label string) string {
 		return "skip"
 	case strings.Contains(l, "update"):
 		return "update"
-	// Yes/No approval vocabulary, mirroring the claude-code adapter.
-	case containsAny(l, "proceed", "accept", "trust", "yes", "continue"):
-		return "proceed"
-	// The deny tokens below are comma/space-suffixed ("no,", "no ") on purpose
-	// so they never match "now"/"notice"; that leaves a bare "No" (lowercasing
-	// to exactly "no") matching neither, so this exact-match case is required —
-	// the approval gate DEMANDS a deny row, and real dialogs render a bare
-	// "2. No".
-	case l == "no":
-		return "deny"
-	case containsAny(l, "exit", "deny", "reject", "cancel", "no,", "no ", "don't", "do not"):
-		return "deny"
+	// Yes/No approval vocabulary, shared with the claude-code adapter.
+	// The approval gate DEMANDS a deny row, and real dialogs render a bare
+	// "2. No", which IntentAlias handles by its leading word.
 	default:
-		return ""
+		return menu.IntentAlias(label)
 	}
-}
-
-func containsAny(s string, subs ...string) bool {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
 }
 
 func findByAlias(req *turns.InputRequest, alias string) *turns.InputOption {
