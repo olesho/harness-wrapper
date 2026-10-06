@@ -129,6 +129,13 @@ func TestClaudeScriptsStartFromAnyDirectory(t *testing.T) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
+		// trust-dialog.json records the folder-trust dialog itself (the
+		// trust-dialog-* corpus cells): it waits for the dialog and answers
+		// it with the 2.1.251+ keys, so by design it neither starts in a
+		// trusted directory nor handles the 2.1.247 option order.
+		if e.Name() == "trust-dialog.json" {
+			continue
+		}
 		scr, err := loadScript(filepath.Join(dir, e.Name()))
 		if err != nil {
 			t.Fatalf("%s: %v", e.Name(), err)
