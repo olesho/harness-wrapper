@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -311,7 +312,8 @@ func TestNodeDBCheckpoint(t *testing.T) {
 func TestSpoolCommittedBeforeDeletion(t *testing.T) {
 	l, oc, m := recordAgent(t, fixtureSession, "../../transcript/claudecode/testdata/entries-2.1.283.jsonl", nil)
 	cfg, _ := parseOpenConfig(oc)
-	if err := os.MkdirAll(cfg.Spool, 0o700); err != nil {
+	spool := sessionSpool(cfg.Spool, fixtureSession)
+	if err := os.MkdirAll(spool, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	pre := transcript.ParsedEvent{HarnessSessionID: fixtureSession, Event: transcript.Event{
@@ -324,7 +326,7 @@ func TestSpoolCommittedBeforeDeletion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(cfg.Spool, name), data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(spool, name), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -340,24 +342,24 @@ func TestSpoolCommittedBeforeDeletion(t *testing.T) {
 	if !started {
 		t.Fatal("no tool_started from the spool")
 	}
-	if _, err := os.Stat(filepath.Join(cfg.Spool, "pre-tool-use-1-1-1.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(spool, "pre-tool-use-1-1-1.json")); err != nil {
 		t.Errorf("the tool hook's file went before its chunk was committed: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.Spool, "session-start-1-1-2.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(spool, "session-start-1-1-2.json")); err == nil {
 		t.Error("a file that reports nothing stays")
 	}
 	if err := r.Commit(ch); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(cfg.Spool, "pre-tool-use-1-1-1.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(spool, "pre-tool-use-1-1-1.json")); err == nil {
 		t.Error("the tool hook's file stays after its chunk was committed")
 	}
 }
 
 // A Session's reader takes its own spool, and its own files at the spool
 // root, which a host kept before each Session had a spool, its subagents'
-// included; another Session's files, in its spool or at the root, it leaves
-// where they are.
+// included; another Session's files it leaves to that Session: those in its
+// spool where they are, those at the root moved into its spool.
 func TestSpoolPerSession(t *testing.T) {
 	l, oc, m := recordAgent(t, fixtureSession, "../../transcript/claudecode/testdata/entries-2.1.283.jsonl", nil)
 	cfg, _ := parseOpenConfig(oc)
@@ -406,12 +408,145 @@ func TestSpoolPerSession(t *testing.T) {
 	}
 	for path, ev := range files {
 		_, err := os.Stat(path)
+		atRoot := filepath.Dir(path) == cfg.Spool
 		switch ours := ev.HarnessSessionID == fixtureSession || ev.ParentSessionID == fixtureSession; {
-		case ours && err == nil:
-			t.Errorf("%s, the Session's, stays after its chunk was committed", filepath.Base(path))
-		case !ours && err != nil:
+		case (ours || atRoot) && err == nil:
+			t.Errorf("%s stays where it was", filepath.Base(path))
+		case !ours && !atRoot && err != nil:
 			t.Errorf("%s, another Session's, is gone: %v", filepath.Base(path), err)
 		}
+	}
+	if got := spoolToolIDs(t, sessionSpool(cfg.Spool, other)); !got["toolu_other"] || !got["toolu_root_other"] || len(got) != 2 {
+		t.Errorf("the other Session's spool holds %v, want its own file and the one moved from the root", got)
+	}
+}
+
+// spoolToolIDs reads the tool use ids the spool in dir holds, consuming
+// nothing.
+func spoolToolIDs(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	sc, err := harnesscore.ReadSpool(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, sb := range sc.Batches {
+		for _, pe := range sb.Events {
+			got[pe.Event.ToolUseID] = true
+		}
+	}
+	return got
+}
+
+// Every Session's reader polls the spool root at once. The root's files are
+// moved into the Sessions' spools by one reader at a time: each Session gets
+// exactly its own events — from a file holding several Sessions' events too,
+// which is then acknowledged — and no Session is told of a file at the root
+// it cannot be shown to own.
+func TestLegacySpoolRootSharedBySessions(t *testing.T) {
+	l, oc, m := recordAgent(t, fixtureSession, "../../transcript/claudecode/testdata/entries-2.1.283.jsonl", nil)
+	cfg, _ := parseOpenConfig(oc)
+	const other = "b2c3d4e5-0000-4000-8000-000000000001"
+	tool := func(session, id string) transcript.ParsedEvent {
+		return transcript.ParsedEvent{HarnessSessionID: session, Event: transcript.Event{
+			Type: transcript.EventToolUse, Role: transcript.RoleAssistant, ToolName: "Bash", ToolUseID: id,
+			ToolInput: json.RawMessage(`{"command":"echo hi"}`), Source: transcript.SourceHook,
+		}}
+	}
+	root := map[string][]transcript.ParsedEvent{
+		"pre-tool-use-1-1-1.json": {tool(fixtureSession, "toolu_a")},
+		"pre-tool-use-2-1-2.json": {tool(other, "toolu_b")},
+		"pre-tool-use-3-1-3.json": {tool(fixtureSession, "toolu_mixed_a"), tool(other, "toolu_mixed_b")},
+	}
+	for name, evs := range root {
+		data, err := transcript.MarshalParsedEvents(evs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cfg.Spool, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(cfg.Spool, "pre-tool-use-4-1-4.json"), []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := []string{fixtureSession, other}
+	readers := make([]adapter.Reader, len(sessions))
+	for i, s := range sessions {
+		readers[i] = openReader(t, s, l, oc, m, nil)
+	}
+	got := make([]map[string]int, len(sessions))
+	faults := make([][]contract.Fault, len(sessions))
+	var wg sync.WaitGroup
+	for i, r := range readers {
+		got[i] = map[string]int{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				ch, err := r.Read(context.Background(), contract.MaxObserveBytes)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				for _, o := range ch.Items {
+					if o.Kind == contract.KindToolStarted {
+						got[i][o.ID]++
+					}
+				}
+				faults[i] = append(faults[i], ch.Faults...)
+				if err := r.Commit(ch); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	// A reader that found the root held may have finished its rounds before
+	// the holder moved its files: what is left is in its spool by now.
+	for i, r := range readers {
+		ch, err := r.Read(context.Background(), contract.MaxObserveBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range ch.Items {
+			if o.Kind == contract.KindToolStarted {
+				got[i][o.ID]++
+			}
+		}
+		faults[i] = append(faults[i], ch.Faults...)
+		if err := r.Commit(ch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []map[string]int{
+		{"tool_started:toolu_a": 1, "tool_started:toolu_mixed_a": 1},
+		{"tool_started:toolu_b": 1, "tool_started:toolu_mixed_b": 1},
+	}
+	for i := range sessions {
+		if len(got[i]) != len(want[i]) {
+			t.Errorf("session %d got %v, want %v", i, got[i], want[i])
+		}
+		for id, n := range want[i] {
+			if got[i][id] != n {
+				t.Errorf("session %d got %v, want %v", i, got[i], want[i])
+				break
+			}
+		}
+		for _, f := range faults[i] {
+			if f.Kind == "spool_quarantined" {
+				t.Errorf("session %d was told of a root file it does not own: %+v", i, f)
+			}
+		}
+	}
+	left, _ := filepath.Glob(filepath.Join(cfg.Spool, "*.json"))
+	if len(left) != 0 {
+		t.Errorf("files left at the root: %v", left)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Spool, harnesscore.SpoolQuarantineDir, "pre-tool-use-4-1-4.json")); err != nil {
+		t.Errorf("the unreadable root file is not in the root's quarantine: %v", err)
 	}
 }
 

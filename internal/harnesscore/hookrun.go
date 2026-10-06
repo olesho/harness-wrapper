@@ -101,6 +101,15 @@ func HandleHookEvent(harnessName, event string, env []string, stdin []byte) (Hoo
 // the renamed file empty; without the second, it can undo the rename and lose
 // a batch the hook already reported written.
 func writeSpool(spoolDir, event string, events []transcript.ParsedEvent) error {
+	return WriteSpoolFile(spoolDir, event, time.Now().UnixNano(), events)
+}
+
+// WriteSpoolFile writes events to the spool in spoolDir as one file, exactly
+// as the hook for event does (writeSpool), but named as written at nanos (Unix
+// nanoseconds). It is for a consumer that moves events from one spool to
+// another and must keep the hook and the order they were written in; a hook
+// itself never calls it. spoolDir must exist.
+func WriteSpoolFile(spoolDir, event string, nanos int64, events []transcript.ParsedEvent) error {
 	// DURABLE form: persists Source/NativeID/SchemaVersion (Event's public JSON
 	// omits them), which the authority filter + dedup need after the round-trip.
 	data, err := transcript.MarshalParsedEvents(events)
@@ -113,7 +122,13 @@ func writeSpool(spoolDir, event string, events []transcript.ParsedEvent) error {
 	// zero-padded timestamp LEADS (spoolNameFormat), so a name-sorted read is
 	// chronological; with the event first, every "post-…" file sorted ahead of
 	// an earlier "stop" or "session-start".
-	base := fmt.Sprintf(spoolNameFormat, time.Now().UnixNano(), event, os.Getpid(), spoolSeq.Add(1))
+	if event == "" || strings.ContainsAny(event, "/\\\x00") || event[0] >= '0' && event[0] <= '9' {
+		return fmt.Errorf("harness: %q is not a spool event name", event)
+	}
+	if nanos < 0 {
+		return fmt.Errorf("harness: spool file time %d is before 1970", nanos)
+	}
+	base := fmt.Sprintf(spoolNameFormat, nanos, event, os.Getpid(), spoolSeq.Add(1))
 	final := filepath.Join(spoolDir, base)
 	tmp := final + ".tmp"
 	if err := writeSynced(tmp, data); err != nil {

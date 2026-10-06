@@ -56,7 +56,8 @@ type openConfig struct {
 	// Session's hooks write to a spool of its own beneath it (sessionSpool),
 	// which its record reader alone takes. Files a host kept at the root —
 	// before this profile, at the root it now names scratch, or before each
-	// Session had a spool — are read there, each by the Session it names.
+	// Session had a spool — are moved, under a lock, into the spools of the
+	// Sessions they name (migrateLegacySpool).
 	Spool string `json:"spool"`
 }
 

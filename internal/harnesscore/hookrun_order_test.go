@@ -90,6 +90,29 @@ func TestDrainSpoolOrdersLegacyNames(t *testing.T) {
 	}
 }
 
+// WriteSpoolFile keeps the hook and the time it is given, so events moved to
+// another spool keep their dispatch and their order; it refuses a name that
+// would not parse back.
+func TestWriteSpoolFileKeepsEventAndTime(t *testing.T) {
+	spool := t.TempDir()
+	if err := WriteSpoolFile(spool, HookArgPostToolUse, 42, textEvent("x")); err != nil {
+		t.Fatal(err)
+	}
+	for name := range spoolJSON(t, spool) {
+		if event, nanos, ok := ParseSpoolFileName(name); !ok || event != HookArgPostToolUse || nanos != 42 {
+			t.Errorf("%s parses to %q, %d, %v", name, event, nanos, ok)
+		}
+	}
+	for _, bad := range []string{"", "../x", "9lives"} {
+		if err := WriteSpoolFile(spool, bad, 1, textEvent("x")); err == nil {
+			t.Errorf("WriteSpoolFile(%q) wrote a file", bad)
+		}
+	}
+	if err := WriteSpoolFile(spool, "stop", -1, textEvent("x")); err == nil {
+		t.Error("WriteSpoolFile took a time before 1970")
+	}
+}
+
 func TestParseSpoolFileName(t *testing.T) {
 	for _, c := range []struct {
 		name  string

@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
@@ -54,10 +57,9 @@ type chunkToken struct {
 	batch transcript.Batch
 	moved bool
 	reset bool
-	// receipts acknowledge the files of the Session's spool; legacy, those
-	// of the spool root.
-	receipts, legacy []harnesscore.SpoolReceipt
-	after            recordState
+	// receipts acknowledge the files of the Session's spool.
+	receipts []harnesscore.SpoolReceipt
+	after    recordState
 }
 
 func checkpointOf(cp transcript.Checkpoint) *contract.Checkpoint {
@@ -157,10 +159,10 @@ func (r *reader) Read(_ context.Context, maxBytes int) (adapter.Chunk, error) {
 		}
 	}
 
+	migrateLegacySpool(r.cfg.Spool)
 	if r.spool != "" {
-		tok.receipts = r.readSpool(&ch, r.spool, false)
+		tok.receipts = r.readSpool(&ch, r.spool)
 	}
-	tok.legacy = r.readSpool(&ch, r.cfg.Spool, true)
 	if len(ch.Items) == 0 && ch.Checkpoint == nil && ch.Reset == nil && ch.Rescan == nil && len(ch.Faults) == 0 {
 		return adapter.Chunk{}, nil
 	}
@@ -183,29 +185,23 @@ func (r *reader) Commit(c adapter.Chunk) error {
 	if len(tok.receipts) > 0 {
 		errs = append(errs, harnesscore.AckSpool(r.spool, tok.receipts...))
 	}
-	if len(tok.legacy) > 0 {
-		errs = append(errs, harnesscore.AckSpool(r.cfg.Spool, tok.legacy...))
-	}
 	return errors.Join(errs...)
 }
 
-// readSpool adds what the spool in dir reports to ch, and returns the
-// receipts that acknowledge it. At the spool root it takes only this
-// Session's files, and leaves every other Session's where it is. A file that
-// reports nothing, whoever's, goes at once: it has nothing to commit.
-func (r *reader) readSpool(ch *adapter.Chunk, dir string, root bool) []harnesscore.SpoolReceipt {
+// readSpool adds what the Session's own spool in dir reports to ch, and
+// returns the receipts that acknowledge it. A file that reports nothing goes
+// at once: it has nothing to commit.
+func (r *reader) readSpool(ch *adapter.Chunk, dir string) []harnesscore.SpoolReceipt {
 	sc, _ := harnesscore.ReadSpool(dir)
 	var nothing, taken []harnesscore.SpoolReceipt
 	for _, sb := range sc.Batches {
 		items := spoolItems(sb)
-		switch {
-		case len(items) == 0:
+		if len(items) == 0 {
 			nothing = append(nothing, sb.Receipt)
-		case root && !r.ours(sb):
-		default:
-			ch.Items = append(ch.Items, items...)
-			taken = append(taken, sb.Receipt)
+			continue
 		}
+		ch.Items = append(ch.Items, items...)
+		taken = append(taken, sb.Receipt)
 	}
 	_ = harnesscore.AckSpool(dir, nothing...)
 	for _, q := range sc.Quarantined {
@@ -214,19 +210,86 @@ func (r *reader) readSpool(ch *adapter.Chunk, dir string, root bool) []harnessco
 	return taken
 }
 
-// ours reports whether a spool file is this Session's: every event its own,
-// or one of its subagents'.
-func (r *reader) ours(sb harnesscore.SpoolBatch) bool {
+// legacySpoolLock is the lock file, at the spool root, that one reader at a
+// time holds to move the root's files into the Sessions' own spools.
+const legacySpoolLock = "spool-legacy.lock"
+
+// migrateLegacySpool moves the hook files a host kept at the spool root —
+// before each Session had a spool of its own — into the spools of the
+// Sessions they belong to, where each Session's reader takes its own.
+//
+// The root is shared by every Session of the agent, and ReadSpool assumes one
+// consumer. When each reader took its own files straight from the root, the
+// readers raced to quarantine the same files, every Session got the faults of
+// files that were not its own, and a file holding several Sessions' events
+// was never acknowledged by any. So the root is handled under an flock, taken
+// without waiting: a reader that finds it held skips the root this time,
+// since the holder is moving the files anyway. Under it, each file's events
+// are split by the Session they belong to (the event's own, or its parent's
+// for a subagent's), written durably to that Session's spool under the same
+// hook and time, and only then is the root file acknowledged. A crash in
+// between writes a Session's part again, which its reader dedups by
+// observation id. Events of no claude Session (no UUID) can reach no reader
+// and go with their file, as does a file that reports nothing.
+//
+// A file the root's ReadSpool quarantines cannot be told to be any Session's,
+// so it is reported to none: it stays in the root's quarantine for
+// inspection. Each Session's own spool reports its own.
+func migrateLegacySpool(root string) {
+	lf, err := os.OpenFile(filepath.Join(root, legacySpoolLock), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600) //nolint:gosec // the agent's scratch root
+	if err != nil {
+		return
+	}
+	defer func() { _ = lf.Close() }()
+	if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+		return // another reader holds the root
+	}
+	defer func() { _ = syscall.Flock(int(lf.Fd()), syscall.LOCK_UN) }()
+	sc, _ := harnesscore.ReadSpool(root)
+	var moved []harnesscore.SpoolReceipt
+	for _, sb := range sc.Batches {
+		if moveLegacyFile(root, sb) == nil {
+			moved = append(moved, sb.Receipt)
+		}
+	}
+	_ = harnesscore.AckSpool(root, moved...)
+}
+
+// moveLegacyFile writes the events of one root spool file to the spools of
+// the Sessions they belong to. A nil return means the root file may go.
+func moveLegacyFile(root string, sb harnesscore.SpoolBatch) error {
+	if len(spoolItems(sb)) == 0 {
+		return nil
+	}
+	event, nanos, ok := harnesscore.ParseSpoolFileName(sb.Receipt.Name)
+	if !ok {
+		return nil // spoolItems reports nothing for such a name
+	}
+	var order []string
+	bySession := map[string][]transcript.ParsedEvent{}
 	for _, pe := range sb.Events {
 		top := pe.HarnessSessionID
 		if pe.ParentSessionID != "" {
 			top = pe.ParentSessionID
 		}
-		if top != r.session {
-			return false
+		if !sessionid.IsUUID(top) {
+			continue
+		}
+		if _, seen := bySession[top]; !seen {
+			order = append(order, top)
+		}
+		bySession[top] = append(bySession[top], pe)
+	}
+	for _, id := range order {
+		dir := sessionSpool(root, id)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := harnesscore.WriteSpoolFile(dir, event, nanos, bySession[id]); err != nil {
+			return err
 		}
 	}
-	return len(sb.Events) > 0
+	return nil
 }
 
 func (r *reader) Close() error { return nil }
