@@ -3,6 +3,7 @@ package claudecode
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -410,6 +412,63 @@ func TestSpoolPerSession(t *testing.T) {
 		case !ours && err != nil:
 			t.Errorf("%s, another Session's, is gone: %v", filepath.Base(path), err)
 		}
+	}
+}
+
+// A spool file is dispatched by the hook it was written under, read from its
+// name in the current timestamp-first form and in the legacy event-first one;
+// a failure's file is never taken for a success's, though its event name
+// starts with the other's.
+func TestSpoolItemsDispatchByHook(t *testing.T) {
+	tool := transcript.ParsedEvent{HarnessSessionID: fixtureSession, Event: transcript.Event{
+		Type: transcript.EventToolUse, ToolName: "Bash", ToolUseID: "toolu_1", Source: transcript.SourceHook,
+	}}
+	start := transcript.ParsedEvent{
+		HarnessSessionID: "agent-1", ParentSessionID: fixtureSession,
+		Event: transcript.Event{Type: transcript.EventSubagentStart, Source: transcript.SourceHook},
+	}
+	stop := transcript.ParsedEvent{
+		HarnessSessionID: "agent-1", ParentSessionID: fixtureSession,
+		Event: transcript.Event{Type: transcript.EventSubagentStop, Source: transcript.SourceHook},
+	}
+	digest := "sha256:" + strings.Repeat("ab", 32)
+	for _, c := range []struct {
+		event  string
+		ev     transcript.ParsedEvent
+		kind   contract.Kind
+		failed bool
+	}{
+		{harnesscore.HookArgPreToolUse, tool, contract.KindToolStarted, false},
+		{harnesscore.HookArgPostToolUse, tool, contract.KindToolFinished, false},
+		{harnesscore.HookArgPostToolUseFailure, tool, contract.KindToolFinished, true},
+		{harnesscore.HookArgSubagentStart, start, contract.KindSubagentStarted, false},
+		{harnesscore.HookArgSubagentStop, stop, contract.KindSubagentStopped, false},
+	} {
+		for _, name := range []string{
+			fmt.Sprintf("%020d-%s-%d-%d.json", time.Now().UnixNano(), c.event, 42, 1),
+			c.event + "-1-1-1.json",
+		} {
+			items := spoolItems(harnesscore.SpoolBatch{
+				Receipt: harnesscore.SpoolReceipt{Name: name, Digest: digest},
+				Events:  []transcript.ParsedEvent{c.ev},
+			})
+			if len(items) != 1 || items[0].Kind != c.kind {
+				t.Errorf("%s: items %+v, want one %s", name, items, c.kind)
+				continue
+			}
+			if c.kind == contract.KindToolFinished {
+				var d contract.ToolFinishedData
+				if err := json.Unmarshal(items[0].Data, &d); err != nil || d.Failed != c.failed {
+					t.Errorf("%s: finished %+v (%v), want failed=%v", name, d, err, c.failed)
+				}
+			}
+		}
+	}
+	if items := spoolItems(harnesscore.SpoolBatch{
+		Receipt: harnesscore.SpoolReceipt{Name: fmt.Sprintf("%020d-session-start-1-1.json", 1), Digest: digest},
+		Events:  []transcript.ParsedEvent{tool},
+	}); len(items) != 0 {
+		t.Errorf("a session-start file reports %+v", items)
 	}
 }
 

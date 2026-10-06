@@ -2,6 +2,7 @@ package harnesscore
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -105,11 +107,13 @@ func writeSpool(spoolDir, event string, events []transcript.ParsedEvent) error {
 	if err != nil {
 		return fmt.Errorf("harness: marshal spool events: %w", err)
 	}
-	// Unique per (event, time, pid, in-process seq): pids differ across the
+	// Unique per (time, event, pid, in-process seq): pids differ across the
 	// separate hook subprocesses, and the atomic seq guarantees uniqueness for
-	// concurrent writers within one process even at the same nanosecond.
-	// Ordering is reconstructed from event content, not the filename.
-	base := fmt.Sprintf("%s-%d-%d-%d.json", event, time.Now().UnixNano(), os.Getpid(), spoolSeq.Add(1))
+	// concurrent writers within one process even at the same nanosecond. The
+	// zero-padded timestamp LEADS (spoolNameFormat), so a name-sorted read is
+	// chronological; with the event first, every "post-…" file sorted ahead of
+	// an earlier "stop" or "session-start".
+	base := fmt.Sprintf(spoolNameFormat, time.Now().UnixNano(), event, os.Getpid(), spoolSeq.Add(1))
 	final := filepath.Join(spoolDir, base)
 	tmp := final + ".tmp"
 	if err := writeSynced(tmp, data); err != nil {
@@ -129,6 +133,73 @@ func writeSpool(spoolDir, event string, events []transcript.ParsedEvent) error {
 		return fmt.Errorf("harness: sync spool dir: %w", err)
 	}
 	return spoolCrash("write:committed")
+}
+
+// spoolNameFormat names a spool file: "<unix nanos, 20 digits>-<event>-<pid>-
+// <seq>.json". The fixed-width timestamp first makes byte order chronological.
+const spoolNameFormat = "%020d-%s-%d-%d.json"
+
+// ParseSpoolFileName returns the hook event a spool file was written under
+// and the time, in Unix nanoseconds, it was named at. A consumer tells the
+// hook a file came from this way, never by the shape of the name.
+//
+// It reads both the current form, "<nanos:20>-<event>-<pid>-<seq>.json", and
+// the legacy one, "<event>-<nanos>-<pid>-<seq>.json", which spools written
+// before the change may still hold (a spool outlives its writer when its
+// consumer, agentd, does). Both are told apart unambiguously: no hook event
+// starts with a digit. ok is false for a name of neither form.
+func ParseSpoolFileName(name string) (event string, nanos int64, ok bool) {
+	stem, found := strings.CutSuffix(name, ".json")
+	if !found {
+		return "", 0, false
+	}
+	parts := strings.Split(stem, "-")
+	numeric := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	if len(parts) < 4 || !numeric(parts[len(parts)-1]) || !numeric(parts[len(parts)-2]) {
+		return "", 0, false
+	}
+	var ts string
+	if len(parts[0]) == 20 && numeric(parts[0]) {
+		ts, event = parts[0], strings.Join(parts[1:len(parts)-2], "-")
+	} else {
+		if !numeric(parts[len(parts)-3]) {
+			return "", 0, false
+		}
+		ts, event = parts[len(parts)-3], strings.Join(parts[:len(parts)-3], "-")
+	}
+	n, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil || event == "" || numeric(event[:1]) {
+		return "", 0, false
+	}
+	return event, n, true
+}
+
+// compareSpoolNames orders spool file names chronologically: by the time
+// ParseSpoolFileName reads from each (so legacy-named files, written before
+// any current one, still come first), then by name. A name of neither form
+// sorts after every parsed one, by name.
+func compareSpoolNames(a, b string) int {
+	_, ta, oka := ParseSpoolFileName(a)
+	_, tb, okb := ParseSpoolFileName(b)
+	switch {
+	case oka && !okb:
+		return -1
+	case !oka && okb:
+		return 1
+	case oka && ta != tb:
+		return cmp.Compare(ta, tb)
+	}
+	return strings.Compare(a, b)
 }
 
 // writeSynced creates path and fsyncs data to it. O_EXCL means a file or
@@ -197,6 +268,8 @@ var spoolCrash = func(string) error { return nil }
 // supervisor outlives its harness — reads with ReadSpool and acknowledges
 // with AckSpool after its own durable commit, and never calls DrainSpool.
 //
+// Files are drained in chronological order (compareSpoolNames).
+//
 // A missing spool dir is not an error (no hooks fired). A single unreadable /
 // unparseable file is skipped (left in place) and collected into err, but does
 // not abort the drain of the rest.
@@ -208,6 +281,7 @@ func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 		}
 		return nil, fmt.Errorf("harness: read spool dir: %w", err)
 	}
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return compareSpoolNames(a.Name(), b.Name()) })
 	var (
 		out  []transcript.ParsedEvent
 		errs []string
@@ -301,7 +375,8 @@ type SpoolQuarantine struct {
 
 // SpoolContents is what one ReadSpool call found.
 type SpoolContents struct {
-	// Batches holds the events of each spool file read, in file-name order.
+	// Batches holds the events of each spool file read, in the order the
+	// files were written (by their names; see ParseSpoolFileName).
 	Batches []SpoolBatch
 	// Quarantined reports each file taken out of the spool unread.
 	Quarantined []SpoolQuarantine
@@ -405,7 +480,7 @@ list:
 			break
 		}
 	}
-	slices.SortFunc(out.Batches, func(a, b SpoolBatch) int { return strings.Compare(a.Receipt.Name, b.Receipt.Name) })
+	slices.SortFunc(out.Batches, func(a, b SpoolBatch) int { return compareSpoolNames(a.Receipt.Name, b.Receipt.Name) })
 	slices.SortFunc(out.Quarantined, func(a, b SpoolQuarantine) int { return strings.Compare(a.Name, b.Name) })
 	return out, errors.Join(errs...)
 }

@@ -153,13 +153,8 @@ func TestToolHooksSpoolForReadAndAck(t *testing.T) {
 		if len(b.Events) != 1 {
 			t.Fatalf("%s: %d events, want 1", b.Receipt.Name, len(b.Events))
 		}
-		// The longest argument first: a failure's file also starts with
-		// "post-tool-use-".
-		for _, arg := range []string{harness.HookArgPostToolUseFailure, harness.HookArgPostToolUse, harness.HookArgPreToolUse} {
-			if strings.HasPrefix(b.Receipt.Name, arg+"-") {
-				byArg[arg] = b.Events[0].Event
-				break
-			}
+		if arg, _, ok := harness.ParseSpoolFileName(b.Receipt.Name); ok {
+			byArg[arg] = b.Events[0].Event
 		}
 	}
 	pre, post, fail := byArg[harness.HookArgPreToolUse], byArg[harness.HookArgPostToolUse], byArg[harness.HookArgPostToolUseFailure]

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/olesho/harness-wrapper/pkg/harness"
@@ -76,12 +75,13 @@ func TestSubagentHooksSpoolRoundTrip(t *testing.T) {
 			if pe.HarnessSessionID != agentID || pe.ParentSessionID != parentSID {
 				t.Errorf("%s: sessions %q under %q", b.Receipt.Name, pe.HarnessSessionID, pe.ParentSessionID)
 			}
+			event, _, _ := harness.ParseSpoolFileName(b.Receipt.Name)
 			switch {
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgSubagentStart+"-"):
+			case event == harness.HookArgSubagentStart:
 				start = &pe
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgSubagentStop+"-") && pe.Event.Type == transcript.EventSubagentStop:
+			case event == harness.HookArgSubagentStop && pe.Event.Type == transcript.EventSubagentStop:
 				marker = &pe
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgSubagentStop+"-"):
+			case event == harness.HookArgSubagentStop:
 				transcriptEvents++
 				if pe.Event.Text != "42" || pe.Event.Source == transcript.SourceHook || i != 0 {
 					t.Errorf("subagent transcript event %d = %+v, want the record on disk ahead of the marker", i, pe.Event)

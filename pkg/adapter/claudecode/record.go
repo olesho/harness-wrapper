@@ -376,7 +376,7 @@ func boundInput(raw json.RawMessage) (json.RawMessage, bool) {
 }
 
 // spoolItems are the observations one hook spool file reports, by the hook it
-// was written under (its name's prefix). Other files — session markers, the
+// was written under (harnesscore.ParseSpoolFileName). Other files — session markers, the
 // prompt, Stop's and SessionEnd's copy of the transcript — report nothing.
 func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 	name := sb.Receipt.Name
@@ -428,16 +428,19 @@ func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 			out = append(out, contract.NewObservation(kind, pe.HarnessSessionID, contract.OriginRecord, at, data))
 		}
 	}
-	switch {
-	case strings.HasPrefix(name, harnesscore.HookArgPreToolUse+"-"):
+	// The hook is read from the name by harnesscore, which knows both the
+	// current timestamp-first form and the legacy event-first one.
+	event, _, _ := harnesscore.ParseSpoolFileName(name)
+	switch event {
+	case harnesscore.HookArgPreToolUse:
 		tool(contract.KindToolStarted, false, false)
-	case strings.HasPrefix(name, harnesscore.HookArgPostToolUseFailure+"-"):
+	case harnesscore.HookArgPostToolUseFailure:
 		tool(contract.KindToolFinished, true, true)
-	case strings.HasPrefix(name, harnesscore.HookArgPostToolUse+"-"):
+	case harnesscore.HookArgPostToolUse:
 		tool(contract.KindToolFinished, false, true)
-	case strings.HasPrefix(name, harnesscore.HookArgSubagentStart+"-"):
+	case harnesscore.HookArgSubagentStart:
 		subagent(contract.KindSubagentStarted, transcript.EventSubagentStart)
-	case strings.HasPrefix(name, harnesscore.HookArgSubagentStop+"-"):
+	case harnesscore.HookArgSubagentStop:
 		subagent(contract.KindSubagentStopped, transcript.EventSubagentStop)
 	}
 	return out

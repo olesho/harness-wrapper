@@ -20,7 +20,7 @@ func TestRun(t *testing.T) {
 	if code := run([]string{"claude", harnesscore.HookArgPreToolUse}, env, strings.NewReader(payload), &out, &errs); code != 0 {
 		t.Fatalf("exit %d: %s", code, errs.String())
 	}
-	files, _ := filepath.Glob(filepath.Join(spool, harnesscore.HookArgPreToolUse+"-*.json"))
+	files, _ := filepath.Glob(filepath.Join(spool, "*-"+harnesscore.HookArgPreToolUse+"-*.json"))
 	if len(files) != 1 {
 		t.Fatalf("spool holds %v, want one pre-tool-use file (stderr %q)", files, errs.String())
 	}

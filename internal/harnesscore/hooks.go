@@ -54,15 +54,15 @@ type HookProvider interface {
 // Each fired entry spools one event (transcript.SourceHook) in a spool file
 // named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
 // HookArgPostToolUseFailure — so a consumer tells a start from an end by the
-// file as well as by the event. The authority filter never admits these
+// file (ParseSpoolFileName) as well as by the event. The authority filter never admits these
 // events to Run's OnEvent.
 type ToolHookProvider interface {
 	ToolHookEntries() []HookEntry
 }
 
 // The canonical per-tool hook arguments (ToolHookProvider): the `<harness>
-// <arg>` a fired per-tool hook runs, and the prefix of the spool file it
-// writes.
+// <arg>` a fired per-tool hook runs, and the event its spool file is named
+// under (ParseSpoolFileName).
 const (
 	// HookArgPreToolUse fires before a tool runs. Its event is a tool_use:
 	// the tool's name, its tool_use id and its input.
@@ -76,7 +76,7 @@ const (
 )
 
 // The canonical subagent hook arguments: the `<harness> <arg>` a harness's
-// subagent hooks run, and the prefix of the spool file each writes. They are
+// subagent hooks run, and the event each one's spool file is named under. They are
 // in the default HookSpec of a harness that reports its subagents through
 // hooks (claude's SubagentStart and SubagentStop).
 const (

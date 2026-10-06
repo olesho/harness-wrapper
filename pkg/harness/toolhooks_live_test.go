@@ -147,12 +147,12 @@ func TestToolHooksLive(t *testing.T) {
 				c = &call{}
 				calls[e.ToolName] = c
 			}
-			switch {
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgPostToolUseFailure+"-"):
+			switch event, _, _ := harness.ParseSpoolFileName(b.Receipt.Name); event {
+			case harness.HookArgPostToolUseFailure:
 				c.fail = &e
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgPostToolUse+"-"):
+			case harness.HookArgPostToolUse:
 				c.post = &e
-			case strings.HasPrefix(b.Receipt.Name, harness.HookArgPreToolUse+"-"):
+			case harness.HookArgPreToolUse:
 				c.pre = &e
 			}
 			t.Logf("spool %-42s %-11s %-5s id=%s input=%s output=%q", b.Receipt.Name, e.Type, e.ToolName, e.ToolUseID,

@@ -148,6 +148,11 @@ func ReadSpool(spoolDir string) (SpoolContents, error) {
 	return harnesscore.ReadSpool(spoolDir)
 }
 
+// ParseSpoolFileName calls harnesscore.ParseSpoolFileName.
+func ParseSpoolFileName(name string) (event string, nanos int64, ok bool) {
+	return harnesscore.ParseSpoolFileName(name)
+}
+
 // AckSpool calls harnesscore.AckSpool.
 func AckSpool(spoolDir string, receipts ...SpoolReceipt) error {
 	return harnesscore.AckSpool(spoolDir, receipts...)
