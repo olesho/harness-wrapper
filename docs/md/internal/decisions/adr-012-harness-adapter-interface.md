@@ -1,6 +1,6 @@
 # ADR-012: harness-wrapper implements the Harness Adapter Interface
 
-**Status:** Accepted (2026-09-28)
+**Status:** Accepted (2026-09-28); amended 2026-10-06
 
 **Intent:** principle 3, *normalize, don't leak*, principle 5, *keep the stack one-way*, and principle
 6, *evolve public contracts deliberately* ([INTENT](../../../../INTENT.md#design-principles)). Under
@@ -69,8 +69,14 @@ The migration plan is
    `pkg/harness`, over `internal/harnesscore`: the core is everything but `Run` and `RunTurn`, which
    drive a harness through `pkg/chat`, so a harness's hook profile links no chat.
 6. **stream-json stays the Claude transport.** The TUI + hooks + transcript hybrid
-   (`probes/tui-hybrid`) is not a shipped transport: an interrupt before the first token leaves it no
-   trace, and it cannot see API retries.
+   (`probes/tui-hybrid`) is not shipped, although on claude 2.1.284 it can report what the interface
+   needs. Hooks and the transcript give turns, tools, failures and receipts. claude's debug log
+   (`--debug-file`) gives the rest: each interrupt (`[onCancel]`, then `[engine] turn N end`),
+   including one before the first token, and each failed API attempt (`API error (attempt k/N)`).
+   Those two facts would rest on a log whose format claude doesn't document, while stream-json
+   carries them as frames, with a retry's delay that the log lacks. A hybrid transport, if built,
+   pins claude, keeps the debug lines it parses in the conformance fixtures, and refuses to start
+   when its first turn logs no `[engine] turn` line.
 
 ## Alternatives
 
@@ -106,4 +112,11 @@ The migration plan is
 
 In the order of the migration plan: the chat split (`internal/chatcore`, `internal/wrapcore`); the
 contract package and conformance kit; the Harness Adapter with its Claude Code profile; the Codex
-profile over `codex app-server`.
+profile over `codex app-server`. Optionally, the TUI hybrid as a second transport of the Claude Code
+profile (Decision 6).
+
+## History
+
+- 2026-10-06: the TUI hybrid's two gaps, an interrupt before the first token and retries in
+  progress, close on claude's debug log (`probes/tui-hybrid`, claude 2.1.284). stream-json stays
+  the Claude transport, for the reasons Decision 6 now gives.
