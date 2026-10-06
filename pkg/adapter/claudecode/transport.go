@@ -177,12 +177,11 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if _, err := os.Stat(cfg.Binary); err != nil {
 		return nil, openFailed(contract.OpenBinaryNotFound, "%v", err)
 	}
+	// The hooks write to the Session's own spool, and the hook helper's
+	// guard keeps out a hook of any other session.
+	spool := sessionSpool(cfg.Spool, id)
 	env := append(adapter.HostEnv(), cfg.Env...)
-	if req.Mode == contract.OpenReopen {
-		// Arms the hook helper's guard against a leftover hook of another
-		// session.
-		env = append(env, harnesscore.EnvHarnessSessionID+"="+id)
-	}
+	env = append(env, harnesscore.EnvSpool+"="+spool, harnesscore.EnvHarnessSessionID+"="+id)
 	if c := req.Credential; c != nil {
 		if c.Kind != CredentialKind {
 			return nil, openFailed(contract.OpenConfigInvalid, "credential kind %q, want %s", c.Kind, CredentialKind)
@@ -193,7 +192,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		}
 		env = append(env, "CLAUDE_CODE_OAUTH_TOKEN="+tok)
 	}
-	if err := os.MkdirAll(cfg.Spool, 0o700); err != nil {
+	if err := os.MkdirAll(spool, 0o700); err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "spool: %v", err)
 	}
 	if req.Loaded {

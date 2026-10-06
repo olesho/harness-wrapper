@@ -200,8 +200,11 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   two side by side): `settings.json` with the hooks, `.claude.json` with onboarding, bypass and
   workspace trust answered, the persona, skills, memory, `mcp.json` and the workspace's `CLAUDE.md`,
   and `open_config` with claude's arguments and environment. Each hook runs the helper, which writes
-  what it reports to the spool: the scratch root itself, beside the markers' directory, so a spool a
-  host kept before this profile, at the root it now names scratch, is read where it is.
+  what it reports to its Session's spool, `scratch/spool/<session id>`: the transport sets the claude
+  process's own `HW_EVENT_SPOOL`, so `settings.json` stays the agent's, and the helper's guard
+  (`HW_HARNESS_SESSION_ID`) keeps out a hook of any other session. Files a host kept at the scratch
+  root — before this profile, or before each Session had a spool — are read there, each by the
+  Session it names.
 - **Transport:** stream-json, one claude process per Session in a process group of its own. A fresh
   Session starts under its id (`--session-id`); a reopen resumes its transcript (`--resume`), or,
   when claude never wrote one — the launch that opened the Session ended before its first entry —
@@ -214,7 +217,7 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   interrupted or failed, too. A failed turn is classed by the synthetic message's tag, the HTTP status
   and, for a 429, whether the account refused it: a usage wall (`You've hit your … limit · resets …`)
   closes the gate until its reset; the server's 429 (`not your usage limit`) is an `api` error.
-- **Record:** the session transcript, followed from the checkpoint, and the hook spool. Checkpoint
+- **Record:** the session transcript, followed from the checkpoint, and the Session's spool. Checkpoint
   format 1 is the transcript follower's checkpoint — the one agentd stored — so stored checkpoints
   resume where they stood (`TestNodeDBCheckpoint`). Entries become `user_input`, `assistant_text`,
   `tool_use`, `tool_result` and `api_error`, keyed by the entry's uuid (and block) or the tool use id,

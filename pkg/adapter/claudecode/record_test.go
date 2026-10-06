@@ -352,6 +352,67 @@ func TestSpoolCommittedBeforeDeletion(t *testing.T) {
 	}
 }
 
+// A Session's reader takes its own spool, and its own files at the spool
+// root, which a host kept before each Session had a spool, its subagents'
+// included; another Session's files, in its spool or at the root, it leaves
+// where they are.
+func TestSpoolPerSession(t *testing.T) {
+	l, oc, m := recordAgent(t, fixtureSession, "../../transcript/claudecode/testdata/entries-2.1.283.jsonl", nil)
+	cfg, _ := parseOpenConfig(oc)
+	const other = "b2c3d4e5-0000-4000-8000-000000000001"
+	tool := func(session, parent, id string) transcript.ParsedEvent {
+		return transcript.ParsedEvent{HarnessSessionID: session, ParentSessionID: parent, Event: transcript.Event{
+			Type: transcript.EventToolUse, Role: transcript.RoleAssistant, ToolName: "Bash", ToolUseID: id,
+			ToolInput: json.RawMessage(`{"command":"echo hi"}`), Source: transcript.SourceHook,
+		}}
+	}
+	files := map[string]transcript.ParsedEvent{
+		filepath.Join(sessionSpool(cfg.Spool, fixtureSession), "pre-tool-use-1-1-1.json"): tool(fixtureSession, "", "toolu_own"),
+		filepath.Join(sessionSpool(cfg.Spool, other), "pre-tool-use-1-1-2.json"):          tool(other, "", "toolu_other"),
+		filepath.Join(cfg.Spool, "pre-tool-use-1-1-3.json"):                               tool(fixtureSession, "", "toolu_root"),
+		filepath.Join(cfg.Spool, "pre-tool-use-1-1-4.json"):                               tool(other, "", "toolu_root_other"),
+		filepath.Join(cfg.Spool, "pre-tool-use-1-1-5.json"):                               tool("agent-1", fixtureSession, "toolu_root_subagent"),
+	}
+	for path, ev := range files {
+		data, err := transcript.MarshalParsedEvents([]transcript.ParsedEvent{ev})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, _ := readAll(t, openReader(t, fixtureSession, l, oc, m, nil), contract.MaxObserveBytes)
+	got := map[string]bool{}
+	for _, o := range items {
+		if o.Kind == contract.KindToolStarted {
+			got[o.ID] = true
+		}
+	}
+	for _, id := range []string{"toolu_own", "toolu_root", "toolu_root_subagent"} {
+		if !got["tool_started:"+id] {
+			t.Errorf("no tool_started of %s, the Session's", id)
+		}
+	}
+	for _, id := range []string{"toolu_other", "toolu_root_other"} {
+		if got["tool_started:"+id] {
+			t.Errorf("tool_started of %s, another Session's", id)
+		}
+	}
+	for path, ev := range files {
+		_, err := os.Stat(path)
+		switch ours := ev.HarnessSessionID == fixtureSession || ev.ParentSessionID == fixtureSession; {
+		case ours && err == nil:
+			t.Errorf("%s, the Session's, stays after its chunk was committed", filepath.Base(path))
+		case !ours && err != nil:
+			t.Errorf("%s, another Session's, is gone: %v", filepath.Base(path), err)
+		}
+	}
+}
+
 // A prompt without a marker — sent before this profile, or by another host —
 // never inherits the input of a turn that ended before it.
 func TestUnmarkedPromptTakesNoInput(t *testing.T) {

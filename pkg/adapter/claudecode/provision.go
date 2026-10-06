@@ -52,12 +52,21 @@ type openConfig struct {
 	// and the credential.
 	Env        []string `json:"env"`
 	WorkingDir string   `json:"working_dir"`
-	// Spool is the hook spool: where the hook helper writes, and the record
-	// reader reads. It is the scratch root itself, beside the submission
-	// markers' directory, so a spool a host kept before this profile — at
-	// the root it now names scratch — is read where it is.
+	// Spool is the agent's spool root: the scratch root itself. Each
+	// Session's hooks write to a spool of its own beneath it (sessionSpool),
+	// which its record reader alone takes. Files a host kept at the root —
+	// before this profile, at the root it now names scratch, or before each
+	// Session had a spool — are read there, each by the Session it names.
 	Spool string `json:"spool"`
 }
+
+// spoolDir holds each Session's hook spool, under the spool root.
+const spoolDir = "spool"
+
+// sessionSpool is the hook spool of Session id: the claude process's own
+// HW_EVENT_SPOOL, so settings.json, the hooks' one configuration, stays the
+// agent's.
+func sessionSpool(root, id string) string { return filepath.Join(root, spoolDir, id) }
 
 func parseOpenConfig(raw []byte) (openConfig, error) {
 	var cfg openConfig

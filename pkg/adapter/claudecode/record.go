@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
@@ -18,7 +19,7 @@ import (
 )
 
 // The record is claude's session transcript, followed from the checkpoint,
-// and the hook spool.
+// and the Session's hook spool.
 //
 // Transcript entries become user_input, assistant_text, tool_use,
 // tool_result and api_error, keyed by the entry's uuid (and block) or the
@@ -30,6 +31,8 @@ import (
 type reader struct {
 	session string
 	cfg     openConfig
+	// spool is the Session's own hook spool; "" for an id that names none.
+	spool   string
 	markers *adapter.Markers
 	f       *transcript.Follower
 	rescan  *contract.Rescan
@@ -48,11 +51,13 @@ type recordState struct {
 }
 
 type chunkToken struct {
-	batch    transcript.Batch
-	moved    bool
-	reset    bool
-	receipts []harnesscore.SpoolReceipt
-	after    recordState
+	batch transcript.Batch
+	moved bool
+	reset bool
+	// receipts acknowledge the files of the Session's spool; legacy, those
+	// of the spool root.
+	receipts, legacy []harnesscore.SpoolReceipt
+	after            recordState
 }
 
 func checkpointOf(cp transcript.Checkpoint) *contract.Checkpoint {
@@ -68,6 +73,9 @@ func (Profile) Record(src adapter.RecordSource) (adapter.Reader, error) {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
 	r := &reader{session: src.SessionID, cfg: cfg, markers: src.Markers}
+	if sessionid.IsUUID(src.SessionID) {
+		r.spool = sessionSpool(cfg.Spool, src.SessionID)
+	}
 	var from transcript.Checkpoint
 	if cp := src.Checkpoint; cp != nil {
 		switch {
@@ -149,22 +157,10 @@ func (r *reader) Read(_ context.Context, maxBytes int) (adapter.Chunk, error) {
 		}
 	}
 
-	sc, _ := harnesscore.ReadSpool(r.cfg.Spool)
-	var nothing []harnesscore.SpoolReceipt
-	for _, sb := range sc.Batches {
-		items := spoolItems(sb)
-		if len(items) == 0 {
-			nothing = append(nothing, sb.Receipt)
-			continue
-		}
-		ch.Items = append(ch.Items, items...)
-		tok.receipts = append(tok.receipts, sb.Receipt)
+	if r.spool != "" {
+		tok.receipts = r.readSpool(&ch, r.spool, false)
 	}
-	// A file that reports nothing has nothing to commit.
-	_ = harnesscore.AckSpool(r.cfg.Spool, nothing...)
-	for _, q := range sc.Quarantined {
-		ch.Faults = append(ch.Faults, contract.Fault{Kind: "spool_quarantined", Detail: capText(q.Name+": "+q.Reason, 1024)})
-	}
+	tok.legacy = r.readSpool(&ch, r.cfg.Spool, true)
 	if len(ch.Items) == 0 && ch.Checkpoint == nil && ch.Reset == nil && ch.Rescan == nil && len(ch.Faults) == 0 {
 		return adapter.Chunk{}, nil
 	}
@@ -185,9 +181,52 @@ func (r *reader) Commit(c adapter.Chunk) error {
 	}
 	r.cur = tok.after
 	if len(tok.receipts) > 0 {
-		errs = append(errs, harnesscore.AckSpool(r.cfg.Spool, tok.receipts...))
+		errs = append(errs, harnesscore.AckSpool(r.spool, tok.receipts...))
+	}
+	if len(tok.legacy) > 0 {
+		errs = append(errs, harnesscore.AckSpool(r.cfg.Spool, tok.legacy...))
 	}
 	return errors.Join(errs...)
+}
+
+// readSpool adds what the spool in dir reports to ch, and returns the
+// receipts that acknowledge it. At the spool root it takes only this
+// Session's files, and leaves every other Session's where it is. A file that
+// reports nothing, whoever's, goes at once: it has nothing to commit.
+func (r *reader) readSpool(ch *adapter.Chunk, dir string, root bool) []harnesscore.SpoolReceipt {
+	sc, _ := harnesscore.ReadSpool(dir)
+	var nothing, taken []harnesscore.SpoolReceipt
+	for _, sb := range sc.Batches {
+		items := spoolItems(sb)
+		switch {
+		case len(items) == 0:
+			nothing = append(nothing, sb.Receipt)
+		case root && !r.ours(sb):
+		default:
+			ch.Items = append(ch.Items, items...)
+			taken = append(taken, sb.Receipt)
+		}
+	}
+	_ = harnesscore.AckSpool(dir, nothing...)
+	for _, q := range sc.Quarantined {
+		ch.Faults = append(ch.Faults, contract.Fault{Kind: "spool_quarantined", Detail: capText(q.Name+": "+q.Reason, 1024)})
+	}
+	return taken
+}
+
+// ours reports whether a spool file is this Session's: every event its own,
+// or one of its subagents'.
+func (r *reader) ours(sb harnesscore.SpoolBatch) bool {
+	for _, pe := range sb.Events {
+		top := pe.HarnessSessionID
+		if pe.ParentSessionID != "" {
+			top = pe.ParentSessionID
+		}
+		if top != r.session {
+			return false
+		}
+	}
+	return len(sb.Events) > 0
 }
 
 func (r *reader) Close() error { return nil }
