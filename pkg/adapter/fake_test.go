@@ -52,7 +52,7 @@ func (p *fakeProfile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: fakeName, Version: "1.0.0", Adapter: "harness-wrapper adapter test"},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapRetryVisible, contract.CapRateLimits,
-			contract.CapSessionLoad, contract.CapAutonomousTurns,
+			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapConcurrentSessions,
 		},
 		Load:             &contract.LoadSupport{Formats: []int{2}, Sources: []string{"1.0.0"}},
 		CheckpointFormat: fakeCheckpoint1,
@@ -62,7 +62,7 @@ func (p *fakeProfile) Describe() contract.Descriptor {
 			PermissionPostures: []string{contract.PostureBypass},
 			InputContent:       []string{contract.ContentText},
 		},
-		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes},
+		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes, MaxSessions: 8},
 	}
 }
 

@@ -155,6 +155,8 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		}
 		return contract.OpenResult{}, err
 	}
+	crowded, started := s.starting()
+	defer started()
 	if d := s.adapter.opts.StartDelay; d > 0 {
 		select {
 		case <-time.After(d):
@@ -163,6 +165,11 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		case <-s.closed:
 			return fail(&contract.Error{Code: contract.CodeClosed})
 		}
+	}
+	if s.adapter.breaks("open-race") && crowded() {
+		// As codex's app-servers started together on a fresh home do
+		// (openai/codex#50290).
+		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenConfigInvalid, Message: "failed to initialize state runtime: another start is under way"})
 	}
 	if _, err := os.Stat(s.cfg.Binary); err != nil {
 		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenBinaryNotFound, Message: err.Error()})
@@ -212,6 +219,9 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		return fail(&contract.Error{Code: contract.CodeClosed})
 	default:
 	}
+	if !s.hold(st.dir) {
+		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenSessionInUse, Message: id + " is open in another Host"})
+	}
 
 	s.mu.Lock()
 	s.store = st
@@ -230,7 +240,13 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 // watchKill turns a crash into the Session's exit.
 func (s *session) watchKill() {
 	<-s.kill
+	siblings := s.siblings()
 	s.exit(contract.ExitCrashed, "killed without close")
+	if s.adapter.breaks("crash-siblings") {
+		for _, sib := range siblings {
+			Kill(sib)
+		}
+	}
 }
 
 // exit ends the harness process: the Session is exited, and a
@@ -248,7 +264,9 @@ func (s *session) exit(class contract.ExitClass, detail string) {
 	s.auto = nil
 	s.counter++
 	key := fmt.Sprintf("%d.%d", s.proc, s.counter)
+	dir := s.store.dir
 	s.mu.Unlock()
+	s.letGo(dir)
 	if t != nil {
 		t.intOnce.Do(func() { close(t.interrupt) })
 		select {
@@ -419,6 +437,11 @@ func (s *session) live(kind contract.Kind, key, inputID string, data any) {
 		o.TurnID = turnID(inputID)
 	}
 	s.cursor.push(item{obs: o})
+	if s.adapter.breaks("cross-deliver") {
+		for _, sib := range s.siblings() {
+			sib.cursor.push(item{obs: o})
+		}
+	}
 }
 
 // liveKey is a key for a live observation of the harness process instance.
@@ -578,6 +601,12 @@ func (s *session) hear() {
 	lines, _, err := st.readRecord(from)
 	if err != nil {
 		return
+	}
+	if s.req.Loaded && s.adapter.breaks("load-mixes-sessions") {
+		for _, other := range workspaceRecords(st) {
+			more, _, _ := other.readRecord(0)
+			lines = append(lines, more...)
+		}
 	}
 	var heard []string
 	for _, l := range lines {
@@ -890,6 +919,16 @@ func (s *session) Interrupt(ctx context.Context, req contract.InterruptRequest) 
 	}
 	s.mu.Unlock()
 	t.intOnce.Do(func() { close(t.interrupt) })
+	if s.adapter.breaks("interrupt-siblings") {
+		for _, sib := range s.siblings() {
+			sib.mu.Lock()
+			st := sib.turn
+			sib.mu.Unlock()
+			if st != nil {
+				st.intOnce.Do(func() { close(st.interrupt) })
+			}
+		}
+	}
 	deadline := time.NewTimer(req.Deadline())
 	defer deadline.Stop()
 	select {
@@ -1022,7 +1061,13 @@ func (s *session) Close(ctx context.Context, reason contract.CloseReason, drain 
 		return *s.closeRes, nil
 	}
 	// TERM the harness; a turn in flight ends with the process.
+	siblings := s.siblings()
 	s.exit(contract.ExitClean, "closed: "+string(reason))
+	if s.adapter.breaks("close-siblings") {
+		for _, sib := range siblings {
+			sib.exit(contract.ExitCrashed, "a sibling closed")
+		}
+	}
 	dctx, cancel := context.WithTimeout(ctx, drain)
 	defer cancel()
 	drained := s.cursor.waitDrained(dctx)

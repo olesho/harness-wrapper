@@ -147,6 +147,17 @@ of one ends nothing of the rest, and a record handle on one may be open while th
   capability.
 - An adapter without the capability has one Session of an agent open at a time.
 
+The kit's `concurrent-*` scenarios hold the rules, with as many Sessions as the Descriptor allows
+where the number is the point and two elsewhere: Sessions open together on a fresh agent, each
+under an id of its own, and one open in a Host is refused to another with `session_in_use`
+(`concurrent-open`); their turns run at once, a reply, a tool call and streamed text, and nothing
+one does is delivered to another (`concurrent-turns`); an interrupt, a close or a crash of one ends
+nothing beside it, and a crashed one reopens while another runs (`concurrent-interrupt`,
+`concurrent-close`, `concurrent-crash`); a record handle on one reads its own record alone while
+another works, which still observes its own tool calls (`concurrent-record`); and Sessions saved
+together load together, each opening under its saved id with its own conversation and not its
+sibling's (`concurrent-load`).
+
 ## harness-wrapper's Harness Adapter
 
 `pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
