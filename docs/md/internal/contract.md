@@ -209,7 +209,10 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   Session starts under its id (`--session-id`); a reopen resumes its transcript (`--resume`), or,
   when claude never wrote one — the launch that opened the Session ended before its first entry —
   starts under its id as a fresh one would. A reopen with `loaded` does not: with no transcript where
-  claude looks it fails with `session_not_found` before claude is launched. An input
+  claude looks it fails with `session_not_found` before claude is launched. A claude whose `system`
+  frames speak for another session — a copy, as claude may start of a session another process
+  holds — is stopped: before it answered `initialize`, `Open` fails with `session_in_use`; at a
+  turn's `system/init`, that turn ends `errored`. An input
   is a user message whose uuid is the input's native id, a fresh UUID kept in its submission marker;
   claude's `command_lifecycle` receipt returns `Send`, and its transcript keeps the uuid as the prompt
   entry's. A turn ends with claude's `result`: by `is_error` and `terminal_reason`. `cancelled` needs
