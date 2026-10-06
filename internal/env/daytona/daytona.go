@@ -23,6 +23,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/olesho/harness-wrapper/internal/env"
 )
@@ -205,8 +206,10 @@ func randHex(n int) (string, error) {
 }
 
 type daytonaWorkspace struct {
-	sandbox   DaytonaSandbox
-	spec      env.WorkspaceSpec
+	sandbox DaytonaSandbox
+	spec    env.WorkspaceSpec
+
+	mu        sync.Mutex
 	destroyed bool
 }
 
@@ -375,15 +378,21 @@ func (w *daytonaWorkspace) GuestPath(kind env.PathKind) string {
 func (w *daytonaWorkspace) HostAlias(hostURL string) string { return hostURL }
 
 func (w *daytonaWorkspace) Destroy(ctx context.Context, outcome env.Outcome) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.destroyed {
 		return nil // idempotent
 	}
-	w.destroyed = true // set BEFORE the ShouldKeep check — see design note.
+	// Set BEFORE the ShouldKeep check: a kept sandbox stays kept, so a later
+	// Destroy with a different outcome cannot delete it.
+	w.destroyed = true
 	if env.ShouldKeep(w.spec.Retention, outcome) {
 		return nil // kept for debugging.
 	}
 	if err := w.sandbox.Delete(ctx, 60); err != nil {
-		// Best-effort cleanup; surfaced to the caller.
+		// Not destroyed after all: leave it retryable rather than leaking the
+		// sandbox behind a no-op Destroy.
+		w.destroyed = false
 		return fmt.Errorf("daytona: failed to delete sandbox: %w", err)
 	}
 	return nil

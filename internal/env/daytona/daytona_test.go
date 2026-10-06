@@ -425,3 +425,20 @@ func TestProvisioner_PreflightRequiresSDK(t *testing.T) {
 type errFake string
 
 func (e errFake) Error() string { return string(e) }
+
+// A failed Delete must leave Destroy retryable; marking the workspace
+// destroyed first would turn every retry into a no-op and leak the sandbox.
+func TestDestroyRetryableAfterDeleteFailure(t *testing.T) {
+	sb := &fakeSandbox{id: "r1", deleteErr: errFake("transient")}
+	ws := &daytonaWorkspace{sandbox: sb, spec: env.WorkspaceSpec{}}
+	if err := ws.Destroy(context.Background(), env.OutcomeSuccess); err == nil {
+		t.Fatal("first Destroy succeeded, want the delete error")
+	}
+	sb.deleteErr = nil
+	if err := ws.Destroy(context.Background(), env.OutcomeSuccess); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if sb.deleted != 2 {
+		t.Fatalf("Delete calls = %d, want 2 (the retry must reach the API)", sb.deleted)
+	}
+}

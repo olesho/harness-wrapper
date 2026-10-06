@@ -1,6 +1,9 @@
 package env
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Core lifecycle engine (design §4).
 //
@@ -16,6 +19,10 @@ import "context"
 //  5. Redactions registered, THEN injector.Apply(composedWs)
 //  6. (turns run — out of this module's scope)
 //  7. destroy: injector.Cleanup → containment teardown → inner destroy
+
+// unwindTimeout bounds the setup-failure unwind, which runs detached from the
+// caller's (possibly already cancelled) context.
+const unwindTimeout = 2 * time.Minute
 
 // noopRedactor drops every secret — the default when a caller wires no log sink.
 // Redaction is still SEQUENCED correctly (before apply); it just goes nowhere.
@@ -47,8 +54,16 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	// workspace once Compose runs, so the single workspace-destroy thunk always
 	// tears down the deepest layer acquired.
 	var teardownWs Workspace
+	// unwindCtx is what the unwind thunks run under. Setup often fails BECAUSE
+	// ctx was cancelled or hit its deadline; tearing down on that same ctx
+	// would fail every step immediately and leak the sandbox/container. So the
+	// unwind gets ctx's values but not its cancellation, bounded on its own.
+	unwindCtx := ctx
 
 	fail := func(setupErr error) (*Environment, error) {
+		var cancel context.CancelFunc
+		unwindCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), unwindTimeout)
+		defer cancel()
 		teardownErrs := runAll(reverseThunks(unwind))
 		if len(teardownErrs) > 0 {
 			// Surface the ORIGINAL cause first, with teardown failures attached —
@@ -70,7 +85,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 		return fail(err)
 	}
 	teardownWs = inner
-	unwind = append(unwind, func() error { return teardownWs.Destroy(ctx, OutcomeSetupFailure) })
+	unwind = append(unwind, func() error { return teardownWs.Destroy(unwindCtx, OutcomeSetupFailure) })
 
 	// 3. containment runtime capability checks, via inner exec.
 	if err := contain.Preflight(ctx, inner); err != nil {
@@ -90,7 +105,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 	} else {
 		layer = contain.Layer(policy)
 	}
-	composed := Compose(inner, layer)
+	composed := &composedWorkspace{inner: inner, layer: layer, retention: spec.Retention}
 	teardownWs = composed
 
 	// 5. redactions registered BEFORE any apply (§4): a half-completed Apply can
@@ -100,7 +115,7 @@ func Env(ctx context.Context, cfg EnvConfig) (*Environment, error) {
 		registerRedactions(redactor, inj)
 		injCopy := inj
 		// Push cleanup before apply — it must run even if this apply half-fails.
-		unwind = append(unwind, func() error { return injCopy.Cleanup(ctx, composed) })
+		unwind = append(unwind, func() error { return injCopy.Cleanup(unwindCtx, composed) })
 		if err := inj.Apply(ctx, composed); err != nil {
 			return fail(err)
 		}

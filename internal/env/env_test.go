@@ -228,3 +228,47 @@ func contains(xs []string, s string) bool {
 	}
 	return false
 }
+
+// wsProvisioner hands back any Workspace.
+type wsProvisioner struct{ ws Workspace }
+
+func (wsProvisioner) Name() string                    { return "ws" }
+func (wsProvisioner) Preflight(context.Context) error { return nil }
+func (p wsProvisioner) Create(context.Context, WorkspaceSpec) (Workspace, error) {
+	return p.ws, nil
+}
+
+// ctxCheckingWorkspace records whether Destroy ran under a live context.
+type ctxCheckingWorkspace struct {
+	fakeWorkspace
+	destroyCtxErr error
+}
+
+func (w *ctxCheckingWorkspace) Destroy(ctx context.Context, outcome Outcome) error {
+	w.destroyCtxErr = ctx.Err()
+	return w.fakeWorkspace.Destroy(ctx, outcome)
+}
+
+// Setup frequently fails BECAUSE the caller's ctx was cancelled. The unwind
+// must not reuse that ctx, or every teardown step fails immediately and the
+// sandbox leaks.
+func TestEnvUnwindRunsDetachedFromCancelledCtx(t *testing.T) {
+	var log []string
+	inner := &ctxCheckingWorkspace{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Env(ctx, EnvConfig{
+		Provision: wsProvisioner{ws: inner},
+		Contain:   &scriptedContainment{log: &log, preflightErr: context.Canceled},
+		Spec:      WorkspaceSpec{Name: "n"},
+	})
+	if err == nil {
+		t.Fatal("Env succeeded, want the containment preflight error")
+	}
+	if len(inner.destroyOutcomes) != 1 {
+		t.Fatalf("inner not destroyed on unwind: %v", inner.destroyOutcomes)
+	}
+	if inner.destroyCtxErr != nil {
+		t.Fatalf("unwind Destroy ran on a dead context: %v", inner.destroyCtxErr)
+	}
+}

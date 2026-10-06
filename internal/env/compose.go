@@ -51,6 +51,11 @@ func execChecked(ctx context.Context, inner Workspace, argv []string, what strin
 type composedWorkspace struct {
 	inner Workspace
 	layer ContainmentLayer
+	// retention, when set (Env sets it from the spec), keeps the containment
+	// layer alive in exactly the cases the inner workspace is kept, so a
+	// sandbox retained for debugging is not torn down underneath it. Compose
+	// leaves it empty: always tear down, as before.
+	retention Retention
 }
 
 // Compose decorates inner with the containment primitives of layer.
@@ -120,6 +125,9 @@ func (c *composedWorkspace) Destroy(ctx context.Context, outcome Outcome) error 
 	// failure aggregated, never short-circuited (§4 / §5.1).
 	errs := runAll([]func() error{
 		func() error {
+			if ShouldKeep(c.retention, outcome) {
+				return nil // kept for debugging, together with the inner workspace.
+			}
 			t := c.layer.Teardown()
 			if len(t) > 0 {
 				return execChecked(ctx, c.inner, t, "teardown")

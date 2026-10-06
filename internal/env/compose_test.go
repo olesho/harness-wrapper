@@ -239,3 +239,29 @@ func TestComposeDestroyAggregatesBothFailures(t *testing.T) {
 		t.Fatalf("inner destroy should still run: %v", inner.destroyOutcomes)
 	}
 }
+
+// A sandbox kept for debugging (keep-on-failure + failed run) must keep its
+// containment layer too; tearing it down would leave the kept inner workspace
+// without the sandbox the developer wanted to inspect.
+func TestComposeDestroyHonorsRetention(t *testing.T) {
+	inner := &fakeWorkspace{}
+	ws := &composedWorkspace{inner: inner, layer: fakeLayer{teardown: []string{"teardown-cmd"}}, retention: RetentionKeepOnFailure}
+	if err := ws.Destroy(context.Background(), OutcomeFailure); err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.execCalls) != 0 {
+		t.Fatalf("containment torn down despite keep-on-failure: %v", inner.execCalls)
+	}
+	if len(inner.destroyOutcomes) != 1 || inner.destroyOutcomes[0] != OutcomeFailure {
+		t.Fatalf("inner destroy must still be told the outcome: %v", inner.destroyOutcomes)
+	}
+
+	inner = &fakeWorkspace{}
+	ws = &composedWorkspace{inner: inner, layer: fakeLayer{teardown: []string{"teardown-cmd"}}, retention: RetentionKeepOnFailure}
+	if err := ws.Destroy(context.Background(), OutcomeSuccess); err != nil {
+		t.Fatal(err)
+	}
+	if len(inner.execCalls) != 1 {
+		t.Fatalf("containment not torn down on success: %v", inner.execCalls)
+	}
+}
