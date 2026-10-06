@@ -154,7 +154,7 @@ func (s *Session) WriteStdin(p []byte) (int, error) {
 		return 0, ErrSessionTerminated
 	default:
 	}
-	if s.ptmx == nil {
+	if s.ptmx == nil || s.ptmxClosed {
 		return 0, ErrSessionTerminated
 	}
 	return s.ptmx.Write(p)
@@ -174,7 +174,7 @@ func (s *Session) Resize(cols, rows uint16) error {
 		return ErrSessionTerminated
 	default:
 	}
-	if s.ptmx == nil {
+	if s.ptmx == nil || s.ptmxClosed {
 		return ErrSessionTerminated
 	}
 	return pty.Setsize(s.ptmx, &pty.Winsize{Cols: cols, Rows: rows})

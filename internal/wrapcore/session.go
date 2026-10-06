@@ -113,8 +113,12 @@ type Session struct {
 
 	doneCh chan struct{}
 
-	fanout  *outputFanout
-	stdinMu sync.Mutex
+	fanout *outputFanout
+	// stdinMu serializes WriteStdin and Resize with each other and with the
+	// supervisor closing the PTY master; ptmxClosed (guarded by it) is set
+	// when that close happens, so neither touches a closed descriptor.
+	stdinMu    sync.Mutex
+	ptmxClosed bool
 
 	// stoppingOutput is set when the supervisor ends the read of the PTY
 	// master itself (stopOutput, then closing it): whatever error ends the
@@ -440,7 +444,7 @@ func (s *Session) supervise(ctx context.Context) {
 	drained := awaitOutputEnd(outDone, outputDrainBudget)
 	s.stoppingOutput.Store(true)
 	s.stopOutput()
-	_ = s.ptmx.Close()
+	s.closePTY()
 	<-outDone
 	s.releaseOutput()
 
@@ -1108,4 +1112,16 @@ func emitClassifierTrace(cfg Config, c Classification) {
 		Kind:   kind,
 		Fields: fields,
 	})
+}
+
+// closePTY closes the PTY master under stdinMu, so a concurrent WriteStdin or
+// Resize sees ptmxClosed instead of racing the close on the descriptor.
+func (s *Session) closePTY() {
+	s.stdinMu.Lock()
+	defer s.stdinMu.Unlock()
+	if s.ptmxClosed {
+		return
+	}
+	s.ptmxClosed = true
+	_ = s.ptmx.Close()
 }
