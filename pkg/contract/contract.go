@@ -15,7 +15,12 @@
 // and an interrupt that names a turn). Minor 2 adds credentials kept from the
 // harness by an egress broker (brokered_credentials: Descriptor.Egress and
 // Placeholder), and a subscription login the runtime keeps itself and lends
-// behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 5
+// behind that broker (login_keeper: Descriptor.Keeper and Keep). Minor 3
+// lets a connector's secret header come from a file
+// (HTTPConnector.HeadersFile), and adds the turns a harness starts to take up
+// work it ran in the background (background_turns). Minor 4 reports that
+// work itself as it changes (the background_tasks observation and
+// State.Background). Minor 5
 // gives Placeholder the agent's model (PlaceholderRequest.Model), so a
 // credential kind that serves several providers keeps each credential on its
 // own provider's hosts. Minor 6 lets several Sessions of one agent be open at

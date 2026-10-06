@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -124,7 +125,7 @@ func provision(c *check) {
 	var e *contract.Error
 	if _, err := c.f.Adapter.Provision(bad); codeOf(err) != contract.CodeUnsupported {
 		c.fail("provision.unsupported", "an undeclared credential kind: %v, want unsupported", err)
-	} else if asErr(err, &e); e.Field == "" {
+	} else if !asErr(err, &e) || e.Field == "" {
 		c.fail("provision.unsupported", "unsupported, but naming no field")
 	}
 }
@@ -189,11 +190,8 @@ func headers(c *check) {
 }
 
 func asErr(err error, e **contract.Error) bool {
-	ce, ok := err.(*contract.Error)
-	if ok {
-		*e = ce
-	}
-	return ok
+	// errors.As, as codeOf does: an adapter may wrap its *contract.Error.
+	return errors.As(err, e)
 }
 
 // open: the handle's states before and at opening.
@@ -479,15 +477,29 @@ func observe(c *check) {
 	if again.BatchID != first.BatchID || !reflect.DeepEqual(again.Items, first.Items) {
 		c.fail("observe.replay", "an unacknowledged batch came back as %q with %d items, want %q with %d", again.BatchID, len(again.Items), first.BatchID, len(first.Items))
 	}
+	// Observe is safe to call concurrently: Observes racing each other while
+	// the batch is outstanding each return it again.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	var second error
-	go func() {
-		defer wg.Done()
-		_, second = s.Observe(ctx, 0, contract.MaxObserveBytes)
-	}()
+	racing := make([]contract.Batch, 4)
+	racingErr := make([]error, len(racing))
+	gate := make(chan struct{})
+	for i := range racing {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-gate
+			racing[i], racingErr[i] = s.Observe(ctx, 0, contract.MaxObserveBytes)
+		}()
+	}
+	close(gate)
 	wg.Wait()
-	_ = second // the outstanding batch returns at once, so no overlap is certain
+	for i, b := range racing {
+		if racingErr[i] != nil {
+			c.fail("observe.replay", "concurrent Observe while %q is outstanding: %v", first.BatchID, racingErr[i])
+		} else if b.BatchID != first.BatchID {
+			c.fail("observe.replay", "concurrent Observe while %q is outstanding returned %q", first.BatchID, b.BatchID)
+		}
+	}
 	if err := s.Ack(first.BatchID); err != nil {
 		c.fail("observe.ack", "Ack(%s): %v", first.BatchID, err)
 	}

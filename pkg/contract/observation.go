@@ -81,7 +81,7 @@ const (
 // Values lists the set.
 func (Origin) Values() []string { return []string{"record", "live"} }
 
-// Kind is an observation's kind. The set is closed in 1.0.
+// Kind is an observation's kind. The set is closed within a minor version.
 type Kind string
 
 // Kinds, with their data.
