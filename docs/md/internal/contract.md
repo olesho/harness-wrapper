@@ -169,6 +169,8 @@ It is the shared part, and names no harness:
   gets the input. `OpenRecord` and `Recover` rest on them: only an intact store's missing marker
   proves an input never ran. A send the transport refused before anything reached the harness
   withdraws its marker: the input id is free to be sent again, and `Recover` says `not_found`.
+  The store is made whole, beside its place and renamed in, so Sessions that open together share
+  it and none finds it without its sentinel.
 
 A harness process's environment is its `open_config`'s, its credential, and what `adapter.HostEnv`
 takes from the Host: `PATH`, `LANG`, `LC_*`, `TZ`, and the variables `HW_HARNESS_ENV` names — a

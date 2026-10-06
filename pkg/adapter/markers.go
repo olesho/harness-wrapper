@@ -57,22 +57,41 @@ type Markers struct {
 // time.
 func OpenMarkers(scratch string) (*Markers, error) {
 	dir := filepath.Join(scratch, markersDir)
-	switch err := os.Mkdir(dir, 0o700); {
-	case err == nil:
-		if err := writeSynced(filepath.Join(dir, storeFile), []byte("harness-wrapper submission markers\n")); err != nil {
+	switch _, err := os.Lstat(dir); {
+	case errors.Is(err, fs.ErrNotExist):
+		if err := createStore(scratch, dir); err != nil {
 			return nil, fmt.Errorf("adapter: marker store: %w", err)
 		}
-		if err := syncDir(dir); err != nil {
-			return nil, fmt.Errorf("adapter: marker store: %w", err)
-		}
-		if err := syncDir(scratch); err != nil {
-			return nil, fmt.Errorf("adapter: marker store: %w", err)
-		}
-	case errors.Is(err, fs.ErrExist):
-	default:
+	case err != nil:
 		return nil, fmt.Errorf("adapter: marker store: %w", err)
 	}
 	return &Markers{dir: dir, byNative: map[string]Marker{}}, nil
+}
+
+// createStore creates the store whole: a directory holding storeFile, made
+// beside it and renamed into place, so another Session's Host opening at the
+// same moment never finds it without its sentinel. When another Host's store
+// is there first, this one's is dropped: a store is never renamed over, since
+// it holds its sentinel and rename replaces no directory with entries.
+func createStore(scratch, dir string) error {
+	tmp, err := os.MkdirTemp(scratch, markersDir+".tmp-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(tmp) }() // nothing left once renamed
+	if err := writeSynced(filepath.Join(tmp, storeFile), []byte("harness-wrapper submission markers\n")); err != nil {
+		return err
+	}
+	if err := syncDir(tmp); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		if _, serr := os.Lstat(dir); serr == nil {
+			return nil
+		}
+		return err
+	}
+	return syncDir(scratch)
 }
 
 // fileName is the marker file of inputID: a digest, so that no id — ".." is
