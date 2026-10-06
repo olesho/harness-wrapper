@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -55,6 +56,10 @@ const (
 	// stderrTail is how much of claude's stderr an exit's detail keeps.
 	stderrTail = 4 << 10
 )
+
+// untaskedTurns numbers claude's own turns that ended with no task named
+// (onResult), each of which gets a native id of its own.
+var untaskedTurns atomic.Uint64
 
 type transport struct {
 	id     string
@@ -661,7 +666,11 @@ func (t *transport) onResult(f *frame) {
 	if own && ts == nil {
 		ts = &turnState{native: ownNative(t.task)}
 		if t.task == "" {
-			ts.native = ownNative("result")
+			// No notification named the task: the turn still needs a native
+			// id of its own, since the Session never starts an ended one
+			// again — unique in the process, so a Session that outlives
+			// one claude process does not meet the last one's ids.
+			ts.native = ownNative("result-" + strconv.FormatUint(untaskedTurns.Add(1), 10))
 		}
 		t.task = ""
 	}

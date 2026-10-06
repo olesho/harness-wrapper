@@ -6,6 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
@@ -35,5 +36,31 @@ func TestBackgroundTasks(t *testing.T) {
 	}
 	if none := backgroundTasks(nil); none == nil || len(none) != 0 {
 		t.Errorf("no list: %#v, want an empty one", none)
+	}
+}
+
+// Each turn claude starts itself and ends with no task named gets a native id
+// of its own: the Session never starts an ended turn again, so a fixed id
+// dropped every such turn after the first.
+func TestUntaskedOwnTurnsAreDistinct(t *testing.T) {
+	var events []adapter.Event
+	tr := &transport{report: func(ev adapter.Event) { events = append(events, ev) }}
+	var f frame
+	if err := json.Unmarshal([]byte(`{"type":"result","origin":{"kind":"task-notification"},"result":"done"}`), &f); err != nil {
+		t.Fatal(err)
+	}
+	tr.onResult(&f)
+	tr.onResult(&f)
+	var started, ended []string
+	for _, ev := range events {
+		switch ev.Kind {
+		case adapter.Started:
+			started = append(started, ev.Auto)
+		case adapter.Ended:
+			ended = append(ended, ev.Auto)
+		}
+	}
+	if len(started) != 2 || len(ended) != 2 || started[0] == started[1] || started[0] != ended[0] || started[1] != ended[1] {
+		t.Fatalf("started %q, ended %q: want two turns with distinct ids", started, ended)
 	}
 }
