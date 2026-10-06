@@ -1126,14 +1126,18 @@ func configArgHasKey(arg, key string) bool {
 }
 
 func applyDefaults(cfg *Config) {
+	// validateConfig enforces IdleQuiet <= IdleClassify <= StaleThreshold only
+	// between fields the caller set, so a default must never undercut a
+	// caller's value: IdleClassify=10m with StaleThreshold unset must not
+	// become a 5m stale threshold that fires before classification.
 	if cfg.IdleQuiet == 0 {
 		cfg.IdleQuiet = 15 * time.Second
 	}
 	if cfg.IdleClassify == 0 {
-		cfg.IdleClassify = 60 * time.Second
+		cfg.IdleClassify = max(60*time.Second, cfg.IdleQuiet)
 	}
 	if cfg.StaleThreshold == 0 {
-		cfg.StaleThreshold = 5 * time.Minute
+		cfg.StaleThreshold = max(5*time.Minute, cfg.IdleClassify)
 	}
 	if cfg.WaitDelay == 0 {
 		cfg.WaitDelay = 5 * time.Second

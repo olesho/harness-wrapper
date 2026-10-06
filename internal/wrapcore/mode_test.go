@@ -5,6 +5,7 @@ import (
 	"io"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestArgsWithHarnessModel(t *testing.T) {
@@ -121,5 +122,30 @@ func TestValidateConfig_ModelNeedsAModelFlag(t *testing.T) {
 		if err := validateConfig(&Config{BinaryPath: "x", Stdout: io.Discard, Harness: harness, Model: "m"}); err != nil {
 			t.Errorf("harness %q with a Model: validateConfig() = %v, want nil", harness, err)
 		}
+	}
+}
+
+// Defaults must respect IdleQuiet <= IdleClassify <= StaleThreshold against
+// whatever the caller did set.
+func TestApplyDefaultsKeepsThresholdOrder(t *testing.T) {
+	tests := []struct {
+		name                    string
+		cfg                     Config
+		wantClassify, wantStale time.Duration
+	}{
+		{"all defaulted", Config{}, 60 * time.Second, 5 * time.Minute},
+		{"long IdleQuiet lifts IdleClassify and StaleThreshold", Config{IdleQuiet: 2 * time.Minute}, 2 * time.Minute, 5 * time.Minute},
+		{"long IdleClassify lifts StaleThreshold", Config{IdleClassify: 10 * time.Minute}, 10 * time.Minute, 10 * time.Minute},
+		{"very long IdleQuiet carries through", Config{IdleQuiet: 7 * time.Minute}, 7 * time.Minute, 7 * time.Minute},
+		{"explicit StaleThreshold is kept", Config{StaleThreshold: 30 * time.Second, IdleClassify: 20 * time.Second}, 20 * time.Second, 30 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := tt.cfg
+			applyDefaults(&cfg)
+			if cfg.IdleClassify != tt.wantClassify || cfg.StaleThreshold != tt.wantStale {
+				t.Errorf("IdleClassify, StaleThreshold = %v, %v; want %v, %v", cfg.IdleClassify, cfg.StaleThreshold, tt.wantClassify, tt.wantStale)
+			}
+		})
 	}
 }
