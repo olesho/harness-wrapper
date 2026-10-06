@@ -85,11 +85,12 @@ func (c *Conversation) promptWasSwallowed(snap screen.Snapshot) bool {
 // transcriptProofOfCurrentTurn looks for assistant output in the harness's own
 // rollout, which overturns the screen-only swallow verdict.
 //
-// Deliberately conservative about what counts as proof: any assistant turn with
-// non-empty text in the transcript for this session. The alternative — matching
-// the exact prompt — would need the pre-send watermark meta-harness keeps, and
-// getting that wrong turns a rescue into a false success, which is the one
-// direction this must not fail in.
+// Only entries at or beyond sentTranscriptWatermark — how far the transcript
+// already extended when this prompt was submitted — can speak for this turn.
+// From the second turn on the transcript always holds earlier replies, and
+// letting one of those count would turn a swallowed prompt into a false
+// success, which is the one direction this must not fail in. With no watermark
+// there is no proof: the screen verdict stands.
 //
 // snap is the settled screen the verdict is about. It is read only to LABEL a
 // miss, never to skip the search: "no rescue was POSSIBLE" (persistence off, no
@@ -135,11 +136,22 @@ func (c *Conversation) searchTranscriptProof() swallowedPromptVerdict {
 // tryTranscriptProof is one read. retryable marks the flush-lag-shaped miss
 // (no rollout yet) rather than a real failure.
 func (c *Conversation) tryTranscriptProof(reader turns.TranscriptReader, sessionID string) (v swallowedPromptVerdict, retryable bool) {
+	c.mu.Lock()
+	watermark := c.sentTranscriptWatermark
+	c.mu.Unlock()
+	if watermark == watermarkUnknown {
+		return swallowedPromptVerdict{diag: "transcript extent at send unknown; cannot tell this turn's output from earlier turns'"}, false
+	}
 	tturns, err := reader.ReadTranscript(sessionID, c.transcriptDir())
 	if err != nil {
 		return swallowedPromptVerdict{diag: "transcript check failed: " + err.Error()}, true
 	}
-	for i := len(tturns) - 1; i >= 0; i-- {
+	if watermark > len(tturns) {
+		// The transcript shrank under us; nothing in it can be placed after
+		// the send.
+		watermark = len(tturns)
+	}
+	for i := len(tturns) - 1; i >= watermark; i-- {
 		if Role(tturns[i].Role) != RoleAssistant {
 			continue
 		}
@@ -154,7 +166,7 @@ func (c *Conversation) tryTranscriptProof(reader turns.TranscriptReader, session
 			return swallowedPromptVerdict{proofText: text}, false
 		}
 	}
-	return swallowedPromptVerdict{diag: fmt.Sprintf("transcript has no assistant output (%d turn(s))", len(tturns))}, false
+	return swallowedPromptVerdict{diag: fmt.Sprintf("transcript has no assistant output since the prompt was sent (%d turn(s), %d before it)", len(tturns), watermark)}, false
 }
 
 // applySwallowedPromptVerdict finishes a turn the adapter reported as never
