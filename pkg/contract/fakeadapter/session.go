@@ -142,12 +142,17 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 
 	fail := func(err error) (contract.OpenResult, error) {
 		s.mu.Lock()
+		// A Close during the start may have ended the Session already: exit
+		// then signals it, once.
+		exited := s.phase == contract.PhaseExited
 		s.phase = contract.PhaseExited
 		s.opening = false
 		s.openErr = err
 		s.mu.Unlock()
 		s.killOnce.Do(func() { close(s.kill) })
-		close(s.exited)
+		if !exited {
+			close(s.exited)
+		}
 		return contract.OpenResult{}, err
 	}
 	if d := s.adapter.opts.StartDelay; d > 0 {
