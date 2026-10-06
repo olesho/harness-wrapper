@@ -20,7 +20,7 @@
   "pi": {
     "package": "@earendil-works/pi-coding-agent",
     "binary": "pi",
-    "pinned": "0.76.0",
-    "verified_at": "2026-06-27"
+    "pinned": "1.0.4",
+    "verified_at": "2026-10-06"
   }
 }

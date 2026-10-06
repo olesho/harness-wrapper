@@ -15,7 +15,7 @@ against. It is embedded into `pkg/versions` at build time.
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
   "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
-  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
+  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "1.0.4",   "verified_at": "2026-10-06"}
 }
 ```
 
@@ -60,6 +60,11 @@ pass, and `TestCodexKeeperLive` signed in to a real ChatGPT login with a device 
 and signed out. claude stays at `2.1.283`: 2.1.289 passes the stream-json conformance suite and the
 hook live tests, but takes a prompt the screen driver delivers as a bracketed paste as pasted
 content, not a request, so `TestRunTurn_RealClaudeLargePromptIntact` fails on it.
+
+pi moved to `1.0.4` on 2026-10-06, for the Harness Adapter's Pi profile over `pi --mode rpc`:
+`probes/pirpc` passes every test against the 1.0.4 release, on macOS and Linux arm64. hw's older pi
+layers (the screen adapter, the headless profile and the TUI patterns) were verified on 0.76.0 only;
+they were removed rather than re-verified, so the pin speaks for the profile alone.
 
 The read API:
 

@@ -35,8 +35,8 @@ func TestAllAndPinnedAgainstRepo(t *testing.T) {
 	if got, ok := Pinned("opencode"); ok {
 		t.Errorf("expected opencode to be unpinned, got %q", got)
 	}
-	// pi is pinned: its adapter/profile are verified against 0.76.0 with a
-	// committed corpus (test/corpus/pi/) and replay/e2e tests.
+	// pi is pinned: the Harness Adapter's Pi profile is verified against
+	// it (probes/pirpc, the profile's conformance kit).
 	if got, ok := Pinned("pi"); !ok || got == "" {
 		t.Errorf("expected pi to be pinned, got %q ok=%v", got, ok)
 	}

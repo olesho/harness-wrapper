@@ -16,11 +16,11 @@ The probe is a Go test package that skips without the binary it names. `fetch.sh
 release for this platform and checks it against the release's `SHA256SUMS`:
 
 ```sh
-probes/pirpc/fetch.sh /tmp/pinned 1.0.4
+probes/pirpc/fetch.sh /tmp/pinned
 HW_REAL_PI=/tmp/pinned/pi/pi go test -count=1 -v ./probes/pirpc/
 ```
 
-Without a version, `fetch.sh` takes pi's pin in `pkg/versions/versions.json`. On another machine,
+`fetch.sh` takes pi's pin in `pkg/versions/versions.json`, or the version given after the directory. On another machine,
 build the test binary (`GOOS=linux GOARCH=arm64 go test -c ./probes/pirpc/`) and run it from a
 directory holding `hwtag.ts`. `pgrep` and `pkill` must be on `PATH`.
 

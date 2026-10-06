@@ -570,8 +570,17 @@ every profile's effective version includes.
 DisableSupervisionForTest makes every launch see a host that delegates no
 cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (int, int, error)`
-OpenPTYPair reports ErrUnsupported.
+#### `func OpenPTYPair() (master, slave int, err error)`
+OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
+O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
+than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
+Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
+pty.Open — and the caller wraps the master in an *os.File only after the
+spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
+
+It runs on an ordinary thread: Landlock fixes a file's rights when the file
+is opened, so a master opened on the restricted thread would deny the
+wrapper's later resize calls.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -585,7 +594,9 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent reports ErrUnsupported.
+StateParent returns the directory beneath which managed state lives:
+$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
+~/.local/state/harness-wrapper/contain.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -604,8 +615,9 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(Input) (*Launch, error)`
-Prepare reports ErrUnsupported: Landlock containment is Linux-only.
+#### `func Prepare(in Input) (l *Launch, err error)`
+Prepare turns in into a Launch, or refuses it before anything runs. On
+refusal it releases whatever it acquired, including ephemeral state.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -633,8 +645,10 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(Input) (*Preview, error)`
-PreviewLaunch reports ErrUnsupported.
+#### `func PreviewLaunch(in Input) (*Preview, error)`
+PreviewLaunch runs the checks Prepare runs, collecting every problem
+instead of stopping at the first, and allocates nothing: no state, no
+cgroup, no ruleset. Only an invalid request is an error.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -650,11 +664,13 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(bool) (*State, error)`
-NewState reports ErrUnsupported.
+#### `func NewState(persistent bool) (*State, error)`
+NewState allocates new managed state. Persistent state survives its
+launches until Remove; ephemeral state is deleted by the launch that
+created it once that launch's cgroup is empty.
 
-#### `func OpenState(string) (*State, error)`
-OpenState reports ErrUnsupported.
+#### `func OpenState(id string) (*State, error)`
+OpenState opens existing managed state by id.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -5497,7 +5513,7 @@ Schema:
 	  "codex":       {"package": "@openai/codex",             "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
 	  "claude-code": {"package": "@anthropic-ai/claude-code", "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
 	  "opencode":    {"package": "opencode-ai",               "binary": "opencode", "pinned": "",        "verified_at": ""},
-	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "0.76.0",  "verified_at": "2026-06-27"}
+	  "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "1.0.4",   "verified_at": "2026-10-06"}
 	}
 
 An empty pinned/verified_at string is allowed and means "not yet
