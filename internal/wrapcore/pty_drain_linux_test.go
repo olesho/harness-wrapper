@@ -75,7 +75,10 @@ func TestLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
 // netpoller: closing it does not end a read already blocked on it, so the
 // supervisor has to wake that read itself. The leftover here holds the
 // terminal silently — output would end the blocked read on its own — and,
-// without cgroup supervision, outlives the harness.
+// without cgroup supervision, outlives the harness. It starts a session of its
+// own (setsid), the case the unsupervised session sweep cannot reach; a
+// leftover still in the harness's session is swept at Finish and would hold
+// nothing open.
 func TestContainedLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
 	if _, err := landlock.Probe(0); err != nil {
 		if v := os.Getenv("HW_LANDLOCK_REQUIRE_ABI"); v != "" && v != "0" {
@@ -98,7 +101,7 @@ func TestContainedLeftoverTerminalHolderCannotHoldWaitOpen(t *testing.T) {
 	s, err := Start(ctx, Config{
 		Harness:     "sh",
 		BinaryPath:  sh,
-		Args:        []string{"-c", `trap "" HUP; (while :; do sleep 0.1; done) & echo $! > "$1"; exit 0`, "harness", pidFile},
+		Args:        []string{"-c", `trap "" HUP; setsid sh -c 'trap "" HUP; while :; do sleep 0.1; done' & echo $! > "$1"; exit 0`, "harness", pidFile},
 		WorkingDir:  wd,
 		Env:         []string{"PATH=/usr/bin:/bin"},
 		Stdout:      io.Discard,
