@@ -9,7 +9,7 @@ JSONL is tailed every 20 ms. Keys: text then `\r`; interrupt a lone `\x1b`.
 **Gaps re-probed:** claude 2.1.283 (hw's pin) and 2.1.284, on macOS arm64 and Ubuntu 26.04 arm64
 (Lima), 2026-10-06, with `gaps.py`,
 which adds claude's debug log (`--debug-file`) and OpenTelemetry logs as side channels
-(*Closing the gaps*, *Test matrix*).
+(*Closing the gaps*, *Test matrix*), and on a real account (*Real account*).
 
 Rerun: `python3 mockapi.py 18712 <w>/mock &`, then `python probe.py <w> main exhaust stall early retry queue`
 and `python gaps.py <w>` (all eight scenarios; both need `pyte`). `CLAUDE_BIN` picks the claude
@@ -151,7 +151,26 @@ claude retries its first failure at once without advancing its counter, hence th
 | Turn claude starts after background work | 3/3 | 3/3 | 3/3 | 3/3 |
 | `probe.py`'s isolated sessions (exhaust, stall, early, retry, queue) | the September findings hold | the same | the same | the same |
 
-Not run: a real account.
+The real account's runs are under *Real account*.
+
+## Real account
+
+2026-10-06, claude 2.1.284 on macOS arm64, Haiku, a `claude setup-token` token. `REAL_TOKEN_FILE` makes claude reach the real API, with the token read from the file into claude's environment only. The real API can't be made to stall or fail on demand, so the `real_*` scenarios use ordinary prompts, and retries stay covered by the mock.
+
+| Scenario | Evidence |
+|---|---|
+| A plain turn | `[engine] turn 1 end … stop=end_turn`, `Stop` with `PONG` |
+| Esc 0.3 s after Enter | before the first token: `[onCancel]` and the turn's end 59–112 ms after Esc, `stop=null`, no interrupt record and no assistant entry (2 runs) |
+| Esc mid-text, 1 s after the first displayed line | the turn's end 87–136 ms after Esc, `stop=null`, the interrupt record with the partial reply (2 runs) |
+| Esc mid-tool (`sleep 30`) | `[onCancel]` 60–112 ms after Esc, the turn's end 348–822 ms after Esc with `stop=tool_use`, the interrupt record, and the tool's process gone 2 s after Esc (3 runs) |
+| A prompt sent while a turn runs | 2 engine turns, in order; the queued prompt's `UserPromptSubmit` carries the running turn's `prompt_id`; a `queue-operation` record (2 runs) |
+| The turn claude starts after background work | the input's turn ends; when the command finishes, claude's own turn logs `[engine] turn 2 start`, fires `UserPromptSubmit` with `<task-notification>…`, and records the notification (2 runs) |
+
+Every run settled on the same evidence as against the mock. The token appeared in none of the runs' artifacts: debug logs, transcripts, hook logs, OpenTelemetry records, raw terminal output and configuration.
+
+Two probe faults surfaced here, both fixed:
+- `probe.py` named the transcript's directory by replacing only `/` and `.` in the working directory. claude replaces every non-alphanumeric character with `-`, and the real scenarios' directories contain `_`, so the first real run read no transcript.
+- The mid-tool check counted every `sleep 30` on the machine, including another session's 10-minute-old `sleep 30; gh run watch …`. It now counts only processes started during the scenario.
 
 ## Costs and risks
 

@@ -14,6 +14,9 @@ in <workdir>/<scenario>/timeline.jsonl with its arrival time; a digest is printe
 
 Usage: gaps.py <workdir> [scenario ...]
 Scenarios: retry exhaust stall early midtext midtool queue background (default: all).
+With REAL_TOKEN_FILE (a file holding a `claude setup-token` token), claude reaches the
+real API instead of the mock, and the default scenarios are the real_* ones: real_turn
+real_early real_midtext real_midtool real_queue real_background. No mock is needed.
 Each run appends one verdict line per scenario to <workdir>/results.jsonl and prints it.
 CLAUDE_BIN picks the claude binary (default: claude on PATH).
 Start the mock first: python3 mockapi.py 18712 <workdir>/mock
@@ -209,6 +212,34 @@ def run_midtext(work):
     return s
 
 
+def seconds(etime):
+    """ps's elapsed time, [[dd-]hh:]mm:ss, in seconds."""
+    days, _, rest = etime.rpartition("-")
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    return (int(days) if days else 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+
+def sleep_procs(max_age):
+    """`sleep 30` processes started within max_age seconds: the scenario's own, not other
+    sessions' on the same machine. Lines are pid, ppid, age, command."""
+    out = subprocess.run(["ps", "-axo", "pid=,ppid=,etime=,command="], capture_output=True, text=True).stdout
+    keep = []
+    for l in out.splitlines():
+        f = l.split(None, 3)
+        if len(f) == 4 and "sleep 30" in f[3] and "ps -axo" not in f[3] and seconds(f[2]) <= max_age:
+            keep.append(l.strip()[:160])
+    return keep
+
+
+def watch_sleep(s, esc_t):
+    """Record what of the tool's `sleep 30` is left 2 s and 12 s after the interrupt."""
+    for after in (2, 12):
+        time.sleep(max(0, esc_t + after - time.time()))
+        s.note("sleep-30-after-%ds" % after, procs=sleep_procs(time.time() - s.t0 + 1))
+
+
 def run_midtool(work):
     s = fresh(work, "midtool")
 
@@ -217,8 +248,8 @@ def run_midtool(work):
         time.sleep(1.0)
         s.esc()
     probe.turn(s, "esc-mid-tool", "TOOL sleep 30", esc, timeout=6)
-    pids = subprocess.run(["pgrep", "-f", "sleep 30"], capture_output=True, text=True).stdout.split()
-    s.note("sleep-30-left", pids=pids)
+    esc_t = next((s.t0 + r["t"] for r in s.timeline if r["src"] == "action" and r["what"] == "esc"), time.time())
+    watch_sleep(s, esc_t)
     s.write(b"\x15", "ctrl-u")
     time.sleep(0.3)
     s.close()
@@ -253,6 +284,88 @@ def run_background(work):
     return s
 
 
+# Real-account scenarios (REAL_TOKEN_FILE set). The real API can't be made to stall
+# or fail on demand, so these use ordinary prompts, and retries stay with the mock.
+REAL_LONG = "Write a 400-word story about a lighthouse keeper. Plain text, no tools."
+
+
+def run_real_turn(work):
+    s = fresh(work, "real_turn")
+    probe.turn(s, "real-turn", "Reply with exactly the word PONG and nothing else. Use no tools.", timeout=90)
+    s.close()
+    return s
+
+
+def run_real_early(work):
+    s = fresh(work, "real_early")
+
+    def esc(t0):
+        time.sleep(0.3)
+        s.esc()
+    probe.turn(s, "real-esc-right-after-enter", REAL_LONG, esc, timeout=10)
+    s.write(b"\x15", "ctrl-u")
+    time.sleep(0.3)
+    s.close()
+    return s
+
+
+def run_real_midtext(work):
+    s = fresh(work, "real_midtext")
+
+    def esc(t0):
+        s.wait_hook("MessageDisplay", t0, 60)
+        time.sleep(1.0)
+        s.esc()
+    probe.turn(s, "real-esc-mid-text", REAL_LONG, esc, timeout=10)
+    s.close()
+    return s
+
+
+def run_real_midtool(work):
+    s = fresh(work, "real_midtool")
+
+    def esc(t0):
+        s.wait_hook("PreToolUse", t0, 60)
+        time.sleep(1.0)
+        s.esc()
+    probe.turn(s, "real-esc-mid-tool", "Use the Bash tool to run exactly this command: sleep 30", esc, timeout=10)
+    esc_t = next((s.t0 + r["t"] for r in s.timeline if r["src"] == "action" and r["what"] == "esc"), time.time())
+    watch_sleep(s, esc_t)
+    s.write(b"\x15", "ctrl-u")
+    time.sleep(0.3)
+    s.close()
+    return s
+
+
+def run_real_queue(work):
+    s = fresh(work, "real_queue")
+    s.note("scenario", label="real-send-while-busy")
+    t = time.time()
+    s.type(REAL_LONG)
+    s.wait_hook("UserPromptSubmit", t, 10)
+    time.sleep(1.5)
+    s.type("Reply with exactly the word PONG6 and nothing else.")
+    s.wait_hook("Stop", t, 120, pred=lambda p: "PONG6" in (p.get("last_assistant_message") or ""))
+    time.sleep(1.0)
+    s.close()
+    return s
+
+
+def run_real_background(work):
+    s = fresh(work, "real_background")
+    s.note("scenario", label="real-background-command")
+    t = time.time()
+    s.type("Use the Bash tool with run_in_background set to true to run exactly this command: "
+           "sleep 5; echo bg-done. Then reply with one short sentence and stop. Do not check on it.")
+    # The input's own turn ends first; claude's own turn follows when the command ends.
+    end = time.time() + 150
+    while time.time() < end and sum(1 for h in s.hooks if h["payload"].get("hook_event_name") == "Stop") < 2:
+        time.sleep(0.2)
+    time.sleep(1.0)
+    s.close()
+    return s
+
+
 def evaluate(s, name):
     """One verdict per scenario, from the timeline alone."""
     tl = sorted(s.timeline, key=lambda r: r["t"])
@@ -264,7 +377,7 @@ def evaluate(s, name):
     ms = lambda t: None if t is None or esc is None else int(round((t - esc) * 1000))
     ends = [re.search(r"turn (\d+) end .*stop=(\S+)", l) for t, l in dbg if "[engine] turn" in l and " end " in l]
     v = {"scenario": name}
-    if name in ("stall", "early", "midtext", "midtool"):
+    if name in ("stall", "early", "midtext", "midtool", "real_early", "real_midtext", "real_midtool"):
         end1 = first(r"\[engine\] turn 1 end")
         v.update({
             "onCancel_ms": ms(first(r"\[onCancel\]")),
@@ -274,9 +387,10 @@ def evaluate(s, name):
         })
         # stop is null when a reply was cut, tool_use when a running tool was stopped
         v["settled"] = v["onCancel_ms"] is not None and v["turn_end_ms"] is not None and v["turn_end_ms"] < 1500
-        if name == "midtool":
-            note = next((r for r in tl if r["src"] == "action" and r["what"] == "sleep-30-left"), {})
-            v["sleep_left"] = len(note.get("pids", []))
+        if name in ("midtool", "real_midtool"):
+            for after in (2, 12):
+                note = next((r for r in tl if r["src"] == "action" and r["what"] == "sleep-30-after-%ds" % after), {})
+                v["sleep_after_%ds" % after] = note.get("procs", [])
     elif name in ("retry", "exhaust"):
         v.update({
             "attempts": [re.search(r"attempt (\d+/\d+)", l).group(1) for t, l in dbg if "API error (attempt" in l],
@@ -286,7 +400,11 @@ def evaluate(s, name):
         })
         want = ("end_turn", True, False) if name == "retry" else ("stop_sequence", False, True)
         v["settled"] = bool(v["attempts"]) and (v["stop"], v["Stop"], v["StopFailure"]) == want
-    elif name == "queue":
+    elif name == "real_turn":
+        v.update({"stop": ends[0].group(2) if ends and ends[0] else None,
+                  "stops": [h["payload"].get("last_assistant_message", "")[:20] for h in hooks if h["event"] == "Stop"]})
+        v["settled"] = v["stop"] == "end_turn" and any("PONG" in x for x in v["stops"])
+    elif name in ("queue", "real_queue"):
         subs = [h for h in hooks if h["event"] == "UserPromptSubmit"]
         v.update({
             "submits": [(h["payload"].get("prompt"), (h.get("prompt_id") or "")[:8]) for h in subs],
@@ -296,9 +414,10 @@ def evaluate(s, name):
         })
         # Both turns end. Their Stop hooks (and debug lines) may arrive in either order: each
         # hook carries its prompt_id, so order is reported, not required.
-        v["stops_in_order"] = bool(v["stops"]) and "PONG 6" in v["stops"][-1]
-        v["settled"] = v["engine_turns"] == 2 and len(v["stops"]) == 2 and any("PONG 6" in x for x in v["stops"])
-    elif name == "background":
+        pong = "PONG6" if name == "real_queue" else "PONG 6"
+        v["stops_in_order"] = bool(v["stops"]) and pong in v["stops"][-1]
+        v["settled"] = v["engine_turns"] == 2 and len(v["stops"]) == 2 and any(pong in x for x in v["stops"])
+    elif name in ("background", "real_background"):
         subs = [h for h in hooks if h["event"] == "UserPromptSubmit"]
         v.update({
             "submits": [(h["payload"].get("prompt", "")[:30], h["payload"].get("source")) for h in subs],
@@ -306,7 +425,10 @@ def evaluate(s, name):
             "stops": [h["payload"].get("last_assistant_message", "")[:20] for h in hooks if h["event"] == "Stop"],
             "notification_record": any("task-notification" in json.dumps(r) for r in recs if r.get("type") == "user"),
         })
-        v["settled"] = v["engine_turns"] >= 2 and any("BG DONE" in x for x in v["stops"])
+        own = any("task-notification" in (p or "") for p, _ in v["submits"])
+        v["own_turn_submit"] = own
+        v["settled"] = v["engine_turns"] >= 2 and len(v["stops"]) >= 2 and own if name == "real_background" \
+            else v["engine_turns"] >= 2 and any("BG DONE" in x for x in v["stops"])
     return v
 
 
@@ -349,8 +471,10 @@ if __name__ == "__main__":
     binary = os.environ.get("CLAUDE_BIN", "claude")
     version = subprocess.run([binary, "--version"], capture_output=True, text=True).stdout.split()[0]
     runs = {"retry": run_retry, "exhaust": run_exhaust, "stall": run_stall, "early": run_early,
-            "midtext": run_midtext, "midtool": run_midtool, "queue": run_queue, "background": run_background}
-    for name in sys.argv[2:] or list(runs):
+            "midtext": run_midtext, "midtool": run_midtool, "queue": run_queue, "background": run_background,
+            "real_turn": run_real_turn, "real_early": run_real_early, "real_midtext": run_real_midtext,
+            "real_midtool": run_real_midtool, "real_queue": run_real_queue, "real_background": run_real_background}
+    for name in sys.argv[2:] or [n for n in runs if n.startswith("real_") == bool(os.environ.get("REAL_TOKEN_FILE"))]:
         s = runs[name](work)
         if os.environ.get("DIGEST"):
             digest(s)

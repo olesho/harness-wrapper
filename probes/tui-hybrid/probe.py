@@ -12,6 +12,7 @@ Needs pyte (python -m pip install pyte) for screen snapshots.
 import fcntl
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -68,6 +69,11 @@ class Session:
                     "ANTHROPIC_AUTH_TOKEN": TOKEN, "DISABLE_AUTOUPDATER": "1",
                     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "TERM": "xterm-256color",
                     "HOOKLOG": self.hooklog})
+        if os.environ.get("REAL_TOKEN_FILE"):
+            # A real account: claude reaches the API with a `claude setup-token` token,
+            # read from a file so it never appears in an argv or a log.
+            del env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"]
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = open(os.environ["REAL_TOKEN_FILE"]).read().strip()
         env.update(env_extra or {})
         self.t0 = time.time()
         self.timeline = []
@@ -85,7 +91,8 @@ class Session:
         self.master = master
         self.note("launch", argv=argv[1:])
         threading.Thread(target=self._pty, daemon=True).start()
-        self.tpath = os.path.join(self.cfg, "projects", self.cwd.replace("/", "-").replace(".", "-"),
+        # claude names the project directory after the cwd, every non-alphanumeric character as "-".
+        self.tpath = os.path.join(self.cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", self.cwd),
                                   self.sid + ".jsonl")
         self.hook_off = 0
         self.tr_off = 0
