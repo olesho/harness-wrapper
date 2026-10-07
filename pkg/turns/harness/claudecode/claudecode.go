@@ -738,6 +738,15 @@ var spinnerLineRE = regexp.MustCompile(`^[^\S\r\n]*[·✢✳✶✻✽][^\S\r\n]+
 // interrupt" for the backoff, so without this a retrying turn read as idle.
 var retryLineRE = regexp.MustCompile(`(?m)^[^\S\r\n]*[·✢✳✶✻✽][^\S\r\n]+[^\r\n]*·[^\S\r\n]*Retrying in \d+`)
 
+// waitingLineRE matches the status line while a turn waits on subagents it has
+// backgrounded: "✻ Waiting for 1 background agent to finish", recorded on
+// 2.1.283 (test/corpus/claude-code/subagent-tool). claude backgrounds an Agent
+// call even when it asked for the foreground, answers the tool call, and holds
+// the turn here until the agent's notification arrives; the footer drops "esc to
+// interrupt" and the line has no spinner ellipsis, so without this a turn that
+// is still waiting on its agents read as idle.
+var waitingLineRE = regexp.MustCompile(`(?m)^[^\S\r\n]*[·✢✳✶✻✽][^\S\r\n]+Waiting for \d+ background agents? to finish`)
+
 // composerRuleRE matches one horizontal rule of the composer box — a run of
 // box-drawing dashes alone on its line. The composer sits between the last two.
 var composerRuleRE = regexp.MustCompile(`^[^\S\r\n]*─{8,}[^\S\r\n]*$`)
@@ -832,14 +841,15 @@ func (a *Adapter) PromptNotAccepted(snap screen.Snapshot, sentScreenText string)
 func (*Adapter) Busy(snap screen.Snapshot) bool {
 	status, footer, ok := statusRegion(snap.Text)
 	if !ok {
-		return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text) || retryLineRE.MatchString(snap.Text)
+		return strings.Contains(snap.Text, busyMarker) || workingRE.MatchString(snap.Text) ||
+			retryLineRE.MatchString(snap.Text) || waitingLineRE.MatchString(snap.Text)
 	}
 	for _, ln := range footer {
 		if strings.Contains(ln, busyMarker) {
 			return true
 		}
 	}
-	return spinnerLineRE.MatchString(status) || retryLineRE.MatchString(status)
+	return spinnerLineRE.MatchString(status) || retryLineRE.MatchString(status) || waitingLineRE.MatchString(status)
 }
 
 // PermissionMode reports Claude Code's current permission posture as a

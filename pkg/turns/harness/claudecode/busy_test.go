@@ -24,6 +24,11 @@ func TestBusy_synthetic(t *testing.T) {
 // in-progress spinner line stays, so Busy must still report true off it alone —
 // otherwise an intermediate "✻ <verb> for Ns" summary on that frame cuts the turn
 // off mid-sub-agent (the plan-reviewer-stalls-on-ORCHE-37 bug).
+//
+// These hand-written frames (from a June observation) have no composer box, so
+// they exercise Busy's whole-screen fallback. On 2.1.283 claude paints a
+// running subagent's rows BELOW the composer box instead; that layout is pinned
+// by subagent_corpus_test.go against a real recording.
 func TestBusy_subAgentSpinnerWithoutFooter(t *testing.T) {
 	a := New()
 	// A real sub-agent frame, WITHOUT "esc to interrupt" present.
