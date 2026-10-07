@@ -114,10 +114,15 @@ The migration plan is
 
 In the order of the migration plan: the chat split (`internal/chatcore`, `internal/wrapcore`); the
 contract package and conformance kit; the Harness Adapter with its Claude Code profile; the Codex
-profile over `codex app-server`. Optionally, the TUI hybrid as a second transport of the Claude Code
-profile (Decision 6).
+profile over `codex app-server`. Then, **planned**, the TUI hybrid as a second transport of the
+Claude Code profile (Decision 6): agentd's fallback for when stream-json is unavailable or breaks,
+behind the same interface, so agentd adds no TUI code of its own (agentd ADR 0002 and 0004, 2026-10-07).
 
 ## History
+
+- 2026-10-07: the TUI hybrid moves from optional to planned, as agentd's Claude fallback. agentd's
+  earlier fallback, hw's TUI driver behind `pkg/chat`, has been unreachable there since agentd moved
+  onto this interface (its ADR 0004); its ADRs 0002 and 0004 now name the hybrid instead.
 
 - 2026-10-06: the TUI hybrid's two gaps, an interrupt before the first token and retries in
   progress, close on claude's debug log (`probes/tui-hybrid`: claude 2.1.283 and 2.1.284, macOS

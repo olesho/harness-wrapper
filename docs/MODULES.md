@@ -584,8 +584,17 @@ every profile's effective version includes.
 DisableSupervisionForTest makes every launch see a host that delegates no
 cgroup, until the returned function runs. Tests only.
 
-#### `func OpenPTYPair() (int, int, error)`
-OpenPTYPair reports ErrUnsupported.
+#### `func OpenPTYPair() (master, slave int, err error)`
+OpenPTYPair opens a pseudoterminal pair from raw descriptors: /dev/ptmx with
+O_NOCTTY|O_CLOEXEC, unlocked, and the slave taken with TIOCGPTPEER rather
+than a path lookup of /dev/pts/N. Both ends are blocking descriptors outside
+Go's netpoller — the contained path never uses os.OpenFile or creack/pty's
+pty.Open — and the caller wraps the master in an *os.File only after the
+spawn, with os.NewFile, which leaves a blocking descriptor unregistered.
+
+It runs on an ordinary thread: Landlock fixes a file's rights when the file
+is opened, so a master opened on the restricted thread would deny the
+wrapper's later resize calls.
 
 #### `func ProfileID(harness string) (string, int, error)`
 ProfileID resolves the profile a contained launch of harness would use,
@@ -599,7 +608,9 @@ returned function runs. It exists for this module's tests only: internal
 packages are not importable from outside the module.
 
 #### `func StateParent() (string, error)`
-StateParent reports ErrUnsupported.
+StateParent returns the directory beneath which managed state lives:
+$XDG_STATE_HOME/harness-wrapper/contain, defaulting to
+~/.local/state/harness-wrapper/contain.
 
 #### `func Targets(a *containment.Applied) map[string]string`
 Targets returns the requested-path → canonical-target map of an applied
@@ -648,8 +659,10 @@ enforcement would succeed — and private directories not yet allocated appear
 as placeholders ($STATE/home, $STATE/tmp, $TERMINAL). The applied policy a
 launch reports records the real paths.
 
-#### `func PreviewLaunch(Input) (*Preview, error)`
-PreviewLaunch reports ErrUnsupported.
+#### `func PreviewLaunch(in Input) (*Preview, error)`
+PreviewLaunch runs the checks Prepare runs, collecting every problem
+instead of stopping at the first, and allocates nothing: no state, no
+cgroup, no ruleset. Only an invalid request is an error.
 
 #### `type RefusalError`
 RefusalError explains why a contained launch was refused before the harness
@@ -665,11 +678,13 @@ root — are its children. Landlock rules bind to directory objects, so a
 descendant that survives one session can never reach another session's
 directories, even at a reused path.
 
-#### `func NewState(bool) (*State, error)`
-NewState reports ErrUnsupported.
+#### `func NewState(persistent bool) (*State, error)`
+NewState allocates new managed state. Persistent state survives its
+launches until Remove; ephemeral state is deleted by the launch that
+created it once that launch's cgroup is empty.
 
-#### `func OpenState(string) (*State, error)`
-OpenState reports ErrUnsupported.
+#### `func OpenState(id string) (*State, error)`
+OpenState opens existing managed state by id.
 
 #### `type TestLogin`
 TestLogin is a stand-in's login flow; the fields mean what loginSpec's do.
@@ -1649,21 +1664,13 @@ On platforms other than Linux every entry point returns ErrUnsupported.
 ### Exported Types & Functions
 
 #### `func ABI() (int, error)`
-ABI returns the kernel's Landlock ABI version. It distinguishes the reasons
-Landlock can be missing, because the fix differs: ENOSYS means the syscalls
-are absent or filtered by seccomp, EOPNOTSUPP that Landlock is built in but
-left out of the boot-time LSM list.
+ABI reports ErrUnsupported: Landlock is Linux-only.
 
 #### `func Errata() int`
-Errata returns the kernel's errata bitmask for its ABI, or 0 when the kernel
-cannot report one.
+Errata reports 0.
 
-#### `func Probe(minABI int) (int, error)`
-Probe reports whether the kernel can enforce a ruleset created with
-Config{MinABI: minABI}: it returns the ABI and a non-nil error when that ABI
-is below the one minABI demands (zero: ResolveUnixABI) or Landlock is
-unavailable. It is advisory — ruleset creation and enforcement remain
-authoritative, and every contained launch performs both.
+#### `func Probe(int) (int, error)`
+Probe reports ErrUnsupported.
 
 #### `type AccessFS`
 AccessFS is a set of Landlock filesystem rights (LANDLOCK_ACCESS_FS_*).
@@ -1686,12 +1693,8 @@ and the rights to allow beneath it.
 #### `type Ruleset`
 Ruleset is never created on this platform.
 
-#### `func New(cfg Config) (*Ruleset, error)`
-New creates a ruleset handling HandledFSFor(kernel ABI), both IPC scopes
-and, when cfg.RestrictTCP is set, TCP bind and connect. It fails with
-ErrUnavailable when the kernel's ABI is below the one cfg.MinABI demands:
-kernel availability alone is not enough, every handled field must be
-accepted.
+#### `func New(Config) (*Ruleset, error)`
+New reports ErrUnsupported.
 
 #### `type Scope`
 Scope is a set of Landlock IPC scopes (LANDLOCK_SCOPE_*).
@@ -3504,6 +3507,11 @@ under: open_failed with reason adapter_missing.
 #### `func Errorf(code Code, format string, args ...any) *Error`
 Errorf is an *Error with a formatted message.
 
+#### `func OpenAbandoned(cause error) *Error`
+OpenAbandoned is the error of an Open whose ctx ended (cause is ctx.Err()):
+CodeOpenFailed with no Reason, because nothing about the harness or the
+config failed — the caller abandoned it, and knows why.
+
 #### `type ErrorClass`
 ErrorClass classifies a turn's or an API call's failure.
 
@@ -3798,7 +3806,7 @@ A read-only handle on one Session's durable record: Observe delivers record-orig
 - `Recover(ctx context.Context, inputID string) (Recovered, error)`
 
 #### `Session`
-One harness conversation, safe for concurrent use: Open, Send one input, Interrupt a named turn, Answer prompts, Observe and Ack batches, read an observational State, and Close, which is terminal for the handle.
+One harness conversation, safe for concurrent use: Open, Send one input, Interrupt a named turn, Answer prompts, Observe and Ack batches, read an observational State, and Close, which is terminal for the handle; an Open whose ctx is cancelled or times out fails open_failed with no reason.
 
 > Session is one harness conversation. Its methods are safe to call
 concurrently: State, Observe and Ack are never blocked by an outstanding
