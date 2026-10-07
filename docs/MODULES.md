@@ -187,7 +187,7 @@ PageEntry is one documentation page.
 
 ## Module: apparmor (`internal/apparmor`)
 
-harness-wrapper's AppArmor socket layer: the one static profile a contained launch stacks onto the harness when the kernel's Landlock ABI predates RESOLVE_UNIX (ADR-005). It generates the profile, which withholds write access outside a fixed set of roots so a harness cannot connect to host UNIX sockets, and checks that the installed, loaded profile matches the roots a launch is about to report.
+harness-wrapper's AppArmor socket layer: the one static profile a contained launch stacks onto the harness when the kernel's Landlock ABI predates RESOLVE_UNIX (ADR-005). It generates the profile, which withholds write access outside a fixed set of roots so a harness cannot connect to host UNIX sockets, checks that the installed, loaded profile matches the roots a launch is about to report, and flags roots broad enough to expose agent sockets such as ~/.gnupg or ~/.ssh.
 
 > Package apparmor is harness-wrapper's AppArmor socket layer: the one static
 profile a contained launch stacks onto the harness when the kernel's Landlock
@@ -206,6 +206,17 @@ not reloaded names a profile that is not loaded, and the launch is refused
 instead of reporting roots the kernel does not enforce.
 
 ### Exported Types & Functions
+
+#### `func BroadRootWarnings(roots []string, home, runtimeDir string) []string`
+BroadRootWarnings returns one warning for each root broad enough to expose
+agent sockets: home itself, a root that contains a directory where agents
+keep pathname sockets (~/.gnupg, ~/.ssh, the user's runtime directory,
+/tmp, /run), or one inside an agent's own directory. Beneath a root the layer allows connecting
+to every socket, so such a root hands a contained harness the user's
+gpg-agent, ssh-agent or session bus. These roots stay valid — accepting
+that is the host owner's call — so this only warns. roots, home and
+runtimeDir are compared as given, so pass them canonical (symlinks
+resolved); home or runtimeDir may be "".
 
 #### `func CheckConfined(pid int, profile string) error`
 CheckConfined reports an error unless process pid runs with profile in
@@ -569,8 +580,9 @@ conformance job itself needs it; nothing outside the module can call it.
 BaselineManifestVersion reports the version of the shared baseline, which
 every profile's effective version includes.
 
-#### `func DisableSupervisionForTest() func()`
-DisableSupervisionForTest does nothing here.
+#### `func DisableSupervisionForTest() (restore func())`
+DisableSupervisionForTest makes every launch see a host that delegates no
+cgroup, until the returned function runs. Tests only.
 
 #### `func OpenPTYPair() (int, int, error)`
 OpenPTYPair reports ErrUnsupported.
@@ -606,8 +618,9 @@ Launch is a prepared contained launch: profile resolved, every grant
 pinned and checked, private state and the child environment provisioned,
 supervision set up and the ruleset built. Nothing has started yet.
 
-#### `func Prepare(Input) (*Launch, error)`
-Prepare reports ErrUnsupported: Landlock containment is Linux-only.
+#### `func Prepare(in Input) (l *Launch, err error)`
+Prepare turns in into a Launch, or refuses it before anything runs. On
+refusal it releases whatever it acquired, including ephemeral state.
 
 #### `type LaunchOptions`
 LaunchOptions are the lifecycle choices a caller inside this module makes
@@ -667,7 +680,7 @@ harness: any executable, plus the listed read/execute trees.
 
 ## Module: delivery (`internal/delivery`)
 
-The bounded, ordered event delivery behind the wrapper's and chat's OnEvent callbacks (ADR-008). One worker hands each event to the callback in push order, and a producer that finds the queue full waits for room rather than dropping the event.
+The bounded, ordered event delivery behind the wrapper's and chat's OnEvent callbacks (ADR-008). One worker hands each event to the callback in push order, and a producer that finds the queue full waits for room rather than dropping the event; a callback that panics is recovered, its event counted as undelivered, and delivery continues.
 
 > Package delivery is the bounded, ordered event delivery behind the wrapper's
 and chat's OnEvent callbacks (ADR-008): one worker hands each event to the
@@ -1093,7 +1106,7 @@ regardless of this policy.
 
 ## Module: main (`internal/facadegen`)
 
-A code generator that writes a facade package's declarations: one per exported top-level identifier of a core package, as a type alias, re-declared const or var, or forwarding func. pkg/wrapper and pkg/chat are regenerated with it, via go generate, as facades over internal/wrapcore and internal/chatcore.
+A code generator that writes a facade package's declarations: one per exported top-level identifier of a core package, as a type alias, re-declared const or var, or forwarding func, carrying the core declaration's doc comment. pkg/wrapper, pkg/chat and pkg/harness are regenerated with it, via go generate, and it refuses a symbol whose build-tagged declarations disagree.
 
 > Command facadegen writes a facade package's declarations: one per exported
 top-level identifier of a core package — a type alias, a re-declared const or
@@ -1736,7 +1749,7 @@ Start starts a mock on a loopback port.
 
 ## Module: procgroup (`internal/procgroup`)
 
-Runs a harness in a process group of its own, so that stopping it also reaches the processes it started that stay in the group; where process groups are unavailable, it reaches the harness's process alone. It also reports whether the group is empty and the signal a process exited on.
+Runs a harness in a process group of its own, so that stopping it also reaches the processes it started that stay in the group; where process groups are unavailable, it reaches the harness's process alone. It reports whether the group is empty and the signal a process exited on, and never signals the group of a reaped leader once it is empty, so a recycled group id is never hit.
 
 > Package procgroup runs a harness in a process group of its own; where
 there are none, it reaches the harness's process alone.
@@ -1744,6 +1757,14 @@ there are none, it reaches the harness's process alone.
 Package procgroup runs a harness in a process group of its own, so that
 stopping it reaches the processes it started too — those that stay in the
 group.
+
+A process-group ID is the leader's pid, and it can be reused once the
+leader has been reaped and the group has no member left. So the group is
+signalled only while that cannot have happened: while the leader has not
+been reaped, or, after, while the group still has members (a member keeps
+the ID from being reused). This is the rule wrapcore's groupTerminator
+follows; an adapter's kill after its harness exited would otherwise signal
+whichever group had since been given the ID.
 
 ### Exported Types & Functions
 
@@ -1989,20 +2010,22 @@ build without cgo (or off Linux) there is no C to open them from.
 
 ### Exported Types & Functions
 
-#### `func Close(int)`
-Close does nothing.
+#### `func Close(fd int)`
+Close closes fd from C.
 
 #### `func ListenNonCloexec() int`
-ListenNonCloexec returns -1: no C here.
+ListenNonCloexec opens a loopback TCP listener from C, without
+SOCK_CLOEXEC.
 
-#### `func OpenNonCloexec(string) int`
-OpenNonCloexec returns -1: no C here.
+#### `func OpenNonCloexec(path string) int`
+OpenNonCloexec opens path read-only from C, without O_CLOEXEC.
 
-#### `func StartOpeners(string, int) int`
-StartOpeners starts nothing.
+#### `func StartOpeners(path string, n int) int`
+StartOpeners starts n C threads that open and close path without
+O_CLOEXEC until StopOpeners; it returns how many started.
 
 #### `func StopOpeners() int64`
-StopOpeners returns 0.
+StopOpeners stops the C openers and returns how many opens they made.
 
 ## Module: wrapcore (`internal/wrapcore`)
 
@@ -2497,14 +2520,23 @@ of its record, and never an input's turn id.
 Drawn is n letters and digits drawn from nonce for use: the same nonce and
 use always give the same ones, and another use others.
 
+#### `func HeaderCommand(file string) string`
+HeaderCommand is a shell command that prints the value of a header read
+from file as HeadersScript reads one: its CRs and newlines dropped. A file
+it cannot read, or one holding another control character but a tab, fails
+it, printing nothing. It holds the file's path and no value: a harness
+whose configuration takes a command per header runs it each time it
+connects.
+
 #### `func HeadersScript(name string, files map[string]string) string`
 HeadersScript is a shell script that prints the headers of MCP server name
 as a harness's headers helper answers them, a JSON object: each header's
-value read from its file in files, its newlines dropped and its
+value read from its file in files, its CRs and newlines dropped and its
 backslashes, quotes and tabs escaped. It holds the files' paths and no
-value, and a file it cannot read fails it. A profile writes it as a file
-of its own under config, which the harness runs with /bin/sh each time it
-connects (no provisioned file is executable): a connector's headers_file.
+value; a file it cannot read, or one holding another control character,
+fails it. A profile writes it as a file of its own under config, which the
+harness runs with /bin/sh each time it connects (no provisioned file is
+executable): a connector's headers_file.
 
 #### `func HostEnv() []string`
 HostEnv is the part of the Host's environment a harness process takes:
@@ -2716,6 +2748,46 @@ BinaryPath is codex's path in the harness distribution rooted at root.
 #### `type Profile`
 Profile is the Codex profile. It keeps no state.
 
+## Module: proc (`pkg/adapter/internal/proc`)
+
+What the Harness Adapter profiles' transports share of running a harness's process: Start launches it on pipes in a process group of its own, ReadBoundedLine and ReadToken read its output and credential, TailBuffer and LastLine keep the tail of its stderr, and Exit reads its exit as the Session's.
+
+> Package proc holds what the profiles' transports share of running a
+harness's process: starting it on pipes in a group of its own, reading its
+lines, keeping its stderr's tail, reading its credential, and reading its
+exit as the Session's.
+
+### Exported Types & Functions
+
+#### `func Exit(cmd *exec.Cmd, waitErr error, stopping, killed bool, stderr string) contract.SessionExitedData`
+Exit is the Session's exit for cmd, which Wait returned waitErr for:
+clean when it exited 0 or was stopped, killed when a signal ended it (or
+SIGKILL a stop), crashed otherwise. Its detail is stderr's last line, or
+waitErr's when that is empty.
+
+#### `func LastLine(s string) string`
+LastLine is s's last nonempty line, cut to DetailMax bytes.
+
+#### `func ReadBoundedLine(r *bufio.Reader, max int) ([]byte, error)`
+ReadBoundedLine returns the next line without its line ending; a line
+longer than max bytes, its ending not counted, is consumed and dropped
+(nil, nil). At the end of input it returns what is left with the error.
+
+#### `func ReadToken(file string) (string, error)`
+ReadToken reads a credential file: one line, no control characters.
+
+#### `func Start(bin string, args []string, dir string, env []string, errTo io.Writer) (*exec.Cmd, io.WriteCloser, *os.File, error)`
+Start launches bin in a process group of its own: stdin a pipe, stdout and
+stderr plain pipes read here, so Wait never waits on a descendant that
+inherited them. stderr is copied into errTo until the process's last
+writer closes it.
+
+#### `type TailBuffer`
+TailBuffer keeps the last n bytes written to it.
+
+#### `func NewTailBuffer(n int) *TailBuffer`
+NewTailBuffer is a TailBuffer of n bytes.
+
 ## Module: pi (`pkg/adapter/pi`)
 
 The Harness Adapter's Pi profile: the pi coding agent driven over its RPC mode (JSON lines on stdio), one process per Session, with the session file as its record. Importing it registers the adapter under "pi"; a bundled tag extension records each input's id in the session, since pi records none a client chooses.
@@ -2794,118 +2866,317 @@ so Options.Harness resolves exactly the names it always has.
 ### Exported Types & Functions
 
 #### `func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error`
-DeleteContainmentState calls chatcore.DeleteContainmentState.
+DeleteContainmentState removes the private state of a stored contained
+conversation: it first ends whatever the conversation's last launch left in
+its recorded cgroup, then deletes the directory and marks the record, which
+can no longer be resumed. Deleting state a launch still uses is refused.
+
+It forwards to chatcore.DeleteContainmentState.
 
 #### `func DialogAnchors(harness string) []string`
-DialogAnchors calls chatcore.DialogAnchors.
+DialogAnchors returns the literal lines a BLOCKING dialog paints — a
+folder-trust prompt, a bypass-permissions confirmation. A screen showing one
+is about a dialog, not a login, which is the distinction a caller recording
+evidence needs in order to tell a real auth wall from a verdict taken over a
+modal. Nil for a harness with no known dialogs. The empty string returns
+every registered harness's anchors (turns.DialogAnchorer), for a caller that
+describes a screen without knowing which harness drew it.
+
+It forwards to chatcore.DialogAnchors.
 
 #### `func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error)`
-DiscoverModels calls chatcore.DiscoverModels.
+DiscoverModels launches the harness on an ephemeral memstore-backed session,
+probes its `/model` picker read-only, and returns the models it lists. It is
+read-only: it never selects a model — after writing `/model` the picker is
+left open, but because the session is memstore-backed and Close'd immediately
+in the defer, no Escape/cleanup keystroke is required.
+
+It gates on readiness up front (so an unauthenticated CLI fast-fails with
+ErrAuthRequired rather than hanging to the render deadline), then writes
+`/model` and polls the rendered screen against models.ParseModelPicker until
+it yields a non-empty list or the render budget elapses.
+
+Error contract — three distinct outcomes:
+  - ErrPickerUnsupported: the harness has no parseable picker (not
+    claude-code/claude or codex).
+  - ErrAuthRequired: the CLI is logged out / not onboarded (fast-fail).
+  - ErrPickerTimeout: the picker never rendered within RenderTimeout.
+
+It forwards to chatcore.DiscoverModels.
 
 #### `type ContainmentStore`
-ContainmentStore is chatcore.ContainmentStore.
+ContainmentStore is the optional Store extension a store implements to
+declare that it persists contained conversations faithfully. chat.Open and
+Reopen refuse containment on a Store that does not implement it, rather than
+trust a record the store may silently drop. chat.Store itself gains no
+method: callers implement it.
+
+By implementing it a store commits that CreateSession, UpdateSession and
+GetSession round-trip Session.Containment intact, and that it never
+populates the legacy HarnessSessionID of a session that has one.
+
+It is an alias of chatcore.ContainmentStore.
 
 #### `type Conversation`
-Conversation is chatcore.Conversation.
+Conversation owns one supervised harness process and serves the
+chat-style API on top of it.
+
+It is an alias of chatcore.Conversation.
 
 #### `func Open(ctx context.Context, opts Options) (*Conversation, error)`
-Open calls chatcore.Open.
+Open starts a fresh harness session, wires the screen + turn watcher, and
+returns a live Conversation. To resume a prior harness session instead, set
+Options.Resume (or use Reopen with a stored chat session id).
+
+It forwards to chatcore.Open.
 
 #### `func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error)`
-Reopen calls chatcore.Reopen.
+Reopen resumes a previously-stored chat session against its harness's own
+persisted session, re-attaching a fresh live Conversation. It looks up the
+stored record by SessionID, requires it to carry a harness session id, and
+launches the harness with the adapter's resume args spliced in. Unlike Open
+it does NOT create a new store record — the record already exists.
+
+It forwards to chatcore.Reopen.
 
 #### `type ConversationEvent`
-ConversationEvent is chatcore.ConversationEvent.
+ConversationEvent is a discriminated event observed on
+Conversation.Events(). Inspect Type to learn which payload is set: Turn
+for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+EventExited, RateLimit for EventRateLimit.
+
+It is an alias of chatcore.ConversationEvent.
 
 #### `type DeliveryState`
-DeliveryState is chatcore.DeliveryState.
+DeliveryState is the event queue's pressure, for diagnostics: a consumer
+that stops taking events shows here before anything else notices.
+
+It is an alias of chatcore.DeliveryState.
 
 #### `type DiscoverModelsOptions`
-DiscoverModelsOptions is chatcore.DiscoverModelsOptions.
+DiscoverModelsOptions configures DiscoverModels. It mirrors the chat/oneshot
+launch surface (the fields Open needs), plus a picker render budget.
+
+It is an alias of chatcore.DiscoverModelsOptions.
 
 #### `type Disposition`
-Disposition is chatcore.Disposition.
+Disposition is the action a policy takes for a matched request kind.
+
+It is an alias of chatcore.Disposition.
 
 #### `type DispositionKind`
-DispositionKind is chatcore.DispositionKind.
+DispositionKind is how a policy disposes of a matched InputRequest.
+
+It is an alias of chatcore.DispositionKind.
 
 #### `type EventType`
-EventType is chatcore.EventType.
+EventType discriminates the variants of a ConversationEvent.
+
+It is an alias of chatcore.EventType.
 
 #### `type ExitInfo`
-ExitInfo is chatcore.ExitInfo.
+ExitInfo is how the harness process ended.
+
+It is an alias of chatcore.ExitInfo.
 
 #### `type HistorySource`
-HistorySource is chatcore.HistorySource.
+HistorySource identifies where a History result came from.
+
+It is an alias of chatcore.HistorySource.
 
 #### `type InputAnswer`
-InputAnswer is chatcore.InputAnswer.
+InputAnswer is how a caller answers an InputRequest. Set OptionID (an
+option ID or Alias) for single-select menu/confirm/trust prompts; set Text
+for free-text ("text_input") prompts; set OptionIDs (each an option ID or
+Alias) to select one or more options on a MultiSelect request.
+
+OptionID and OptionIDs are mutually exclusive: setting both returns
+ErrConflictingAnswer. OptionIDs on a request whose MultiSelect is false
+returns ErrNotMultiSelect.
+
+It is an alias of chatcore.InputAnswer.
 
 #### `type InputOption`
-InputOption is chatcore.InputOption.
+InputOption is one selectable choice in an InputRequest.
+
+It is an alias of chatcore.InputOption.
 
 #### `type InputPolicy`
-InputPolicy is chatcore.InputPolicy.
+InputPolicy pre-configures how interactive prompts are resolved without a
+live client in the loop. It is JSON-serializable so it can be supplied at
+open time over a transport (harness-chatd). When a request matches no rule
+(or the matched disposition is "ask"), the request is surfaced on Events().
+
+It is an alias of chatcore.InputPolicy.
 
 #### `type InputRequest`
-InputRequest is chatcore.InputRequest.
+InputRequest is the client-facing view of a blocking interactive prompt
+the harness is showing (e.g. Claude Code's folder-trust dialog). It mirrors
+turns.InputRequest but deliberately omits the per-option keystrokes: the
+client answers semantically by option ID or Alias and the chat layer owns
+the translation to keys.
+
+It is an alias of chatcore.InputRequest.
 
 #### `type InputUnresolvedError`
-InputUnresolvedError is chatcore.InputUnresolvedError.
+InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
+PermissionModeBlockedError it carries the client-facing chat.InputRequest
+(the value PendingInput returns and Answer accepts) plus the screen as it
+looked when the driver gave up, so a failed run is diagnosable from the error
+alone rather than from a 43-minute silence.
+
+It is an alias of chatcore.InputUnresolvedError.
 
 #### `type InterruptResult`
-InterruptResult is chatcore.InterruptResult.
+InterruptResult is what Interrupt did.
+
+It is an alias of chatcore.InterruptResult.
 
 #### `type Options`
-Options is chatcore.Options.
+Options configures a single Conversation.
+
+It is an alias of chatcore.Options.
 
 #### `type PermissionModeBlockedError`
-PermissionModeBlockedError is chatcore.PermissionModeBlockedError.
+PermissionModeBlockedError is the concrete error behind
+ErrPermissionModeBlockedByInput. It carries the client-facing
+chat.InputRequest (NOT the internal turns.InputRequest): exactly the value
+PendingInput returns and Answer accepts, so the documented
+resolve-then-retry recovery round-trips without a type conversion the caller
+cannot perform.
+
+Observed is the last posture read before the driver stopped pressing; it is
+also returned as SetPermissionMode's string result.
+
+It is an alias of chatcore.PermissionModeBlockedError.
 
 #### `type RateLimit`
-RateLimit is chatcore.RateLimit.
+RateLimit is the harness's report of the account's usage limit, as it stood
+when the harness last reported it. Each field is the harness's own figure;
+a zero field means the report did not include it.
+
+It is an alias of chatcore.RateLimit.
 
 #### `type RateLimitStatus`
-RateLimitStatus is chatcore.RateLimitStatus.
+RateLimitStatus is where the account stands against its usage limit.
+
+It is an alias of chatcore.RateLimitStatus.
 
 #### `type RateLimitWindow`
-RateLimitWindow is chatcore.RateLimitWindow.
+RateLimitWindow is one usage window's standing.
+
+It is an alias of chatcore.RateLimitWindow.
 
 #### `type ReopenOptions`
-ReopenOptions is chatcore.ReopenOptions.
+ReopenOptions configures Reopen. It is the Options knobs that make sense when
+re-attaching to an already-stored session: the harness, working dir, and
+resume id come from the stored record (looked up by SessionID), so they are
+intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"resume">).
+
+It is an alias of chatcore.ReopenOptions.
 
 #### `type Role`
-Role is chatcore.Role.
+Role identifies who produced a turn.
+
+It is an alias of chatcore.Role.
 
 #### `type ScreenAnchor`
-ScreenAnchor is chatcore.ScreenAnchor.
+ScreenAnchor is one identified screen pattern: the regex this package
+matches with, and a stable id for it.
+
+The ids exist because a consumer that RECORDS which banner it saw needs a
+name for it, and copying the regexes out to invent one is how a consumer
+ends up tracking harness drift by hand. loom did exactly that: it mirrored
+these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
+of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
+with its copies unanchored where these are line-anchored.
+
+The id strings are a DOWNSTREAM CONTRACT. loom's
+docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
+triggers, so a rename silently breaks the trigger it belongs to. Add anchors
+freely; do not rename an existing id.
+
+It is an alias of chatcore.ScreenAnchor.
 
 #### `func AuthAnchors(harness string) []ScreenAnchor`
-AuthAnchors calls chatcore.AuthAnchors.
+AuthAnchors returns the screen anchors whose presence means the harness
+cannot produce output until a human authenticates — onboarding wizard first,
+then logged-out banner, which is authRequired's own precedence, so a caller
+recording the FIRST hit names the arm this package would have taken.
+
+A harness this package has no banner set for returns nil. The empty string
+returns every harness's anchors, for a caller that describes a screen
+without knowing which harness drew it.
+
+It forwards to chatcore.AuthAnchors.
 
 #### `type Session`
-Session is chatcore.Session.
+Session is the chat-level session record. Distinct from
+wrapper.Session: this is the persistence/metadata view, owned by Store.
+
+It is an alias of chatcore.Session.
 
 #### `type SessionContainment`
-SessionContainment is chatcore.SessionContainment.
+SessionContainment is the containment record of a contained conversation.
+It is persisted BEFORE the conversation's first launch, and every later
+launch — Reopen included — inherits it: a contained conversation can never
+continue uncontained or under a different policy.
+
+Downgrade guard: in a contained Session the legacy HarnessSessionID field
+stays empty for good, and the harness's own session id lives only here. An
+older harness-wrapper, which knows nothing of this record, therefore sees a
+session with no harness session id and refuses to resume it
+(ErrNoHarnessSession) instead of resuming it unrestricted — even when its
+decoder drops this field. Read the id through Session.HarnessID.
+
+It is an alias of chatcore.SessionContainment.
 
 #### `type State`
-State is chatcore.State.
+State is a conversation's live state, read in one call (ADR-008).
+
+It is an alias of chatcore.State.
 
 #### `type Store`
-Store is chatcore.Store.
+Store persists chat-level session metadata and turn records.
+
+Store does NOT store transcript bodies. Harnesses persist their own
+conversation logs (~/.codex/sessions/, ~/.claude/projects/); a future
+pkg/transcript layer reads them for History reconstruction. Store
+only holds the indexable metadata: who owns what, which chat session
+maps to which harness session, what turn IDs have been issued, when
+each turn started and finished.
+
+Implementations must be safe for concurrent use.
+
+It is an alias of chatcore.Store.
 
 #### `type Transport`
-Transport is chatcore.Transport.
+Transport selects how a Conversation talks to its harness (Options.Transport).
+
+It is an alias of chatcore.Transport.
 
 #### `type Turn`
-Turn is chatcore.Turn.
+Turn is one message in the conversation.
+
+It is an alias of chatcore.Turn.
 
 #### `type TurnCode`
-TurnCode is chatcore.TurnCode.
+TurnCode is the machine-readable half of a terminal Turn.Reason: a short,
+stable token a consumer switches on, with no prose attached.
+
+Reason is operator copy — it is worded for a human, it carries a trailing
+"(…)" detail on the usage wall, and rewording it is an ordinary editorial
+change. Consumers that matched on the reason therefore had to SUBSTRING it,
+which makes every such reword a silent behaviour change downstream. Code is
+what those consumers should read instead. Empty for every turn that is not
+one of the terminal walls below, including ordinary task failures.
+
+It is an alias of chatcore.TurnCode.
 
 #### `type TurnState`
-TurnState is chatcore.TurnState.
+TurnState is the lifecycle stage of a Turn.
+
+It is an alias of chatcore.TurnState.
 
 ## Module: memstore (`pkg/chat/memstore`)
 
@@ -3051,6 +3322,13 @@ nothing else of harness-wrapper.
 
 ### Exported Types & Functions
 
+#### `func CheckCapabilities(d Descriptor) error`
+CheckCapabilities refuses a Descriptor that declares a capability newer
+than the minor of its contract version: a caller of that minor would not
+know it, and a newer caller, Compatible with it, would rely on what the
+declared minor never promised. A capability not in the set is left to the
+caller, which knows its own set.
+
 #### `func CheckEgress(d Descriptor) error`
 CheckEgress refuses a Descriptor whose egress is malformed: one without the
 capability, a host that is not an exact lower-case name, a route for a kind
@@ -3085,6 +3363,11 @@ the Descriptor can say.
 Compatible reports whether a caller of this package may use an adapter
 declaring contract version v: the majors match. The caller then sends it
 requests no newer than v's minor.
+
+#### `func MinorOf(v string) (int, error)`
+MinorOf is the minor of contract version v: the newest requests a caller
+may send an adapter declaring v (Compatible), and the newest capabilities
+that adapter may declare (Capability.Since).
 
 #### `func Names() []string`
 Names lists every registered harness, sorted.
@@ -3665,6 +3948,11 @@ as against a real harness talking to that mock:
 	GOAL <n> <k>   a goal's objective: each of the first <n> turns the harness
 	               starts for it works <k> ticks and replies "goal step <i>";
 	               the next one completes the goal, and the harness rests
+	BG <command>   run <command> in the background, and reply "BG STARTED".
+	               The work outlives the turn: reported running and then
+	               ended (background_tasks), after which the harness starts
+	               a turn of its own that takes its result up, replying
+	               "BG DONE: ran <command>"
 	anything else  reply "ok"
 
 A turn the harness started itself is stopped by an input — it ends
@@ -3679,6 +3967,11 @@ by another Adapter value, reads what an earlier one left, as it would after
 a crash. A Session saved in one environment is therefore loaded into another
 by moving that directory to the new workspace's name: the relocation
 Provision answers a request that loads with.
+
+As a Session opens, its harness connects to each http connector's MCP
+server with one initialize request, carrying the connector's headers: a
+header from a file (HTTPConnector.HeadersFile) is read from it then, and is
+in no rendered file or open configuration.
 
 ### Exported Types & Functions
 
@@ -3863,40 +4156,143 @@ own harness.
 ### Exported Types & Functions
 
 #### `func AckSpool(spoolDir string, receipts ...SpoolReceipt) error`
-AckSpool calls harnesscore.AckSpool.
+AckSpool deletes the spool files the receipts name, once the consumer has
+durably committed their events, and fsyncs the directory so that the
+deletions survive a crash. It deletes a file only while it is still exactly
+the one ReadSpool read. A receipt whose name is not a plain spool file name,
+or whose file changed or was replaced since, is refused — wrapped in
+ErrSpoolReceipt — and deletes nothing, so contents nobody committed are
+never lost: ReadSpool returns the changed file again under a new receipt.
+
+A receipt whose file is already gone counts as acknowledged, so repeating
+an acknowledgement, say after a crash, is safe; the directory is fsynced
+even then, which makes an earlier unsynced deletion durable. Until AckSpool
+returns nil, a crash can leave any of its files in place to be read again,
+and the consumer recognises them by receipt. The error joins every refusal
+and failure; the other receipts are still acknowledged.
+
+It forwards to harnesscore.AckSpool.
 
 #### `func BinaryName(p Profile) string`
-BinaryName calls harnesscore.BinaryName.
+BinaryName returns the executable name for p: its BinaryName when p
+implements BinaryNamer and names one, else p.Name() — a harness whose binary
+is named after its registry key need not implement the interface.
+
+It forwards to harnesscore.BinaryName.
 
 #### `func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error)`
-DrainSpool calls harnesscore.DrainSpool.
+DrainSpool reads every COMPLETED spool file (`.json`, never the in-flight
+`.tmp`), returning all parsed events and removing each file it successfully
+consumed so a later drain does not re-emit them. Run calls it after the
+harness exits (the grace-window drain), then removes the per-run spool; the
+consumer additionally dedups by Event.ID(), so a file left behind by a delete
+failure is absorbed rather than duplicated.
+
+DrainSpool is destructive and not transactional: it deletes each file as
+soon as it has parsed it, before the caller has done anything with the
+events, so a crash in between loses them. That suits a consumer that lives
+and dies with the run. One that must not lose events — agentd, whose
+supervisor outlives its harness — reads with ReadSpool and acknowledges
+with AckSpool after its own durable commit, and never calls DrainSpool.
+
+Files are drained in chronological order (compareSpoolNames). The spool is
+read as ReadSpool reads it — confined to the directory, never through a
+symlink, never blocking on a FIFO and never past MaxSpoolFileBytes — since
+the hook subprocess that writes it may be less trusted than the reader.
+
+A missing spool dir is not an error (no hooks fired). A single unreadable,
+untrusted or unparseable file is skipped (left in place) and collected into
+err, but does not abort the drain of the rest.
+
+It forwards to harnesscore.DrainSpool.
 
 #### `func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []string, harnessName string) error`
-EnsureSettingsJSONHooks calls harnesscore.EnsureSettingsJSONHooks.
+EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
+settings.json (the shared two-level hook format) at settingsPath, rendering each command from
+loomArgv via RenderHookCommand (harnessName is the token in the command). It
+preserves the user's hooks + unknown keys, marks loom's entries (owner), and
+refreshes the loom path each call (self-healing). flock-guarded + atomic.
+
+It forwards to harnesscore.EnsureSettingsJSONHooks.
 
 #### `func EnvLookup(env []string, key string) string`
-EnvLookup calls harnesscore.EnvLookup.
+EnvLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
+if absent. The last occurrence wins (matching exec semantics). Exported so
+per-harness Profile packages — which cannot see this package's unexported
+helpers — read the launch env by exactly the same rule the hook subprocess
+does; see ConfigDirResolver.
+
+It forwards to harnesscore.EnvLookup.
 
 #### `func IsManagedHookCommand(command string) bool`
-IsManagedHookCommand calls harnesscore.IsManagedHookCommand.
+IsManagedHookCommand reports whether a rendered hook command is one loom owns
+(by the marker), so a merge can replace/remove it idempotently.
+
+It forwards to harnesscore.IsManagedHookCommand.
 
 #### `func ParseSpoolFileName(name string) (string, int64, bool)`
-ParseSpoolFileName calls harnesscore.ParseSpoolFileName.
+ParseSpoolFileName returns the hook event a spool file was written under
+and the time, in Unix nanoseconds, it was named at. A consumer tells the
+hook a file came from this way, never by the shape of the name.
+
+It reads both the current form, "<nanos:20>-<event>-<pid>-<seq>.json", and
+the legacy one, "<event>-<nanos>-<pid>-<seq>.json", which spools written
+before the change may still hold (a spool outlives its writer when its
+consumer, agentd, does). Both are told apart unambiguously: no hook event
+starts with a digit. ok is false for a name of neither form.
+
+It forwards to harnesscore.ParseSpoolFileName.
 
 #### `func Register(name string, p Profile)`
-Register calls harnesscore.Register.
+Register adds a Profile under name. Per-harness packages call this from their
+init(); panics on a duplicate to catch double-registration at startup.
+
+It forwards to harnesscore.Register.
 
 #### `func Registered() []string`
-Registered calls harnesscore.Registered.
+Registered returns the sorted names of all registered profiles (for tests
+and diagnostics).
+
+It is also the list of harnesses a launcher supports: the harness-wrapper CLI
+accepts exactly these names (blank-importing pkg/harness/all), resolving each
+one's executable through BinaryName.
+
+It forwards to harnesscore.Registered.
 
 #### `func RenderHookCommand(loomArgv []string, harnessName string, arg string, owner string) string`
-RenderHookCommand calls harnesscore.RenderHookCommand.
+RenderHookCommand builds the hook command string written into a harness's
+config. It is ALWAYS a POSIX shell command with a pre-exec env guard so a
+left-in-place entry is inert on a non-wrapper run (review #5):
+
+	sh -c 'test -n "$HW_EVENT_SPOOL" || exit 0; exec <loomArgv> <harness> <arg>' # harness-wrapper-hook:<owner>
+
+With HW_EVENT_SPOOL unset the guard exits 0 WITHOUT touching the binary, so a
+stale/moved loom can never break someone else's run. loomArgv is the loom
+binary path + subcommand (e.g. {"/abs/loom","hooks"}); every interpolated
+value is POSIX-single-quoted, so spaces/quotes in the path are safe.
+
+It forwards to harnesscore.RenderHookCommand.
 
 #### `func WithLockedFile(targetPath string, fn func(existing []byte) ([]byte, error)) error`
-WithLockedFile calls harnesscore.WithLockedFile.
+WithLockedFile runs fn under an exclusive flock so concurrent same-worktree
+ensures don't clobber each other, then writes fn's result atomically.
+
+The flock is taken on a STABLE SIDECAR (`<targetPath>.lock`, never renamed) —
+flock is inode-based, so locking the file we then temp+rename-replace would
+drop the guard (the new inode is unlocked). fn receives the current file
+bytes (nil if absent) and returns the new content, or (nil, nil) to indicate
+"no change" (nothing is written). The target itself is written via temp+rename
+for torn-read safety.
+
+It forwards to harnesscore.WithLockedFile.
 
 #### `type BinaryNamer`
-BinaryNamer is harnesscore.BinaryNamer.
+BinaryNamer is an OPTIONAL interface a Profile implements to name the
+executable a launcher looks up on PATH to start the harness ("claude" for
+Claude Code). It lets a launcher derive its harness table from the registry
+instead of keeping its own; see BinaryName.
+
+It is an alias of harnesscore.BinaryNamer.
 
 #### `type Config`
 Config configures a single harness.Run. It embeds the low-level wrapper.Config
@@ -3907,40 +4303,119 @@ harness.Run OWNS wrapper.Config.OnLine: any value the caller sets in
 Wrapper.OnLine is overwritten by the orchestrator's durable tap.
 
 #### `type ConfigDirResolver`
-ConfigDirResolver is harnesscore.ConfigDirResolver.
+ConfigDirResolver is an OPTIONAL interface a Profile implements when the
+harness takes its config ROOT from the launch environment (Claude Code's
+CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than from $HOME alone. It lets
+the harness-agnostic orchestrator forward that root to the hook subprocess as
+HW_HARNESS_CONFIG_DIR without knowing any harness's env-var vocabulary.
+
+Without it, a fired hook naming a per-profile transcript is rejected by
+validateTranscriptPath as "not under transcript root", because HookContext
+.ConfigDir is empty and the check falls back to <Home>/.claude.
+
+It is an alias of harnesscore.ConfigDirResolver.
 
 #### `type HookContext`
-HookContext is harnesscore.HookContext.
+HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
+HW_* env (never the subprocess cwd) — the authority for environment. It is
+distinct from ResolveContext (run-detection inputs) and ReadContext (the
+read/export environment).
+
+It is an alias of harnesscore.HookContext.
 
 #### `type HookEntry`
-HookEntry is harnesscore.HookEntry.
+HookEntry maps one native hook event to its loom subcommand.
+
+It is an alias of harnesscore.HookEntry.
 
 #### `type HookOutcome`
-HookOutcome is harnesscore.HookOutcome.
+HookOutcome is the result of HandleHookEvent. For capture events it is the
+zero value. For the yield-guard control hook it may direct the caller to BLOCK
+the tool: print BlockOutput to stdout and exit with a non-zero code the harness
+interprets as "block" (Claude: exit 2).
+
+It is an alias of harnesscore.HookOutcome.
 
 #### `func HandleHookEvent(harnessName string, event string, env []string, stdin []byte) (HookOutcome, error)`
-HandleHookEvent calls harnesscore.HandleHookEvent.
+HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
+command delegates to. For capture events it parses the fired hook's stdin
+payload into events and writes them to the spool; for the yield-guard control
+event it returns a HookOutcome telling the caller whether to BLOCK the tool.
+
+It is INERT (zero outcome, writes nothing) when HW_EVENT_SPOOL is absent — so
+a leftover hook entry can never perturb a non-wrapper run (review #5; this is
+the runtime counterpart to the rendered shell guard). The subprocess does NOT
+call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
+main run's resolution already decided to install hooks.
+
+It forwards to harnesscore.HandleHookEvent.
 
 #### `type HookProvider`
-HookProvider is harnesscore.HookProvider.
+HookProvider is the capability for hook-driven transcript acquisition. A
+ResolvedProfile carries a non-nil Hooks only when hook support is confirmed
+for the run (statically firm for Claude; runtime-probed for Codex).
+
+The two methods serve the two sides of the hook lifecycle:
+  - HookSpec() describes WHAT to install (which native events map to which
+    `loom hooks <harness> <arg>` subcommand) so the orchestrator can
+    idempotently ensure the per-worktree hook config.
+  - ParseHookPayload() runs inside the fired hook SUBPROCESS: it parses the
+    harness's stdin payload (which HANDS OVER the transcript_path + session
+    id — no path reconstruction) and returns the canonical events, reading
+    the handed-over native transcript file on the file-bearing phases.
+
+ParseHookPayload is harness-STATIC (callable without Resolve): the hook
+subprocess is a fresh process that trusts it was invoked because the main
+run's resolution already passed, so it parses rather than re-detects.
+
+It is an alias of harnesscore.HookProvider.
 
 #### `type HookSpec`
-HookSpec is harnesscore.HookSpec.
+HookSpec describes the hook entries the orchestrator idempotently + atomically
+ensures in the harness's hook-config file. Per-harness variation is ONLY the
+config path + native event names + arg mapping — the shell+stdin-JSON contract
+is shared across Claude/Codex.
+
+It is an alias of harnesscore.HookSpec.
 
 #### `type Mode`
-Mode is harnesscore.Mode.
+Mode selects how the orchestrator acquires the transcript for a run. It is
+the F1 flag of the P3 rollout: default Off (no acquisition, no behavior
+change) until a caller opts in.
+
+It is an alias of harnesscore.Mode.
 
 #### `type Profile`
-Profile is harnesscore.Profile.
+Profile is the per-harness entry point. Implementations live in
+pkg/harness/<name> and self-register via Register in their init().
+
+It is an alias of harnesscore.Profile.
 
 #### `func For(name string) (Profile, bool)`
-For calls harnesscore.For.
+For returns the registered Profile for the named harness. ok=false means the
+harness has no profile (caller degrades: resume→checkpoint, transcript→floor).
+The relevant pkg/harness/<name> package must be imported for its init() to
+run — blank-import pkg/harness/all to register all built-ins.
+
+It forwards to harnesscore.For.
 
 #### `type ResolveContext`
-ResolveContext is harnesscore.ResolveContext.
+ResolveContext carries the RUN-DETECTION inputs Resolve needs — the binary,
+its args/env, the working dir, and config roots to probe. It is deliberately
+SEPARATE from HookContext (the hook-subprocess environment) and ReadContext
+(the transcript read/export environment), both introduced in later phases.
+
+It is an alias of harnesscore.ResolveContext.
 
 #### `type ResolvedProfile`
-ResolvedProfile is harnesscore.ResolvedProfile.
+ResolvedProfile is the post-detection capability set for ONE run. A field is
+non-nil only when that capability is available this run. The orchestrator
+dispatches on these fields, never on the static Profile.
+
+P1 populates SessionID + Resume (Claude). Later phases add capability fields
+(StreamParser, HookProvider, TranscriptReader, Exporter) additively.
+
+It is an alias of harnesscore.ResolvedProfile.
 
 #### `type Result`
 Result wraps wrapper.Result with the transcript outcome.
@@ -3956,40 +4431,136 @@ error the tap records are read here AFTER wrapper.Run returns with an
 established happens-before — no locking needed.
 
 #### `type Resumer`
-Resumer is harnesscore.Resumer.
+Resumer produces the resume-specific CLI argument prefix for a given session
+id. The caller appends its own policy flags (output format, prompt, etc.).
+
+Intentionally separate from turns.SessionResumer (pkg/turns/turns.go): this
+one serves the headless pkg/harness registry (keyed e.g. "claude", not chat's
+"claude-code") and composes into headless invocations, whereas the turns
+counterpart is keyed the way chat looks adapters up and composes into the
+interactive TUI argv. See turns.SessionResumer's doc for why the two must not
+be merged.
+
+It is an alias of harnesscore.Resumer.
 
 #### `type SessionIDExtractor`
-SessionIDExtractor is harnesscore.SessionIDExtractor.
+SessionIDExtractor recovers the harness-assigned session UUID from a single
+line of the harness's headless stream output. Stateless and idempotent:
+callers invoke it per line and keep the first non-empty result.
+
+It is an alias of harnesscore.SessionIDExtractor.
 
 #### `type SettingsHookCmd`
-SettingsHookCmd is harnesscore.SettingsHookCmd.
+SettingsHookCmd is a single command hook within a matcher group.
+
+It is an alias of harnesscore.SettingsHookCmd.
 
 #### `type SettingsHookMatcher`
-SettingsHookMatcher is harnesscore.SettingsHookMatcher.
+SettingsHookMatcher is one matcher group in a settings.json hook event.
+
+It is an alias of harnesscore.SettingsHookMatcher.
 
 #### `type SpoolBatch`
-SpoolBatch is harnesscore.SpoolBatch.
+SpoolBatch is the events one spool file holds, with the receipt that
+acknowledges it.
+
+It is an alias of harnesscore.SpoolBatch.
 
 #### `type SpoolContents`
-SpoolContents is harnesscore.SpoolContents.
+SpoolContents is what one ReadSpool call found.
+
+It is an alias of harnesscore.SpoolContents.
 
 #### `func ReadSpool(spoolDir string) (SpoolContents, error)`
-ReadSpool calls harnesscore.ReadSpool.
+ReadSpool reads the completed spool files (`.json`, never an in-flight
+`.tmp`) without consuming them. Each batch carries a receipt, and its file
+stays in the spool until AckSpool is handed that receipt. A consumer commits
+a batch's events durably first and acknowledges it second, so a crash at any
+point loses nothing: ReadSpool returns every file not yet acknowledged again,
+under the same receipt, for the consumer to recognise as committed (or to
+dedup by Event.ID()).
+
+The spool is written by the hook subprocess, which may run as a less trusted
+user than the reader, so ReadSpool trusts nothing in it. It refuses a spool
+dir that is itself a symlink and confines every lookup to the directory. It
+reads only regular, singly linked files of at most MaxSpoolFileBytes, and it
+never follows a symlink or blocks on a FIFO. A file it cannot read as events
+— any other kind of file, an oversize or hard-linked one, an unsafe name, or
+contents that do not parse — is moved into SpoolQuarantineDir, or deleted
+once that holds MaxSpoolQuarantine files, and reported in Quarantined. It
+is never lost silently, and it cannot block the files behind it.
+
+One call handles a bounded amount of the spool and sets More when it leaves
+files for the next call. A spool has one consumer: ReadSpool takes no lock,
+so two concurrent readers would each return the same files. A missing spool
+dir is not an error (no hook fired). A file that cannot be read for any
+other reason stays where it is and is named in the error; the batches
+returned alongside an error are still valid.
+
+It forwards to harnesscore.ReadSpool.
 
 #### `type SpoolQuarantine`
-SpoolQuarantine is harnesscore.SpoolQuarantine.
+SpoolQuarantine reports a file ReadSpool took out of the spool without
+returning its events, because it could not trust or parse it.
+
+It is an alias of harnesscore.SpoolQuarantine.
 
 #### `type SpoolReceipt`
-SpoolReceipt is harnesscore.SpoolReceipt.
+SpoolReceipt identifies one spool file exactly as ReadSpool read it. A
+consumer hands it back to AckSpool once it has durably committed the file's
+events. It is comparable, so the consumer can record it in its own journal
+and recognise the file when a crash makes ReadSpool return it again.
+
+It is an alias of harnesscore.SpoolReceipt.
 
 #### `type StaticHookProfile`
-StaticHookProfile is harnesscore.StaticHookProfile.
+StaticHookProfile is an OPTIONAL interface a Profile implements when the
+harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
+the payload parser WITHOUT running Resolve: static hook availability is a
+harness fact, distinct from per-run capability resolution — which the
+subprocess must not re-run (it would re-probe; review #1). The main run still
+gates the DECISION to install/use hooks on the resolved ResolvedProfile.Hooks.
+
+It is an alias of harnesscore.StaticHookProfile.
 
 #### `type StreamParser`
-StreamParser is harnesscore.StreamParser.
+StreamParser parses a single line of the harness's headless stream output
+(e.g. `claude -p --output-format stream-json`) into canonical events. This is
+the generic "stdout floor" acquisition strategy: the orchestrator feeds it
+each raw line from the wrapper's durable line tap (wrapper.Config.OnLine) and
+concatenates the results.
+
+Contract: stateless and idempotent per line; one input line yields zero or
+more ParsedEvents (an assistant line can carry a text block AND a tool_use
+block). It MUST tolerate non-event lines — non-JSON, ANSI-polluted, or
+non-conversational (system/result) — by returning nil rather than erroring,
+because the tap delivers raw PTY bytes. Each returned event is tagged
+Source=live; the orchestrator stamps RunID/Harness and assigns the
+authoritative monotonic Seq from arrival order (stream lines carry no native
+per-line timestamp, so arrival order is the order).
+
+It is an alias of harnesscore.StreamParser.
 
 #### `type ToolHookProvider`
-ToolHookProvider is harnesscore.ToolHookProvider.
+ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+harness can report every tool call through its hooks: one event when a tool
+starts, one when it finishes or fails. Its entries are not in HookSpec,
+because they run a hook subprocess on every tool call; a consumer that wants
+per-tool events — one reading the spool with ReadSpool — adds them to the
+spec it ensures:
+
+	spec := *hp.HookSpec()
+	if th, ok := hp.(ToolHookProvider); ok {
+		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+	}
+
+Each fired entry spools one event (transcript.SourceHook) in a spool file
+named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+file (ParseSpoolFileName) as well as by the event. The authority filter never admits these
+events to Run's OnEvent.
+
+It is an alias of harnesscore.ToolHookProvider.
 
 #### `type TurnConfig`
 TurnConfig configures RunTurn, the one-shot interactive-turn entrypoint.
@@ -4010,10 +4581,21 @@ RunTurn runs one interactive harness turn and returns when that turn reaches
 a completed or errored state.
 
 #### `type YieldControl`
-YieldControl is harnesscore.YieldControl.
+YieldControl is the caller's handle to request cooperative preemption of a
+running harness. The caller creates it, passes it in harness.Config.Yield
+(the orchestrator wires its path into the harness env as HW_YIELD_FILE), and
+calls Request mid-run to make the next tool block.
+
+It is safe to construct before the run and call from another goroutine while
+the run is in flight (Request/Clear are single filesystem ops).
+
+It is an alias of harnesscore.YieldControl.
 
 #### `func NewYieldControl() (*YieldControl, error)`
-NewYieldControl calls harnesscore.NewYieldControl.
+NewYieldControl allocates a private yield file under a fresh temp dir. The
+caller owns the lifecycle and should Close it when the run is done.
+
+It forwards to harnesscore.NewYieldControl.
 
 ## Module: all (`pkg/harness/all`)
 
@@ -5794,94 +6376,348 @@ exactly as they always have.
 ### Exported Types & Functions
 
 #### `func BypassEnablingFlags(harness string) []string`
-BypassEnablingFlags calls wrapcore.BypassEnablingFlags.
+BypassEnablingFlags returns the harness argv flags that, when present at
+launch, leave the harness able to reach the bypass rung. Single source of
+truth for validatePermissionMode's contradiction check and pkg/chat's
+ring-length calculation.
+
+Only two such flags exist: claude's SkipPermissionsFlag and codex's
+--dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
+permission axis at all return nil.
+
+The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
+see BypassReachableFlags.
+
+It forwards to wrapcore.BypassEnablingFlags.
 
 #### `func BypassReachableFlags(harness string) []string`
-BypassReachableFlags calls wrapcore.BypassReachableFlags.
+BypassReachableFlags returns the harness argv flags that, when present at
+launch, leave bypass REACHABLE on the harness's own permission ring —
+whether or not the launch is already unrestricted. This is the wider of the
+two sets and the split matters: BypassEnablingFlags answers "is this launch
+already unrestricted" and feeds validatePermissionMode's contradiction
+check, while this one answers "can this session get to bypass at all" and
+feeds pkg/chat's ring-length calculation.
+
+For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
+unlocks the rung without selecting it. Codex has no separate unlock flag, so
+the two sets coincide there. The returned slice is freshly allocated; callers
+may mutate it.
+
+It forwards to wrapcore.BypassReachableFlags.
 
 #### `func EffectiveLaunchRung(harness string, args []string, mode string) string`
-EffectiveLaunchRung calls wrapcore.EffectiveLaunchRung.
+EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
+given the caller's argv and the Config.PermissionMode knob — i.e. it replays
+argsWithHarnessPermissionMode's suppression rule rather than trusting the
+knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
+extracts the VALUE from both "--permission-mode=x" and the separated
+"--permission-mode x" form and normalizes native spellings (acceptEdits ->
+ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
+
+A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
+itself reported as a definite bypass: it suppresses injection AND leaves the
+harness unrestricted, so there is nothing unknown about the result.
+
+Returns "" when argv carries a permission flag whose value cannot be resolved
+(a trailing flag with no operand, an unrecognized spelling), when only
+codex's -a axis is set (which suppresses injection but leaves the sandbox at
+the harness default), and when neither argv nor mode says anything. "" means
+UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
+answer.
+
+Passing ALREADY-INJECTED args is safe — the function is idempotent over
+argsWithHarnessPermissionMode, because injection self-suppresses: once the
+axis is in argv, argsContainAnyFlag short-circuits the second pass and the
+argv arm reads back the value that was injected. Formally,
+EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
+== EffectiveLaunchRung(h, args, mode).
+
+It forwards to wrapcore.EffectiveLaunchRung.
 
 #### `func HarnessArgs(cfg Config) ([]string, error)`
-HarnessArgs calls wrapcore.HarnessArgs.
+HarnessArgs validates cfg exactly as Start does and returns the argv Start
+would launch the harness with: cfg.Args with the Effort, Model and
+PermissionMode flags injected. It starts nothing. It is for a caller that
+runs the harness itself over another transport — pkg/chat's claude-code
+stream-json driver — and must honour the same knobs the same way. The I/O
+fields are not needed: Stdout defaults to io.Discard here.
+
+It forwards to wrapcore.HarnessArgs.
 
 #### `func IsBypassPermissionMode(mode string) bool`
-IsBypassPermissionMode calls wrapcore.IsBypassPermissionMode.
+IsBypassPermissionMode reports whether mode resolves to claude-code's
+bypassPermissions directive — the canonical rung "bypass" and its
+claude-native spelling "bypassPermissions", and NOTHING else.
+
+Three call sites, all of which need exactly this question:
+ 1. cmd/harness-wrapper.applySandboxDefaults — compose (env half only).
+ 2. cmd/harness-wrapper.parseHarnessWrapperArgs — the --sandbox-defaults
+    exclusion check, which is deliberately harness-INDEPENDENT.
+ 3. pkg/wrapper.validateConfig — the contradictory-argv rejection.
+
+codex's "danger-full-access" is deliberately NOT included even though it is
+codex's bypass-equivalent: call site 2 runs before the harness is known, so
+treating it as bypass would let `--sandbox-defaults --permission-mode
+danger-full-access codex --` slip past the exclusion check. codex's own
+bypass handling lives in isCodexBypassMode.
+
+It forwards to wrapcore.IsBypassPermissionMode.
 
 #### `func MorePermissive(a string, b string) bool`
-MorePermissive calls wrapcore.MorePermissive.
+MorePermissive reports whether rung a is strictly more permissive than b,
+by index in PermissionRungs.
+
+Unknown rungs are never more permissive (fail closed): an empty string, a
+native spelling ("acceptEdits", "danger-full-access") or a typo yields false
+for a, so a caller asking "may I stay where I am?" never gets a yes it did
+not earn. Note b being unknown ALSO yields false, so the answer is false
+whenever either side is not a canonical rung.
+
+It forwards to wrapcore.MorePermissive.
 
 #### `func PermissionRungs() []string`
-PermissionRungs calls wrapcore.PermissionRungs.
+PermissionRungs returns the canonical rungs, ordered least to most
+permissive — the same order the unexported consts are declared in.
+
+A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
+may sort, truncate or reverse the result without corrupting a later call.
+
+It forwards to wrapcore.PermissionRungs.
 
 #### `type Classification`
-Classification is wrapcore.Classification.
+Classification is a Classifier's verdict for a single ClassifierInput.
+
+It is an alias of wrapcore.Classification.
 
 #### `func ClassifyFinishedOutput(harness string, output string) Classification`
-ClassifyFinishedOutput calls wrapcore.ClassifyFinishedOutput.
+ClassifyFinishedOutput classifies the output of a harness that has ALREADY
+EXITED, applying the same classifier ClassifyOutput does and then a residual
+fallback for the signals the per-harness anchored matchers miss.
+
+It is the post-exit entry point. ClassifyOutput remains the plain one-shot:
+same classifier, no fallback, results unchanged for every caller. The split
+exists because the residual rows below are the broadest patterns in the
+library — `\bbilling\b`, `\bquota\b`, API-key variable names — and sharing
+them with the live polling dispatcher would let an agent that merely PRINTS
+such a word terminate its own quiet, healthy process. Post-exit there is no
+process left to terminate, so breadth costs a misclassification at worst.
+
+Order:
+ 1. The resolved classifier (custom override → per-harness adapter →
+    default), exactly as ClassifyOutput runs it.
+ 2. An actionable result is returned unchanged — including
+    StatusBinaryNotFound, which is a statement about the launch, not the
+    output.
+ 3. Only on ErrNone / ErrUnknown — "nothing actionable" — are the residual
+    rows consulted. A hit REPLACES the result rather than decorating it:
+    the rows are a different fingerprint of the same text, not a refinement
+    of a verdict the classifier did not reach.
+ 4. An ErrTransient result whose surrounding text names a timeout is
+    refined to ErrTimeout, which keeps a network timeout in its own class
+    (and its own backoff bucket downstream) instead of a generic 5xx.
+ 5. A rate-limited result with no wait hint gets one from a Retry-After
+    token anywhere in the output. The per-harness matchers only parse the
+    hint when it sits inside the message they anchored on; a CLI that
+    prints the header on its own line is the common case, and a caller
+    that has to scrape it itself is maintaining a harness-output pattern
+    outside the repository that owns them.
+
+Returns the classifier's own result when nothing matches, so a caller's
+exit-code fallback still applies.
+
+It forwards to wrapcore.ClassifyFinishedOutput.
 
 #### `func ClassifyOutput(harness string, output string) Classification`
-ClassifyOutput calls wrapcore.ClassifyOutput.
+ClassifyOutput runs the resolved per-harness classifier as a one-shot
+over a finished output blob (e.g. a log tail, or the recent-output buffer
+of an exited harness). Idle is forced on so the Cost/Retry/transport
+patterns are eligible; Quiet is left off so a trailing interactive prompt
+in a *dead* process's tail is not misreported as waiting_for_input.
+Returns the zero Classification when nothing matches.
+
+It is the post-hoc counterpart to the live polling the wrapper performs
+during a run — the single entry point external callers (e.g. loom's
+agenterr adapter) should use to classify captured output with the same
+patterns the wrapper applies internally.
+
+It forwards to wrapcore.ClassifyOutput.
 
 #### `type Classifier`
-Classifier is wrapcore.Classifier.
+Classifier inspects recent harness output and reports actionable
+status classifications. Implementations must be safe for concurrent
+use.
+
+Classifiers are stateless: the wrapper rebuilds ClassifierInput on
+each poll. Returning the same Classification across consecutive
+polls is fine; the wrapper de-duplicates emitted events.
+
+It is an alias of wrapcore.Classifier.
 
 #### `type ClassifierFunc`
-ClassifierFunc is wrapcore.ClassifierFunc.
+ClassifierFunc adapts a function to the Classifier interface.
+
+It is an alias of wrapcore.ClassifierFunc.
 
 #### `type ClassifierInput`
-ClassifierInput is wrapcore.ClassifierInput.
+ClassifierInput is the snapshot a Classifier inspects when deciding
+whether to escalate the wrapper's status. It is rebuilt each time
+the wrapper polls the classifier; classifiers are stateless.
+
+It is an alias of wrapcore.ClassifierInput.
 
 #### `type Config`
-Config is wrapcore.Config.
+Config configures a single Run.
+
+Fields with zero values get sensible defaults documented per-field.
+Construct Config using keyed struct literals; positional initialization
+is unsupported and will break across versions.
+
+It is an alias of wrapcore.Config.
 
 #### `type Containment`
-Containment is wrapcore.Containment.
+Containment requests an optional Landlock boundary around the harness child
+on Linux: an extra, kernel-enforced layer outside whatever the harness's own
+sandbox and permission settings enforce, which keep their meanings. A nil
+*Containment (the default everywhere) means no containment, and the
+uncontained launch path is exactly the one used without this feature.
+
+See pkg/containment for the fields and docs/md/guide/permissions.md for what
+the boundary covers and what it does not.
+
+It is an alias of wrapcore.Containment.
 
 #### `type ErrorClass`
-ErrorClass is wrapcore.ErrorClass.
+ErrorClass is the canonical, lifecycle-free taxonomy of harness-output
+errors. It is the *mechanism* half of the classification contract: the
+wrapper assigns it from harness output; downstream consumers (loomcli,
+the SDK) map it to their own *policy*. It is deliberately distinct from
+Status, which mixes runtime lifecycle (idle, waiting_for_input, stale)
+with error states.
+
+ErrorClass is additive public API consumed by multiple repos: new values
+may be appended, but existing values and their String() forms are stable.
+
+It is an alias of wrapcore.ErrorClass.
 
 #### `type Login`
-Login is wrapcore.Login.
+Login is a human-led sign-in in progress; see StartLogin.
+
+It is an alias of wrapcore.Login.
 
 #### `func StartLogin(ctx context.Context, cfg LoginConfig) (*Login, error)`
-StartLogin calls wrapcore.StartLogin.
+StartLogin starts the harness's own login command inside a contained
+launch whose login is kept in cfg.StateDir, for a person to complete:
+
+  - Prompt returns the sign-in page to open, and codex's one-time code.
+  - SubmitCode passes on the code claude's page shows after signing in.
+  - Wait reports whether the harness is signed in once the command has
+    ended. It runs the harness's own status command in the same StateDir to
+    decide.
+
+A login runs only the login and status commands its harness profile pins,
+so it works before the profile is activated for sessions. Neither command
+receives the harness's credential variables, and neither runs tools, so
+codex's bypass-rung requirement does not apply. Linux only, like every
+contained launch.
+
+It forwards to wrapcore.StartLogin.
 
 #### `type LoginConfig`
-LoginConfig is wrapcore.LoginConfig.
+LoginConfig configures a human-led sign-in; see StartLogin.
+
+It is an alias of wrapcore.LoginConfig.
 
 #### `type LoginPrompt`
-LoginPrompt is wrapcore.LoginPrompt.
+LoginPrompt is what the person signing in needs from the harness.
+
+It is an alias of wrapcore.LoginPrompt.
 
 #### `type LoginResult`
-LoginResult is wrapcore.LoginResult.
+LoginResult reports how a sign-in ended.
+
+It is an alias of wrapcore.LoginResult.
 
 #### `func LoginStatus(ctx context.Context, cfg LoginConfig) (LoginResult, error)`
-LoginStatus calls wrapcore.LoginStatus.
+LoginStatus runs the harness's own status command, contained, in
+cfg.StateDir, and reports whether the harness is signed in there. It starts
+no login, so cfg.Output is unused.
+
+It forwards to wrapcore.LoginStatus.
 
 #### `type QueueLimits`
-QueueLimits is wrapcore.QueueLimits.
+QueueLimits bounds an OnEvent queue: the events it holds at once, and their
+payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+
+It is an alias of wrapcore.QueueLimits.
 
 #### `type Result`
-Result is wrapcore.Result.
+Result describes the outcome of a Run.
+
+It is an alias of wrapcore.Result.
 
 #### `func Run(ctx context.Context, cfg Config) (Result, error)`
-Run calls wrapcore.Run.
+Run starts the configured harness under a pseudoterminal, supervises
+it until it exits or ctx is cancelled, and returns the normalized
+outcome. It is a blocking convenience wrapper around Start+Wait
+preserved for callers that don't need a live session handle.
+
+Errors are returned only when the wrapper itself fails to do its job
+(invalid configuration, missing binary, PTY allocation failure, IO
+errors on the master fd, a Classifier panic; see Session.Wait for the
+Result that comes with the last two). Harness-level outcomes — clean exit,
+non-zero exit, signal termination, idle classification — are always
+reported through the returned Result with a nil error.
+
+Context cancellation is handled by sending the harness a termination
+signal. The returned Result will have Status == StatusInterrupted;
+ctx.Err() is not propagated as the returned error.
+
+It forwards to wrapcore.Run.
 
 #### `type Session`
-Session is wrapcore.Session.
+Session is a live handle to a supervised harness process. Construct
+one with Start; retrieve the terminal outcome with Wait. Stop
+requests a graceful shutdown without forcing the caller to track
+context cancellation. Concurrent calls to Wait, Stop, Snapshot, and
+Events are safe.
+
+It is an alias of wrapcore.Session.
 
 #### `func Start(ctx context.Context, cfg Config) (*Session, error)`
-Start calls wrapcore.Start.
+Start launches the configured harness under a pseudoterminal and
+returns a live Session. Unlike Run, Start returns immediately; the
+caller observes lifecycle through Session.Events / Session.Snapshot
+and retrieves the final outcome via Session.Wait.
+
+Errors are returned only when the wrapper itself fails to start
+(invalid configuration, missing binary, PTY allocation failure).
+Once Start has returned a non-nil Session, every harness outcome
+flows through Wait with a nil error.
+
+It forwards to wrapcore.Start.
 
 #### `type SessionEvent`
-SessionEvent is wrapcore.SessionEvent.
+SessionEvent is a state transition observed by a Session. Events are
+delivered on Session.Events() in order. Mid-run classifications
+(waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
+Status events — under Config.KeepAliveOnClassification the terminal ones
+too, with Terminated false. The final event is always Terminated, after
+which the channel is closed.
+
+It is an alias of wrapcore.SessionEvent.
 
 #### `type Snapshot`
-Snapshot is wrapcore.Snapshot.
+Snapshot is the most recent state observation for a Session. Snapshot
+is safe to read concurrently with the session running; it always
+reflects a coherent point-in-time view.
+
+It is an alias of wrapcore.Snapshot.
 
 #### `type Status`
-Status is wrapcore.Status.
+Status is the normalized run status returned by the wrapper.
+
+It is an alias of wrapcore.Status.
 
 ## Module: trace (`pkg/wrapper/trace`)
 
@@ -5993,7 +6829,7 @@ under pkg/wrapper.
 
 ## Module: main (`test/mcpprobe`)
 
-A stdio MCP server for the real-harness conformance runs. It serves one tool, "probe", whose result carries the server's start nonce and the outcome of reading a forbidden file, so a contained harness that starts it shows its domain's denial from an MCP server's side.
+A stdio MCP server for the real-harness conformance runs. It serves one tool, "probe", whose result carries the server's start nonce and the outcome of reading a forbidden file (or no-target when none is given), so a contained harness that starts it shows its domain's denial from an MCP server's side.
 
 > mcpprobe is a stdio MCP server for the real-harness conformance runs. It
 serves one tool, "probe", whose result carries the nonce the server was
