@@ -56,6 +56,7 @@ func fakeFixture(t *testing.T, breaks string) Fixture {
 		},
 		Timeout: 10 * time.Second,
 		Quiet:   300 * time.Millisecond,
+		MCP:     true,
 	}
 }
 
@@ -149,6 +150,7 @@ var broken = map[string]struct{ rule, scenario string }{
 	"capability-past-minor":       {"describe.minor", "describe"},
 	"bg-tasks-unreported":         {"bg.tasks", "background"},
 	"bg-not-taken-up":             {"bg.reported", "background"},
+	"headers-file-unread":         {"headers.reach", "headers"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule
@@ -173,7 +175,7 @@ func TestBrokenAdaptersFail(t *testing.T) {
 				Run(r, Fixture{
 					Adapter: f.Adapter, HarnessRoot: f.HarnessRoot, Spec: f.Spec, Credential: f.Credential, Kill: f.Kill,
 					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: 3 * time.Second, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
-					Approve: f.Approve,
+					Approve: f.Approve, MCP: f.MCP,
 				})
 			}
 			if !ran {

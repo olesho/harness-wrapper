@@ -46,6 +46,11 @@
 // a crash. A Session saved in one environment is therefore loaded into another
 // by moving that directory to the new workspace's name: the relocation
 // Provision answers a request that loads with.
+//
+// As a Session opens, its harness connects to each http connector's MCP
+// server with one initialize request, carrying the connector's headers: a
+// header from a file (HTTPConnector.HeadersFile) is read from it then, and is
+// in no rendered file or open configuration.
 package fakeadapter
 
 import (
@@ -112,7 +117,7 @@ var Breaks = []string{
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
-	"ack-fails", "capability-past-minor", "bg-tasks-unreported", "bg-not-taken-up",
+	"ack-fails", "capability-past-minor", "bg-tasks-unreported", "bg-not-taken-up", "headers-file-unread",
 }
 
 // Adapter is the fake harness's adapter.
@@ -238,6 +243,9 @@ func (a *Adapter) Placeholder(req contract.PlaceholderRequest) (contract.Placeho
 type openConfig struct {
 	Binary string `json:"binary"`
 	Model  string `json:"model,omitempty"`
+	// MCP are the http connectors the harness connects to as a Session
+	// opens.
+	MCP []mcpServer `json:"mcp,omitempty"`
 }
 
 // BinaryPath is where Provision tells the fake harness's binary to be, under
@@ -297,7 +305,7 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 			files = append(files, contract.TextFile(contract.RootConfig, filepath.ToSlash(filepath.Join("memory", f.Path)), "0600", f.Content))
 		}
 	}
-	cfg, _ := json.Marshal(openConfig{Binary: BinaryPath(req.HarnessRoot), Model: req.Spec.Model})
+	cfg, _ := json.Marshal(openConfig{Binary: BinaryPath(req.HarnessRoot), Model: req.Spec.Model, MCP: mcpServers(req.Spec)})
 	return contract.ProvisionResult{
 		Files:              files,
 		OpenConfig:         cfg,

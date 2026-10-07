@@ -255,6 +255,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	state := s.stateLocked()
 	s.mu.Unlock()
 	go s.watchKill()
+	go s.connectMCP()
 	// A Session with an active goal goes back to work as it opens.
 	s.work()
 	return contract.OpenResult{SessionID: id, State: state}, nil
