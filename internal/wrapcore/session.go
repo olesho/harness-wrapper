@@ -2,6 +2,7 @@ package wrapcore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/creack/pty"
 	"github.com/olesho/harness-wrapper/internal/delivery"
@@ -731,8 +733,38 @@ func (s *Session) recordStatusChange(c classification, terminated bool) {
 	if s.onEvent != nil {
 		// Waits for room, unless a Stop comes first: the supervisor records
 		// these, and a stalled OnEvent must not keep it from stopping.
+		s.pushOnEvent(e)
+	}
+}
+
+// pushOnEvent queues e for OnEvent, waiting for room unless a Stop comes
+// first. An event over the queue's byte bound is not dropped: it is queued
+// again with its Reason cut to fit, as chat does with an oversized turn.
+func (s *Session) pushOnEvent(e SessionEvent) {
+	err := s.onEvent.Push(e, s.stopRequest)
+	if errors.Is(err, delivery.ErrTooLarge) {
+		e.Reason = truncateReason(e.Reason, s.onEvent.Stats().Limits.Bytes-sessionEventSize(SessionEvent{}))
 		_ = s.onEvent.Push(e, s.stopRequest)
 	}
+}
+
+// truncatedMark ends a Reason cut to fit OnEvent's byte bound.
+const truncatedMark = " …[truncated]"
+
+// truncateReason cuts reason to at most limit bytes, on a rune boundary,
+// ending it with truncatedMark.
+func truncateReason(reason string, limit int64) string {
+	if int64(len(reason)) <= limit {
+		return reason
+	}
+	keep := limit - int64(len(truncatedMark))
+	if keep <= 0 {
+		return ""
+	}
+	for keep > 0 && !utf8.RuneStart(reason[keep]) {
+		keep--
+	}
+	return reason[:keep] + truncatedMark
 }
 
 // emitEvent delivers e on Events(), dropping it if the channel buffer is
