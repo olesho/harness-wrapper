@@ -47,7 +47,6 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
-
 	// The built-in harnesses' classifier patterns: a TUI conversation's
 	// supervisor classifies its harness's output with them.
 	_ "github.com/olesho/harness-wrapper/pkg/wrapper"
