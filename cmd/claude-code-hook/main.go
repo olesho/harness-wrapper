@@ -6,6 +6,11 @@
 // them.
 //
 //	claude-code-hook claude <hook>
+//	claude-code-hook tui <hook>
+//
+// The second form is the Claude Code TUI profile's live hooks
+// (pkg/adapter/claudecodetui/live): what claude reports as it runs, written
+// for its transport, which drives claude's TUI.
 //
 // It exits 2 when the handler says to block the tool (its decision on
 // stdout), and 0 otherwise: a failure is reported on stderr and never blocks
@@ -18,6 +23,7 @@ import (
 	"os"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/pkg/adapter/claudecodetui/live"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/claude" // registers the "claude" hook profile
 	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
@@ -28,8 +34,8 @@ const maxPayload = 16 << 20
 func main() { os.Exit(run(os.Args[1:], os.Environ(), os.Stdin, os.Stdout, os.Stderr)) }
 
 func run(args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) != 2 || args[0] != harnessname.Claude {
-		_, _ = fmt.Fprintln(stderr, "usage: claude-code-hook claude <hook>")
+	if len(args) != 2 || args[0] != harnessname.Claude && args[0] != live.Harness {
+		_, _ = fmt.Fprintln(stderr, "usage: claude-code-hook claude|tui <hook>")
 		return 0
 	}
 	payload, err := io.ReadAll(io.LimitReader(stdin, maxPayload+1))
@@ -39,6 +45,12 @@ func run(args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if len(payload) > maxPayload {
 		_, _ = fmt.Fprintf(stderr, "claude-code-hook: payload over %d bytes, not recorded\n", maxPayload)
+		return 0
+	}
+	if args[0] == live.Harness {
+		if err := live.HandleHook(args[1], env, payload); err != nil {
+			_, _ = fmt.Fprintf(stderr, "claude-code-hook: %v\n", err)
+		}
 		return 0
 	}
 	out, err := harnesscore.HandleHookEvent(harnessname.Claude, args[1], env, payload)

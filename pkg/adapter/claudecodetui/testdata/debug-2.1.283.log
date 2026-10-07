@@ -1,0 +1,17 @@
+2026-10-07T15:28:34.001Z [DEBUG] [engine] send set_max_thinking_tokens max=null
+2026-10-07T15:28:34.001Z [DEBUG] [engine] send set_model model=claude-sonnet-5
+2026-10-07T15:28:38.945Z [DEBUG] [engine] yield system/init (first)
+2026-10-07T15:28:38.945Z [DEBUG] [engine] turn 1 start
+2026-10-07T15:28:39.967Z [DEBUG] [engine] turn 1 end (turns=1 usage in=10 out=5 cost=$0.0001 api=343ms stop=end_turn resultLen=6)
+2026-10-07T15:28:50.793Z [DEBUG] [engine] turn read waited 6ms for the previous turn's result
+2026-10-07T15:28:50.794Z [DEBUG] [engine] turn 2 start
+2026-10-07T15:28:50.827Z [ERROR] API error (attempt 1/3): 529 529 {"error":{"message":"mock overloaded_error 1/99","type":"overloaded_error"},"type":"error"}
+2026-10-07T15:28:50.840Z [ERROR] API error (attempt 1/3): 529 529 {"error":{"message":"mock overloaded_error 2/99","type":"overloaded_error"},"type":"error"}
+2026-10-07T15:28:51.402Z [ERROR] API error (attempt 2/3): 529 529 {"error":{"message":"mock overloaded_error 3/99","type":"overloaded_error"},"type":"error"}
+2026-10-07T15:28:52.601Z [ERROR] API error (attempt 3/3): 529 529 {"error":{"message":"mock overloaded_error 4/99","type":"overloaded_error"},"type":"error"}
+2026-10-07T15:28:52.610Z [DEBUG] [engine] turn 2 end (turns=1 usage in=10 out=5 cost=$0.0001 api=343ms stop=stop_sequence resultLen=0)
+2026-10-07T15:28:52.611Z [ERROR] [engine] turn ended in error: API Error: 529 mock overloaded_error 4/99. This is a server-side issue, usually temporary — try again in a moment. If it persists, check your inference gateway (127.0.0.1:52249).
+2026-10-07T15:29:02.919Z [DEBUG] [engine] turn 3 start
+2026-10-07T15:29:02.985Z [ERROR] API error (attempt 1/3): 429 429 {"error":{"message":"mock usage limit","type":"rate_limit_error"},"type":"error"}
+2026-10-07T15:29:03.002Z [DEBUG] [engine] turn 3 end (turns=1 usage in=10 out=5 cost=$0.0001 api=343ms stop=stop_sequence resultLen=0)
+2026-10-07T15:29:03.002Z [ERROR] [engine] turn ended in error: You've hit your session limit · resets 7:29pm (Europe/Istanbul)
