@@ -74,9 +74,14 @@ type transport struct {
 	stdin       io.WriteCloser
 	stdinClosed bool
 
-	rmu     sync.Mutex
+	cmu     sync.Mutex // guards the calls awaiting an answer
 	seq     int
 	waiting map[string]chan rpcResult
+
+	// rmu serializes reports: a change that reports holds it from the change
+	// to the report, so events reach the Session in the order they happened,
+	// from one goroutine at a time.
+	rmu sync.Mutex
 
 	mu        sync.Mutex
 	turn      *turnState // the input pi is on, nil when none
@@ -413,10 +418,10 @@ func readBoundedLine(r *bufio.Reader, max int) ([]byte, error) {
 func (t *transport) onLine(l *line) {
 	switch l.Type {
 	case "response":
-		t.rmu.Lock()
+		t.cmu.Lock()
 		ch := t.waiting[l.ID]
 		delete(t.waiting, l.ID)
-		t.rmu.Unlock()
+		t.cmu.Unlock()
 		if ch != nil {
 			ch <- rpcResult{resp: l.rpcResponse}
 		}
@@ -433,6 +438,8 @@ func (t *transport) onLine(l *line) {
 		}
 		t.mu.Unlock()
 	case "auto_retry_start":
+		t.rmu.Lock()
+		defer t.rmu.Unlock()
 		t.mu.Lock()
 		ts := t.turn
 		t.mu.Unlock()
@@ -462,6 +469,13 @@ func (t *transport) onLine(l *line) {
 
 // started reports the turn of the input pi is on as begun, once.
 func (t *transport) started() {
+	t.rmu.Lock()
+	defer t.rmu.Unlock()
+	t.startedLocked()
+}
+
+// startedLocked is started, its caller holding rmu.
+func (t *transport) startedLocked() {
 	t.mu.Lock()
 	ts := t.turn
 	first := ts != nil && !ts.started
@@ -477,7 +491,9 @@ func (t *transport) started() {
 // settled ends the turn of the input pi is on: pi has nothing more to do for
 // it. Its outcome is the run's last assistant message.
 func (t *transport) settled() {
-	t.started()
+	t.rmu.Lock()
+	defer t.rmu.Unlock()
+	t.startedLocked()
 	t.mu.Lock()
 	ts := t.turn
 	t.turn = nil
@@ -535,12 +551,12 @@ func (t *transport) wait() {
 	t.stdinClosed = true
 	_ = t.stdin.Close()
 	t.wmu.Unlock()
-	t.rmu.Lock()
+	t.cmu.Lock()
 	for id, ch := range t.waiting {
 		ch <- rpcResult{err: errExited}
 		delete(t.waiting, id)
 	}
-	t.rmu.Unlock()
+	t.cmu.Unlock()
 
 	exit := contract.SessionExitedData{Class: contract.ExitCrashed}
 	var code int
@@ -568,7 +584,9 @@ func (t *transport) wait() {
 	if exit.Detail == "" && err != nil && sig == "" && code != 0 {
 		exit.Detail = err.Error()
 	}
+	t.rmu.Lock()
 	t.report(adapter.Event{Kind: adapter.Exited, Exit: exit})
+	t.rmu.Unlock()
 	close(t.exited)
 }
 
@@ -594,26 +612,26 @@ func (t *transport) write(v any) error {
 
 // call sends a command and waits for pi's answer.
 func (t *transport) call(ctx context.Context, cmd map[string]any) (rpcResponse, error) {
-	t.rmu.Lock()
+	t.cmu.Lock()
 	t.seq++
 	id := "hw" + strconv.Itoa(t.seq)
 	ch := make(chan rpcResult, 1)
 	t.waiting[id] = ch
-	t.rmu.Unlock()
+	t.cmu.Unlock()
 	cmd["id"] = id
 	if err := t.write(cmd); err != nil {
-		t.rmu.Lock()
+		t.cmu.Lock()
 		delete(t.waiting, id)
-		t.rmu.Unlock()
+		t.cmu.Unlock()
 		return rpcResponse{}, err
 	}
 	select {
 	case r := <-ch:
 		return r.resp, r.err
 	case <-ctx.Done():
-		t.rmu.Lock()
+		t.cmu.Lock()
 		delete(t.waiting, id)
-		t.rmu.Unlock()
+		t.cmu.Unlock()
 		return rpcResponse{}, ctx.Err()
 	case <-t.exited:
 		return rpcResponse{}, errExited
