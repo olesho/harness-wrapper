@@ -146,6 +146,10 @@ of one ends nothing of the rest, and a record handle on one may be open while th
   `load.sources`, it names nothing the adapter has not run, and it is run again whenever the pin
   moves. `contract.CheckSessions` holds the form; `Descriptor.Sessions` is the number, 1 without the
   capability.
+- The limit is the **runtime's to keep**. An adapter does not count an agent's Sessions and need not
+  refuse one past `Descriptor.Sessions`; what it does there is unspecified, and the conformance kit
+  never opens more than the limit. The only refusal an adapter owes is per Session:
+  `open_failed`/`session_in_use` while another Host holds the same Session.
 - An adapter without the capability has one Session of an agent open at a time.
 
 The kit's `concurrent-*` scenarios hold the rules, with as many Sessions as the Descriptor allows

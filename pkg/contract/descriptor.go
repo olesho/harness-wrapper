@@ -156,6 +156,10 @@ const (
 	// inputs, turn, record, observations and checkpoint; what one does
 	// reaches no other; and a record handle on one may be open while others
 	// run. Without it, one Session of an agent is open at a time.
+	//
+	// The limit is the runtime's to keep (Descriptor.Sessions): an adapter
+	// need not refuse a Session past it, and what it does there is
+	// unspecified and untested.
 	CapConcurrentSessions Capability = "concurrent_sessions"
 )
 
@@ -287,11 +291,17 @@ type Limits struct {
 	// (capability concurrent_sessions), at least 2: the most the adapter's
 	// concurrency conformance has passed with the real harness at the version
 	// it pins — never a number it has not run. 0 without the capability.
+	//
+	// It states what has been verified, not a limit the adapter enforces: the
+	// runtime (Host or Supervisor) must not have more of an agent's Sessions
+	// open than Descriptor.Sessions, and an adapter's behavior past it is
+	// unspecified.
 	MaxSessions int `json:"max_sessions,omitempty"`
 }
 
 // Sessions is how many Sessions of one agent may be open at once:
-// Limits.MaxSessions with capability concurrent_sessions, 1 without.
+// Limits.MaxSessions with capability concurrent_sessions, 1 without. A runtime
+// counts an agent's open Sessions against it; adapters do not enforce it.
 func (d Descriptor) Sessions() int {
 	if d.Has(CapConcurrentSessions) && d.Limits.MaxSessions > 1 {
 		return d.Limits.MaxSessions

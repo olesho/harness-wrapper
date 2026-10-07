@@ -110,6 +110,8 @@ Not guaranteed:
 ## Consequences
 
 - A runtime counts an agent's open Sessions against `Descriptor.Sessions()` and its own capacity.
+  Adapters do not enforce the limit: past it their behavior is unspecified and untested, since
+  `MaxSessions` states what has been verified rather than a ceiling (made explicit 2026-10-07).
 - Each Session is a harness process: a busy one peaked near 500 MiB with Claude Code and 380 MiB
   with Codex in the probe, so a runtime sizes its capacity by memory.
 - `MaxSessions` is re-run, not carried, when a pin moves.
