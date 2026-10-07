@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.283",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "A turn that runs a subagent: the model calls the Agent tool (run_in_background false) and the subagent runs `sleep 30` in Bash. claude backgrounds the agent anyway (\"Backgrounded agent\"), answers the tool call, then holds the turn on \"✻ Waiting for 1 background agent to finish\" with no \"esc to interrupt\" in the footer, while the agent's row (\"◯ general-purpose  mock … Ns · ↓ N tokens\") is painted BELOW the composer box; once the agent's \u003ctask-notification\u003e arrives it answers again and ends the turn. Recorded with `HW_RECORD_SUBAGENT=1 go test ./pkg/chat -run RecordSubAgent` (internal/chatcore/subagent_record_test.go): the real claude against internal/mockapi, in /tmp/hw-rebake/subagent-tool with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, bypassPermissions) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-10-07T09:34:59.209133Z",
+ "rows": 40
+}
