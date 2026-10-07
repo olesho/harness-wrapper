@@ -78,7 +78,13 @@ func answer(req request, nonce, forbidden string) (any, bool) {
 	return nil, false
 }
 
+// probe reports the nonce and the outcome of reading forbidden: read-allowed,
+// read-denied with the error, or no-target when no -forbidden was given and
+// nothing was tried.
 func probe(nonce, forbidden string) string {
+	if forbidden == "" {
+		return fmt.Sprintf("nonce=%s no-target", nonce)
+	}
 	outcome := "read-allowed"
 	if _, err := os.ReadFile(forbidden); err != nil {
 		outcome = "read-denied: " + err.Error()
