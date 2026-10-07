@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,11 @@ type session struct {
 	auto      *autoTurn
 	autoEnded map[string]contract.InterruptOutcome
 	rest      bool
+	// background is the work the harness runs in the background
+	// (background_turns); taken, the work that ended, each awaiting the
+	// turn of the harness's own that takes its result up.
+	background []contract.BackgroundTask
+	taken      []contract.BackgroundTask
 	// heard is the conversation the model was last given.
 	heard []string
 	// loadedAt is, for a loaded Session, where its record ended when it
@@ -75,9 +81,12 @@ type turn struct {
 	answer    chan string
 }
 
-// autoTurn is a turn the harness started by itself, for its goal.
+// autoTurn is a turn the harness started by itself: for its goal, or to take
+// up the result of work it ran in the background.
 type autoTurn struct {
-	id        string // its turn id
+	id string // its turn id
+	// bg is the background work the turn takes up; nil for a goal's turn.
+	bg        *contract.BackgroundTask
 	interrupt chan struct{}
 	intOnce   sync.Once
 	done      chan struct{} // closed once it ended
@@ -276,6 +285,8 @@ func (s *session) exit(class contract.ExitClass, detail string) {
 	s.turn = nil
 	at := s.auto
 	s.auto = nil
+	// The background work dies with the harness.
+	s.background, s.taken = nil, nil
 	s.counter++
 	key := fmt.Sprintf("%d.%d", s.proc, s.counter)
 	dir := s.store.dir
@@ -308,6 +319,7 @@ func (s *session) stateLocked() contract.State {
 	case s.auto != nil:
 		st.TurnID = s.auto.id
 	}
+	st.Background = slices.Clone(s.background)
 	return st
 }
 
@@ -337,7 +349,7 @@ func (s *session) Send(ctx context.Context, in contract.Input) (contract.SendRes
 		s.work()
 	}()
 	s.mu.Lock()
-	for s.auto != nil && s.turn == nil && s.phase == contract.PhaseBusy && !s.closing && !s.adapter.breaks("auto-send-busy") {
+	for s.auto != nil && s.auto.bg == nil && s.turn == nil && s.phase == contract.PhaseBusy && !s.closing && !s.adapter.breaks("auto-send-busy") {
 		// The harness is on a turn of its own: the input stops it, and the
 		// input's turn follows.
 		at := s.auto
@@ -588,6 +600,9 @@ func (s *session) run(t *turn) {
 		}
 	case "CRASH":
 		s.killOnce.Do(func() { close(s.kill) })
+	case "BG":
+		s.startBackground(arg)
+		reply("BG STARTED")
 	case "MKGOAL":
 		s.mu.Lock()
 		st := s.store
@@ -645,7 +660,23 @@ func (s *session) hear() {
 // input being sent comes first.
 func (s *session) work() {
 	s.mu.Lock()
-	if s.phase != contract.PhaseIdle || s.turn != nil || s.auto != nil || s.rest || s.closing || s.sending != nil {
+	if s.phase != contract.PhaseIdle || s.turn != nil || s.auto != nil || s.closing || s.sending != nil {
+		s.mu.Unlock()
+		return
+	}
+	if len(s.taken) > 0 {
+		// Background work ended: a turn takes its result up, whatever
+		// stopped a turn of the harness's own before.
+		bg := s.taken[0]
+		s.taken = s.taken[1:]
+		at := &autoTurn{id: "a_" + bg.ID, bg: &bg, interrupt: make(chan struct{}), done: make(chan struct{})}
+		s.auto = at
+		s.phase = contract.PhaseBusy
+		s.mu.Unlock()
+		go s.runBackgroundTurn(at)
+		return
+	}
+	if s.rest {
 		s.mu.Unlock()
 		return
 	}
@@ -751,17 +782,96 @@ func (s *session) endAuto(at *autoTurn, outcome contract.TurnOutcome, text strin
 	at.outcome = contract.InterruptTooLate
 	if outcome == contract.TurnInterrupted {
 		at.outcome = contract.InterruptStopped
-		if !at.preempted && !s.adapter.breaks("auto-restarts") {
+		if !at.preempted && at.bg == nil && !s.adapter.breaks("auto-restarts") {
 			s.rest = true
 		}
 	}
 	s.autoEnded[at.id] = at.outcome
-	again := outcome == contract.TurnCompleted || !at.preempted && s.adapter.breaks("auto-restarts")
+	again := outcome == contract.TurnCompleted || at.bg != nil || !at.preempted && s.adapter.breaks("auto-restarts")
 	s.mu.Unlock()
 	at.finish()
 	if again {
 		s.work()
 	}
+}
+
+// startBackground starts command in the background: it runs for a few ticks,
+// past the turn that started it, and once it ends the harness takes its
+// result up in a turn of its own (background_turns).
+func (s *session) startBackground(command string) {
+	task := contract.BackgroundTask{ID: "bg" + randomHex(6), Kind: contract.BackgroundCommand, Description: truncateDescription(command)}
+	s.mu.Lock()
+	s.background = append(s.background, task)
+	tasks := slices.Clone(s.background)
+	s.mu.Unlock()
+	s.reportBackground(tasks)
+	go s.runBackground(task)
+}
+
+// truncateDescription cuts a task's description to 200 bytes.
+func truncateDescription(d string) string {
+	if len(d) > 200 {
+		return d[:200]
+	}
+	return d
+}
+
+// reportBackground reports the work running in the background now. It names
+// no input or turn: the work outlives the turn that started it.
+func (s *session) reportBackground(tasks []contract.BackgroundTask) {
+	if s.adapter.breaks("bg-tasks-unreported") {
+		return
+	}
+	if tasks == nil {
+		tasks = []contract.BackgroundTask{}
+	}
+	s.live(contract.KindBackgroundTasks, s.liveKey(), "", contract.BackgroundTasksData{Tasks: tasks})
+}
+
+// runBackground is the background work itself: it ends after a few ticks,
+// unless the harness exits first, and its result waits for a turn.
+func (s *session) runBackground(task contract.BackgroundTask) {
+	select {
+	case <-time.After(5 * s.adapter.opts.Tick):
+	case <-s.exited:
+		return
+	}
+	s.mu.Lock()
+	if s.phase == contract.PhaseExited {
+		s.mu.Unlock()
+		return
+	}
+	s.background = slices.DeleteFunc(s.background, func(t contract.BackgroundTask) bool { return t.ID == task.ID })
+	if !s.adapter.breaks("bg-not-taken-up") {
+		s.taken = append(s.taken, task)
+	}
+	tasks := slices.Clone(s.background)
+	s.mu.Unlock()
+	s.reportBackground(tasks)
+	s.work()
+}
+
+// runBackgroundTurn is the fake harness taking up background work's result
+// in a turn of its own. An input sent meanwhile is refused busy, as during
+// an input's turn; an interrupt naming the turn stops it.
+func (s *session) runBackgroundTurn(at *autoTurn) {
+	s.cursor.push(item{obs: s.autoObs(at, contract.KindTurnStarted, at.id, contract.OriginLive, struct{}{})})
+	select {
+	case <-at.interrupt:
+		s.endAuto(at, contract.TurnInterrupted, "", true)
+		return
+	case <-time.After(s.adapter.opts.Tick):
+	}
+	text := "BG DONE: ran " + at.bg.Description
+	msg := "m-" + at.id
+	o := s.autoObs(at, contract.KindAssistantText, msg+".0", contract.OriginRecord, contract.AssistantTextData{MessageID: msg, Text: text})
+	s.mu.Lock()
+	st := s.store
+	s.mu.Unlock()
+	if end, err := st.appendRecord(o); err == nil {
+		s.cursor.push(item{obs: o, end: end})
+	}
+	s.endAuto(at, contract.TurnCompleted, text, true)
 }
 
 // pause waits d, and reports whether the turn was interrupted meanwhile.
@@ -882,9 +992,9 @@ func (s *session) end(t *turn, outcome contract.TurnOutcome, text string, terr *
 	case t.outcome <- intOutcome:
 	default:
 	}
-	if outcome == contract.TurnCompleted {
-		s.work()
-	}
+	// Background work that ended meanwhile is taken up however the turn
+	// ended; the goal, only once it completed (work reads rest).
+	s.work()
 }
 
 // afterSend waits for an outstanding Send's result: an Interrupt or Answer

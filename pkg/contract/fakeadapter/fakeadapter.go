@@ -27,6 +27,11 @@
 //	GOAL <n> <k>   a goal's objective: each of the first <n> turns the harness
 //	               starts for it works <k> ticks and replies "goal step <i>";
 //	               the next one completes the goal, and the harness rests
+//	BG <command>   run <command> in the background, and reply "BG STARTED".
+//	               The work outlives the turn: reported running and then
+//	               ended (background_tasks), after which the harness starts
+//	               a turn of its own that takes its result up, replying
+//	               "BG DONE: ran <command>"
 //	anything else  reply "ok"
 //
 // A turn the harness started itself is stopped by an input — it ends
@@ -107,7 +112,7 @@ var Breaks = []string{
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
-	"ack-fails", "capability-past-minor",
+	"ack-fails", "capability-past-minor", "bg-tasks-unreported", "bg-not-taken-up",
 }
 
 // Adapter is the fake harness's adapter.
@@ -178,6 +183,7 @@ func (a *Adapter) capabilities() []contract.Capability {
 	caps := []contract.Capability{
 		contract.CapResume, contract.CapAssignSessionID, contract.CapPrompts, contract.CapStreamingText,
 		contract.CapToolsObserved, contract.CapRetryVisible, contract.CapSessionLoad, contract.CapAutonomousTurns,
+		contract.CapBackgroundTurns,
 	}
 	if !a.breaks("egress-without-capability") {
 		caps = append(caps, contract.CapBrokeredCredentials)
