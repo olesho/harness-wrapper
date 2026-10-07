@@ -26,8 +26,8 @@ jobs:
       CLAUDE_VERSION: "2.1.283"
       CLAUDE_SHA256: "1859583ce32920595c61ef868bee52e1b1594f7486db209935e01f1e5e804ae2"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -57,8 +57,8 @@ jobs:
       CODEX_VERSION: "0.160.0"
       CODEX_SHA256: "37a41d61c3399182b8c727b77090cc7a1566bd849d0f09070a0bbc6fec4c58dc"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -91,8 +91,8 @@ jobs:
       PI_VERSION: "1.0.4"
       PI_SHA256: "284c45dd28cf975a13cff6af34741dd0a0cdca6634e8bdfc0083ae7d452e86d6"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 

@@ -55,14 +55,14 @@ jobs:
             append: "lsm=lockdown,yama,integrity,apparmor"
           - { cell: seccomp-blocked, kernel: "7.1.13", go: stable, cgo: "1", mode: expect-unavailable, wrap: seccomp }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - if: matrix.go == 'floor'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - if: matrix.go == 'stable'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
 
@@ -92,7 +92,7 @@ jobs:
 
       # Caches the .deb files only; fetch-kernel.sh re-verifies them every run.
       - name: Restore kernel packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/kernel-debs
           key: kernel-debs-amd64-${{ matrix.kernel }}-${{ hashFiles('ci/landlock/kernels.json') }}
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: landlock-${{ matrix.cell }}-go-${{ matrix.go }}-cgo${{ matrix.cgo }}
           path: out/
@@ -183,8 +183,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -213,7 +213,7 @@ jobs:
           echo "$RUNNER_TEMP/vng/bin" >> "$GITHUB_PATH"
 
       - name: Restore kernel packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/kernel-debs
           key: kernel-debs-amd64-7.1.13-${{ hashFiles('ci/landlock/kernels.json') }}
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: landlock-harness-smoke
           path: out/
@@ -287,8 +287,8 @@ jobs:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: "Concurrent-spawn stress (cgo on: C threads open descriptors too)"
@@ -311,8 +311,8 @@ jobs:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Install the socket layer
@@ -335,10 +335,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Previous release
