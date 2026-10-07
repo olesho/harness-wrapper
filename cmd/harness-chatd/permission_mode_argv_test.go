@@ -378,7 +378,9 @@ exec %q "$@"
 // HTTP response.
 func readShimRecord(t *testing.T, path string) string {
 	t.Helper()
-	for i := 0; i < 400; i++ {
+	// Generous: the shim runs within milliseconds normally, but under a full
+	// parallel `veracity ci` (coverage on) an 8 s budget was seen to expire.
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		if raw, err := os.ReadFile(path); err == nil && bytes.Contains(raw, []byte("IS_SANDBOX=")) {
 			return string(raw)
 		}
