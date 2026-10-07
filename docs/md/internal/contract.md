@@ -33,7 +33,10 @@ login the runtime **keeps** itself and lends behind that broker (`login_keeper`,
   harness it also calls `Placeholder`.
 - The **Host** opens Sessions (`NewSession`, then `Open`) and record handles (`OpenRecord`), feeds a
   Session one input at a time, and acknowledges each batch of observations only after the
-  Supervisor has committed it.
+  Supervisor has committed it. An `Open` whose context the Host cancels, or whose deadline passes,
+  fails `open_failed` with **no reason** (`contract.OpenAbandoned`, message `abandoned: …`): nothing
+  about the harness or the config failed, and the Host, which owns the context, knows which it was.
+  It then calls `Close`.
 
 A profile registers its adapter under its harness's name in `init`; a runtime links the harnesses it
 offers through one file of blank imports and finds them with `contract.Lookup`.

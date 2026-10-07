@@ -101,6 +101,13 @@ func (OpenFailure) Values() []string {
 	}
 }
 
+// OpenAbandoned is the error of an Open whose ctx ended (cause is ctx.Err()):
+// CodeOpenFailed with no Reason, because nothing about the harness or the
+// config failed — the caller abandoned it, and knows why.
+func OpenAbandoned(cause error) *Error {
+	return &Error{Code: CodeOpenFailed, Message: "abandoned: " + cause.Error()}
+}
+
 // Error is every error the interface returns.
 type Error struct {
 	Code Code `json:"code"`

@@ -45,8 +45,10 @@ type Adapter interface {
 // Send, and Interrupt and Answer are ordered after its result.
 type Session interface {
 	// Open starts the Session fresh or reopens it: unopened → starting →
-	// idle, blocked or exited. Cancelling ctx abandons the open; the Host then
-	// calls Close.
+	// idle, blocked or exited. Cancelling ctx abandons the open: Open fails
+	// CodeOpenFailed with no Reason (OpenAbandoned), since the caller, which
+	// owns ctx, knows whether it cancelled or timed out; the Host then calls
+	// Close.
 	Open(ctx context.Context) (OpenResult, error)
 	// Send submits one input. An error is an *Error carrying a Certainty. A
 	// turn the harness started itself (capability autonomous_turns) is

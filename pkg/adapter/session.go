@@ -154,7 +154,14 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 			return contract.OpenResult{}, contract.Errorf(contract.CodeClosed, "closed while opening")
 		}
 		var ce *contract.Error
-		if !errors.As(err, &ce) {
+		switch {
+		case errors.As(err, &ce):
+		case ctx.Err() != nil:
+			// The caller abandoned the open: its ctx was cancelled or hit its
+			// deadline. That says nothing about the config, so no reason is
+			// claimed; the caller owns ctx and knows which it was.
+			err = contract.OpenAbandoned(ctx.Err())
+		default:
 			err = &contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenConfigInvalid, Message: err.Error()}
 		}
 		return contract.OpenResult{}, err

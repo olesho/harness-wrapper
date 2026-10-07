@@ -173,7 +173,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 		select {
 		case <-time.After(d):
 		case <-ctx.Done():
-			return fail(ctx.Err())
+			return fail(contract.OpenAbandoned(ctx.Err()))
 		case <-s.closed:
 			return fail(&contract.Error{Code: contract.CodeClosed})
 		}
@@ -226,7 +226,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	}
 	select {
 	case <-ctx.Done():
-		return fail(ctx.Err())
+		return fail(contract.OpenAbandoned(ctx.Err()))
 	case <-s.closed:
 		return fail(&contract.Error{Code: contract.CodeClosed})
 	default:
