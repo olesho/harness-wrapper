@@ -80,9 +80,17 @@ func TestDecodeEntry(t *testing.T) {
 			continue
 		}
 		g := *got
-		g.UUID, g.MessageID = "", ""
+		g.UUID, g.MessageID, g.PromptID = "", "", ""
 		if g != c.want {
 			t.Errorf("entry %s = %+v, want %+v", c.uuid, g, c.want)
+		}
+	}
+	if e := byUUID["836c3ebb"]; e == nil || e.PromptID == "" {
+		t.Errorf("the prompt's entry carries no prompt id: %+v", e)
+	}
+	for _, id := range []string{"624ab4b2", "7f5987c5", "543c389a"} {
+		if e := byUUID[id]; e != nil && e.PromptID != "" {
+			t.Errorf("entry %s, which holds no prompt, has prompt id %q", id, e.PromptID)
 		}
 	}
 	if e := byUUID["624ab4b2"]; e != nil && !strings.HasPrefix(e.MessageID, "msg_") {

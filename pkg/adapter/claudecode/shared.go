@@ -1,0 +1,39 @@
+package claudecode
+
+import (
+	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/contract"
+)
+
+// What the Claude Code profiles share. A profile that runs claude another way
+// — the TUI hybrid (pkg/adapter/claudecodetui) — renders claude's
+// configuration with ProvisionWith, launches claude from the same
+// open_config, reads the same record with NewRecord, and classifies claude's
+// failures with TurnError; each of them is this profile's own, so the two
+// cannot drift apart.
+
+// OpenConfig is the open_config Provision renders: claude's binary, arguments,
+// environment, working directory and the agent's hook spool root.
+type OpenConfig = openConfig
+
+// ParseOpenConfig reads an open_config Provision rendered.
+func ParseOpenConfig(raw []byte) (OpenConfig, error) { return parseOpenConfig(raw) }
+
+// SessionSpool is the hook spool of Session id under the spool root: the one
+// the Session's claude process writes, and its record reads.
+func SessionSpool(root, id string) string { return sessionSpool(root, id) }
+
+// SessionArgs are the arguments that name the session claude runs: a fresh
+// one under its id, or the one it resumes.
+func SessionArgs(mode contract.OpenMode, id string, cfg OpenConfig) []string {
+	return sessionArgs(mode, id, cfg)
+}
+
+// TurnError is the contract's account of a model call claude reported failed:
+// its error tag (an API-error entry's, or StopFailure's error), the HTTP
+// status when known, and claude's text, which tells a usage wall and when it
+// resets. rejected says the account's usage limit refused the call.
+func TurnError(tag string, status int, text string, rejected bool, now time.Time) *contract.TurnError {
+	return failure{tag: tag, status: status, text: text, rejected: rejected}.turnError(now)
+}

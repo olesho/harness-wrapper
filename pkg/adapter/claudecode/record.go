@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,6 +38,12 @@ type reader struct {
 	// spool is the Session's own hook spool; "" for an id that names none.
 	spool   string
 	markers *adapter.Markers
+	// native is the native id of the input a user entry holds (RecordOptions).
+	native func(e *claudecode.Entry) string
+	// lag is RecordOptions.PromptLag; held is when the reader began holding
+	// back a reply that belongs to no turn.
+	lag     time.Duration
+	held    time.Time
 	f       *transcript.Follower
 	rescan  *contract.Rescan
 	cur     recordState // at the committed position
@@ -70,11 +77,36 @@ func checkpointOf(cp transcript.Checkpoint) *contract.Checkpoint {
 // Record opens the reader of a Session's record. A checkpoint it cannot read
 // makes it read from the start, reporting a rescan.
 func (Profile) Record(src adapter.RecordSource) (adapter.Reader, error) {
+	return NewRecord(src, RecordOptions{})
+}
+
+// RecordOptions are how a Claude Code profile's record differs from this
+// one's.
+type RecordOptions struct {
+	// Native is the native id of the input a user entry holds, "" for an
+	// entry that holds none; nil means the entry's uuid, which is the input's
+	// native id in the stream-json transport's record.
+	Native func(e *claudecode.Entry) string
+	// PromptLag, when set, says claude may write a turn's reply to its
+	// transcript before the prompt (claude's TUI does, on a session's first
+	// turn, claude 2.1.283): the record takes each read's entries in the
+	// order of their timestamps, and holds back a reply that belongs to no
+	// turn for up to PromptLag, for its prompt to be written.
+	PromptLag time.Duration
+}
+
+// NewRecord opens the reader of a Session's record, as Record does, with
+// opts: the record of any profile that runs claude with this profile's
+// configuration, transcript and hook spool.
+func NewRecord(src adapter.RecordSource, opts RecordOptions) (adapter.Reader, error) {
 	cfg, err := parseOpenConfig(src.OpenConfig)
 	if err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
-	r := &reader{session: src.SessionID, cfg: cfg, markers: src.Markers}
+	r := &reader{session: src.SessionID, cfg: cfg, markers: src.Markers, native: opts.Native, lag: opts.PromptLag}
+	if r.native == nil {
+		r.native = func(e *claudecode.Entry) string { return e.UUID }
+	}
 	if sessionid.IsUUID(src.SessionID) {
 		r.spool = sessionSpool(cfg.Spool, src.SessionID)
 	}
@@ -150,6 +182,20 @@ func (r *reader) Read(_ context.Context, maxBytes int) (adapter.Chunk, error) {
 		return adapter.Chunk{}, err
 	default:
 		ch.Items, tok.after = r.items(b.Events, r.cur)
+		if stray := strays(ch.Items); r.lag > 0 && len(stray) > 0 {
+			// The prompt may be on disk past the read's bound: read on,
+			// beyond it, for the prompt, and let the Session refuse a batch
+			// the bound cannot hold.
+			r.f.MaxBatchBytes = max(r.f.MaxBatchBytes, laggedBatchBytes)
+			if more, err := r.f.Poll(); err == nil && more.From == b.From {
+				if items, after := r.items(more.Events, r.cur); !anyOf(strays(items), stray) {
+					b, ch.Items, tok.after = more, items, after
+				}
+			}
+		}
+		if r.holdBack(ch.Items) {
+			return adapter.Chunk{}, nil
+		}
 		for _, se := range b.Errors {
 			ch.Faults = append(ch.Faults, contract.Fault{Kind: "unreadable_entry", Detail: capText(se.Error(), 1024)})
 		}
@@ -316,17 +362,86 @@ func runs(events []transcript.FollowedEvent) []entryRun {
 	return out
 }
 
+// ordered is runs(events), in the order of their entries' timestamps when
+// claude may write a prompt after its reply (RecordOptions.PromptLag); an
+// entry without a timestamp keeps its place after the one before it.
+func (r *reader) ordered(events []transcript.FollowedEvent) []entryRun {
+	rs := runs(events)
+	if r.lag <= 0 {
+		return rs
+	}
+	at := make(map[*claudecode.Entry]time.Time, len(rs))
+	var last time.Time
+	for _, run := range rs {
+		if ts := run.events[0].Event.Timestamp; !ts.IsZero() {
+			last = ts
+		}
+		at[run.entry] = last
+	}
+	sort.SliceStable(rs, func(i, j int) bool { return at[rs[i].entry].Before(at[rs[j].entry]) })
+	return rs
+}
+
+// holdBack reports whether a read's items must wait: one is a reply that
+// belongs to no turn, whose prompt claude may not have written yet
+// (RecordOptions.PromptLag). It holds them back for PromptLag at most.
+func (r *reader) holdBack(items []contract.Observation) bool {
+	if r.lag <= 0 {
+		return false
+	}
+	switch {
+	case len(strays(items)) == 0:
+		r.held = time.Time{}
+		return false
+	case r.held.IsZero():
+		r.held = time.Now()
+		return true
+	case time.Since(r.held) < r.lag:
+		return true
+	}
+	r.held = time.Time{}
+	return false
+}
+
+// strays are the ids of the items that are a reply belonging to no turn.
+func strays(items []contract.Observation) map[string]bool {
+	out := map[string]bool{}
+	for _, o := range items {
+		switch o.Kind {
+		case contract.KindAssistantText, contract.KindToolUse, contract.KindAPIError:
+			if o.TurnID == "" {
+				out[o.ID] = true
+			}
+		}
+	}
+	return out
+}
+
+// anyOf reports whether a and b share an id.
+func anyOf(a, b map[string]bool) bool {
+	for id := range a {
+		if b[id] {
+			return true
+		}
+	}
+	return false
+}
+
+// laggedBatchBytes is how far a read goes past its bound for a prompt claude
+// wrote after its reply.
+const laggedBatchBytes = 8 << 20
+
 // items are the observations of events, read from state st, and the state
 // after them.
 func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]contract.Observation, recordState) {
 	var out []contract.Observation
-	for _, run := range runs(events) {
+	for _, run := range r.ordered(events) {
 		e := run.entry
 		if e.Sidechain {
 			continue
 		}
-		if e.Type == transcript.TypeUser && e.UUID != "" {
-			if mk, ok := r.markers.ByNative(e.UUID); ok && mk.SessionID == r.session {
+		if n := r.native(e); e.Type == transcript.TypeUser && n != "" {
+			if mk, ok := r.markers.ByNative(n); ok && mk.SessionID == r.session {
 				st = recordState{input: mk.InputID}
 			}
 		}
@@ -525,20 +640,21 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 		if err != nil || b.Checkpoint == b.From {
 			return unknown, nil
 		}
-		for _, run := range runs(b.Events) {
+		for _, run := range r.ordered(b.Events) {
 			e := run.entry
 			if e.Sidechain {
 				continue
 			}
-			if e.Type == transcript.TypeUser && e.UUID == m.Native {
+			n := r.native(e)
+			if e.Type == transcript.TypeUser && n != "" && n == m.Native {
 				found = true
 				continue
 			}
 			if !found {
 				continue
 			}
-			if e.Type == transcript.TypeUser && e.UUID != "" {
-				if _, ours := r.markers.ByNative(e.UUID); ours {
+			if e.Type == transcript.TypeUser && n != "" {
+				if _, ours := r.markers.ByNative(n); ours {
 					// The next input began, and nothing said how this one ended.
 					return unknown, nil
 				}
