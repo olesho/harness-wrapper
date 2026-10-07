@@ -59,6 +59,18 @@ jobs:
       - name: TS + Python client suites
         run: make test-clients
 
+  facades:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: generated facades match their generator
+        run: |
+          go generate ./pkg/...
+          git diff --exit-code -- pkg/
+
   corpus-manifests:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

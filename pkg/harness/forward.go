@@ -146,6 +146,11 @@ func HandleHookEvent(harnessName string, event string, env []string, stdin []byt
 	return harnesscore.HandleHookEvent(harnessName, event, env, stdin)
 }
 
+// ParseSpoolFileName calls harnesscore.ParseSpoolFileName.
+func ParseSpoolFileName(name string) (string, int64, bool) {
+	return harnesscore.ParseSpoolFileName(name)
+}
+
 // DrainSpool calls harnesscore.DrainSpool.
 func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 	return harnesscore.DrainSpool(spoolDir)
@@ -154,11 +159,6 @@ func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 // ReadSpool calls harnesscore.ReadSpool.
 func ReadSpool(spoolDir string) (SpoolContents, error) {
 	return harnesscore.ReadSpool(spoolDir)
-}
-
-// ParseSpoolFileName calls harnesscore.ParseSpoolFileName.
-func ParseSpoolFileName(name string) (event string, nanos int64, ok bool) {
-	return harnesscore.ParseSpoolFileName(name)
 }
 
 // AckSpool calls harnesscore.AckSpool.

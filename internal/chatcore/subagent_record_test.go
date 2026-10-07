@@ -12,6 +12,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/internal/mockapi"
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 )
 
@@ -64,7 +65,7 @@ func TestRecordSubAgent(t *testing.T) {
 	seed("settings.json", map[string]any{"permissions": map[string]any{"defaultMode": "bypassPermissions"}})
 
 	conv, err := Open(context.Background(), Options{
-		Harness:    chatClaudeCode,
+		Harness:    harnessname.ClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: wd,
 		Args:       []string{"--dangerously-skip-permissions"},

@@ -24,4 +24,4 @@
 // own harness.
 package harness
 
-//go:generate go run ../../internal/facadegen -core ../../internal/harnesscore -import github.com/olesho/harness-wrapper/internal/harnesscore -alias harnesscore -pkg harness -skip RenderSettingsJSONHooks -o forward.go
+//go:generate go run ../../internal/facadegen -core ../../internal/harnesscore -import github.com/olesho/harness-wrapper/internal/harnesscore -alias harnesscore -pkg harness -skip RenderSettingsJSONHooks,WriteSpoolFile -o forward.go
