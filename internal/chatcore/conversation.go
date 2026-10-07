@@ -874,6 +874,13 @@ func (c *Conversation) Events() <-chan ConversationEvent { return c.eventCh }
 // control token. Holders are queued FIFO. The returned release function
 // passes the token to the next waiter (or leaves it free); call it
 // (typically with defer) when done sending messages.
+//
+// Control is advisory within a process: the token is not bound to the
+// caller that acquired it. Send, Answer and SetPermissionMode check only that
+// some caller holds it, so every goroutine that writes to the harness must
+// take it itself; nothing stops code that skips AcquireControl, and writes
+// made through Wrapper().WriteStdin bypass it entirely. harness-chatd is what
+// binds a token to one HTTP caller.
 func (c *Conversation) AcquireControl(ctx context.Context) (release func(), err error) {
 	return c.queue.Acquire(ctx)
 }

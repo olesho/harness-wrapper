@@ -294,8 +294,9 @@ func matchRung(rung string) postureMatch {
 //
 // # Preconditions
 //
-// The caller MUST already hold the control token (AcquireControl); otherwise
-// SetPermissionMode returns ErrNoControl. It mirrors Send here and deliberately
+// The caller MUST already hold the control token (AcquireControl); when no
+// caller holds it SetPermissionMode returns ErrNoControl (control is advisory:
+// the holder is not checked to be the caller, see AcquireControl). It mirrors Send here and deliberately
 // NOT DiscoverModels: controlQueue is an exclusive, FIFO, NON-REENTRANT mutex
 // (control.go:17-29), so a self-acquiring driver would deadlock the natural
 // caller sequence

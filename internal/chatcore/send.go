@@ -17,8 +17,9 @@ import (
 // Complete or Errored.
 //
 // Preconditions:
-//   - The caller must currently hold the control token from
-//     AcquireControl. Send returns ErrNoControl otherwise.
+//   - Control must be held (AcquireControl). Send returns ErrNoControl when
+//     no caller holds it; it does not check that the caller is the holder —
+//     see AcquireControl.
 //   - No prior assistant turn may be in flight. Send returns
 //     ErrTurnInFlight otherwise.
 //
@@ -278,7 +279,9 @@ func (c *Conversation) emitAuthRequiredTurn(ctx context.Context, text string) (s
 // to reach past the chat API — e.g. to AttachOutput or read the raw
 // RecentOutput buffer. Use Conversation.Resize instead of resizing the
 // wrapper directly so the private terminal emulator stays synchronized.
-// Use with care: writing directly to stdin bypasses the control-token guard.
+// Use with care: writing directly to stdin bypasses the control token, so
+// such writes are not serialized with Send or Answer. Hold control
+// (AcquireControl) around them when anything else may be sending.
 func (c *Conversation) Wrapper() *wrapper.Session { return c.sess }
 
 // Quit asks the harness to exit gracefully by sending its adapter-defined quit

@@ -93,8 +93,8 @@ func (p *InputPolicy) resolve(kind string) (Disposition, bool) {
 // Answer responds to the interactive prompt currently awaiting an answer.
 //
 // Preconditions, mirroring Send:
-//   - The caller must hold the control token (AcquireControl); otherwise
-//     Answer returns ErrNoControl.
+//   - Control must be held (AcquireControl); Answer returns ErrNoControl when
+//     no caller holds it, without checking that the caller is the holder.
 //
 // requestID must match the pending request's ID (pass "" to target whatever
 // is currently pending). Errors: ErrNoInputPending, ErrStaleInputRequest,

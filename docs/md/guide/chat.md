@@ -137,7 +137,14 @@ release, err := conv.AcquireControl(ctx)
 
 `AcquireControl` is a **FIFO mutex**. The first caller gets the token immediately; others queue and
 are served in order. If `ctx` cancels before a waiter is served, it returns `ctx.Err()` and leaves the
-queue. `Send` and `Answer` return `ErrNoControl` if no caller currently holds the token.
+queue. `Send`, `Answer` and `SetPermissionMode` return `ErrNoControl` if no caller currently holds the
+token.
+
+Within one process, control is **advisory**: the token is not bound to the caller that acquired it.
+`Send` and friends check only that *some* caller holds it, so every goroutine that writes to the
+harness must take it itself, and raw writes through `conv.Wrapper().WriteStdin` bypass it — hold the
+token around them if anything else may be sending. [harness-chatd](gateway.md) is what binds a token
+to one client across a process boundary.
 
 The wrapper-level writer lock is held by the `Conversation` from `Open` to `Close`; `AcquireControl`
 is the *chat-level* token coordinating multiple chat clients sharing one conversation.

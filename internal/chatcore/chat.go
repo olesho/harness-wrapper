@@ -342,8 +342,9 @@ var (
 	// no registered adapter.
 	ErrUnknownHarness = errors.New("chat: unknown harness")
 
-	// ErrNoControl is returned by Send when no caller has acquired
-	// control. Acquire via AcquireControl first.
+	// ErrNoControl is returned by Send, Answer and SetPermissionMode when no
+	// caller holds control. Acquire via AcquireControl first; control is
+	// advisory (see AcquireControl).
 	ErrNoControl = errors.New("chat: control token not held")
 
 	// ErrTurnInFlight is returned by Send when a previous assistant
