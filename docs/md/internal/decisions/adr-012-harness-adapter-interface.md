@@ -120,6 +120,12 @@ behind the same interface, so agentd adds no TUI code of its own (agentd ADR 000
 
 ## History
 
+- 2026-10-07: the TUI hybrid's phase 1 lands as a harness of its own, `claude-code-tui`
+  (`pkg/adapter/claudecodetui`), beside `claude-code`, which is unchanged: open and reopen, turns
+  that complete or error, the shared record, Close. It pins claude, keeps the debug lines it parses
+  in a fixture, gates the first turn on `[engine] turn N start`, and reads turn lines only while one
+  turn is in flight. Interrupts, retries, prompts and claude's own turns come in later phases.
+
 - 2026-10-07: the TUI hybrid moves from optional to planned, as agentd's Claude fallback. agentd's
   earlier fallback, hw's TUI driver behind `pkg/chat`, has been unreachable there since agentd moved
   onto this interface (its ADR 0004); its ADRs 0002 and 0004 now name the hybrid instead.

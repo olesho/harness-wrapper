@@ -59,7 +59,7 @@ Row is one harness's drift status. Exported for the JSON output.
 
 ## Module: main (`cmd/claude-code-hook`)
 
-The Claude Code profile's hook helper: the command claude's settings.json runs for each hook, shipped in the harness distribution. It hands the hook payload to the claude hook handler, which writes the reported events durably to the spool named by HW_EVENT_SPOOL, and exits 2 only when the handler blocks a tool; any failure is reported on stderr and never blocks claude.
+_(summary pending — run the veracity-docs skill)_
 
 > Command claude-code-hook is the Claude Code profile's hook helper: the
 command claude's settings.json runs for each hook, from the harness
@@ -69,6 +69,11 @@ the spool named by HW_EVENT_SPOOL, where the profile's record reader finds
 them.
 
 	claude-code-hook claude <hook>
+	claude-code-hook tui <hook>
+
+The second form is the Claude Code TUI profile's live hooks
+(pkg/adapter/claudecodetui/live): what claude reports as it runs, written
+for its transport, which drives claude's TUI.
 
 It exits 2 when the handler says to block the tool (its decision on
 stdout), and 0 otherwise: a failure is reported on stderr and never blocks
@@ -1664,13 +1669,21 @@ On platforms other than Linux every entry point returns ErrUnsupported.
 ### Exported Types & Functions
 
 #### `func ABI() (int, error)`
-ABI reports ErrUnsupported: Landlock is Linux-only.
+ABI returns the kernel's Landlock ABI version. It distinguishes the reasons
+Landlock can be missing, because the fix differs: ENOSYS means the syscalls
+are absent or filtered by seccomp, EOPNOTSUPP that Landlock is built in but
+left out of the boot-time LSM list.
 
 #### `func Errata() int`
-Errata reports 0.
+Errata returns the kernel's errata bitmask for its ABI, or 0 when the kernel
+cannot report one.
 
-#### `func Probe(int) (int, error)`
-Probe reports ErrUnsupported.
+#### `func Probe(minABI int) (int, error)`
+Probe reports whether the kernel can enforce a ruleset created with
+Config{MinABI: minABI}: it returns the ABI and a non-nil error when that ABI
+is below the one minABI demands (zero: ResolveUnixABI) or Landlock is
+unavailable. It is advisory — ruleset creation and enforcement remain
+authoritative, and every contained launch performs both.
 
 #### `type AccessFS`
 AccessFS is a set of Landlock filesystem rights (LANDLOCK_ACCESS_FS_*).
@@ -1693,8 +1706,12 @@ and the rights to allow beneath it.
 #### `type Ruleset`
 Ruleset is never created on this platform.
 
-#### `func New(Config) (*Ruleset, error)`
-New reports ErrUnsupported.
+#### `func New(cfg Config) (*Ruleset, error)`
+New creates a ruleset handling HandledFSFor(kernel ABI), both IPC scopes
+and, when cfg.RestrictTCP is set, TCP bind and connect. It fails with
+ErrUnavailable when the kernel's ABI is below the one cfg.MinABI demands:
+kernel availability alone is not enough, every handled field must be
+accepted.
 
 #### `type Scope`
 Scope is a set of Landlock IPC scopes (LANDLOCK_SCOPE_*).
@@ -2013,22 +2030,20 @@ build without cgo (or off Linux) there is no C to open them from.
 
 ### Exported Types & Functions
 
-#### `func Close(fd int)`
-Close closes fd from C.
+#### `func Close(int)`
+Close does nothing.
 
 #### `func ListenNonCloexec() int`
-ListenNonCloexec opens a loopback TCP listener from C, without
-SOCK_CLOEXEC.
+ListenNonCloexec returns -1: no C here.
 
-#### `func OpenNonCloexec(path string) int`
-OpenNonCloexec opens path read-only from C, without O_CLOEXEC.
+#### `func OpenNonCloexec(string) int`
+OpenNonCloexec returns -1: no C here.
 
-#### `func StartOpeners(path string, n int) int`
-StartOpeners starts n C threads that open and close path without
-O_CLOEXEC until StopOpeners; it returns how many started.
+#### `func StartOpeners(string, int) int`
+StartOpeners starts nothing.
 
 #### `func StopOpeners() int64`
-StopOpeners stops the C openers and returns how many opens they made.
+StopOpeners returns 0.
 
 ## Module: wrapcore (`internal/wrapcore`)
 
@@ -2703,7 +2718,7 @@ A running harness: Submit hands it an input (an ErrNotSubmitted error guarantees
 
 ## Module: claudecode (`pkg/adapter/claudecode`)
 
-The Harness Adapter's Claude Code profile: claude driven over its stream-json protocol, one process per Session, with the session transcript and the hook spool as its record. Importing it registers the adapter under "claude-code" and links no other harness; it locates the pinned claude binary and the cmd/claude-code-hook helper in the harness distribution.
+_(summary pending — run the veracity-docs skill)_
 
 > Package claudecode is the Harness Adapter's Claude Code profile: claude
 driven over its stream-json protocol, one process per Session, with the
@@ -2725,8 +2740,132 @@ BinaryPath is claude's path in the harness distribution rooted at root.
 HookPath is the hook helper's path in the harness distribution rooted at
 root.
 
+#### `func NewRecord(src adapter.RecordSource, opts RecordOptions) (adapter.Reader, error)`
+NewRecord opens the reader of a Session's record, as Record does, with
+opts: the record of any profile that runs claude with this profile's
+configuration, transcript and hook spool.
+
+#### `func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.ProvisionResult, error)`
+ProvisionWith renders claude's configuration for the spec as Provision
+does, with extra's hooks in settings.json too.
+
+#### `func SessionArgs(mode contract.OpenMode, id string, cfg OpenConfig) []string`
+SessionArgs are the arguments that name the session claude runs: a fresh
+one under its id, or the one it resumes.
+
+#### `func SessionSpool(root, id string) string`
+SessionSpool is the hook spool of Session id under the spool root: the one
+the Session's claude process writes, and its record reads.
+
+#### `func TurnError(tag string, status int, text string, rejected bool, now time.Time) *contract.TurnError`
+TurnError is the contract's account of a model call claude reported failed:
+its error tag (an API-error entry's, or StopFailure's error), the HTTP
+status when known, and claude's text, which tells a usage wall and when it
+resets. rejected says the account's usage limit refused the call.
+
+#### `type Hooks`
+Hooks are hooks a profile that runs claude with this profile's
+configuration adds to it: each entry runs the distribution's hook helper
+as `<helper> <Harness> <arg>`, beside the hooks this profile's record
+reads.
+
+#### `type OpenConfig`
+OpenConfig is the open_config Provision renders: claude's binary, arguments,
+environment, working directory and the agent's hook spool root.
+
+#### `func ParseOpenConfig(raw []byte) (OpenConfig, error)`
+ParseOpenConfig reads an open_config Provision rendered.
+
 #### `type Profile`
 Profile is the Claude Code profile. It keeps no state.
+
+#### `type RecordOptions`
+RecordOptions are how a Claude Code profile's record differs from this
+one's.
+
+## Module: claudecodetui (`pkg/adapter/claudecodetui`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package claudecodetui is the Harness Adapter's Claude Code TUI profile: the
+"TUI hybrid" (ADR-012, decision 6). claude runs interactively, without -p,
+on a pseudo-terminal; the profile types inputs as keystrokes and never reads
+the screen. What claude does comes from its hooks (a live channel, package
+live, beside the hook spool), its transcript, and its debug log
+(--debug-file). Importing it registers the Harness Adapter under
+"claude-code-tui" (contract.Lookup), beside "claude-code", whose
+configuration, record and failure classes it shares (pkg/adapter/claudecode).
+
+It is agentd's fallback for when stream-json is unavailable or breaks. This
+is its first phase: Sessions open fresh or reopen, inputs run as turns that
+complete or error, the record is the Claude Code profile's, and Close stops
+claude. Interrupts, retries reported as they happen, prompts, turns of
+claude's own and rate-limit reports come later; the Descriptor declares
+none of them.
+
+### Exported Types & Functions
+
+#### `type Profile`
+Profile is the Claude Code TUI profile. It keeps no state.
+
+## Module: live (`pkg/adapter/claudecodetui/live`)
+
+_(summary pending — run the veracity-docs skill)_
+
+> Package live is the Claude Code TUI profile's live hook channel: what the
+hooks claude fires report to the transport while it runs, and the binding
+of each prompt claude took to the input it was typed for.
+
+The hook helper (cmd/claude-code-hook, run as `claude-code-hook tui <arg>`)
+calls HandleHook; the transport reads what it wrote. Everything lives in
+one directory per Session (Dir), named to the helper by EnvDir:
+
+	events/   one file per hook fired, written atomically, which the
+	          transport reads in order and removes
+	prompts/  one file per prompt bound to an input: the prompt's id (claude's
+	          promptId) names it, and it holds the input's native id; the
+	          record reader matches the transcript's prompt entries by it
+	pending   the input the transport is typing, which the UserPromptSubmit
+	          hook binds to the prompt claude reports
+
+The UserPromptSubmit hook binds the prompt before claude writes the prompt
+to its transcript: claude waits for the hook before it starts the turn
+(claude 2.1.283), so a record that holds the prompt always finds it bound.
+
+### Exported Types & Functions
+
+#### `func Bound(dir, promptID string) (string, bool)`
+Bound is the native id of the input the prompt promptID was bound to.
+
+#### `func ClearPending(dir string) error`
+ClearPending withdraws the input being typed.
+
+#### `func Dir(spoolRoot, id string) string`
+Dir is Session id's live directory under the agent's spool root.
+
+#### `func HandleHook(arg string, env []string, payload []byte) error`
+HandleHook is the hook helper's work for a live hook: the payload claude
+handed the hook, read as an Event, the prompt bound when it is the input's,
+and the event written to the Session's directory. It does nothing outside a
+TUI Session (EnvDir unset).
+
+#### `func Prepare(dir string) error`
+Prepare makes dir ready for a launch: its directories made, and the events
+and the pending input of an earlier launch gone. Bindings stay: the record
+is read by them.
+
+#### `func Remove(dir string, ev Event)`
+Remove removes an event Read returned, once the transport has taken it.
+
+#### `func SetPending(dir, native string) error`
+SetPending records, durably, that the input native is being typed: the
+next prompt claude takes is bound to it.
+
+#### `type Event`
+Event is what one hook reported.
+
+#### `func Read(dir string) ([]Event, error)`
+Read returns the events written so far, oldest first.
 
 ## Module: codex (`pkg/adapter/codex`)
 
@@ -5269,7 +5408,7 @@ transcript carried no usage. Callers type-assert a Reader to UsageReader.
 
 ## Module: claudecode (`pkg/transcript/claudecode`)
 
-Reads Claude Code's own JSONL session logs, locating a session by encoding the working directory into its projects path, and parses them into canonical transcript events plus optional token usage. It can also follow a live transcript from a checkpoint.
+_(summary pending — run the veracity-docs skill)_
 
 > Package claudecode reads Claude Code session transcripts.
 

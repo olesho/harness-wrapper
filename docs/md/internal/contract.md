@@ -266,6 +266,45 @@ API — when `HW_REAL_CLAUDE` names the pinned binary. `TestClaudeLoadsSavedSess
 each source version saved (`testdata/load`). The `harness-adapter` workflow runs them on Linux with
 the pinned claude it downloads and verifies.
 
+## The Claude Code TUI profile
+
+`pkg/adapter/claudecodetui` registers `claude-code-tui`: the TUI hybrid of
+[ADR-012](decisions/adr-012-harness-adapter-interface.md) (decision 6), agentd's fallback for when
+stream-json is unavailable or breaks. It is a harness name of its own, beside `claude-code`, with its
+own Descriptor and conformance run; `claude-code` is unchanged. It shares the Claude Code profile's
+distribution, pin, `open_config`, record and failure classes (`claudecode.ProvisionWith`,
+`NewRecord`, `TurnError`), and differs in how claude runs:
+
+- **Transport:** claude runs interactively, without `-p`, on a pseudo-terminal, with
+  `--debug-file`. `Start` refuses a claude other than the pin (`version_unsupported`), and waits for
+  the Session's `SessionStart` hook and the debug log's `[engine]` lines (`capability_missing`
+  without them). An input is typed into the composer — a paste when it holds a newline or a control
+  character — then Enter. Nothing reads the screen.
+- **Live hooks:** `SessionStart`, `UserPromptSubmit`, `Stop` and `StopFailure` run the hook helper as
+  `claude-code-hook tui <hook>`, which writes what each reports to `scratch/tui/<session id>`
+  (`pkg/adapter/claudecodetui/live`). `UserPromptSubmit` binds claude's prompt id to the input being
+  typed; that is `Send`'s receipt and the turn's start. claude waits for the hook before it writes
+  the prompt to its transcript, so the binding is on disk first. `Stop` completes the turn with
+  `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
+  the HTTP status from the debug log's `API error` lines or claude's text.
+- **Debug log:** only `[engine] turn N start`, `… end (… stop=…)` and `API error (attempt k/N):
+  <status>`, kept in `testdata/debug-2.1.283.log`, and read only while the one input's turn is in
+  flight. The next input is typed once the debug log logged the turn's end. The gate: a first turn
+  whose start the log never logs ends `errored` (`internal`), and claude is stopped.
+- **Record:** `claude-code`'s, except that a prompt entry is matched to its input by its prompt id
+  (`promptId`), through the binding, since its uuid is claude's own. claude's TUI may write a fresh
+  session's first reply to the transcript before its prompt, so the record orders a read's entries
+  by timestamp and holds a reply of no turn back for up to 3 s while its prompt is written.
+  File checkpointing (`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`) is off, as under stream-json.
+- **Close** presses Ctrl-C until claude quits (the first press may cancel a turn or an armed
+  automatic continue), then signals the group.
+
+Phase 1 declares `resume` and `assign_session_id` alone. Interrupts (`Interrupt` returns
+`unsupported`; the kit's `interrupt` scenarios are skipped), retries reported as they happen,
+prompts, turns claude starts itself, rate-limit reports, tools and subagents observed, side-by-side
+Sessions, load and brokered credentials come in later phases. `TestClaudeTUIConforms` runs the kit
+against the pinned claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it.
+
 ## The Codex profile
 
 `pkg/adapter/codex` registers `codex`. Its harness distribution, under `harness_root`, is the pinned
