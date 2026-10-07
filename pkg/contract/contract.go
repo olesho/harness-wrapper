@@ -82,6 +82,14 @@ func ParseVersion(v string) (major, minor int, err error) {
 	return major, minor, nil
 }
 
+// MinorOf is the minor of contract version v: the newest requests a caller
+// may send an adapter declaring v (Compatible), and the newest capabilities
+// that adapter may declare (Capability.Since).
+func MinorOf(v string) (int, error) {
+	_, minor, err := ParseVersion(v)
+	return minor, err
+}
+
 // Compatible reports whether a caller of this package may use an adapter
 // declaring contract version v: the majors match. The caller then sends it
 // requests no newer than v's minor.

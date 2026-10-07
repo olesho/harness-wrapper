@@ -168,6 +168,43 @@ func (Capability) Values() []string {
 	}
 }
 
+// Since is the minor version that added c to the set — 0 for the 1.0
+// set — or -1 for a capability not in it. A Descriptor declares c only from
+// that minor on (CheckCapabilities).
+func (c Capability) Since() int {
+	switch c {
+	case CapResume, CapAssignSessionID, CapPrompts, CapStreamingText, CapToolsObserved, CapSubagents, CapRateLimits, CapRetryVisible:
+		return 0
+	case CapSessionLoad, CapAutonomousTurns:
+		return 1
+	case CapBrokeredCredentials, CapLoginKeeper:
+		return 2
+	case CapBackgroundTurns:
+		return 3
+	case CapConcurrentSessions:
+		return 6
+	}
+	return -1
+}
+
+// CheckCapabilities refuses a Descriptor that declares a capability newer
+// than the minor of its contract version: a caller of that minor would not
+// know it, and a newer caller, Compatible with it, would rely on what the
+// declared minor never promised. A capability not in the set is left to the
+// caller, which knows its own set.
+func CheckCapabilities(d Descriptor) error {
+	minor, err := MinorOf(d.Contract)
+	if err != nil {
+		return &Error{Code: CodeProtocol, Field: "contract", Message: err.Error()}
+	}
+	for _, c := range d.Capabilities {
+		if since := c.Since(); since > minor {
+			return &Error{Code: CodeProtocol, Field: "capabilities", Message: fmt.Sprintf("%s is from %s%d.%d, and the adapter declares %s", c, versionPrefix, Major, since, d.Contract)}
+		}
+	}
+	return nil
+}
+
 // SpecSupport is the part of the Agent Spec a harness honours.
 type SpecSupport struct {
 	// Models is the model ids the harness takes, or any.

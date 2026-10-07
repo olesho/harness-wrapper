@@ -107,7 +107,7 @@ var Breaks = []string{
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
-	"ack-fails",
+	"ack-fails", "capability-past-minor",
 }
 
 // Adapter is the fake harness's adapter.
@@ -139,8 +139,13 @@ const ArchiveFormat = 2
 // Describe describes the fake: every capability, every spec field, and
 // MaxSessions Sessions of an agent side by side.
 func (a *Adapter) Describe() contract.Descriptor {
+	version := contract.Version
+	if a.breaks("capability-past-minor") {
+		// 1.2 knew no concurrent_sessions, nor background_turns.
+		version = "harness-adapter/1.2"
+	}
 	return contract.Descriptor{
-		Contract:     contract.Version,
+		Contract:     version,
 		Harness:      contract.HarnessInfo{Name: Name, Version: Version, Adapter: "harness-wrapper fakeadapter"},
 		Capabilities: a.capabilities(),
 		Load:         &contract.LoadSupport{Formats: []int{ArchiveFormat}, Sources: []string{Version}},

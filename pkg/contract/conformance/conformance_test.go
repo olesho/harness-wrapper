@@ -146,6 +146,7 @@ var broken = map[string]struct{ rule, scenario string }{
 	"record-reads-siblings":       {"concurrent.record", "concurrent-record"},
 	"load-mixes-sessions":         {"concurrent.load-history", "concurrent-load"},
 	"ack-fails":                   {"observe.host", "turn"},
+	"capability-past-minor":       {"describe.minor", "describe"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule

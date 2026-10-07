@@ -70,6 +70,9 @@ func describe(c *check) {
 			c.fail("describe.capabilities", "unknown capability %q", cap)
 		}
 	}
+	if err := contract.CheckCapabilities(d); err != nil {
+		c.fail("describe.minor", "%v", err)
+	}
 	if d.CheckpointFormat < 1 {
 		c.fail("describe.checkpoint_format", "checkpoint_format %d", d.CheckpointFormat)
 	}

@@ -88,6 +88,61 @@ func testDescriptor() Descriptor {
 	}
 }
 
+func TestMinorOf(t *testing.T) {
+	if m, err := MinorOf(Version); err != nil || m != Minor {
+		t.Errorf("MinorOf(%q) = %d, %v, want %d", Version, m, err, Minor)
+	}
+	if m, err := MinorOf("harness-adapter/1.2"); err != nil || m != 2 {
+		t.Errorf("MinorOf(1.2) = %d, %v", m, err)
+	}
+	if _, err := MinorOf("harness-adapter/1"); err == nil {
+		t.Error("MinorOf accepted a version with no minor")
+	}
+}
+
+// Every capability of the set was added by a minor this package defines, and
+// one outside it by none.
+func TestCapabilitySince(t *testing.T) {
+	for _, v := range Capability("").Values() {
+		if s := Capability(v).Since(); s < 0 || s > Minor {
+			t.Errorf("%s.Since() = %d, want 0..%d", v, s, Minor)
+		}
+	}
+	if s := Capability("telepathy").Since(); s != -1 {
+		t.Errorf("an unknown capability's Since = %d, want -1", s)
+	}
+	for c, want := range map[Capability]int{CapRateLimits: 0, CapAutonomousTurns: 1, CapLoginKeeper: 2, CapBackgroundTurns: 3, CapConcurrentSessions: 6} {
+		if s := c.Since(); s != want {
+			t.Errorf("%s.Since() = %d, want %d", c, s, want)
+		}
+	}
+}
+
+func TestCheckCapabilities(t *testing.T) {
+	d := func(v string, caps ...Capability) Descriptor { return Descriptor{Contract: v, Capabilities: caps} }
+	for _, ok := range []Descriptor{
+		d(Version, CapResume, CapSessionLoad, CapConcurrentSessions),
+		d("harness-adapter/1.0", CapResume, CapRateLimits),
+		d("harness-adapter/1.3", CapBackgroundTurns, CapLoginKeeper),
+		d("harness-adapter/1.2", "telepathy"),
+	} {
+		if err := CheckCapabilities(ok); err != nil {
+			t.Errorf("%s %v: %v", ok.Contract, ok.Capabilities, err)
+		}
+	}
+	for _, bad := range []Descriptor{
+		d("harness-adapter/1.2", CapResume, CapConcurrentSessions),
+		d("harness-adapter/1.0", CapSessionLoad),
+		d("harness-adapter/1.2", CapBackgroundTurns),
+		d("harness-adapter/1", CapResume),
+	} {
+		var e *Error
+		if err := CheckCapabilities(bad); !errors.As(err, &e) || e.Code != CodeProtocol {
+			t.Errorf("%s %v: %v, want protocol", bad.Contract, bad.Capabilities, err)
+		}
+	}
+}
+
 func TestCheckSpec(t *testing.T) {
 	d := testDescriptor()
 	ok := AgentSpec{
