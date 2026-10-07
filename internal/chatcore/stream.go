@@ -18,6 +18,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/delivery"
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
@@ -308,13 +309,7 @@ var streamReservedFlags = []string{
 	"--replay-user-messages", "--permission-prompt-tool",
 }
 
-func isClaudeCode(harness string) bool {
-	switch strings.ToLower(strings.TrimSpace(harness)) {
-	case "claude", chatClaudeCode:
-		return true
-	}
-	return false
-}
+func isClaudeCode(harness string) bool { return harnessname.IsClaude(harness) }
 
 func startStreamProc(bin string, args []string, dir string, env []string) (*streamProc, error) {
 	cmd := exec.Command(bin, args...)

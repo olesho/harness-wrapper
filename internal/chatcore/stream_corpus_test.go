@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // replayedTurn is how a replayed turn ended, and what its Interrupt got.
@@ -29,7 +31,7 @@ func replayStreamCapture(t *testing.T, name string) (turns []replayedTurn, promp
 	}
 	defer func() { _ = f.Close() }()
 	c := &Conversation{
-		opts:    Options{Harness: chatClaudeCode},
+		opts:    Options{Harness: harnessname.ClaudeCode},
 		store:   newFakeStore(),
 		eventCh: make(chan ConversationEvent, 4096),
 		done:    make(chan struct{}),

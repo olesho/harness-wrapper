@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 )
@@ -27,31 +28,31 @@ func TestUsageLimitMessage(t *testing.T) {
 	}{
 		{
 			name:    "decorated wall with reset time",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "  ⎿  You've hit your session limit · resets 10:20pm (Europe/Warsaw)\n     /usage-credits to finish what you're working on.\n",
 			want:    "You've hit your session limit · resets 10:20pm (Europe/Warsaw)",
 		},
 		{
 			name:    "bare wall, no decoration",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "You've hit your session limit · resets 8pm (UTC)",
 			want:    "You've hit your session limit · resets 8pm (UTC)",
 		},
 		{
 			name:    "usage phrasing with a bullet bubble",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "⏺ You've hit your usage limit · resets 9:15am (UTC)\n\n✻ Brewed for 0s\n",
 			want:    "You've hit your usage limit · resets 9:15am (UTC)",
 		},
 		{
 			name:    "spelled-out 'have hit'",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "You have hit your session limit · resets midnight",
 			want:    "You have hit your session limit · resets midnight",
 		},
 		{
 			name:    "wall embedded in a fuller screen",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "⏺ Working on it…\n\n  ⎿  You've hit your session limit · resets 10:20pm (Europe/Warsaw)\n\n❯ \n",
 			want:    "You've hit your session limit · resets 10:20pm (Europe/Warsaw)",
 		},
@@ -60,13 +61,13 @@ func TestUsageLimitMessage(t *testing.T) {
 			// relabeled — the CLI only ever emits the anchored "You('ve| have) hit
 			// your … limit" sentence.
 			name:    "prose about usage limits does not match",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "⏺ Your plan's usage limit resets nightly; the session limit is separate.\n",
 			want:    "",
 		},
 		{
 			name:    "a reply quoting the phrase mid-sentence does not match",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			in:      "⏺ The docs say that when you've hit your session limit the CLI prints a banner.\n",
 			want:    "",
 		},
@@ -105,7 +106,7 @@ func TestUsageLimitMessage(t *testing.T) {
 func TestUsageLimitRelabel_WallAsReply(t *testing.T) {
 	const wall = "You've hit your session limit · resets 10:20pm (Europe/Warsaw)"
 	snap := screen.Snapshot{Text: "⏺ " + wall + "\n\n✻ Brewed for 0s\n\n❯ \n"}
-	c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+	c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 
 	// Precondition: this is a NON-empty extraction, which is exactly why
 	// authRelabel cannot catch it.
@@ -140,7 +141,7 @@ func TestUsageLimitRelabel_WallAsReply(t *testing.T) {
 // text. The whole-screen probe fallback must still catch it.
 func TestUsageLimitRelabel_WallOnScreenOnly(t *testing.T) {
 	snap := screen.Snapshot{Text: "  ⎿  You've hit your usage limit · resets 9:15am (UTC)\n\n❯ \n"}
-	c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+	c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 	if c.cleanAssistantText(snap) != "" {
 		t.Fatalf("precondition: a ⎿-decorated wall should not extract as a reply")
 	}
@@ -157,7 +158,7 @@ func TestUsageLimitRelabel_WallOnScreenOnly(t *testing.T) {
 // logged-out screen still relabels as ReasonAuthRequired rather than being swallowed
 // by the usage-limit check that now runs first at both completion sites.
 func TestUsageLimitRelabel_LeavesOtherOutcomesAlone(t *testing.T) {
-	c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+	c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 
 	t.Run("genuine reply untouched", func(t *testing.T) {
 		snap := screen.Snapshot{Text: "⏺ Done — the session limit handling is in place.\n\n✻ Brewed for 2s\n\n❯ \n"}

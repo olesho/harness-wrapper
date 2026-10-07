@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
@@ -231,9 +232,6 @@ func (s *stabilizer) disarm() {
 // forever in a select, which is how an unarmed stabilizer stays inert.
 func (s *stabilizer) ch() <-chan time.Time { return s.c }
 
-// chatClaudeCode is the adapter-style name for the Claude Code harness.
-const chatClaudeCode = "claude-code"
-
 // requiresPromptReadiness reports whether the conversation's harness must show
 // a ready composer before a message is typed (turns.ReadinessDetector).
 func (c *Conversation) requiresPromptReadiness() bool { return requiresReadiness(c.adapter) }
@@ -393,9 +391,9 @@ type ScreenAnchor struct {
 // without knowing which harness drew it.
 func AuthAnchors(harness string) []ScreenAnchor {
 	switch harness {
-	case chatClaudeCode:
+	case harnessname.ClaudeCode:
 		return concatAnchors(claudeOnboardingAnchors, claudeLoggedOutAnchors)
-	case "codex":
+	case harnessname.Codex:
 		return concatAnchors(codexOnboardingAnchors, codexLoggedOutAnchors)
 	case "":
 		return concatAnchors(claudeOnboardingAnchors, codexOnboardingAnchors,
@@ -450,9 +448,9 @@ func anyAnchor(anchors []ScreenAnchor, text string) bool {
 // the wizard, so the auth gate short-circuits with ReasonAuthRequired instead.
 func onboardingWall(harness, text string) bool {
 	switch harness {
-	case chatClaudeCode:
+	case harnessname.ClaudeCode:
 		return anyAnchor(claudeOnboardingAnchors, text)
-	case "codex":
+	case harnessname.Codex:
 		return anyAnchor(codexOnboardingAnchors, text)
 	default:
 		return false
@@ -494,7 +492,7 @@ const horizontalSpace = `[\t \x{00A0}]`
 // without a known wall (only claude-code today).
 func usageLimitMessage(harness, text string) (string, bool) {
 	switch harness {
-	case chatClaudeCode:
+	case harnessname.ClaudeCode:
 		m := claudeUsageLimitRE.FindStringSubmatch(text)
 		if m == nil {
 			return "", false
@@ -511,9 +509,9 @@ func usageLimitMessage(harness, text string) (string, bool) {
 // any harness without a known banner set.
 func authRequired(harness, text string) bool {
 	switch harness {
-	case chatClaudeCode:
+	case harnessname.ClaudeCode:
 		return anyAnchor(claudeOnboardingAnchors, text) || anyAnchor(claudeLoggedOutAnchors, text)
-	case "codex":
+	case harnessname.Codex:
 		return anyAnchor(codexOnboardingAnchors, text) || anyAnchor(codexLoggedOutAnchors, text)
 	default:
 		return false
@@ -522,7 +520,7 @@ func authRequired(harness, text string) bool {
 
 func submitKeyForHarness(harness, screenText string) []byte {
 	switch harness {
-	case chatClaudeCode:
+	case harnessname.ClaudeCode:
 		// Claude Code enables enhanced keyboard handling in its TUI and does
 		// not submit the input box when a synthetic PTY writer sends plain
 		// CR/LF — it only inserts a newline and the turn never runs. CSI 13 u
@@ -531,7 +529,7 @@ func submitKeyForHarness(harness, screenText string) []byte {
 		// composer shows neither "bypass permissions" nor "ctrl+g to edit in
 		// Vim" — so we always send the enhanced Enter, mirroring codex below.
 		return []byte("\x1b[13u")
-	case "codex":
+	case harnessname.Codex:
 		// codex 0.141.0 turns on the enhanced (kitty) keyboard protocol at startup,
 		// so a plain CR/LF from a synthetic PTY writer is NOT treated as submit — it
 		// only inserts a newline in the composer and the turn never runs. CSI 13 u is
@@ -584,11 +582,11 @@ func submitKeyForHarness(harness, screenText string) []byte {
 // a screen-sensitive variant. Neither harness's Shift+Tab encoding depends on
 // what is rendered.
 func shiftTabForHarness(harness, screenText string) []byte {
-	switch harness {
-	case "claude", chatClaudeCode:
+	switch harnessname.Unalias(harness) {
+	case harnessname.ClaudeCode:
 		// Verified live on 2.1.217: cycles auto → manual in the status line.
 		return []byte(shiftTabCSI9_2u)
-	case "codex":
+	case harnessname.Codex:
 		// Verified live on 0.144.5: cycles the footer into "Plan mode".
 		return []byte(shiftTabCSI9_2u)
 	default:
@@ -649,8 +647,8 @@ const (
 // on the corpus evidence alone; if it ever proves wrong there, it comes out
 // here and nowhere else.
 func pasteWrapForHarness(harness string) (prefix, suffix []byte) {
-	switch harness {
-	case "claude", chatClaudeCode, "codex":
+	switch harnessname.Unalias(harness) {
+	case harnessname.ClaudeCode, harnessname.Codex:
 		return []byte(pasteStartCSI200), []byte(pasteEndCSI201)
 	default:
 		return nil, nil

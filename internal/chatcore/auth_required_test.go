@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
@@ -67,7 +68,7 @@ func TestHandleTurnsEvent_AuthRequiredFromSnap(t *testing.T) {
 		harness string
 		banner  string
 	}{
-		{"claude", chatClaudeCode, "Not logged in · Please run /login"},
+		{"claude", harnessname.ClaudeCode, "Not logged in · Please run /login"},
 		{"codex", "codex", "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,7 +97,7 @@ func TestHandleTurnsEvent_AuthRequiredFromLiveScreen(t *testing.T) {
 	if _, err := scr.Write([]byte("Not logged in · Please run /login")); err != nil {
 		t.Fatalf("screen.Write: %v", err)
 	}
-	c, _ := newAuthTestConv(t, chatClaudeCode, scr)
+	c, _ := newAuthTestConv(t, harnessname.ClaudeCode, scr)
 
 	c.handleTurnsEvent(turns.Event{
 		Kind:   turns.Errored,
@@ -112,7 +113,7 @@ func TestHandleTurnsEvent_AuthRequiredFromLiveScreen(t *testing.T) {
 // An ordinary errored turn (no banner) keeps its original reason — the auth relabel
 // must not fire, and Blocked (cost/rate-limit) is never relabeled.
 func TestHandleTurnsEvent_NonAuthErrorKeepsReason(t *testing.T) {
-	c, _ := newAuthTestConv(t, chatClaudeCode, nil)
+	c, _ := newAuthTestConv(t, harnessname.ClaudeCode, nil)
 	const orig = "claude-code: harness exited"
 	c.handleTurnsEvent(turns.Event{
 		Kind:   turns.Errored,

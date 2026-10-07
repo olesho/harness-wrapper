@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 )
 
@@ -57,7 +58,7 @@ func TestTrustDialogLive(t *testing.T) {
 	ptyLog := filepath.Join(t.TempDir(), "pty.raw")
 
 	conv, err := Open(context.Background(), Options{
-		Harness:    chatClaudeCode,
+		Harness:    harnessname.ClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: workDir,
 		// harnessenv.Cleaned(), not os.Environ(): run from inside a Claude Code

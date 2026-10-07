@@ -3,6 +3,8 @@ package models
 import (
 	"regexp"
 	"strings"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // This file is the SCREEN-PARSER half of model discovery: a faithful port of
@@ -51,10 +53,10 @@ var (
 // (/Select Model and Effort/i) are recognized; every other harness (pi,
 // opencode, …) returns nil, so parseModelPicker yields [].
 func pickerHeaderRe(harness string) *regexp.Regexp {
-	switch norm(harness) {
-	case "claude", "claude-code":
+	switch harnessname.Canonical(harness) {
+	case harnessname.ClaudeCode:
 		return regexp.MustCompile(`(?i)Select model`)
-	case "codex":
+	case harnessname.Codex:
 		return regexp.MustCompile(`(?i)Select Model and Effort`)
 	default:
 		return nil
@@ -84,7 +86,7 @@ func ParseModelPicker(text, harness string) []Info {
 		}
 		rawLabel := strings.TrimSpace(m[1])
 		description := strings.TrimSpace(m[2])
-		if kind == "codex" {
+		if kind == harnessname.Codex {
 			current := codexCurrentRe.MatchString(rawLabel)
 			isDefault := codexDefaultRe.MatchString(rawLabel)
 			// "gpt-5.4-mini (current)" → id/label "gpt-5.4-mini".

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // PTY-driven half of the permission-mode driver's coverage. Unlike
@@ -75,14 +76,14 @@ func TestSetPermissionMode_RingOverPTY(t *testing.T) {
 	}{
 		{
 			name:    "claude-4-ring",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			ring:    []string{"plan", "manual", "ask", "auto"},
 			// A definite non-bypass launch: 4-ring, bypass off the ring.
 			mutate: func(o *Options) { o.PermissionMode = "plan" },
 		},
 		{
 			name:    "claude-5-ring-bypass-enabled",
-			harness: chatClaudeCode,
+			harness: harnessname.ClaudeCode,
 			ring:    []string{"plan", "manual", "ask", "auto", "bypass"},
 			// argv-carried, so Options.PermissionMode stays empty — the case
 			// argsWithHarnessPermissionMode's suppression rule creates.
@@ -168,7 +169,7 @@ func TestSetPermissionMode_NotPersistedAcrossReopen(t *testing.T) {
 	// Launch at "auto"; one Shift+Tab lands on "plan". The resume hint rides on
 	// both frames so the session id is captured for Reopen.
 	ring := []string{"auto", "plan"}
-	script := modeRingScript(chatClaudeCode, ring, 0, 1)
+	script := modeRingScript(harnessname.ClaudeCode, ring, 0, 1)
 	// Splice the resume hint into every frame so the raw line tap sees it.
 	for i := range script.Steps {
 		if f := script.Steps[i].Frame; f != nil {
@@ -253,7 +254,7 @@ func TestSetPermissionMode_NotPersistedAcrossReopen(t *testing.T) {
 // function implies.
 func TestSetPermissionMode_DontAskEscapesOverPTY(t *testing.T) {
 	ring := []string{"dontAsk", "plan", "manual", "ask", "auto"}
-	conv := openFake(t, modeRingScript(chatClaudeCode, ring, 0, len(ring)), func(o *Options) {
+	conv := openFake(t, modeRingScript(harnessname.ClaudeCode, ring, 0, len(ring)), func(o *Options) {
 		o.PermissionMode = "dontAsk"
 	})
 

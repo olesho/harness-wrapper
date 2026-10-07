@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/wrapper/trace"
 )
 
@@ -479,14 +480,14 @@ func validatePermissionMode(cfg *Config) error {
 	if !harnessSupportsPermissionMode(cfg.Harness) {
 		return fmt.Errorf("%w: PermissionMode is only supported for claude and codex harnesses", ErrInvalidConfig)
 	}
-	if normHarness(cfg.Harness) == "codex" && mode == permissionModePlan {
+	if normHarness(cfg.Harness) == harnessname.Codex && mode == permissionModePlan {
 		// codex has no launch-time equivalent of the plan rung, and a no-op
 		// would launch codex with NO launch-time restriction at all for a
 		// caller who explicitly asked for the non-executing rung.
 		return fmt.Errorf("%w: permission mode %q is not supported by the codex harness (no launch-time flag; use /plan after launch)", ErrInvalidConfig, mode)
 	}
 	if !isSupportedPermissionMode(cfg.Harness, mode) {
-		return fmt.Errorf("%w: PermissionMode %q is not valid for the %s harness", ErrInvalidConfig, mode, normHarness(cfg.Harness))
+		return fmt.Errorf("%w: PermissionMode %q is not valid for the %s harness", ErrInvalidConfig, mode, harnessname.Normalize(cfg.Harness))
 	}
 	// Contradictory argv. A bare --permission-mode / -s / -a already in Args is
 	// NOT handled here: that is the caller restating the same axis, so plain
@@ -501,7 +502,7 @@ func validatePermissionMode(cfg *Config) error {
 	// is bypass, where the CLI skips the arg append. Do not mistake this for a
 	// second composition check.
 	bypassMode := IsBypassPermissionMode(mode)
-	if normHarness(cfg.Harness) == "codex" {
+	if normHarness(cfg.Harness) == harnessname.Codex {
 		bypassMode = isCodexBypassMode(mode)
 	}
 	if !bypassMode {
@@ -514,18 +515,15 @@ func validatePermissionMode(cfg *Config) error {
 	return nil
 }
 
-// normHarness normalizes a harness name for switch matching. The chat layer
+// normHarness canonicalizes a harness name for switch matching. The chat layer
 // uses adapter-style names ("claude-code") while the CLI/effort code
-// historically switched on short names ("claude"); normalizing lets both
-// reach the same per-harness translation. Mirrors classifier.go.
-func normHarness(h string) string { return strings.ToLower(strings.TrimSpace(h)) }
-
-// harnessClaudeCode is the adapter-style name for the Claude Code harness.
-const harnessClaudeCode = "claude-code"
+// historically switched on short names ("claude"); canonicalizing lets both
+// reach the same per-harness translation.
+func normHarness(h string) string { return harnessname.Canonical(h) }
 
 func harnessSupportsEffort(harness string) bool {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode, "codex":
+	case harnessname.ClaudeCode, harnessname.Codex:
 		return true
 	default:
 		return false
@@ -536,7 +534,7 @@ func harnessSupportsEffort(harness string) bool {
 // for harness.
 func harnessSupportsModel(harness string) bool {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode, "codex":
+	case harnessname.ClaudeCode, harnessname.Codex:
 		return true
 	default:
 		return false
@@ -557,12 +555,12 @@ func argsWithHarnessEffort(harness string, args []string, effort string) []strin
 		return args
 	}
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		if argsContainAnyFlag(args, "--effort") {
 			return args
 		}
 		return prependArgs(args, "--effort", effort)
-	case "codex":
+	case harnessname.Codex:
 		if argsContainConfigKey(args, "model_reasoning_effort") {
 			return args
 		}
@@ -587,12 +585,12 @@ func argsWithHarnessModel(harness string, args []string, model string) []string 
 		return args
 	}
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		if argsContainAnyFlag(args, "--model") {
 			return args
 		}
 		return prependArgs(args, "--model", model)
-	case "codex":
+	case harnessname.Codex:
 		if argsContainConfigKey(args, "model") {
 			return args
 		}
@@ -686,7 +684,7 @@ const (
 
 func harnessSupportsPermissionMode(harness string) bool {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode, "codex":
+	case harnessname.ClaudeCode, harnessname.Codex:
 		return true
 	default:
 		return false
@@ -707,12 +705,12 @@ func isSupportedPermissionMode(harness, mode string) bool {
 		return true
 	}
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		switch mode {
 		case claudeModeAcceptEdits, claudeModeDontAsk, claudeModeBypassPermissions:
 			return true
 		}
-	case "codex":
+	case harnessname.Codex:
 		switch mode {
 		case codexSandboxReadOnly, codexSandboxWorkspaceWrite, codexSandboxDangerFullAccess:
 			return true
@@ -744,7 +742,7 @@ func argsWithHarnessPermissionMode(harness string, args []string, mode string) [
 		return args
 	}
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		// --permission-mode: plain last-wins suppression — the caller is
 		// restating the same axis.
 		//
@@ -760,7 +758,7 @@ func argsWithHarnessPermissionMode(harness string, args []string, mode string) [
 		// win at the harness's own arg parsing — a second line of defence
 		// behind the suppression check above, not a substitute for it.
 		return prependArgs(args, "--permission-mode", claudePermissionMode(mode))
-	case "codex":
+	case harnessname.Codex:
 		// Whole-directive wins: if ANY permission-axis flag is already present
 		// we skip injection entirely on BOTH axes. A caller who set only -s
 		// keeps their argv exactly as written rather than receiving a
@@ -885,9 +883,9 @@ func rungIndex(rung string) int {
 // see BypassReachableFlags.
 func BypassEnablingFlags(harness string) []string {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		return []string{SkipPermissionsFlag}
-	case "codex":
+	case harnessname.Codex:
 		return []string{codexBypassFlag}
 	default:
 		return nil
@@ -908,9 +906,9 @@ func BypassEnablingFlags(harness string) []string {
 // may mutate it.
 func BypassReachableFlags(harness string) []string {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		return []string{SkipPermissionsFlag, AllowSkipPermissionsFlag}
-	case "codex":
+	case harnessname.Codex:
 		return []string{codexBypassFlag}
 	default:
 		return nil
@@ -944,7 +942,7 @@ func BypassReachableFlags(harness string) []string {
 // == EffectiveLaunchRung(h, args, mode).
 func EffectiveLaunchRung(harness string, args []string, mode string) string {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		if argsContainAnyFlag(args, SkipPermissionsFlag) {
 			return permissionModeBypass
 		}
@@ -953,7 +951,7 @@ func EffectiveLaunchRung(harness string, args []string, mode string) string {
 			return claudeRung(value)
 		}
 		return claudeRung(mode)
-	case "codex":
+	case harnessname.Codex:
 		if argsContainAnyFlag(args, codexBypassFlag) {
 			return permissionModeBypass
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -50,7 +51,7 @@ func TestKeepAliveLive(t *testing.T) {
 	open := func(t *testing.T, keepAlive bool) *Conversation {
 		t.Helper()
 		conv, err := Open(context.Background(), Options{
-			Harness:                   chatClaudeCode,
+			Harness:                   harnessname.ClaudeCode,
 			BinaryPath:                bin,
 			WorkingDir:                wd,
 			Env:                       harnessenv.Cleaned(),

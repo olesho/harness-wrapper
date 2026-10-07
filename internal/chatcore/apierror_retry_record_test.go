@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 )
 
@@ -120,7 +121,7 @@ func recordAPIErrorScenario(t *testing.T, bin, version, name string, failed int,
 	seed("settings.json", map[string]any{"permissions": map[string]any{"defaultMode": "auto"}})
 
 	conv, err := Open(context.Background(), Options{
-		Harness:    chatClaudeCode,
+		Harness:    harnessname.ClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: wd,
 		Env: append(harnessenv.Cleaned(),

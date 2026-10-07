@@ -14,6 +14,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // TestStreamAccountLive runs the stream-json transport against the real
@@ -105,7 +106,7 @@ func TestStreamAccountLive(t *testing.T) {
 		var err error
 		if reopen == "" {
 			conv, err = Open(ctx, Options{
-				Harness: chatClaudeCode, BinaryPath: bin, WorkingDir: wd, Env: env, Args: args, Model: model,
+				Harness: harnessname.ClaudeCode, BinaryPath: bin, WorkingDir: wd, Env: env, Args: args, Model: model,
 				Transport: TransportStreamJSON, PermissionMode: "bypass", Store: store, OnEvent: onEvent,
 			})
 		} else {

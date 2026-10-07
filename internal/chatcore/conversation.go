@@ -15,6 +15,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/delivery"
 	"github.com/olesho/harness-wrapper/internal/resettime"
 	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
@@ -1005,7 +1006,7 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 		// is always followed by more activity, so it never confirms; the genuine
 		// end-of-turn marker, followed by a settled prompt, confirms in ~2s.
 		// Other harnesses (codex) keep the instant marker path below.
-		if c.opts.Harness == "claude-code" {
+		if c.opts.Harness == harnessname.ClaudeCode {
 			c.mu.Lock()
 			pending := c.currentTurn != nil
 			if pending {

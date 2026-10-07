@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
@@ -201,7 +202,7 @@ func recordInterruptScenario(t *testing.T, bin, version string, sc interruptScen
 	})
 
 	conv, err := Open(context.Background(), Options{
-		Harness:    chatClaudeCode,
+		Harness:    harnessname.ClaudeCode,
 		BinaryPath: bin,
 		WorkingDir: wd,
 		Env: append(harnessenv.Cleaned(),

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
@@ -154,7 +155,7 @@ func TestInterrupt_CancelClearsTheComposerForTheNextSend(t *testing.T) {
 func TestInterrupt_NoTurnWritesNothing(t *testing.T) {
 	var wrote [][]byte
 	c := &Conversation{
-		opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New(),
+		opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New(),
 		screen: screen.New(120, 40), closed: make(chan struct{}),
 		writeStdin: func(p []byte) (int, error) { wrote = append(wrote, p); return len(p), nil },
 	}

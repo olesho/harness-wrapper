@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
@@ -167,7 +168,7 @@ func fakeEnv(t *testing.T, script fakeharness.Script) []string {
 func TestResumeAt_FromTheWall(t *testing.T) {
 	before := time.Now()
 	t.Run("screen relabel", func(t *testing.T) {
-		c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+		c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 		const wall = "You've hit your session limit · resets 10:20pm (Europe/Warsaw)"
 		turn := &Turn{State: TurnStateComplete, Text: wall}
 		if !c.usageLimitRelabel(turn, screen.Snapshot{Text: "⏺ " + wall + "\n\n✻ Brewed for 0s\n\n❯ \n"}) {

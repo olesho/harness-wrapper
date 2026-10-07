@@ -26,6 +26,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 //go:embed models.json
@@ -83,18 +85,14 @@ func parse(data []byte) (map[string]registryEntry, error) {
 // (strings.ToLower(strings.TrimSpace(...))) and deliberately does NOT map
 // claude → claude-code — that alias lives only in registryKey.
 func norm(harness string) string {
-	return strings.ToLower(strings.TrimSpace(harness))
+	return harnessname.Normalize(harness)
 }
 
 // registryKey is the canonical registry key for a harness: norm plus the
 // "claude" → "claude-code" alias, so both resolve to the same entry. Mirrors TS
 // registryKey.
 func registryKey(harness string) string {
-	h := norm(harness)
-	if h == "claude" {
-		return "claude-code"
-	}
-	return h
+	return harnessname.Canonical(harness)
 }
 
 // KnownModels returns the curated list of known model ids/aliases for a

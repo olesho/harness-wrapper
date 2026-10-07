@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 )
 
@@ -86,7 +87,7 @@ func TestReadyForInput_SettledCorpusFrame(t *testing.T) {
 		t.Fatalf("precondition failed: the recorded settled frame still carries the banner, " +
 			"so it cannot demonstrate the scroll-away case")
 	}
-	if !readyForInput(chatClaudeCode, settled) {
+	if !readyForInput(harnessname.ClaudeCode, settled) {
 		t.Error("readyForInput(claude-code, settled 2.1.247 frame) = false; " +
 			"a settled composer must be ready even with the banner scrolled off")
 	}
@@ -126,7 +127,7 @@ func TestReadyForInput_ClaudeNotReadyScreens(t *testing.T) {
 			if !strings.Contains(text, "\u276f") {
 				t.Fatalf("precondition: %s must paint a \u276f selector, or it proves nothing", name)
 			}
-			if readyForInput(chatClaudeCode, text) {
+			if readyForInput(harnessname.ClaudeCode, text) {
 				t.Errorf("readyForInput(claude-code, %s) = true; a blocking screen must stay not-ready", name)
 			}
 		})

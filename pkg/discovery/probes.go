@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // semverRe matches the first X.Y.Z (optionally followed by -pre.release
@@ -33,8 +35,8 @@ func (semverDashVProbe) Detect(ctx context.Context, path string) (string, error)
 
 func init() {
 	p := semverDashVProbe{}
-	RegisterProbe("codex", p)
-	RegisterProbe("claude-code", p)
-	RegisterProbe("opencode", p)
-	RegisterProbe("pi", p)
+	RegisterProbe(harnessname.Codex, p)
+	RegisterProbe(harnessname.ClaudeCode, p)
+	RegisterProbe(harnessname.OpenCode, p)
+	RegisterProbe(harnessname.Pi, p)
 }

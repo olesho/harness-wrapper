@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/discovery/models"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // This file is the LIVE half of model discovery — the driver that feeds a real
@@ -200,8 +200,8 @@ func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.I
 // only claude/claude-code and codex); every other harness parses to [] and so
 // is fast-failed with ErrPickerUnsupported before a session is even launched.
 func pickerSupported(harness string) bool {
-	switch strings.ToLower(strings.TrimSpace(harness)) {
-	case "claude", "claude-code", "codex":
+	switch harnessname.Canonical(harness) {
+	case harnessname.ClaudeCode, harnessname.Codex:
 		return true
 	default:
 		return false

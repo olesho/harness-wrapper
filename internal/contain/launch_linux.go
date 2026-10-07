@@ -16,6 +16,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/apparmor"
 	"github.com/olesho/harness-wrapper/internal/landlock"
 	"github.com/olesho/harness-wrapper/pkg/containment"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"golang.org/x/sys/unix"
 )
 
@@ -315,7 +316,7 @@ func checkTargets(expect map[string]string, pins []*pinned) error {
 // codex runs only at the rung that bypasses it, where the domain is the only
 // boundary. Other modes are refused here, never rewritten.
 func checkHarnessMode(m *manifest, in Input) error {
-	if m.Name != "codex" {
+	if m.Name != harnessname.Codex {
 		return nil
 	}
 	if in.LaunchRung != "bypass" {
@@ -417,7 +418,7 @@ func (l *Launch) provisionState(m *manifest, req *containment.Request, callerEnv
 	}
 
 	switch m.Name {
-	case "claude-code":
+	case harnessname.ClaudeCode:
 		apiKey, _ := lookupEnv(callerEnv, "ANTHROPIC_API_KEY")
 		seed, err := claudeSeed(l.wd.canonical, apiKey)
 		if err == nil {
@@ -426,7 +427,7 @@ func (l *Launch) provisionState(m *manifest, req *containment.Request, callerEnv
 		if err != nil {
 			return lay, nil, nil, refuseErr(StageState, err)
 		}
-	case "codex":
+	case harnessname.Codex:
 		seed, err := codexConfig(l.wd.canonical)
 		if err == nil {
 			err = seedFile(config, "config.toml", seed)

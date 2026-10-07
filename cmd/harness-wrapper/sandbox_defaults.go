@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -88,7 +89,7 @@ const sandboxEnvKey = "IS_SANDBOX"
 // function from the CLI. Do not "fix" this into a normalized match: it would
 // quietly widen the set of invocations that receive the root-enabling env half.
 func applySandboxDefaults(harnessName, permissionMode string, args, env []string) ([]string, []string) {
-	if harnessName != "claude" {
+	if harnessName != harnessname.Claude {
 		return args, env
 	}
 	if !wrapper.IsBypassPermissionMode(permissionMode) && !hasSkipPermissionsFlag(args) {

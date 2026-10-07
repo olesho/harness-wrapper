@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // TestStreamLive runs the stream-json transport (ADR-009) against the real
@@ -193,7 +194,7 @@ func openStreamLive(t *testing.T, bin, api string, store Store, reopen string, e
 		})
 	} else {
 		conv, err = Open(ctx, Options{
-			Harness: chatClaudeCode, BinaryPath: bin, WorkingDir: wd, Env: fullEnv,
+			Harness: harnessname.ClaudeCode, BinaryPath: bin, WorkingDir: wd, Env: fullEnv,
 			Transport: TransportStreamJSON, PermissionMode: "bypass", Store: store, OnEvent: onEvent,
 		})
 	}

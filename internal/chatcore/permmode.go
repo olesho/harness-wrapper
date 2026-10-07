@@ -9,6 +9,7 @@ import (
 	"time"
 
 	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
@@ -502,7 +503,7 @@ var errPermissionModeBoundExhausted = errors.New("chat: permission mode cycle bo
 // short-circuit keys on the target itself, while the cycle decides arrival
 // through the matcher (see postureMatch for why those are not the same test).
 func (c *Conversation) driveToPermissionMode(ctx context.Context, target string, arrived postureMatch, bound int) (string, error) {
-	if c.opts.Harness == "codex" && target == codexCollabPlan {
+	if c.opts.Harness == harnessname.Codex && target == codexCollabPlan {
 		return c.codexEnterPlan(ctx)
 	}
 	return c.cyclePermissionMode(ctx, arrived, bound)
@@ -839,10 +840,10 @@ func (c *Conversation) awaitPostureChange(ctx context.Context, prev turns.Permis
 //     "plan" — are unreachable here.
 //   - everything else (opencode, pi, generic): (nil, false).
 func permissionModeCapabilities(harness string) (targets []string, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(harness)) {
-	case "claude", chatClaudeCode:
+	switch harnessname.Canonical(harness) {
+	case harnessname.ClaudeCode:
 		return wrapper.PermissionRungs(), true
-	case "codex":
+	case harnessname.Codex:
 		return []string{codexCollabPlan, codexCollabDefault}, true
 	default:
 		return nil, false
@@ -882,15 +883,15 @@ func permissionModeCapabilities(harness string) (targets []string, ok bool) {
 // codex's collaboration axis is a plain 2-cycle with no launch-dependent
 // variant, so it short-circuits ahead of all of this.
 func (c *Conversation) cycleRing() (ringLen int, bypassOnRing bool) {
-	if c.opts.Harness == "codex" {
+	if c.opts.Harness == harnessname.Codex {
 		return 2, false
 	}
 
-	rung := wrapper.EffectiveLaunchRung(chatClaudeCode, c.opts.Args, c.opts.PermissionMode)
+	rung := wrapper.EffectiveLaunchRung(harnessname.ClaudeCode, c.opts.Args, c.opts.PermissionMode)
 	if rung == permissionRungBypass {
 		return 5, true
 	}
-	if argsContainFlag(c.opts.Args, wrapper.BypassReachableFlags(chatClaudeCode)...) {
+	if argsContainFlag(c.opts.Args, wrapper.BypassReachableFlags(harnessname.ClaudeCode)...) {
 		return 5, true
 	}
 	if rung == "" {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 )
 
@@ -71,7 +72,7 @@ func TestReadyForSend_QuotedSignInPhraseDoesNotGateSend(t *testing.T) {
 		"Choose the text style that looks best with your terminal",
 	} {
 		t.Run(phrase, func(t *testing.T) {
-			assertSendableDespiteQuote(t, chatClaudeCode, readyComposerQuoting(phrase), phrase)
+			assertSendableDespiteQuote(t, harnessname.ClaudeCode, readyComposerQuoting(phrase), phrase)
 		})
 	}
 }

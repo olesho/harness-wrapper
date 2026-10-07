@@ -13,6 +13,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/contain"
 	"github.com/olesho/harness-wrapper/pkg/containment"
 	"github.com/olesho/harness-wrapper/pkg/harness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/oneshot"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	"github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
@@ -237,10 +238,10 @@ func transcriptReaderFor(harnessName string, env []string, workingDir string) (t
 		}
 		return transcript.ResolveHarnessPath(filepath.Join(dir, sub), workingDir)
 	}
-	switch harnessName {
-	case "claude":
+	switch harnessName { // exact: the CLI's short names
+	case harnessname.Claude:
 		return &claudecode.Reader{ProjectsRoot: root("CLAUDE_CONFIG_DIR", "projects")}, true
-	case "codex":
+	case harnessname.Codex:
 		return &codex.Reader{SessionsRoot: root("CODEX_HOME", "sessions")}, true
 	default:
 		return nil, false

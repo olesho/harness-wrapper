@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 )
 
@@ -29,7 +30,7 @@ func newEchoConversation(t *testing.T, harness string, idleGap time.Duration) *C
 }
 
 func TestAwaitComposerEcho_ReturnsWhenTheTextAppears(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 4*time.Second)
 	pre := c.screen.Snapshot().Text
 
 	go func() {
@@ -51,7 +52,7 @@ func TestAwaitComposerEcho_ReturnsWhenTheTextAppears(t *testing.T) {
 // the fallback this depends on — without it a large prompt would always pay the
 // full bound.
 func TestAwaitComposerEcho_CollapsedPasteCountsAsEcho(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 4*time.Second)
 	pre := c.screen.Snapshot().Text
 
 	go func() {
@@ -75,7 +76,7 @@ func TestAwaitComposerEcho_CollapsedPasteCountsAsEcho(t *testing.T) {
 // Degrade, never hang: if the composer never shows anything, the submit is
 // still written once the bound expires.
 func TestAwaitComposerEcho_DegradesOnTheBound(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 200*time.Millisecond)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 200*time.Millisecond)
 	pre := c.screen.Snapshot().Text
 
 	start := time.Now()
@@ -90,7 +91,7 @@ func TestAwaitComposerEcho_DegradesOnTheBound(t *testing.T) {
 // A cancelled run is different from a missed echo: the whole run is over, so it
 // propagates rather than writing a submit into a dead session.
 func TestAwaitComposerEcho_PropagatesRunCancellation(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 10*time.Second)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 10*time.Second)
 	pre := c.screen.Snapshot().Text
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -105,12 +106,12 @@ func TestAwaitComposerEcho_PropagatesRunCancellation(t *testing.T) {
 // swallowed-prompt check could judge the turn before the submit is even
 // written.
 func TestEchoBound_StaysInsideTheIdleWindow(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 600*time.Millisecond)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 600*time.Millisecond)
 	if got, max := c.echoBoundDur(), 300*time.Millisecond; got > max {
 		t.Fatalf("echoBoundDur = %v, want <= idleGap/2 (%v)", got, max)
 	}
 
-	wide := newEchoConversation(t, chatClaudeCode, time.Hour)
+	wide := newEchoConversation(t, harnessname.ClaudeCode, time.Hour)
 	if got := wide.echoBoundDur(); got != submitEchoGap {
 		t.Fatalf("echoBoundDur = %v, want the configured gap %v when idleGap is generous", got, submitEchoGap)
 	}
@@ -119,7 +120,7 @@ func TestEchoBound_StaysInsideTheIdleWindow(t *testing.T) {
 // Harnesses with no composer to echo into keep the single combined write; the
 // echo path must not be imposed on them.
 func TestRequiresPromptReadiness_GatesTheEchoPath(t *testing.T) {
-	for _, h := range []string{chatClaudeCode, "codex"} {
+	for _, h := range []string{harnessname.ClaudeCode, "codex"} {
 		if !requiresPromptReadiness(h) {
 			t.Fatalf("requiresPromptReadiness(%q) = false, want true", h)
 		}
@@ -130,7 +131,7 @@ func TestRequiresPromptReadiness_GatesTheEchoPath(t *testing.T) {
 }
 
 func TestAwaitComposerEcho_EmptyNeedleUsesScreenChange(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 4*time.Second)
 	pre := c.screen.Snapshot().Text
 
 	go func() {
@@ -187,7 +188,7 @@ func largeText(n int) string {
 // The core contract: markers + text in ONE write, submit key in a LATER one.
 func TestWriteMessageAndSubmit_FramesALargePayloadAsOnePaste(t *testing.T) {
 	rec := &writeRecorder{}
-	c := newPasteConversation(t, chatClaudeCode, rec)
+	c := newPasteConversation(t, harnessname.ClaudeCode, rec)
 	text := largeText(pasteThreshold + 200)
 
 	go func() {
@@ -215,7 +216,7 @@ func TestWriteMessageAndSubmit_FramesALargePayloadAsOnePaste(t *testing.T) {
 // nothing changes, byte for byte.
 func TestWriteMessageAndSubmit_ShortTextIsNotFramed(t *testing.T) {
 	rec := &writeRecorder{}
-	c := newPasteConversation(t, chatClaudeCode, rec)
+	c := newPasteConversation(t, harnessname.ClaudeCode, rec)
 	text := "ship the turn API"
 
 	go func() {
@@ -237,10 +238,10 @@ func TestWriteMessageAndSubmit_ShortTextIsNotFramed(t *testing.T) {
 // A slash command must still open the command palette, which a PASTE does not.
 func TestShouldPaste_NeverFramesASlashCommand(t *testing.T) {
 	text := "/compact " + largeText(pasteThreshold)
-	if _, _, framed := shouldPaste(chatClaudeCode, text); framed {
+	if _, _, framed := shouldPaste(harnessname.ClaudeCode, text); framed {
 		t.Fatal("a slash command was framed as a paste; it would stop opening the command palette")
 	}
-	if _, _, framed := shouldPaste(chatClaudeCode, "  \n /model "+largeText(pasteThreshold)); framed {
+	if _, _, framed := shouldPaste(harnessname.ClaudeCode, "  \n /model "+largeText(pasteThreshold)); framed {
 		t.Fatal("leading whitespace defeated the slash guard")
 	}
 }
@@ -250,7 +251,7 @@ func TestShouldPaste_NeverFramesASlashCommand(t *testing.T) {
 // through the content.
 func TestFramePaste_StripsEmbeddedFraming(t *testing.T) {
 	text := "head\x1b[201~middle\x1b[200~tail"
-	prefix, suffix := pasteWrapForHarness(chatClaudeCode)
+	prefix, suffix := pasteWrapForHarness(harnessname.ClaudeCode)
 	got := string(framePaste(prefix, suffix, text))
 	want := pasteStartCSI200 + "headmiddletail" + pasteEndCSI201
 	if got != want {
@@ -264,7 +265,7 @@ func TestFramePaste_StripsEmbeddedFraming(t *testing.T) {
 // A framed write is rendered as a placeholder, never as the text, so it must
 // not wait out bound/2 for a needle that can never match.
 func TestAwaitComposerEcho_FramedDoesNotWaitForTheTextNeedle(t *testing.T) {
-	c := newEchoConversation(t, chatClaudeCode, 4*time.Second)
+	c := newEchoConversation(t, harnessname.ClaudeCode, 4*time.Second)
 	pre := c.screen.Snapshot().Text
 
 	go func() {
@@ -284,7 +285,7 @@ func TestAwaitComposerEcho_FramedDoesNotWaitForTheTextNeedle(t *testing.T) {
 // Unmeasured harnesses keep today's behaviour. That is the point of a
 // per-harness table, and it mirrors how submitKeyForHarness treats the unknown.
 func TestPasteWrapForHarness_OnlyMeasuredHarnesses(t *testing.T) {
-	for _, h := range []string{"claude", chatClaudeCode, "codex"} {
+	for _, h := range []string{"claude", harnessname.ClaudeCode, "codex"} {
 		prefix, suffix := pasteWrapForHarness(h)
 		if string(prefix) != pasteStartCSI200 || string(suffix) != pasteEndCSI201 {
 			t.Fatalf("pasteWrapForHarness(%q) = (%q, %q), want the CSI 200/201 pair", h, prefix, suffix)

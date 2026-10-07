@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 //go:embed profiles/*.json
@@ -136,7 +138,7 @@ func loadManifests() error {
 			loadError = fmt.Errorf("baseline manifest: %w", err)
 			return
 		}
-		for _, name := range []string{"claude-code", "codex"} {
+		for _, name := range []string{harnessname.ClaudeCode, harnessname.Codex} {
 			b, err := manifestFS.ReadFile("profiles/" + name + ".json")
 			if err != nil {
 				loadError = err
@@ -167,7 +169,9 @@ func profileFor(harness string, login bool) (*manifest, error) {
 	if err := loadManifests(); err != nil {
 		return nil, refuseErr(StageProfile, err)
 	}
-	name := strings.ToLower(strings.TrimSpace(harness))
+	// The manifests list every spelling they answer to (claude-code.json
+	// lists the "claude" alias), so the name is only normalized here.
+	name := harnessname.Normalize(harness)
 	testMu.Lock()
 	var m *manifest
 	for _, tm := range testProfiles {

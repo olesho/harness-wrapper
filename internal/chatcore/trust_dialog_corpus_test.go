@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -126,7 +127,7 @@ func TestDetectInput_TrustDialogCorpusFrame(t *testing.T) {
 // onto the highlighted "No, exit".
 func TestReadyForInput_TrustDialogCorpusFrame(t *testing.T) {
 	frame := trustDialogCorpusFrame(t)
-	if readyForInput(chatClaudeCode, frame) {
+	if readyForInput(harnessname.ClaudeCode, frame) {
 		t.Error("readyForInput(claude-code, recorded 2.1.251 trust dialog) = true; a blocking dialog must stay not-ready")
 	}
 }

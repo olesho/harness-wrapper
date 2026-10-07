@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -73,10 +74,10 @@ func newAnswerFake(t *testing.T, budget time.Duration, first string, onWrite fun
 	f := &answerFake{t: t, scr: screen.New(120, 40), onWrite: onWrite}
 	f.c = &Conversation{
 		opts: Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: budget,
 		},
-		adapter:      testAdapter(chatClaudeCode),
+		adapter:      testAdapter(harnessname.ClaudeCode),
 		screen:       f.scr,
 		eventCh:      make(chan ConversationEvent, 8),
 		closed:       make(chan struct{}),

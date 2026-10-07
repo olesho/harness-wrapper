@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // TestSubmitKeyForHarness pins the per-harness Enter key. codex 0.141.0 and
@@ -52,17 +54,17 @@ func TestAuthRequired(t *testing.T) {
 		want    bool
 	}{
 		// claude-code — real: `claude -p` on a logged-out box prints this verbatim.
-		{"claude not-logged-in", chatClaudeCode, "Not logged in · Please run /login", true},
-		{"claude login-expiry banner", chatClaudeCode, "  ⚠ Your login expires in 1 day · run /login to renew\n❯ ", true},
+		{"claude not-logged-in", harnessname.ClaudeCode, "Not logged in · Please run /login", true},
+		{"claude login-expiry banner", harnessname.ClaudeCode, "  ⚠ Your login expires in 1 day · run /login to renew\n❯ ", true},
 		// codex — real: `codex exec` turn failure / `codex login status` / remediation.
 		{"codex 401", "codex", "ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header", true},
 		{"codex not-logged-in", "codex", "Not logged in", true},
 		{"codex login remediation", "codex", "ChatGPT account ID not available, please re-run `codex login`", true},
 		// No false positives on ordinary screen text.
-		{"claude ordinary reply", chatClaudeCode, "⏺ I refactored the auth module.", false},
+		{"claude ordinary reply", harnessname.ClaudeCode, "⏺ I refactored the auth module.", false},
 		{"codex ordinary reply", "codex", "› ready\nthinking about the task", false},
 		// Anchors do not cross harnesses.
-		{"claude does not fire on codex 401", chatClaudeCode, "HTTP 401 Unauthorized from the API", false},
+		{"claude does not fire on codex 401", harnessname.ClaudeCode, "HTTP 401 Unauthorized from the API", false},
 		{"codex does not fire on claude /login", "codex", "please run /login", false},
 		// Unknown harness never fires.
 		{"unknown harness", "some-other-harness", "Not logged in", false},
@@ -70,11 +72,11 @@ func TestAuthRequired(t *testing.T) {
 		// login-method menu advances into. "Select login method" is GONE from this
 		// screen, so before the fix nothing matched it and Send hung to the
 		// deadline. Both prose lines are anchors; either alone suffices.
-		{"claude oauth sign-in url line", chatClaudeCode, " Browser didn't open? Use the url below to sign in (c to copy)", true},
-		{"claude oauth paste-code line", chatClaudeCode, " Paste code here if prompted >", true},
+		{"claude oauth sign-in url line", harnessname.ClaudeCode, " Browser didn't open? Use the url below to sign in (c to copy)", true},
+		{"claude oauth paste-code line", harnessname.ClaudeCode, " Paste code here if prompted >", true},
 		// The anchors are deliberately the full UI phrasings: an assistant reply
 		// merely saying "paste code" must not be gated.
-		{"claude reply mentioning paste code", chatClaudeCode, "⏺ Copy the snippet and paste code into main.go.", false},
+		{"claude reply mentioning paste code", harnessname.ClaudeCode, "⏺ Copy the snippet and paste code into main.go.", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := authRequired(tc.harness, tc.text); got != tc.want {
@@ -107,13 +109,13 @@ func TestOnboardingWallClaude2_1_263(t *testing.T) {
 				t.Fatalf("read fixture: %v", err)
 			}
 			screen := string(b)
-			if got := onboardingWall(chatClaudeCode, screen); got != tc.wantWall {
+			if got := onboardingWall(harnessname.ClaudeCode, screen); got != tc.wantWall {
 				t.Errorf("onboardingWall = %v, want %v", got, tc.wantWall)
 			}
-			if got := readyForInput(chatClaudeCode, screen); got != tc.wantReady {
+			if got := readyForInput(harnessname.ClaudeCode, screen); got != tc.wantReady {
 				t.Errorf("readyForInput = %v, want %v", got, tc.wantReady)
 			}
-			if got := authRequired(chatClaudeCode, screen); got != tc.wantAuth {
+			if got := authRequired(harnessname.ClaudeCode, screen); got != tc.wantAuth {
 				t.Errorf("authRequired = %v, want %v", got, tc.wantAuth)
 			}
 		})
@@ -131,13 +133,13 @@ func TestReadyForInputClaudeTrustDialog2_1_263(t *testing.T) {
 		" project, or work from your team). If not, take a moment to review what's in this folder first.\n\n" +
 		" Claude Code'll be able to read, edit, and execute files here.\n\n Security guide\n\n" +
 		" \u276f No, exit\n   Yes, I trust this folder\n\n Enter to confirm \u00b7 Esc to cancel\n"
-	if readyForInput(chatClaudeCode, trustDialog) {
+	if readyForInput(harnessname.ClaudeCode, trustDialog) {
 		t.Error("readyForInput(trust dialog) = true, want false")
 	}
-	if onboardingWall(chatClaudeCode, trustDialog) {
+	if onboardingWall(harnessname.ClaudeCode, trustDialog) {
 		t.Error("onboardingWall(trust dialog) = true, want false: it is a blocking dialog, not an auth wall")
 	}
-	if authRequired(chatClaudeCode, trustDialog) {
+	if authRequired(harnessname.ClaudeCode, trustDialog) {
 		t.Error("authRequired(trust dialog) = true, want false")
 	}
 }

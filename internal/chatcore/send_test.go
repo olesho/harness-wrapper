@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // notReadyScreen paints a frame with NO composer prompt at all: the harness is
@@ -44,7 +45,7 @@ func TestSend_TurnInFlightRejectedBeforeReadiness(t *testing.T) {
 		conv.mu.Lock()
 		inFlight := conv.currentTurn != nil
 		conv.mu.Unlock()
-		if inFlight && !readyForInput(chatClaudeCode, conv.screen.Snapshot().Text) {
+		if inFlight && !readyForInput(harnessname.ClaudeCode, conv.screen.Snapshot().Text) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -56,7 +57,7 @@ func TestSend_TurnInFlightRejectedBeforeReadiness(t *testing.T) {
 	if !inFlight {
 		t.Fatal("precondition: a turn must still be in flight")
 	}
-	if readyForInput(chatClaudeCode, conv.screen.Snapshot().Text) {
+	if readyForInput(harnessname.ClaudeCode, conv.screen.Snapshot().Text) {
 		t.Fatal("precondition: the screen must be not-ready, or the ordering is untested")
 	}
 

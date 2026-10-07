@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -61,7 +62,7 @@ func screenWith(t *testing.T, text string) *screen.Screen {
 
 func convOnScreen(scr *screen.Screen) *Conversation {
 	return &Conversation{
-		opts:         Options{Harness: chatClaudeCode},
+		opts:         Options{Harness: harnessname.ClaudeCode},
 		adapter:      claudecode.New(),
 		screen:       scr,
 		inputStateCh: make(chan struct{}, 1),

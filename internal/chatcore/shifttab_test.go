@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/olesho/harness-wrapper/internal/fakeharness"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // TestShiftTabForHarness pins the per-harness Shift+Tab key — the keystroke
@@ -26,8 +27,8 @@ func TestShiftTabForHarness(t *testing.T) {
 		want    []byte
 	}{
 		{"claude alias", "claude", "Claude Code ❯ ", []byte(csi92u)},
-		{"claude-code", chatClaudeCode, "... accept edits on ...", []byte(csi92u)},
-		{"claude-code any screen", chatClaudeCode, "whatever is on screen", []byte(csi92u)},
+		{"claude-code", harnessname.ClaudeCode, "... accept edits on ...", []byte(csi92u)},
+		{"claude-code any screen", harnessname.ClaudeCode, "whatever is on screen", []byte(csi92u)},
 		{"codex", "codex", "›Find and fix a bug in @filename", []byte(csi92u)},
 		{"codex any screen", "codex", "whatever is on screen", []byte(csi92u)},
 		{"unknown unsupported", "someharness", "anything", nil},
@@ -54,7 +55,7 @@ func TestShiftTabForHarness(t *testing.T) {
 // above so the intent survives a careless table edit.
 func TestShiftTabRejectsLegacyForm(t *testing.T) {
 	const legacy = "\x1b[Z"
-	for _, harness := range []string{"claude", chatClaudeCode, "codex"} {
+	for _, harness := range []string{"claude", harnessname.ClaudeCode, "codex"} {
 		if got := shiftTabForHarness(harness, ""); bytes.Equal(got, []byte(legacy)) {
 			t.Errorf("shiftTabForHarness(%q, …) returned the legacy CSI Z form; "+
 				"enhanced-keyboard harnesses need CSI 9;2u", harness)
@@ -68,7 +69,7 @@ func TestShiftTabRejectsLegacyForm(t *testing.T) {
 // keep passing against bytes the wrapper no longer sends. Mirrors the way
 // AwaitSubmit ties fakeharness.SubmitCSI13u to submitKeyForHarness.
 func TestShiftTabMatchesFakeharness(t *testing.T) {
-	for _, harness := range []string{"claude", chatClaudeCode, "codex"} {
+	for _, harness := range []string{"claude", harnessname.ClaudeCode, "codex"} {
 		got := shiftTabForHarness(harness, "")
 		if !bytes.Equal(got, []byte(fakeharness.ShiftTabCSI9_2u)) {
 			t.Errorf("shiftTabForHarness(%q, …) = %q, but fakeharness.ShiftTabCSI9_2u = %q; "+
@@ -82,7 +83,7 @@ func TestShiftTabMatchesFakeharness(t *testing.T) {
 // key, made explicit here alongside its Shift+Tab twin — until now the tie was
 // only implicit in the PTY scenarios that use AwaitSubmit.
 func TestSubmitKeyMatchesFakeharness(t *testing.T) {
-	for _, harness := range []string{chatClaudeCode, "codex"} {
+	for _, harness := range []string{harnessname.ClaudeCode, "codex"} {
 		if got := submitKeyForHarness(harness, ""); !bytes.Equal(got, []byte(fakeharness.SubmitCSI13u)) {
 			t.Errorf("submitKeyForHarness(%q, …) = %q, want fakeharness.SubmitCSI13u %q",
 				harness, got, fakeharness.SubmitCSI13u)

@@ -11,6 +11,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/chat"
 	"github.com/olesho/harness-wrapper/pkg/chat/memstore"
 	"github.com/olesho/harness-wrapper/pkg/containment"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -395,10 +396,7 @@ func turnHarnessName(cfg TurnConfig) string {
 	if cfg.TurnHarness != "" {
 		return cfg.TurnHarness
 	}
-	switch cfg.Harness {
-	case "claude":
-		return "claude-code"
-	default:
-		return cfg.Harness
-	}
+	// Exact match, as before: "claude" maps to the chat adapter "claude-code";
+	// every other spelling passes through untouched.
+	return harnessname.Unalias(cfg.Harness)
 }

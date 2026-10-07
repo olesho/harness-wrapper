@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 )
@@ -32,7 +33,7 @@ func TestAuthRelabel_ClaudeFalseSuccess(t *testing.T) {
 	} {
 		t.Run(fx, func(t *testing.T) {
 			snap := screen.Snapshot{Text: loadCorpusScreen(t, fx)}
-			c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+			c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 			turn := &Turn{
 				State:  TurnStateComplete,
 				Reason: "claude-code: end-of-turn marker confirmed at a settled prompt",
@@ -59,8 +60,8 @@ func TestAuthRelabel_ClaudeFalseSuccess(t *testing.T) {
 // extraction gate protects it.
 func TestAuthRelabel_GenuineReplyUntouched(t *testing.T) {
 	snap := screen.Snapshot{Text: "⏺ To fix this, run /login in your terminal.\n\n✻ Brewed for 2s\n\n❯ \n"}
-	c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
-	if !authRequired(chatClaudeCode, snap.Text) {
+	c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
+	if !authRequired(harnessname.ClaudeCode, snap.Text) {
 		t.Fatalf("precondition: screen should match authRequired (mentions run /login)")
 	}
 	turn := &Turn{State: TurnStateComplete, Text: "To fix this, run /login in your terminal."}
@@ -78,7 +79,7 @@ func TestAuthRelabel_GenuineReplyUntouched(t *testing.T) {
 func TestWaitReadyForSend_OnboardingShortCircuit(t *testing.T) {
 	for _, tc := range []struct{ harness, fx string }{
 		{"codex", "codex/onboarding"},
-		{chatClaudeCode, "claude-code/theme-picker"},
+		{harnessname.ClaudeCode, "claude-code/theme-picker"},
 	} {
 		t.Run(tc.fx, func(t *testing.T) {
 			scr := screen.New(160, 60)

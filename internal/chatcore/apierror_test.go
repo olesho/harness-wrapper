@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
@@ -56,7 +57,7 @@ func convWithTranscript(t *testing.T, sessionID string, lines ...string) *Conver
 	a := claudecode.New()
 	a.ProjectsRoot = root
 	c := &Conversation{
-		opts:                    Options{Harness: chatClaudeCode, WorkingDir: wd},
+		opts:                    Options{Harness: harnessname.ClaudeCode, WorkingDir: wd},
 		adapter:                 a,
 		sentTranscriptWatermark: 0,
 		closed:                  make(chan struct{}),
@@ -120,7 +121,7 @@ func TestAPIErrorVerdict_WallsAndFailures(t *testing.T) {
 				t.Errorf("reason = %q, want %q", v.reason, tc.wantReason)
 			}
 			// The harness's own words are the evidence for the verdict.
-			r := v.turnReason(chatClaudeCode)
+			r := v.turnReason(harnessname.ClaudeCode)
 			if !strings.Contains(r, tc.tag) || !strings.Contains(r, "rendered error") {
 				t.Errorf("turn reason = %q, want it to carry the tag and the rendered text", r)
 			}
@@ -248,7 +249,7 @@ func TestAPIErrorRelabel_BillingReachesTheWall(t *testing.T) {
 		t.Errorf("Reason = %q, want the ReasonBillingWall prefix", turn.Reason)
 	}
 	// No screen recogniser produced this: the transcript is the only source.
-	if authRequired(chatClaudeCode, "Credit balance too low · Add funds: https://platform.claude.com/settings/billing") {
+	if authRequired(harnessname.ClaudeCode, "Credit balance too low · Add funds: https://platform.claude.com/settings/billing") {
 		t.Error("precondition: the billing banner must NOT be an auth banner")
 	}
 }
@@ -451,7 +452,7 @@ func TestSwallowedVerdict_TagNamesTheFailure(t *testing.T) {
 // makes a consumer silently fall back to pattern inference. Reason is operator
 // copy and gets reworded; Code is the contract.
 func TestEveryReasonCarriesItsCode(t *testing.T) {
-	c := &Conversation{opts: Options{Harness: chatClaudeCode}, adapter: claudecode.New()}
+	c := &Conversation{opts: Options{Harness: harnessname.ClaudeCode}, adapter: claudecode.New()}
 
 	t.Run("authRelabel", func(t *testing.T) {
 		snap := screen.Snapshot{Text: "Claude Code\n\nNot logged in · Run /login\n\n❯ \n"}

@@ -38,13 +38,14 @@ import (
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/codex"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/cursor"
 	"github.com/olesho/harness-wrapper/internal/wrapcore/harness/opencode"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // The built-in harnesses' classifier patterns, under the names Config.Harness
 // has always accepted for them.
 func init() {
-	wrapcore.RegisterPatterns(claude.Patterns, "claude", "claude-code")
-	wrapcore.RegisterPatterns(codex.Patterns, "codex")
-	wrapcore.RegisterPatterns(cursor.Patterns, "cursor")
-	wrapcore.RegisterPatterns(opencode.Patterns, "opencode")
+	wrapcore.RegisterPatterns(claude.Patterns, harnessname.Spellings(harnessname.ClaudeCode)...)
+	wrapcore.RegisterPatterns(codex.Patterns, harnessname.Codex)
+	wrapcore.RegisterPatterns(cursor.Patterns, harnessname.Cursor)
+	wrapcore.RegisterPatterns(opencode.Patterns, harnessname.OpenCode)
 }

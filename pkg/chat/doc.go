@@ -41,22 +41,26 @@ package chat
 
 import (
 	"github.com/olesho/harness-wrapper/internal/chatcore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/generic"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/codex"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
+
 	// The built-in harnesses' classifier patterns: a TUI conversation's
 	// supervisor classifies its harness's output with them.
 	_ "github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
 // The built-in harness adapters, under the names Options.Harness has always
-// accepted. The empty name is the generic adapter.
+// accepted: the canonical ids, matched exactly — chat does not fold the
+// "claude" alias (harness.RunTurn does, via harnessname.Unalias, before it gets
+// here). The empty name is the generic adapter.
 func init() {
-	chatcore.RegisterAdapter("codex", func() turns.Adapter { return codex.New() })
-	chatcore.RegisterAdapter("claude-code", func() turns.Adapter { return claudecode.New() })
-	chatcore.RegisterAdapter("opencode", func() turns.Adapter { return opencode.New() })
+	chatcore.RegisterAdapter(harnessname.Codex, func() turns.Adapter { return codex.New() })
+	chatcore.RegisterAdapter(harnessname.ClaudeCode, func() turns.Adapter { return claudecode.New() })
+	chatcore.RegisterAdapter(harnessname.OpenCode, func() turns.Adapter { return opencode.New() })
 	chatcore.RegisterAdapter("generic", func() turns.Adapter { return generic.New() })
 	chatcore.RegisterAdapter("", func() turns.Adapter { return generic.New() })
 }

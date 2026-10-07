@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -239,7 +240,7 @@ func (f *permModeFake) write(p []byte) (int, error) {
 func newPermModeConv(t *testing.T, opts Options, ring []string, startIdx int) (*Conversation, *permModeFake) {
 	t.Helper()
 	if opts.Harness == "" {
-		opts.Harness = chatClaudeCode
+		opts.Harness = harnessname.ClaudeCode
 	}
 	if opts.permModeRenderTimeout == 0 {
 		// Short enough that the bound-exhaustion scenarios (2×ringLen presses,
@@ -306,9 +307,9 @@ func TestPermissionMode_AdapterConsult(t *testing.T) {
 		want    string
 		wantOK  bool
 	}{
-		{chatClaudeCode, claudeModeScreen("plan"), "plan", true},
-		{chatClaudeCode, claudeModeScreen("bypass"), "bypass", true},
-		{chatClaudeCode, []string{"Claude Code", "", "❯ "}, "", false},
+		{harnessname.ClaudeCode, claudeModeScreen("plan"), "plan", true},
+		{harnessname.ClaudeCode, claudeModeScreen("bypass"), "bypass", true},
+		{harnessname.ClaudeCode, []string{"Claude Code", "", "❯ "}, "", false},
 		{"codex", codexModeScreen(codexCollabPlan), codexCollabPlan, true},
 		{"codex", codexModeScreen(codexCollabDefault), codexCollabDefault, true},
 		{"opencode", claudeModeScreen("plan"), "", false},
@@ -330,7 +331,7 @@ func TestPermissionMode_AdapterConsult(t *testing.T) {
 // The driver requires the token and NEVER acquires it: a caller that forgot
 // gets ErrNoControl rather than a switch performed behind another holder's back.
 func TestSetPermissionMode_RequiresControlToken(t *testing.T) {
-	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 3)
+	conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing4, 3)
 
 	mode, err := conv.SetPermissionMode(testCtx(t), "plan")
 	if !errors.Is(err, ErrNoControl) {
@@ -346,7 +347,7 @@ func TestSetPermissionMode_RequiresControlToken(t *testing.T) {
 // SetPermissionMode never calls AcquireControl itself: controlQueue is
 // non-reentrant, so a self-acquiring driver would block here until ctx expired.
 func TestSetPermissionMode_BlockedThenAnswerThenRetry_NoDeadlock(t *testing.T) {
-	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing5, 3) // start: auto
+	conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing5, 3) // start: auto
 
 	var req *turns.InputRequest
 	// The first press lands on "bypass" and raises the acceptance dialog.
@@ -437,7 +438,7 @@ func TestSetPermissionMode_BlockedThenAnswerThenRetry_NoDeadlock(t *testing.T) {
 // The driver must stop pressing IMMEDIATELY — never Shift+Tab into an open
 // modal — and hand the caller the request it needs to answer.
 func TestSetPermissionMode_StopsOnBypassAcceptanceDialog(t *testing.T) {
-	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing5, 0) // start: plan
+	conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing5, 0) // start: plan
 	withControl(t, conv)
 
 	fake.onPress = func(f *permModeFake) bool {
@@ -474,7 +475,7 @@ func TestSetPermissionMode_StopsOnBypassAcceptanceDialog(t *testing.T) {
 // policy's keystrokes clear the modal and the driver keeps going.
 func TestSetPermissionMode_InputPolicyResolvesDialog(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{
-		Harness: chatClaudeCode,
+		Harness: harnessname.ClaudeCode,
 		// claudecode classifies the bypass-acceptance screen under its own
 		// "bypass_acceptance" kind (claudecode.KindBypassAcceptance), distinct
 		// from the folder-trust dialog's "trust_prompt" — so this policy must
@@ -523,7 +524,7 @@ func TestSetPermissionMode_InputPolicyResolvesDialog(t *testing.T) {
 // restore the starting posture, and say so with ErrPermissionModeSwitchFailed.
 func TestSetPermissionMode_BoundExhausted_RestoresStart(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{
-		Harness:        chatClaudeCode,
+		Harness:        harnessname.ClaudeCode,
 		PermissionMode: "auto",
 	}, claudeRing4, 3) // start: auto, and the fake never advances
 	fake.advance = func(idx int) int { return idx }
@@ -552,7 +553,7 @@ func TestSetPermissionMode_RatchetUp_Indeterminate(t *testing.T) {
 	// ring: plan(0) → auto(1) → bypass(2) → bypass … ; "manual" is never shown.
 	ring := []string{"plan", "auto", "bypass"}
 	conv, fake := newPermModeConv(t, Options{
-		Harness:        chatClaudeCode,
+		Harness:        harnessname.ClaudeCode,
 		PermissionMode: "bypass", // bypass-enabled launch: 5-ring bound
 	}, ring, 0)
 	fake.advance = func(idx int) int {
@@ -615,7 +616,7 @@ func TestSetPermissionMode_RingLengthTable(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conv, fake := newPermModeConv(t, Options{
-				Harness:        chatClaudeCode,
+				Harness:        harnessname.ClaudeCode,
 				PermissionMode: tc.mode,
 				Args:           tc.args,
 			}, claudeRing5, 0)
@@ -661,9 +662,9 @@ func TestSetPermissionMode_TargetGates(t *testing.T) {
 	}{
 		// claude: "dontAsk" is a launch-only native spelling; it maps to the
 		// "manual" rung but is not itself on the ring.
-		{chatClaudeCode, "dontAsk", ErrPermissionModeUnreachable},
-		{chatClaudeCode, "", ErrPermissionModeUnreachable},
-		{chatClaudeCode, "acceptEdits", ErrPermissionModeUnreachable},
+		{harnessname.ClaudeCode, "dontAsk", ErrPermissionModeUnreachable},
+		{harnessname.ClaudeCode, "", ErrPermissionModeUnreachable},
+		{harnessname.ClaudeCode, "acceptEdits", ErrPermissionModeUnreachable},
 		// codex: the permissions/sandbox axis is a LAUNCH knob with no in-TUI
 		// cycle, and every canonical rung other than "plan" is off-axis.
 		{"codex", "read-only", ErrPermissionModeUnreachable},
@@ -727,8 +728,8 @@ func TestSetPermissionMode_RoundTrip(t *testing.T) {
 		opts    Options
 		targets []string
 	}{
-		{"claude-4-ring", chatClaudeCode, claudeRing4, Options{Harness: chatClaudeCode, PermissionMode: "plan"}, claudeRing4},
-		{"claude-5-ring", chatClaudeCode, claudeRing5, Options{Harness: chatClaudeCode, PermissionMode: "bypass"}, claudeRing5},
+		{"claude-4-ring", harnessname.ClaudeCode, claudeRing4, Options{Harness: harnessname.ClaudeCode, PermissionMode: "plan"}, claudeRing4},
+		{"claude-5-ring", harnessname.ClaudeCode, claudeRing5, Options{Harness: harnessname.ClaudeCode, PermissionMode: "bypass"}, claudeRing5},
 		{"codex-2-cycle", "codex", []string{codexCollabDefault, codexCollabPlan}, Options{Harness: "codex"}, []string{codexCollabDefault, codexCollabPlan}},
 	} {
 		for start := range rc.ring {
@@ -944,7 +945,7 @@ func TestSetPermissionMode_CodexLeavePlanCycles(t *testing.T) {
 // works — see claudecode/busy_test.go:16) but the SWITCH fast-fails, exactly as
 // Send does.
 func TestSetPermissionMode_TurnInFlight(t *testing.T) {
-	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 3)
+	conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing4, 3)
 	withControl(t, conv)
 
 	// A busy claude frame: spinner + "esc to interrupt" footer, with the mode
@@ -1037,7 +1038,7 @@ func TestSetPermissionMode_ReadinessSplit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read corpus screen: %v", err)
 			}
-			conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 0)
+			conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing4, 0)
 			paint(conv.screen, strings.Split(strings.TrimRight(string(raw), "\n"), "\n"))
 			withControl(t, conv)
 
@@ -1096,7 +1097,7 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 	// check) — it pins the contract at the scale real callers run at.
 	t.Run("budget", func(t *testing.T) {
 		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: permModeBoundTimeout,
 		}, claudeRing4, 0) // start: plan, and nothing ever repaints it
 
@@ -1130,7 +1131,7 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 	// that a budget under one poll body still yields one poll and one return.
 	t.Run("budget-smaller-than-one-poll", func(t *testing.T) {
 		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: time.Microsecond,
 		}, claudeRing4, 0) // start: plan
 
@@ -1148,7 +1149,7 @@ func TestAwaitPostureChange_BudgetIsAHardBound(t *testing.T) {
 	// elapsed, no change". Clock-free: the check runs on the first pass.
 	t.Run("closed", func(t *testing.T) {
 		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: permModeBoundTimeout,
 		}, claudeRing4, 0) // start: plan, so the posture-change check never wins
 		close(conv.closed)
@@ -1182,7 +1183,7 @@ func pendingInputRequest() *turns.InputRequest {
 func TestPressGate_PendingNeverClears(t *testing.T) {
 	t.Run("bound", func(t *testing.T) {
 		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: permModeBoundTimeout,
 		}, claudeRing4, 0)
 
@@ -1216,7 +1217,7 @@ func TestPressGate_PendingNeverClears(t *testing.T) {
 	// into it. Clock-free, and the arm had no coverage either.
 	t.Run("surfaced", func(t *testing.T) {
 		conv, _ := newPermModeConv(t, Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: permModeBoundTimeout,
 		}, claudeRing4, 0)
 
@@ -1261,7 +1262,7 @@ func TestPressGate_PendingNeverClears(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conv, _ := newPermModeConv(t, Options{
-				Harness:               chatClaudeCode,
+				Harness:               harnessname.ClaudeCode,
 				permModeRenderTimeout: permModeBoundTimeout,
 			}, claudeRing4, 0)
 
@@ -1289,7 +1290,7 @@ func TestArgsContainFlag(t *testing.T) {
 	if !argsContainFlag(args, "--permission-mode") {
 		t.Error("joined --permission-mode=… not detected")
 	}
-	if !argsContainFlag([]string{wrapper.SkipPermissionsFlag}, wrapper.BypassEnablingFlags(chatClaudeCode)...) {
+	if !argsContainFlag([]string{wrapper.SkipPermissionsFlag}, wrapper.BypassEnablingFlags(harnessname.ClaudeCode)...) {
 		t.Error("skip-permissions flag not detected")
 	}
 	if argsContainFlag(args, "--dangerously-skip-permissions") {
@@ -1332,7 +1333,7 @@ func enterRingThenCycle(idx int) int {
 // to its deadline. On the pre-fix code this fails with shiftTabs == 0.
 func TestSetPermissionMode_DontAskStartCyclesToManual(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{
-		Harness:        chatClaudeCode,
+		Harness:        harnessname.ClaudeCode,
 		PermissionMode: "dontAsk",
 	}, claudeRingFromDontAsk, 0)
 	fake.advance = enterRingThenCycle
@@ -1382,7 +1383,7 @@ func TestSetPermissionMode_OnRingStartWritesNothing(t *testing.T) {
 					startIdx = i
 				}
 			}
-			conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, tc.ring, startIdx)
+			conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, tc.ring, startIdx)
 			withControl(t, conv)
 
 			mode, err := conv.SetPermissionMode(testCtx(t), tc.target)
@@ -1409,7 +1410,7 @@ func TestSetPermissionMode_OnRingStartWritesNothing(t *testing.T) {
 // permissive than it started.
 func TestSetPermissionMode_StuckInDontAsk(t *testing.T) {
 	conv, fake := newPermModeConv(t, Options{
-		Harness:        chatClaudeCode,
+		Harness:        harnessname.ClaudeCode,
 		PermissionMode: "dontAsk",
 	}, claudeRingFromDontAsk, 0)
 	fake.advance = func(int) int { return 0 } // the press does nothing at all
@@ -1441,7 +1442,7 @@ func TestSetPermissionMode_RestoreFromDontAskStart(t *testing.T) {
 	// A ring whose "plan" position can never be painted: the fake leaves
 	// dontAsk on the first press and then oscillates between manual and ask.
 	conv, fake := newPermModeConv(t, Options{
-		Harness:        chatClaudeCode,
+		Harness:        harnessname.ClaudeCode,
 		PermissionMode: "dontAsk",
 	}, []string{"dontAsk", "manual", "ask"}, 0)
 	fake.advance = func(idx int) int {
@@ -1476,7 +1477,7 @@ func TestSetPermissionMode_RestoreFromDontAskStart(t *testing.T) {
 // and OnRing false, and no target is ever "" — so the early return must not
 // fire and the drive must proceed to press.
 func TestSetPermissionMode_UnreadableScreenNeverSatisfies(t *testing.T) {
-	conv, fake := newPermModeConv(t, Options{Harness: chatClaudeCode}, claudeRing4, 1) // manual
+	conv, fake := newPermModeConv(t, Options{Harness: harnessname.ClaudeCode}, claudeRing4, 1) // manual
 	withControl(t, conv)
 
 	// Repaint a composer with NO footer: readyForInput still passes, but the
@@ -1519,7 +1520,7 @@ func TestPermissionPosture_FallbackShim(t *testing.T) {
 	if _, ok := codex.(turns.PermissionPostureDetector); ok {
 		t.Error("the codex adapter now implements turns.PermissionPostureDetector; the codex tests no longer exercise the fallback")
 	}
-	claude, err := resolveAdapter(chatClaudeCode)
+	claude, err := resolveAdapter(harnessname.ClaudeCode)
 	if err != nil {
 		t.Fatalf("resolveAdapter(claude-code): %v", err)
 	}

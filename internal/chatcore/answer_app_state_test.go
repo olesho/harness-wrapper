@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
@@ -110,10 +111,10 @@ func newDialogApp(t *testing.T, budget time.Duration) *dialogApp {
 	a := &dialogApp{t: t, scr: screen.New(120, 40), state: appState{screen: appTrust}, afterTrustAccepted: appBypass}
 	a.c = &Conversation{
 		opts: Options{
-			Harness:               chatClaudeCode,
+			Harness:               harnessname.ClaudeCode,
 			permModeRenderTimeout: budget,
 		},
-		adapter:      testAdapter(chatClaudeCode),
+		adapter:      testAdapter(harnessname.ClaudeCode),
 		screen:       a.scr,
 		eventCh:      make(chan ConversationEvent, 8),
 		closed:       make(chan struct{}),

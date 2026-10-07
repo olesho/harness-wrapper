@@ -3,6 +3,8 @@ package chatcore
 import (
 	"strings"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // The anchors are exported so a consumer stops copying them. loom had mirrored
@@ -32,7 +34,7 @@ func TestAuthAnchors_AgreeWithAuthRequired(t *testing.T) {
 		"⏺ The docs explain how to run /login when a session expires.\n",
 		"",
 	}
-	for _, harness := range []string{chatClaudeCode, "codex"} {
+	for _, harness := range []string{harnessname.ClaudeCode, "codex"} {
 		for _, screen := range screens {
 			want := authRequired(harness, screen)
 			got := false
@@ -56,7 +58,7 @@ func TestAuthAnchors_AgreeWithAuthRequired(t *testing.T) {
 // wizard, because that one will never become a usable composer on its own.
 func TestAuthAnchors_OnboardingFirst(t *testing.T) {
 	const both = "Claude Code\n  Select login method\n  1. Claude account\n  Not logged in\n❯ "
-	anchors := AuthAnchors(chatClaudeCode)
+	anchors := AuthAnchors(harnessname.ClaudeCode)
 	first := ""
 	for _, a := range anchors {
 		if a.RE.MatchString(both) {
@@ -116,7 +118,7 @@ func TestAuthAnchors_IDsAreAContract(t *testing.T) {
 // one that asks about a harness with no banner set.
 func TestAuthAnchors_HarnessSelection(t *testing.T) {
 	all := AuthAnchors("")
-	if len(all) != len(AuthAnchors(chatClaudeCode))+len(AuthAnchors("codex")) {
+	if len(all) != len(AuthAnchors(harnessname.ClaudeCode))+len(AuthAnchors("codex")) {
 		t.Errorf("AuthAnchors(\"\") = %d anchors, want claude + codex", len(all))
 	}
 	for _, h := range []string{"opencode", "nonesuch"} {
@@ -133,7 +135,7 @@ func TestAuthAnchors_HarnessSelection(t *testing.T) {
 // taken over a folder-trust or bypass-acceptance screen is about a DIALOG, not
 // a credential.
 func TestDialogAnchors(t *testing.T) {
-	got := DialogAnchors(chatClaudeCode)
+	got := DialogAnchors(harnessname.ClaudeCode)
 	if len(got) != 3 {
 		t.Fatalf("got %d dialog anchors, want 3: %v", len(got), got)
 	}

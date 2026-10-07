@@ -3,6 +3,8 @@ package wrapcore
 import (
 	"slices"
 	"testing"
+
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 func TestPermissionRungsOrder(t *testing.T) {
@@ -240,7 +242,7 @@ func TestEffectiveLaunchRungMatchesInjection(t *testing.T) {
 		out := argsWithHarnessPermissionMode(tt.harness, tt.args, tt.mode)
 		var want string
 		switch normHarness(tt.harness) {
-		case "claude", harnessClaudeCode:
+		case harnessname.ClaudeCode:
 			v, _ := flagValue(out, "--permission-mode")
 			want = claudeRung(v)
 		case "codex":
@@ -325,7 +327,7 @@ func TestEffectiveLaunchRungResolvesFromArgvWhenSuppressed(t *testing.T) {
 // argsWithHarnessPermissionMode consults before injecting.
 func suppressionFlagsFor(harness string) []string {
 	switch normHarness(harness) {
-	case "claude", harnessClaudeCode:
+	case harnessname.ClaudeCode:
 		return []string{"--permission-mode", SkipPermissionsFlag}
 	case "codex":
 		return []string{"-s", "--sandbox", "-a", "--ask-for-approval", codexBypassFlag}
