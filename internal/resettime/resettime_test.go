@@ -132,3 +132,26 @@ func mustLoad(t *testing.T, name string) *time.Location {
 	}
 	return loc
 }
+
+func TestParseRollsOverADSTChange(t *testing.T) {
+	loc := mustLoad(t, "Europe/Warsaw")
+	// Summer time ends in Warsaw on 2026-10-25: that day is 25 hours long.
+	now := time.Date(2026, 10, 24, 20, 0, 0, 0, loc)
+	got, ok := Parse("resets 6:40pm (Europe/Warsaw)", now)
+	if !ok {
+		t.Fatal("no reset time parsed")
+	}
+	want := time.Date(2026, 10, 25, 18, 40, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("Parse = %v, want %v", got, want)
+	}
+}
+
+func TestParseRejectsBareHours(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, text := range []string{"resets 6", "resets 18"} {
+		if got, ok := Parse(text, now); ok {
+			t.Errorf("Parse(%q) = %v, want no reset time", text, got)
+		}
+	}
+}

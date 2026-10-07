@@ -47,7 +47,9 @@ func Parse(text string, now time.Time) (time.Time, bool) {
 	nowInLoc := now.In(loc)
 	resume := time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day(), hour, minute, 0, 0, loc)
 	if !resume.After(now) {
-		resume = resume.Add(24 * time.Hour)
+		// Tomorrow by the calendar, not 24h on: across a DST change in loc
+		// the next day's clock-time is 23 or 25 hours away.
+		resume = time.Date(nowInLoc.Year(), nowInLoc.Month(), nowInLoc.Day()+1, hour, minute, 0, 0, loc)
 	}
 	return resume, true
 }
@@ -95,9 +97,9 @@ func applyMeridiem(hour int, ampm, minuteGroup string) (int, bool) {
 			hour += 12
 		}
 	default:
-		// 24-hour form (no am/pm). Reject single-digit hours without a
-		// minute component — "resets 6" is more likely a false positive
-		// than a 6:00 wall-clock.
+		// 24-hour form (no am/pm). Reject any hour without a minute
+		// component — "resets 6" or "resets 18" is more likely a false
+		// positive than a wall-clock time.
 		if minuteGroup == "" {
 			return 0, false
 		}
