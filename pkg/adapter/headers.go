@@ -8,11 +8,12 @@ import (
 
 // HeadersScript is a shell script that prints the headers of MCP server name
 // as a harness's headers helper answers them, a JSON object: each header's
-// value read from its file in files, its newlines dropped and its
+// value read from its file in files, its CRs and newlines dropped and its
 // backslashes, quotes and tabs escaped. It holds the files' paths and no
-// value, and a file it cannot read fails it. A profile writes it as a file
-// of its own under config, which the harness runs with /bin/sh each time it
-// connects (no provisioned file is executable): a connector's headers_file.
+// value; a file it cannot read, or one holding another control character,
+// fails it. A profile writes it as a file of its own under config, which the
+// harness runs with /bin/sh each time it connects (no provisioned file is
+// executable): a connector's headers_file.
 func HeadersScript(name string, files map[string]string) string {
 	names := make([]string, 0, len(files))
 	for k := range files {
@@ -20,10 +21,21 @@ func HeadersScript(name string, files map[string]string) string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	fmt.Fprintf(&b, "#!/bin/sh\n# The headers of MCP server %s, read from their files each time the\n# harness connects: no value is in its configuration or environment.\nset -eu\n", name)
-	b.WriteString("v() { tr -d '\\n' <\"$1\" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/\"/\\\\\"/g' -e 's/\t/\\\\t/g'; }\n")
-	for _, k := range names {
-		fmt.Fprintf(&b, "[ -r %s ] || { echo %s >&2; exit 1; }\n", ShellQuote(files[k]), ShellQuote("cannot read the file of header "+k))
+	fmt.Fprintf(&b, "#!/bin/sh\n# The headers of MCP server %s, read from their files each time the\n# harness connects: no value is in its configuration or environment.\nset -eu\nLC_ALL=C\nexport LC_ALL\n", name)
+	b.WriteString(`die() { echo "$1" >&2; exit 1; }` + "\n")
+	// ctl is $1's control characters but tabs, which JSON cannot hold as
+	// esc leaves them.
+	b.WriteString(`ctl() { printf '%s' "$1" | tr -d '\t -~\200-\377'; }` + "\n")
+	b.WriteString(`esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/` + "\t" + `/\\t/g'; }` + "\n")
+	// Each value is read into a variable of its own, never inside another
+	// command's arguments, so a read that fails fails the script.
+	for i, k := range names {
+		f := ShellQuote(files[k])
+		unreadable := ShellQuote("cannot read the file of header " + k)
+		fmt.Fprintf(&b, "[ -r %s ] || die %s\n", f, unreadable)
+		fmt.Fprintf(&b, "v%d=$(tr -d '\\r\\n' <%s) || die %s\n", i, f, unreadable)
+		fmt.Fprintf(&b, "[ -z \"$(ctl \"$v%d\")\" ] || die %s\n", i, ShellQuote("the file of header "+k+" holds a control character"))
+		fmt.Fprintf(&b, "v%d=$(esc \"$v%d\")\n", i, i)
 	}
 	b.WriteString("printf '{'\n")
 	for i, k := range names {
@@ -31,7 +43,7 @@ func HeadersScript(name string, files map[string]string) string {
 		if i == 0 {
 			sep = ""
 		}
-		fmt.Fprintf(&b, "printf '%s\"%%s\":\"%%s\"' %s \"$(v %s)\"\n", sep, ShellQuote(k), ShellQuote(files[k]))
+		fmt.Fprintf(&b, "printf '%s\"%%s\":\"%%s\"' %s \"$v%d\"\n", sep, ShellQuote(k), i)
 	}
 	b.WriteString("printf '}\\n'\n")
 	return b.String()
