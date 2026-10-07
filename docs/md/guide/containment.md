@@ -107,6 +107,13 @@ scripts and `Makefile`s. Review those before running anything in the tree, and r
 **disposable checkout** (a fresh clone or `git worktree`) that you throw away rather than one you use
 day to day.
 
+The harness binary is pinned and hashed, then executed **by its path**, so a file swapped in between
+the check and the exec would run instead. Only a process outside containment can make that swap —
+the directories a contained harness may execute from are read-only to it — and such a process, running
+as you, could as well change the binary before the check. It crosses no boundary containment draws, so
+it is accepted rather than closed: executing the pinned descriptor (`/proc/self/fd/N`) would also
+rename the harness process to a number, breaking `pgrep` and `killall` by name.
+
 ## Refused, never downgraded
 
 A request that cannot be honoured as asked fails **before the harness starts** — never an
