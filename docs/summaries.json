@@ -1,29 +1,63 @@
 {
   "schemaVersion": 1,
   "modules": {
+    "github.com/olesho/harness-wrapper/ci/landlock/kernelprobe": {
+      "summaryHash": "23537a11506556baf3fc207803f186f250e38fd01f974acd6ceadb74caa9ebe4",
+      "summary": "A CI probe that records the kernel, LSM, seccomp and cgroup facts a Landlock security job depends on, and exits non-zero when the environment cannot enforce the required Landlock ABI. It never skips: a missing capability fails unless the cell is declared to prove refusal, and it can inject a seccomp fault that makes Landlock syscalls return ENOSYS. Linux-only."
+    },
     "github.com/olesho/harness-wrapper/cmd/check-versions": {
-      "summaryHash": "66ee4135704b34363c47bad0fbdccf3ca85ff2a31e5f24fbddb35bc753608697",
-      "summary": "Offline drift sentry: compares the upstream versions pinned in pkg/versions against the npm registry's latest published release for each declared harness package. Prints a Markdown table or JSON and exits 0 when every pin matches, 1 on drift, and 2 when the pins could not be read or the registry could not be reached."
+      "summaryHash": "e763acb222f7bf4a33d546688592b8956ff90078a7d6a3bfc2806d274c21c5c9",
+      "summary": "Offline drift sentry: compares the upstream versions pinned in versions.json against the npm registry's latest published release for each declared harness package. It ends table mode with a one-line verdict and exits 0 when every pin matches, 1 on drift, and 2 when the pins could not be read or the registry could not be reached."
+    },
+    "github.com/olesho/harness-wrapper/cmd/claude-code-hook": {
+      "summaryHash": "35175f2faa5b80af9841b0a31223a4b8d4b3d7ecc8e54b48dfc0ac62e36d009d",
+      "summary": "The Claude Code profile's hook helper: the command claude's settings.json runs for each hook, shipped in the harness distribution. It hands the hook payload to the claude hook handler, which writes the reported events durably to the spool named by HW_EVENT_SPOOL, and exits 2 only when the handler blocks a tool; any failure is reported on stderr and never blocks claude."
     },
     "github.com/olesho/harness-wrapper/cmd/fakeharness": {
-      "summaryHash": "1f1f71cd7580338eb334ec95eb121a5760feb847d09ff648fb7b9bf437dfa6db",
-      "summary": "A scriptable stand-in for an interactive coding harness, used by the PTY-driven integration tests. It reads a JSON script named by an environment variable, switches its PTY slave to raw mode like a real TUI, and replays the script's timeline of painted frames, input waits and exits. Not a product binary."
+      "summaryHash": "77e31764f15ea70b062b670f5d69d7a5db0dfdd15d6453b26e1e11416872387f",
+      "summary": "A scriptable stand-in for an interactive coding harness, used by the chat package's PTY-driven integration tests. It reads a JSON script named by an environment variable, switches its PTY slave to raw mode like a real TUI, and replays the script's timeline of painted frames, input waits and echoes. Not a product binary."
     },
     "github.com/olesho/harness-wrapper/cmd/harness-chatd": {
-      "summaryHash": "49a37181c897707f0f316ac110c5819cba98dae2af0e6dc873950466d2c9a671",
-      "summary": "HTTP + Server-Sent-Events gateway that exposes pkg/chat so non-Go clients can drive multi-turn harness conversations across a process boundary. It serves conversation, control-token, message, input, history and screen routes under /v1 and streams turn and input events as SSE frames. v1 ships no authentication and is meant to be bound to localhost."
+      "summaryHash": "a5420a6cb97ec4403360c377b980cf2a77051018e46be78a8f52672421c0dcb5",
+      "summary": "HTTP + Server-Sent-Events gateway that exposes pkg/chat so non-Go clients can drive multi-turn harness conversations across a process boundary. v1 ships no authentication and is meant to be bound to localhost; reference clients live under clients/."
     },
     "github.com/olesho/harness-wrapper/cmd/harness-wrapper": {
-      "summaryHash": "d414877e465076ddb22c5ef8d3655b0cd70194eebaf47ff3e3a7cdf313f64311",
-      "summary": "The CLI front-end over pkg/wrapper and pkg/chat. It offers transparent PTY passthrough, a one-shot run that reads a prompt from stdin and prints the reply, a machine-readable structured-run that emits one turnproto JSON result line, and tmux-backed detached sessions with attach, status, kill and list subcommands. The dangerous sandbox-defaults injection is deliberately owned here, at the CLI boundary."
+      "summaryHash": "29d570ce44c6a3c1621ce6ab3bfb3c83488e4b2656ac184f0d2898cec0173814",
+      "summary": "The CLI front-end over pkg/wrapper: it supervises an external CLI agent harness under a pseudoterminal and forwards the user's terminal to it. Harness names resolve through the pkg/harness profile registry (claude, codex, opencode)."
     },
     "github.com/olesho/harness-wrapper/docs/gen": {
-      "summaryHash": "c529859e44dd7f4f0709154bcb71ca5876c34e87760e4b06dbc01159cd0ed1e5",
-      "summary": "The static-site generator for the documentation. It renders the canonical markdown under docs/md into themed HTML with syntax-highlighted code and inlined, theme-aware SVG diagrams, and can serve the built site locally for preview. It is a nested Go module so its rendering dependencies stay out of the main module's graph."
+      "summaryHash": "a74dcf3ac47ed930255cc76edc098b56be9fd482dc5f3763fe61d51fd086079c",
+      "summary": "The static-site generator for the documentation. It renders the canonical markdown under docs/md into themed HTML with dual-theme syntax-highlighted code, inlined theme-aware SVG diagrams and a manifest-driven navigation, and can serve the built site locally for preview."
+    },
+    "github.com/olesho/harness-wrapper/internal/apparmor": {
+      "summaryHash": "c254aa8fa385c02d5b68187881fd708f3fbcead853a536218cfbd2d09af2dbaa",
+      "summary": "harness-wrapper's AppArmor socket layer: the one static profile a contained launch stacks onto the harness when the kernel's Landlock ABI predates RESOLVE_UNIX (ADR-005). It generates the profile, which withholds write access outside a fixed set of roots so a harness cannot connect to host UNIX sockets, and checks that the installed, loaded profile matches the roots a launch is about to report."
+    },
+    "github.com/olesho/harness-wrapper/internal/chatcore": {
+      "summaryHash": "ea71f186aa42a7dcda147f999d0d0c5599add80105873f5d878d5337e9d445e6",
+      "summary": "pkg/chat without any harness's screen adapter: the Conversation, its TUI and stream-json transports, the Store contract and event delivery. Code that must link one harness at a time imports this package and registers only its own adapter with RegisterAdapter; pkg/chat re-exports every identifier and registers the built-in adapters.",
+      "interfaces": {
+        "ContainmentStore": {
+          "descHash": "0c4b7b35d3173efe7c901b057c0a694877fbed4822b68e29fdd7c0baf36f6aa0",
+          "description": "Optional marker extension of Store by which a store declares that it persists contained conversations faithfully, round-tripping Session.Containment intact. Open and Reopen refuse containment on a Store that does not implement it."
+        },
+        "Store": {
+          "descHash": "8f5f04fb51704d9596a718485e60f52d4459c5ab201d3ae2d13cc87e7d5eb649",
+          "description": "Persists chat-level session metadata and turn records (not transcript bodies): create, get and update sessions, and append, update and list turns in insertion order. Implementations must be safe for concurrent use."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/contain": {
+      "summaryHash": "3821443db83b08da771cea40f86a98c5e3b1982139b726ac7e1453315a4eb6af",
+      "summary": "Turns a containment.Request into a contained launch: it resolves the harness profile, pins every granted path, provisions private state and the child environment, sets up cgroup supervision, and starts the harness from a locked OS thread holding a thread-scoped Landlock domain (ADR-004). pkg/wrapper is its only production caller, and the uncontained spawn path never reaches it."
+    },
+    "github.com/olesho/harness-wrapper/internal/delivery": {
+      "summaryHash": "42aa53a7d7235f18de52bef421ca0166b97a71e2313788ea6c31023f2c7870df",
+      "summary": "The bounded, ordered event delivery behind the wrapper's and chat's OnEvent callbacks (ADR-008). One worker hands each event to the callback in push order, and a producer that finds the queue full waits for room rather than dropping the event."
     },
     "github.com/olesho/harness-wrapper/internal/env": {
-      "summaryHash": "19b41fbbcd865e0ef8699d7fc71626014737214dbcfdeb043d72bc3d2a4e4f90",
-      "summary": "The execution-environment core: a Provisioner axis for where the machine comes from, a Containment axis for what the agent may touch, the Workspace contract they meet at, the Compose combinator that joins them, and the lifecycle engine covering credential injection, redaction and retention. The model is batch request/response — exec, upload, download — with degenerate local and identity implementations shipped alongside the abstractions.",
+      "summaryHash": "652d958b3e19d3fc94f38c88e6812858c350250eb3597d5fe95a175d99cd8a62",
+      "summary": "A clean-room Go re-implementation of the meta-harness execution-environment core: a Provisioner axis for where the machine comes from, a Containment axis for what the agent may touch, the Workspace contract they meet at, the Compose combinator that joins them, and the lifecycle engine with retention resolution and shell-argv helpers. The model is batch request/response, with degenerate Local and None implementations shipped alongside, and the core imports no driver.",
       "interfaces": {
         "Acquirer": {
           "descHash": "068a2c09cd8a395507ca8b74e870bfc93f87fd4e5b2730e9ba3beb991ef244a4",
@@ -60,8 +94,8 @@
       }
     },
     "github.com/olesho/harness-wrapper/internal/env/daytona": {
-      "summaryHash": "da6f225dfa26817ff694b914d654ad1c5504595ee8ae09da6afdf33772f7e8c4",
-      "summary": "The Daytona provisioner: elastically provisioned remote sandboxes exposed through the internal/env Workspace contract. It depends only on SDK interfaces declared locally rather than on the real Daytona SDK, so unit tests inject a fake and the live client is wired in only for the live test tier.",
+      "summaryHash": "c0a36ba380d26a9c7fc047895d59f0fcaa248c24b84805fcd0800b7e7949da47",
+      "summary": "The Daytona provisioner: elastically provisioned remote sandboxes exposed through the internal/env Workspace contract, plus a file credential injector and a sweep of leftover sandboxes. It depends only on SDK interfaces declared locally rather than on the real Daytona SDK, so unit tests inject a fake and the live client is wired in only for the live tier.",
       "interfaces": {
         "DaytonaSandbox": {
           "descHash": "f56e228697b8306e6539bc0984cb198a167921d7ae7f797d81385b190ee8f8ee",
@@ -74,20 +108,82 @@
       }
     },
     "github.com/olesho/harness-wrapper/internal/env/openshell": {
-      "summaryHash": "3422a482ab3107157ceb087296176612a89cbc663858e4f7c9edeca7becf54ac",
-      "summary": "The OpenShell containment driver: a clean-room Go wrapper of the openshell CLI transport over env.Containment, with policy generation, host-alias rewrite, and deterministic sandbox naming."
+      "summaryHash": "f0baa836d222c00f527abb098c47414bcfb066ed1860d4006b2696f46112155c",
+      "summary": "The OpenShell containment driver: a clean-room Go wrapper of the openshell CLI transport over env.Containment, behind an injectable CliRunner. It generates sandbox policy, rewrites host aliases for guests, crosses env as an in-guest argv prefix, and names sandboxes deterministically for crash recovery."
+    },
+    "github.com/olesho/harness-wrapper/internal/facadegen": {
+      "summaryHash": "be6175ef0fc3e13211e3a3625d4f6c7d8c930ee3908f5222e62fee18f81ee0cd",
+      "summary": "A code generator that writes a facade package's declarations: one per exported top-level identifier of a core package, as a type alias, re-declared const or var, or forwarding func. pkg/wrapper and pkg/chat are regenerated with it, via go generate, as facades over internal/wrapcore and internal/chatcore."
     },
     "github.com/olesho/harness-wrapper/internal/fakeharness": {
-      "summaryHash": "b6e272a651a73c14aade99f7e00a596e0a6be5b5f9c3c1e7b9b8684bb6dd0901",
+      "summaryHash": "8c9662b3129c96d6957822a9bb87233dfc6302f91fcf42d81867afda6432655b",
       "summary": "The script format, fluent builder and one-time binary build behind the scriptable fake harness. It gives the chat tests a real program on a real PTY, so replays exercise the actual screen emulator, turn watcher and idle-completion timing that corpus replay alone cannot reach."
+    },
+    "github.com/olesho/harness-wrapper/internal/harnesscore": {
+      "summaryHash": "b35f8eb71aad9932f2b51961e82b11d554c729f5c1e7a5cf2605391e9e144cc4",
+      "summary": "pkg/harness without its runner: the per-harness Profile registry and capabilities, the hook specs, the hook handler and its spool, and the settings.json hook merge. pkg/harness forwards to it and adds Run and RunTurn; a per-harness hook profile and its hook helper import this package instead so they link no other harness.",
+      "interfaces": {
+        "BinaryNamer": {
+          "descHash": "dcacdc277e47c78e4715b2f5f85d4b9d23a07cdd339e74794fb198c037da48aa",
+          "description": "Optional Profile interface naming the executable a launcher looks up on PATH to start the harness, as a bare file name, so a launcher can derive its harness table from the registry."
+        },
+        "ConfigDirResolver": {
+          "descHash": "c715924f0d04b19a4e5ade0cd2f3875ca8b79c7961a2099eadd760622373f32a",
+          "description": "Optional Profile interface for a harness that takes its config root from the launch environment rather than $HOME alone: it returns that root from a launch env, or empty when the env does not override it, so the orchestrator can forward it to the hook subprocess."
+        },
+        "HookProvider": {
+          "descHash": "b3a908becf464a0a9feff7c2020c24834e6ef3ec4a887162f6eab44ce9bf6c3c",
+          "description": "The capability for hook-driven transcript acquisition: it declares the static hook spec to install, idempotently installs it into a worktree's harness config, and, inside a fired hook subprocess, parses the payload into canonical session-tagged events."
+        },
+        "Profile": {
+          "descHash": "943c36fd462869682706da602d953ba8c55802ba70f47086491713018ecfab57",
+          "description": "The per-harness entry point, self-registered by name: Resolve runs any runtime capability detection once per run and returns only the capabilities confirmed available, without mutating harness config."
+        },
+        "Resumer": {
+          "descHash": "eb09cdbe86f631bb9c738a77676e22dbec94f9f464828667dc25bbfbca792a12",
+          "description": "Supplies the argv fragment that resumes a given harness session in a headless invocation; an empty id yields nil. Deliberately separate from turns.SessionResumer, which serves the interactive TUI."
+        },
+        "SessionIDExtractor": {
+          "descHash": "534b25eda9eb70240d6d63fd3c27b1861799aaaeac771e0f3475bfcf23455cf7",
+          "description": "Recovers the harness-assigned session UUID from a single line of headless stream output; stateless and idempotent, so callers invoke it per line and keep the first non-empty result."
+        },
+        "StaticHookProfile": {
+          "descHash": "4315d24ce5ca99cc2f48b46645fdca234bed270967e814a704aa5c4decf47e1b",
+          "description": "Optional Profile interface exposing the harness's static HookProvider, so a fired hook subprocess can obtain the payload parser without re-running Resolve."
+        },
+        "StreamParser": {
+          "descHash": "8d74dd270765a3dd76b80ff7303a796e895b512cd8f90a3c3f43eff30d7ded74",
+          "description": "Parses one line of the harness's headless stream output into zero or more canonical live events; stateless, idempotent, and tolerant of non-event lines, which yield nil rather than an error."
+        },
+        "ToolHookProvider": {
+          "descHash": "a9ebd54a83172af3ffdc40fbdea15fc4e5e8fc6d5509fdb597c40c4025e138ee",
+          "description": "Optional HookProvider extension for a harness that reports every tool call through hooks: it returns the per-tool start and end hook entries a consumer may add to the spec it ensures, each spooling one event."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/landlock": {
+      "summaryHash": "dc45601dd369af935b985c123a69e159c1c8bf3bde8fcb055f0a2b0d1e5351b3",
+      "summary": "harness-wrapper's thin, cgo-free binding to the Linux Landlock LSM. It builds a ruleset from pinned path descriptors and restricts the calling thread only, so the wrapper process stays unrestricted; rulesets need ABI 9 unless the caller accepts an older kernel, and every entry point returns ErrUnsupported off Linux."
+    },
+    "github.com/olesho/harness-wrapper/internal/mockapi": {
+      "summaryHash": "79dd7f7bd342da43179c096814b8ee19ebee329996d35a7eade694beb67391f0",
+      "summary": "A local stand-in for a harness's model API — the Anthropic Messages API and the OpenAI Responses API — for driving a real harness binary through scripted scenarios with no account and no network. It routes on the text of the last user message (PING, SLOW, STALL, TOOL, AGENT, BG, ERR, LIMIT, BIG) and replies accordingly."
+    },
+    "github.com/olesho/harness-wrapper/internal/procgroup": {
+      "summaryHash": "41ea96277409e61166f8cb499687b2205f234cdc4f01ef92ee87512264a7a82c",
+      "summary": "Runs a harness in a process group of its own, so that stopping it also reaches the processes it started that stay in the group; where process groups are unavailable, it reaches the harness's process alone. It also reports whether the group is empty and the signal a process exited on."
+    },
+    "github.com/olesho/harness-wrapper/internal/resettime": {
+      "summaryHash": "40d94cb05dd0616f9041cacba148dfe17cf7a0f7eaed16964ad1e6e8b3649d29",
+      "summary": "Reads the reset time out of a harness's usage-limit wall message. It is shared by the wrapper's session-limit matcher and the chat layer's turn relabels, so a wall reports the same reset time through every surface."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench": {
       "summaryHash": "2b4736ac5fa7beed3996e82c286c406c1e049ea7415c37085897919172915628",
       "summary": "The terminal-emulator bake-off command. It replays each recorded scenario's raw PTY bytes through every registered emulator candidate and reports fidelity against the expected snapshot, stability after settling, and throughput — the measurement behind the project's vt100 emulator choice."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-record": {
-      "summaryHash": "018a9f6c9ad710f5e3e16fcfa1a2fe2b566950b5442896d86bc821f13b25beaa",
-      "summary": "Records a live harness session under wrapper supervision, capturing the raw PTY byte stream and scenario metadata into a corpus directory. It runs interactively or unattended from a JSON script of wait, send, sleep and interrupt steps, bounded by an idle timeout and a maximum session duration."
+      "summaryHash": "fd40011cfa332a0b5f449a9263aea89b0417dee19c65930c51ecb0104a10a836",
+      "summary": "Records a live harness session under wrapper supervision, capturing the raw PTY byte stream and scenario metadata into a corpus directory. It runs interactively or unattended from a JSON script of wait, send and sleep steps, optionally in a separate working directory."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/cmd/screenbench-synth": {
       "summaryHash": "0b521f0ae78be0c63f51c633f332151a0c208749087399a9812d8fa39a17d65e",
@@ -108,12 +204,100 @@
       "summary": "Comparison utilities for the screen-emulator bake-off: normalize, strip ANSI, exact match, and Levenshtein/normalized edit distance against ground-truth text."
     },
     "github.com/olesho/harness-wrapper/internal/screenbench/scenario": {
-      "summaryHash": "d8130b37ad0b926aa4c45f1e1e586abce72d407e343b5a5988aa1059c47f77d5",
+      "summaryHash": "a34f753e9517ff0fe0f700ecd61ac56dc1ab3a50af3d80f4ce1f43784c8dc436",
       "summary": "Loads recorded bake-off scenarios from disk (bytes.raw + meta.json, optional expected.txt/transcript.jsonl) via Discover, Load, and WriteMeta."
     },
+    "github.com/olesho/harness-wrapper/internal/sessionid": {
+      "summaryHash": "c38fac85d3fc2e05f88b7c6f50d38ebdf8e5a3b1fc92dcba54f2b129f37c7ecf",
+      "summary": "Mints and checks the session ids a harness accepts for a fresh session at launch. Claude Code and pi both take a UUID and name the session's transcript after it."
+    },
+    "github.com/olesho/harness-wrapper/internal/testsupport/cfd": {
+      "summaryHash": "9e7cd785f3e1cc56621c8258922c77289b4bda1244d2c919d9faa16fb248c9c6",
+      "summary": "Test-only helpers that open file descriptors from C for the containment tests: files and listeners without close-on-exec, and C threads that keep opening them, none of which Go's ForkLock knows about. Without cgo or off Linux there is no C to open them from."
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore": {
+      "summaryHash": "65b7c95e6767fc1bfe42c4d23f42af6332112cc30eafd72d55baf7e460baa713",
+      "summary": "pkg/wrapper without any harness's classifier patterns: the PTY supervisor, its normalized Status and ErrorClass vocabulary, launch policy and login. Code that must link one harness at a time imports it and registers only the patterns it needs; pkg/wrapper re-exports every identifier and registers the built-in pattern sets.",
+      "interfaces": {
+        "Classifier": {
+          "descHash": "94a349597e3f5f5a07b9f1ede9521a35b0d5ccaa7949d98fb9d22186577a1a6b",
+          "description": "Inspects recent harness output and reports actionable status classifications; stateless (input rebuilt each poll), safe for concurrent use, and free to repeat a classification since the wrapper de-duplicates emitted events."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore/detector": {
+      "summaryHash": "442049d7dfb2fa0de017b851f1fcfddd42afebe0d4169f0d9d63e5d77c423e6e",
+      "summary": "Generic, stateless pattern primitives for harness classifiers, matched against recent ANSI-stripped harness output: any-match and prompt-suffix matching, retry-after parsing, and API-error and session-limit matcher types. Real classifiers compose these with wrapper state such as idle thresholds."
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore/harness/claude": {
+      "summaryHash": "b0194c121854e7068ef8948a1401cb2975cb4ccdac409c671f9bc1d0c92744bc",
+      "summary": "Classifier patterns for the Claude Code CLI harness, including matchers for API errors and session-limit walls. Patterns are intentionally conservative, since false positives turn an active run into a stuck-looking one."
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore/harness/codex": {
+      "summaryHash": "e08a387fa44541d9f758e8fb19fa02b17bdc1d9f9bed4c16acfb80ec8d0a4dfb",
+      "summary": "Classifier patterns for the OpenAI Codex CLI harness, including its API-error matcher."
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore/harness/cursor": {
+      "summaryHash": "eba34faa2ee48be2c2143a569e22f92a7a243a605856d3325bf40a31162bb56c",
+      "summary": "Classifier patterns for the Cursor CLI harness. It ships only conservative idle-gated cost, retry and prompt fingerprints for now; an anchored API-error matcher is a deliberate follow-up pending real Cursor output samples."
+    },
+    "github.com/olesho/harness-wrapper/internal/wrapcore/harness/opencode": {
+      "summaryHash": "37759b2156fd9f7a6a261129575214cf292504e524c772f3d497ada80bbbcbfc",
+      "summary": "Classifier patterns for the OpenCode CLI. Because OpenCode is provider-agnostic and has no anchored API-error format, it carries conservative cross-provider cost and retry fingerprints and leaves the API-error matcher unset until a recorded corpus exists."
+    },
+    "github.com/olesho/harness-wrapper/pkg/adapter": {
+      "summaryHash": "4219a78fce06b72d7e0c3fc7af3ddfc198930c4da46e8ddd99899dd39832e97c",
+      "summary": "harness-wrapper's Harness Adapter: one implementation of the Harness Adapter Interface (pkg/contract, ADR-012) with a profile per harness. This shared part names no harness — it owns the Session state machine, Observe and Ack over live events and the profile's record, and submission markers for OpenRecord and Recover — while each profile supplies its Descriptor, Provision, Transport and record Reader and registers itself by name.",
+      "interfaces": {
+        "Keeping": {
+          "descHash": "f1fca883255db308fd72fc1fa01a2ea678dac26542379384b112d0f8a5ef9ea3",
+          "description": "The part of a Profile that keeps its harness's subscription login for a runtime (capability login_keeper): Keep opens a keeper of the login under the requested home."
+        },
+        "ModelPlaceholderer": {
+          "descHash": "87dbd11803984fc2361169a359fc5200105de5eedbede58bf7b44113f02dff85",
+          "description": "A Placeholderer whose placeholders follow the agent's model, narrowing each credential swap to the provider the model names; a model it cannot place fails with CodeInvalidSpec."
+        },
+        "NativeNamer": {
+          "descHash": "0c476449e9767a0db336153195cbc6c6852cfb4708206fe32f973f235b2fc4df",
+          "description": "Optional Transport interface by which a profile chooses the native id for each input; a Transport without it gets a random one."
+        },
+        "Placeholderer": {
+          "descHash": "1d6033d2fc6443cc63fcc7f058402b8a7287a08219d7234d1da279931bd80933",
+          "description": "The part of a Profile that renders placeholders for its harness's credentials (capability brokered_credentials), as a function of a nonce; a malformed credential fails with CodeInvalidSpec without repeating it."
+        },
+        "Profile": {
+          "descHash": "e70cd379d20ed90c85b60fcfde045019ca056cafe072ab6da7342d6aed76a851",
+          "description": "What one harness supplies: a pure Describe and Provision, a Record reader of a Session's durable record that needs no binary or credential, and Start, which launches the harness and returns its Transport."
+        },
+        "Reader": {
+          "descHash": "1836b04ba11cebdaf1dd4ccb1dda9ab761db2bb85db4424e96d9a31e322a9672",
+          "description": "Reads one Session's record in order as stable-id items: Read returns the next chunk after the committed position without moving until Commit, and Recover reports what became of an input a submission marker names."
+        },
+        "SelfStarter": {
+          "descHash": "9c7bcc318e189c815d0f5c49f8950876cee32038bf051ba66d532ab008165500",
+          "description": "The Transport of a harness that starts turns with no input (capability autonomous_turns): it reports those turns as Started and Ended events and can interrupt one by its native id."
+        },
+        "Transport": {
+          "descHash": "466dca658608b22f2e1ca2cd6722e63bc00261b767bfb62ade62bba265dd96bc",
+          "description": "A running harness: Submit hands it an input (an ErrNotSubmitted error guarantees nothing reached it), plus Interrupt, Answer, its own session id, and Stop, which ends the process group TERM-then-KILL and reports whether it is gone."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/adapter/claudecode": {
+      "summaryHash": "086bad11dbe9ee58572343516d41edf46d2b2fc26f75aaa05f1b0021fec6d95f",
+      "summary": "The Harness Adapter's Claude Code profile: claude driven over its stream-json protocol, one process per Session, with the session transcript and the hook spool as its record. Importing it registers the adapter under \"claude-code\" and links no other harness; it locates the pinned claude binary and the cmd/claude-code-hook helper in the harness distribution."
+    },
+    "github.com/olesho/harness-wrapper/pkg/adapter/codex": {
+      "summaryHash": "217e48ae344ce74cf3e3a32d2741610bffe976349d760aae11910cdaf2259088",
+      "summary": "The Harness Adapter's Codex profile: codex driven over its app-server JSON-RPC protocol on stdio, one process per Session, with the thread's rollout as its record. Importing it registers the adapter under \"codex\" and links no other harness; it runs the native codex binary from the distribution, never the node shim."
+    },
+    "github.com/olesho/harness-wrapper/pkg/adapter/pi": {
+      "summaryHash": "f731be3568c3b5a0fa104042610684637807bddb6ed278c4a9f0b13d38752df1",
+      "summary": "The Harness Adapter's Pi profile: the pi coding agent driven over its RPC mode (JSON lines on stdio), one process per Session, with the session file as its record. Importing it registers the adapter under \"pi\"; a bundled tag extension records each input's id in the session, since pi records none a client chooses."
+    },
     "github.com/olesho/harness-wrapper/pkg/chat": {
-      "summaryHash": "170b2323f10a67643ee5fd6a978d19f189a0368fa03d6022b6219aabe9369f02",
-      "summary": "The Go chat-conversation API. Each Conversation owns one PTY-supervised harness process and exposes a FIFO control token, one assistant turn per Send, an event stream, request/answer handling for blocking prompts, transcript-backed history, and live permission-mode switching. Persistence is pluggable through the Store interface, and transports deliberately live outside this package.",
+      "summaryHash": "e3886b6ea15987c58f4697649d4140cbfb859f72509513b012586159b17a026b",
+      "summary": "The Go chat-conversation API. Each Conversation owns one PTY-supervised harness process and exposes a FIFO control token, one assistant turn per Send, an event stream, request/answer handling for blocking prompts, and transcript-backed history, with persistence pluggable through the Store interface. It is a facade over internal/chatcore that registers the built-in harness adapters; transports deliberately live outside this package.",
       "interfaces": {
         "Store": {
           "descHash": "8f5f04fb51704d9596a718485e60f52d4459c5ab201d3ae2d13cc87e7d5eb649",
@@ -122,12 +306,52 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/chat/memstore": {
-      "summaryHash": "167bdfd343623ac6b933bdadaabc0d26ae28477475b0feff0a0d312798b29c44",
-      "summary": "In-memory chat.Store implementation shipped with v1: holds sessions and turns in process memory, lost on restart; suitable for tests and single-process gateways."
+      "summaryHash": "1a84fc85d9276c4b2c2c710c680b23647316a677099575f7ae3ffa18a9bf497b",
+      "summary": "In-memory chat.Store implementation shipped with v1: holds sessions and turns in process memory, lost on restart; suitable for tests and single-process gateways. It is written against the chat core, so it serves either package without linking the built-in adapters."
+    },
+    "github.com/olesho/harness-wrapper/pkg/containment": {
+      "summaryHash": "abe36dab51a942336b5d6ac3653a461494d18c351ab33444919e07b70d50d542",
+      "summary": "The data types of harness-wrapper's optional Landlock containment: the Request a caller sends, the Applied record reported once enforcement succeeded, and their canonical, normalized and fingerprinted forms. It is a leaf that touches no OS facility, so wire layers and the stored chat record can carry these types; a nil Request means no containment."
+    },
+    "github.com/olesho/harness-wrapper/pkg/contract": {
+      "summaryHash": "e65fe28e919b78cf0d8d3a1233ea9bfc5ce76ab1ec06851b79180af994295194",
+      "summary": "The Harness Adapter Interface (ADR-012): the Go interface a Harness Adapter implements and a runtime's Agent Adapter calls to drive a coding-agent harness without naming it, in normative form with a JSON Schema for every type. The Supervisor uses its pure Describe, Provision and Placeholder; the Host opens Sessions and record handles; adapters register by harness name and are found with Lookup. It imports only the standard library.",
+      "interfaces": {
+        "Adapter": {
+          "descHash": "25417e4207f1b4d16368683712fa6bd2431a7da11827e231f2007019d738e85a",
+          "description": "One harness exposed through the interface: pure Describe, Provision and Placeholder for the Supervisor, NewSession and OpenRecord for the Host, and Keep for the runtime's login keeper. Capabilities an adapter lacks answer CodeUnsupported."
+        },
+        "Keeper": {
+          "descHash": "747a46dc2c427ab45860efd71ec4a34267940478eae78415ebebff0202d5a295",
+          "description": "Keeps one subscription login, safe for concurrent use: report its Status, start a device-code SignIn, Refresh it, Lend its current credential (a secret for Placeholder and the broker alone), SignOut, and Close."
+        },
+        "Record": {
+          "descHash": "77f5096d3e847bb5219ebfef55618ca5d7605bd6247173c8f3074cb4f8e1d52d",
+          "description": "A read-only handle on one Session's durable record: Observe delivers record-origin items from a checkpoint to the current end, Ack acknowledges committed batches, and Recover reports what became of an input."
+        },
+        "Session": {
+          "descHash": "80105155d53fd99f4c49b19b1f23a2d86fc30046b2a88c0546b1290f6dd6292b",
+          "description": "One harness conversation, safe for concurrent use: Open, Send one input, Interrupt a named turn, Answer prompts, Observe and Ack batches, read an observational State, and Close, which is terminal for the handle."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/contract/conformance": {
+      "summaryHash": "6e4f5a37cc2e10494b484f783ac6b978bcab85dbb4c9a12d6afb5850e12d3b83",
+      "summary": "The Harness Adapter Interface's conformance kit: a fake Agent Adapter, playing both Supervisor and Host, and named-rule scenarios that drive an adapter through the interface and check it keeps the contract. Scenarios speak the mock Messages API prompt language, so they run the same against the fake adapter and a real harness; the kit also saves and restores Session history between agents.",
+      "interfaces": {
+        "T": {
+          "descHash": "28c2cd5b62c0c11b1be0a0146b4eb30401e8a24baf9f371afb6326397c999b1f",
+          "description": "What the kit reports through — *testing.T via Testing, or a recorder in the kit's own negative tests: errors, logs, helpers, subtests and a temp directory."
+        }
+      }
+    },
+    "github.com/olesho/harness-wrapper/pkg/contract/fakeadapter": {
+      "summaryHash": "2950385509a7291fe48733a943927f250e9866dcc8827a4574d2b19da81e81ee",
+      "summary": "A Harness Adapter for a harness that exists only in-process: the reference the conformance kit is proved against and a stand-in harness for a runtime's tests. Its harness runs one goroutine per Session and answers the mock Messages API prompt language, including errors, usage limits, prompts, crashes and self-started goal turns."
     },
     "github.com/olesho/harness-wrapper/pkg/discovery": {
-      "summaryHash": "a15bc41d73f402f194e9724cbabd0f540a9936ba8c5c65d9a2f52ed958730004",
-      "summary": "Answers whether each harness declared in the version pins is installed on PATH and at what version, probing the binary's own version flag behind a cache keyed on binary path and modification time. It is read-only with respect to the system — it never installs, writes, or alters PATH — and treats 'not installed' and 'probe failed' as ordinary results rather than errors.",
+      "summaryHash": "9cc20753bef019dfde34b32f632b577d6b8d3cdb261ef813e7ee34b012331686",
+      "summary": "Answers whether each harness declared in the version pins is installed on PATH and at what version, probing the binary behind a cache keyed on binary path and modification time. It is read-only with respect to the system — it never installs, writes, or alters PATH.",
       "interfaces": {
         "Probe": {
           "descHash": "ba8102c731608329f409964abb695e1cd38a58e1a011fed6b91b3bd0127ce485",
@@ -136,16 +360,16 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/discovery/models": {
-      "summaryHash": "d95c9ee2c5ae0633a1707ebb6afd65cdac501037d8334a8cf317ee9102b5b163",
-      "summary": "A curated static registry of the model identifiers each harness accepts, plus a pure parser for the interactive model-picker screen. It is deliberately offline, because no supported harness exposes a machine-readable model list, so callers can validate or offer models without launching a CLI."
+      "summaryHash": "f40e88a3fea750df18c968c2c24e9076f3f5c8d0b962130f6a25ec807baf19f7",
+      "summary": "A curated, embedded static registry of the model identifiers each harness accepts, with defaults, plus a parser for the interactive model-picker screen. It is deliberately offline, because no supported harness exposes a machine-readable model list, so callers can validate models without launching a CLI."
     },
     "github.com/olesho/harness-wrapper/pkg/env": {
       "summaryHash": "4af5db5b88aefc32a9cf707c09fab9bd5f31d09ae8441b1e70f724262cc22621",
       "summary": "The public host-side client for running one structured turn inside a workspace. It uploads the prompt as a file so argv can never carry it, executes the structured-run runner in the guest, parses the last JSON line of stdout into a structured result, and optionally downloads the transcript. A non-zero guest exit is returned as a parsed result rather than an error."
     },
     "github.com/olesho/harness-wrapper/pkg/harness": {
-      "summaryHash": "d9fdf2ee0b510befc9ba769385a6ad83257bb9b84f25cfdac51c31ebad6754ca",
-      "summary": "The per-harness orchestration and capability layer. Profiles resolve, once per run, which capabilities a harness actually offers — session-id extraction, resume arguments, stream parsing, hooks — while Run supervises a headless run and acquires its transcript through hooks or stream parsing, and RunTurn drives exactly one interactive turn on top of the chat layer. It is distinct from the TUI turn adapters under pkg/turns/harness.",
+      "summaryHash": "9c3014009443f519cae187e8c57cc43d13dfced758c1c29573162ef12fb16b29",
+      "summary": "The per-harness orchestration and capability layer above pkg/wrapper. Profiles resolve, once per run, which capabilities a harness actually offers — session-id extraction, resume arguments, stream parsing, hooks — while Run supervises a headless run and RunTurn drives one interactive turn through pkg/chat. Everything but Run and RunTurn is forwarded from internal/harnesscore; it is distinct from the TUI turn adapters under pkg/turns/harness.",
       "interfaces": {
         "HookProvider": {
           "descHash": "b3a908becf464a0a9feff7c2020c24834e6ef3ec4a887162f6eab44ce9bf6c3c",
@@ -174,15 +398,15 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/harness/all": {
-      "summaryHash": "a7df6f2a147e5be07b879a3822b215b975fdb1515b9cb7000bf5b709f98e1c8e",
+      "summaryHash": "b908196c18fc1e23eaab144bbe04a9de8d3499c1168e8494f0b8a75e41b1cb59",
       "summary": "A side-effect-only package that blank-imports every built-in harness profile so that lookups by name resolve them. Callers who need just one harness may blank-import that subpackage instead."
     },
     "github.com/olesho/harness-wrapper/pkg/harness/claude": {
-      "summaryHash": "9794f53bdc0cc838c549dc223fc0972eeb3b34b16e9325bd2afe1bf0e859f730",
-      "summary": "The harness profile for the Claude Code CLI. It extracts the session id from Claude's machine-readable init event and supplies the resume argument prefix, with later capabilities covering stream parsing and hook installation. Importing the package registers the profile."
+      "summaryHash": "4d70acbf9d4f3b7e2f7587bfefe692fd5bc7d9b3a12dc7312ef8d98b85ee26eb",
+      "summary": "The harness profile for the Claude Code CLI, registered as \"claude\". It extracts the session id from Claude's stream-json init event, supplies the resume argument prefix, parses live stream-json into canonical events, and provides hook-driven acquisition with its settings.json hook installer."
     },
     "github.com/olesho/harness-wrapper/pkg/harness/codex": {
-      "summaryHash": "b08cb2c29cbf1c8822bf6852ff840be7389226d45fd5a1011a4ea0d58411142b",
+      "summaryHash": "683b4a79f056ca4ebf69a1c79e704206bd42a4b9085196509851f1e4f1cc77f7",
       "summary": "harness.Profile for the OpenAI Codex CLI: resume-only, since Codex's stream/hook/export contracts are under-documented and deliberately not implemented on a guess."
     },
     "github.com/olesho/harness-wrapper/pkg/harness/gemini": {
@@ -190,24 +414,32 @@
       "summary": "harness.Profile for the Gemini CLI: resume-by-id plus shell hooks in a Claude-shaped settings.json; hooks-only, with no stream parser until the schema is confirmed."
     },
     "github.com/olesho/harness-wrapper/pkg/harness/opencode": {
-      "summaryHash": "d2cc56da99a9c3533711461e0114c6cc76336f520f8b51bad9d6556ae7a8208c",
+      "summaryHash": "95ecb6f5bb5aec2bef10b87ec6621b207839ec7ab96dc16f85affa7767e2db75",
       "summary": "harness.Profile for the OpenCode CLI: resume + session-id only; no shell hooks (in-process plugins) and stream/export deferred until validatable."
     },
     "github.com/olesho/harness-wrapper/pkg/harness/pi": {
       "summaryHash": "3626f1f3286744d6dc6df81250c4bb71934b43e726e8f3b182767ca3aa8b2b45",
       "summary": "harness.Profile for the pi coding agent: session-id, resume (--session), and a live --mode json stream parser validated against pi 0.76.0; no hooks (no shell-hook contract)."
     },
+    "github.com/olesho/harness-wrapper/pkg/harnessenv": {
+      "summaryHash": "8e9cd5eb31933fd0098c1350c81f299add50ebff9741fc2253892a4f5ab3ecda",
+      "summary": "The single home of the Claude Code session-nesting env policy: the predicate naming the environment variables that mark a process as running inside a Claude Code session, and the filter that strips them before launching a harness so claude keeps persisting its transcript. CLAUDE_CODE_OAUTH_TOKEN is exempt by exact match; this is a nesting predicate, not a containment filter."
+    },
+    "github.com/olesho/harness-wrapper/pkg/harnessname": {
+      "summaryHash": "b5c23ce968d98f536aae6d6329e4e20a3a724769e87656e01d867c216c60530a",
+      "summary": "The single home of the built-in harness identifiers and their alias table, importing only the standard library so any layer may depend on it without linking a harness. It maps between the canonical Claude Code id \"claude-code\" and the short alias \"claude\", with case-insensitive helpers and an exact-spelling Unalias."
+    },
     "github.com/olesho/harness-wrapper/pkg/oneshot": {
-      "summaryHash": "94e1869994941e9466ee7ef72da5750280e4d119e33829033db39a382495d7ab",
-      "summary": "The in-process library for running exactly one headless harness turn and classifying it into the frozen structured-turn status vocabulary. It owns the unattended policy — quit after the turn, auto-answer blocking prompts affirmatively, prefer the harness's own transcript for the reply — and returns every classified outcome with a nil error, reserving errors for unclassifiable failures."
+      "summaryHash": "609e0268ed9f4fafd114a8c07d9e3a3f991cb02263ea22f040a189dd7429e456",
+      "summary": "The in-process library for running exactly one headless harness turn through harness.RunTurn and classifying it into the frozen turnproto status vocabulary, without spawning a subprocess. It owns the unattended auto-accept policy for blocking prompts and leaves the status-to-exit-code mapping to turnproto."
     },
     "github.com/olesho/harness-wrapper/pkg/screen": {
-      "summaryHash": "31750342e31ec04608311744f460daa52f2ab27448efad393bddba692c8313dd",
-      "summary": "Wraps a vt100 terminal emulator so a harness's raw PTY byte stream becomes queryable rendered state. It exposes writes, coherent point-in-time snapshots, a monotonic change generation, coalesced change subscriptions, and a resize that coordinates a fallible peer without holding the read lock."
+      "summaryHash": "9f1337857359b46f038d4df67ee39c2cf1400e7f43647ca4f192bf307ed7e2fb",
+      "summary": "Wraps a vt100 terminal emulator (vt10x, per ADR-001) so a harness's raw PTY byte stream becomes queryable rendered state. It exposes concurrent-safe writes, coherent snapshots, a monotonic change generation, and coalesced change subscriptions for turn detectors and gateways."
     },
     "github.com/olesho/harness-wrapper/pkg/transcript": {
-      "summaryHash": "a67590e3847890c322e1bbb3bb805524be6ec80b8391e5ad17703306a5f75d5b",
-      "summary": "The read-only view of harness-owned session logs, together with the canonical harness-agnostic event model, its public and durable serializations, normalized token accounting, and the shared JSONL line helpers. It is a leaf package that imports neither the turns nor the chat layer, so anything may parse a harness log.",
+      "summaryHash": "55550eca17650b75622734ea0c2ae1ff87e12c1047f96f2dd04acb01c1d83cc3",
+      "summary": "The read-only view of harness-owned session logs, together with the canonical harness-agnostic event model, its serializations, a follower over a growing log from a checkpoint, normalized token accounting, and shared JSONL line helpers. It is a leaf package that imports neither the turns nor the chat layer.",
       "interfaces": {
         "Reader": {
           "descHash": "57f609de91e47e25e5f98d5342990e0d728971f8269549435a72fc401167052c",
@@ -220,27 +452,27 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/transcript/claudecode": {
-      "summaryHash": "0394b1cc5f66f744afb3c9303984675266fbeb3c9c71ef0436a59e2a09298ccd",
-      "summary": "Reads Claude Code's own JSONL session logs, locating a session by encoding the working directory into its projects path, and parses them into canonical transcript events plus optional token usage."
+      "summaryHash": "f218dfef881e1addd70507a9541b477516f0b3dc87c63440e963a477953c4a1b",
+      "summary": "Reads Claude Code's own JSONL session logs, locating a session by encoding the working directory into its projects path, and parses them into canonical transcript events plus optional token usage. It can also follow a live transcript from a checkpoint."
     },
     "github.com/olesho/harness-wrapper/pkg/transcript/codex": {
-      "summaryHash": "a4b4e561590d9d5b7de7051c2bf612887849bc6d28849bd32976da5cc77996d2",
-      "summary": "Reads Codex's rollout JSONL sessions from its date-partitioned sessions tree, parsing response-item envelopes into canonical transcript events and usage. It can also locate the most recent session for a working directory when no session id is known."
+      "summaryHash": "641de306c3b476e0353d705555b03fe2a38025a1e58468a4b5d9e5db191f80f6",
+      "summary": "Reads Codex's rollout JSONL sessions from its date-partitioned sessions tree, parsing response-item envelopes into canonical, tool-aware transcript events and usage. It can locate a thread's rollout and follow it from a checkpoint."
     },
     "github.com/olesho/harness-wrapper/pkg/transcript/gemini": {
       "summaryHash": "bdd2fc36e67fa703b72e329059767d25f094cf6aef62d9da43320268213a2df4",
       "summary": "Reads Gemini CLI session transcripts (~/.gemini/tmp/\u003cproject\u003e/chats/session-*.jsonl), accepting either observed line shape, into the canonical Event stream."
     },
     "github.com/olesho/harness-wrapper/pkg/transcript/pi": {
-      "summaryHash": "c59629eaf0cd5db431e50f5aeceb1eb261ab6ea47c7b42ffb568c3125d63fbd9",
-      "summary": "Reads pi's JSONL agent sessions, locating a session by working-directory slug with a directory-walk fallback and confirming the match against the in-file id header before parsing its typed content blocks."
+      "summaryHash": "508a744a7a4d27e5ebc419820bc7dfc6ffb5493d069fe825b4b6d7672cc64986",
+      "summary": "Reads pi's JSONL agent sessions, locating a session by working-directory slug and confirming it against the in-file id header before parsing its typed content blocks. FollowSession reads a session line by line as pi writes it, for the Harness Adapter's Pi profile."
     },
     "github.com/olesho/harness-wrapper/pkg/turnproto": {
-      "summaryHash": "7b801f1bccc9f655b550ae315e32ee7b8fe469048a2c1fa5910352754088a2a0",
-      "summary": "The neutral wire contract for one supervised turn: the status vocabulary, the canonical status-to-exit-code table, the frozen stderr deadline anchor, the structured result object, and the tolerant last-JSON-line parser hosts use to read it. Every exported name and JSON tag here is a frozen cross-repository contract."
+      "summaryHash": "729ca00d1d9ec028dee36c2771c00d1c510f91d16110c7cd2f94f042abc4a761",
+      "summary": "The neutral wire contract for one supervised turn: the status vocabulary, the canonical status-to-exit-code table, the deadline anchor line, the structured result object, and the tolerant last-JSON-line parser hosts use to read it. Every exported name and JSON tag here is a frozen cross-repository contract."
     },
     "github.com/olesho/harness-wrapper/pkg/turns": {
-      "summaryHash": "47ec315953f919c643d69e63a5a6c9cfcb480d11096b084d495d5839f9583fa6",
+      "summaryHash": "cbae09b9272e55b52dc2225f5365410e1dd2ededfe0ed1bd2f6493e50ca6c636",
       "summary": "Defines the per-harness adapter contract that turns screen snapshots and wrapper status into a small set of turn events, the optional capability interfaces an adapter may opt into, the model for interactive input requests, and the watcher that pumps a wrapper session and a screen into one event stream.",
       "interfaces": {
         "Adapter": {
@@ -248,8 +480,32 @@
           "description": "Per-harness contract translating screen state and wrapper status into turn events; OnScreen/OnWrapperStatus must be safe for concurrent calls."
         },
         "BusyDetector": {
-          "descHash": "2ac9b082d0abb821da9b9b7d3171da5b7b429a7e64345399a30287c77d6afad3",
-          "description": "Optional adapter capability reporting from the rendered screen whether the harness is still working on the current turn versus idle at the prompt."
+          "descHash": "58f8a332d33443827adcb730f1b25b0d464ea512b201f33c326cfd49adf145b6",
+          "description": "Optional adapter capability reporting from the rendered screen whether the harness is still working on the current turn versus idle at the prompt; adapters that cannot tell report false."
+        },
+        "DialogAnchorer": {
+          "descHash": "b02a4c57be2ccfeed41a0eac21c1fe1e9e91256f2a135ee0183372d123b004d8",
+          "description": "Optional adapter capability naming the literal lines the harness's blocking dialogs paint, so a caller can tell a modal from a login wall."
+        },
+        "DialogDetector": {
+          "descHash": "7f8ccf866435dcf50642d408baf49b760978e4e265172de65d4ab94acf3f61ae",
+          "description": "Optional adapter capability reporting which DialogState a screen is in, so a dialog nothing can answer fails a send quickly instead of waiting out its deadline."
+        },
+        "DialogReader": {
+          "descHash": "83bd891e97ba54870abb9b49dcff9f4d1972f5ef4c6e3ac96900df0db299bdf1",
+          "description": "Optional adapter capability for dialogs that can be re-read from any later screen: it parses the answerable dialog and reports whether its anchor is still painted, so the chat layer can confirm an answer landed."
+        },
+        "EnvConfigurable": {
+          "descHash": "099618e269eaa8b64b37669b503bad13d5ba6fadbe5bb934e0f6368087a9f692",
+          "description": "Optional adapter capability applying the harness's launch environment to its on-disk roots, called once at Open with the env the harness is actually launched with; absent or empty values leave the $HOME default."
+        },
+        "Interrupter": {
+          "descHash": "227c0b55aa441740c0ebe19ef5589b3e8ec3b7aa6c0b9354c90cb79ecdd651a8",
+          "description": "Optional adapter capability for harnesses that stop a turn from the keyboard: it supplies the interrupt and composer-clearing keys, reads the composer, and reads from the screen what the harness did with a given turn."
+        },
+        "InterstitialDismisser": {
+          "descHash": "c7541720e7ef077675b7ca65d3a907b9d8bed6123d9f15d941103f8c96829993",
+          "description": "Optional adapter capability returning the keystrokes that safely dismiss a startup interstitial — a screen that blocks input but carries no decision for the caller."
         },
         "MessageExtractor": {
           "descHash": "aeec5f99bad4aec23867604f361c57a7c1bff45098668b7ab1907fb122b2ff52",
@@ -259,13 +515,25 @@
           "descHash": "3fbb242f48ab71e7e19658f4ce9832e1a9d7b989cd591eb44a488a3e598d1079",
           "description": "Reports the harness's permission posture as read off the rendered screen; a negative result means the screen carries no readable signal, never that a particular mode is absent. Implementations do not all report the same axis."
         },
+        "PermissionPostureDetector": {
+          "descHash": "c7887d3c9205e359ef9db05e52cfdc6fd8eb6aac39e9bc5a403272b575afa707",
+          "description": "Optional adapter capability reporting the full permission posture (rung, native spelling, ring membership) from the screen; false means no readable signal, never a different posture. Drivers keep a fallback to PermissionModeDetector."
+        },
         "Quitter": {
           "descHash": "a33b7f1318edd19495319792c8a98120d953920f68611b4a83a1987bad070583",
           "description": "Optional adapter capability surfacing the key sequence that makes the interactive harness exit gracefully instead of being SIGTERM'd."
         },
         "RawSessionIDExtractor": {
-          "descHash": "696c3fdf08feb9f9d13ada77f0a14849a12031f7621f62525e30490a438b940c",
-          "description": "Optional adapter capability surfacing the harness's session ID from a single raw PTY output line rather than the rendered screen."
+          "descHash": "c58f6fe2ca6e82e3c64087b15701f957a4310f2057fbbdcc9272460b429515a9",
+          "description": "Optional adapter capability surfacing the harness's session id from a single raw PTY output line rather than the rendered screen; lines carry raw control bytes, so non-matching lines must return (\"\", false)."
+        },
+        "ReadinessDetector": {
+          "descHash": "2be1fedbf11076e2bf0454f31d3a73dd5c88355378de2e652b4c5823e221898c",
+          "description": "Optional adapter capability reporting whether the rendered screen shows a composer that will take a message now; an adapter without it is always ready."
+        },
+        "SessionAssigner": {
+          "descHash": "85b494df27760ae94fa273d32c15856419c77dc0fabf3b572eda8e94f4b06c08",
+          "description": "Optional adapter capability for harnesses that accept a caller-chosen id for a fresh session: it mints an id, validates its form, and returns the argv fragment that starts a session under it."
         },
         "SessionControlFlags": {
           "descHash": "c9c1060841b2ada7401d2045137ce4e5e7930215145154393436b9ed9b23df6c",
@@ -276,12 +544,16 @@
           "description": "Optional adapter capability surfacing the harness's session ID by scraping the rendered screen snapshot."
         },
         "SessionIDLocator": {
-          "descHash": "14209aca451a016fe3627091d7c7042a2418180cf085c9e11f4a7ea8f92d861a",
-          "description": "Optional adapter capability recovering the harness session ID from on-disk state keyed on the working directory, as a fallback at turn completion."
+          "descHash": "912ef55644176d9130fe112763a6f9295fd7d8cd4d26e8b471ef07f2e384d293",
+          "description": "Optional adapter capability recovering the session id launched in a working directory at a given time from on-disk state, as a fallback at turn completion; it returns (\"\", false) when none or more than one could match."
         },
         "SessionResumer": {
           "descHash": "91e988e925540376a00e65d6cdc1d1d5e5150609ba621ade311a4cbbab4d421c",
           "description": "Supplies the argument fragment that resumes an existing harness session; an adapter that omits it declares the harness non-resumable."
+        },
+        "SwallowedPromptDetector": {
+          "descHash": "0594b8f3738535f46aa680aa0357de2b5b8256f6b4dcbfffeaba88d6c9cb53f5",
+          "description": "Optional adapter capability reporting, from a settled screen and the screen as it was at submission, that the harness never accepted the prompt at all, as opposed to accepting and answering it."
         },
         "TranscriptReader": {
           "descHash": "5f4a94aff3176df5d383412f9da0460068485b1bd2b155c68b8bc85acd146574",
@@ -290,36 +562,44 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/turns/generic": {
-      "summaryHash": "997ed70314e4669e38a02ec62ac03cdabbd2ec9969560506c528e6e8c89cd908",
+      "summaryHash": "c6e00a62c58732f07c76eddb2137d9cb218b58251ff6bea6e2fbc51e84a99574",
       "summary": "Fallback turn-detection adapter that maps wrapper.Status transitions directly to turn events without reading screen contents; a safety net when no per-harness adapter exists."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode": {
-      "summaryHash": "7c9ee992eee7c3dbfd80ee18909eb44888499512ed61ee12b393f6008095cbdc",
-      "summary": "The Claude Code turn adapter. It detects end-of-turn from the thinking-summary line, reports busy from the interrupt footer and spinner, isolates the assistant reply from TUI chrome, parses trust and bypass-acceptance dialogs into structured input requests, reads the permission-mode footer, and supplies graceful quit, resume and transcript capabilities."
+      "summaryHash": "606aad233c18e278121fbfed5fe696ebb08e14486a0b4b62db752b472bd41654",
+      "summary": "The Claude Code turn adapter. It detects end-of-turn from the thinking-summary line, reports busy while a turn is in flight, isolates the assistant reply from TUI chrome, parses blocking dialogs such as folder trust into structured input requests, and reads the permission-mode footer."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/codex": {
-      "summaryHash": "66f2979f7e88a1e32110c5e8fb68facdb2b3e126c6dcbbd7e201134e4f1fdae9",
-      "summary": "The Codex turn adapter. It completes a turn on a fresh end-of-turn footer, extracts or locates the resume session id, surfaces auto-dismissable startup interstitials and strictly-recognised approval dialogs as input requests, and reports Codex's collaboration-axis mode from the rendered screen."
+      "summaryHash": "a2c089d813f3f5ec7ec17784daa4d13fc10158b7ce4ce0ba4310bf5c5ba73c47",
+      "summary": "The Codex turn adapter. Current Codex paints no end-of-turn marker, so completion falls to the chat layer's idle detection and reply content to the rollout transcript; the adapter keeps the legacy token-usage footer path, detects prompt readiness, and surfaces startup interstitials and dialogs as input requests."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/gemini": {
       "summaryHash": "837a0df41011f6cea935c769eb44c017c369cfe5e9b8208ac689cea4461cbd9e",
       "summary": "Turn-detection adapter for the Gemini CLI: end-of-turn/session-id markers not yet identified, so it embeds generic.Adapter until a corpus recording exists."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/opencode": {
-      "summaryHash": "70c4ec924a351b96f574eb04cd6af7ec2b05d6db58d4854278c9cf8f227537f4",
-      "summary": "Turn-detection adapter for the OpenCode CLI: screen markers and transcript reading not yet identified, so it embeds generic.Adapter until a corpus recording exists."
+      "summaryHash": "8bbaab51bb63278d3714085590d7899b0300b6cd364c52f9706a35bf380e5310",
+      "summary": "Turn-detection adapter for the OpenCode CLI: screen markers, session-id extraction and transcript reading are not yet identified, so it embeds generic.Adapter until a corpus recording exists."
     },
     "github.com/olesho/harness-wrapper/pkg/turns/harness/pi": {
       "summaryHash": "71efa5127a368dad55329e13f43002e60ba2282cba49f44dbc8bdd773fdcf619",
       "summary": "The pi turn adapter. It has no confirmed on-screen end-of-turn marker, so completion falls back to the busy-aware idle path driven by the working spinner and the idle status line, alongside a readiness check, a graceful quit sequence, resume arguments and transcript reading."
     },
+    "github.com/olesho/harness-wrapper/pkg/turns/internal/inputtrack": {
+      "summaryHash": "3e81ee8b8a85e517a8fa350496e441ebffcc108fe698da8f17339d10fe61fd0f",
+      "summary": "Turns per-frame blocking-dialog detections into balanced InputRequested / InputResolved transitions, shared by the screen-scraping turn adapters so they cannot drift apart on the edge cases."
+    },
+    "github.com/olesho/harness-wrapper/pkg/turns/internal/menu": {
+      "summaryHash": "56a3682317c82e64f6dac8a4330b9f3a6cbfd4d0bf6a6f2d8dad6dccbbb7bb84",
+      "summary": "Dialog-menu helpers shared by the screen-scraping turn adapters, so the claude-code and codex adapters interpret a menu row's intent the same way."
+    },
     "github.com/olesho/harness-wrapper/pkg/versions": {
-      "summaryHash": "6721ba551e6d5f4fdc0fb7e23d68027deaafb13fb3d0b19bec23032d1b7fdb09",
-      "summary": "The read API for the embedded version pins that bind each harness adapter to the upstream release it was last verified against. Embedding keeps lookups working under trimmed builds and from any working directory, and an equivalent file can also be read from an external path for drift comparison."
+      "summaryHash": "e6cf8fd2e6c940210227c163f1a537e9a551475081d1f954d69e265d61044769",
+      "summary": "The read API for the version pins in versions.json that bind each harness adapter to the upstream release it was last verified against. It returns every entry or one harness's pin, and can read an equivalent file from an external path for drift comparison."
     },
     "github.com/olesho/harness-wrapper/pkg/wrapper": {
-      "summaryHash": "eb6466ef92088493ceaf138f00ed12a966a4fb373fb2bc99b9df8934a1476e3d",
-      "summary": "The foundation layer: it launches a harness under a pseudoterminal, supervises the process, and classifies the run into a small normalized status vocabulary with a canonical error taxonomy. It also owns the execution-mode knobs — reasoning effort, model and permission rung — translating each into that harness's own launch arguments, and exposes a live session handle for attaching output, writing input and resizing.",
+      "summaryHash": "93d4aea47ca5ea5068cdd92f3a53444d0eb82eb3c4adfae4496b0d7922af18cf",
+      "summary": "The foundation layer: it launches a harness under a pseudoterminal, supervises the process group, and classifies the run into a small normalized status vocabulary with a canonical error taxonomy. It also owns launch policy such as permission rungs, login, and a live session handle; it is a facade over internal/wrapcore that adds the built-in harnesses' classifier patterns.",
       "interfaces": {
         "Classifier": {
           "descHash": "94a349597e3f5f5a07b9f1ede9521a35b0d5ccaa7949d98fb9d22186577a1a6b",
@@ -370,8 +650,12 @@
       "summary": "Reflects Go DTO structs into the language-neutral field vocabulary that the cross-language conformance corpus freezes. It is the single place the Go-to-neutral mapping lives, shared by both generators so they emit identical field descriptions, and it deliberately hides Go-only distinctions a TypeScript consumer cannot observe."
     },
     "github.com/olesho/harness-wrapper/test/fakeharness/mock": {
-      "summaryHash": "0c2b967e60f8e553f250d60b66f467bddccc421aa5150a85de71b828996e3acf",
-      "summary": "A non-PTY mock harness binary used by the wrapper's own tests. Its flags select a canned behaviour — completed, failed, stuck, waiting for input, cost-limited, API-error and similar — so supervision and classification paths can be exercised deterministically."
+      "summaryHash": "6f4f15e6b2a243c2c5e37c71a622c314dcc5705500622deceb784df0a25b351b",
+      "summary": "A non-PTY mock harness binary used by the wrapper's own tests. Its --mode flag selects a canned behaviour — completed, failed, stuck, needs-input, cost-limited, API-error, and claude- or codex-style login flows — so supervision and classification paths can be exercised deterministically."
+    },
+    "github.com/olesho/harness-wrapper/test/mcpprobe": {
+      "summaryHash": "17fa4b3250c8c0cfd360bfc65ad2c1e990341753b6405c3884fa1f3720fc6cd9",
+      "summary": "A stdio MCP server for the real-harness conformance runs. It serves one tool, \"probe\", whose result carries the server's start nonce and the outcome of reading a forbidden file, so a contained harness that starts it shows its domain's denial from an MCP server's side."
     }
   }
 }
