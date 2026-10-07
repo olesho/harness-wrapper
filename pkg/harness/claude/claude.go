@@ -14,13 +14,17 @@ import (
 	"strings"
 
 	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // Profile is the Claude Code harness profile.
 type Profile struct{}
 
 // Name implements harness.Profile.
-func (Profile) Name() string { return "claude" }
+func (Profile) Name() string { return harnessname.Claude }
+
+// BinaryName implements harness.BinaryNamer: the Claude Code executable on PATH.
+func (Profile) BinaryName() string { return "claude" }
 
 // Resolve implements harness.Profile. Claude's capabilities are all statically
 // available (documented + firm — no runtime probe needed), so it unconditionally
@@ -97,5 +101,5 @@ func (resumer) ResumeArgs(sessionID string) []string {
 }
 
 func init() {
-	harness.Register("claude", Profile{})
+	harness.Register(harnessname.Claude, Profile{})
 }

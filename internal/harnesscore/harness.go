@@ -138,6 +138,10 @@ func For(name string) (Profile, bool) {
 
 // Registered returns the sorted names of all registered profiles (for tests
 // and diagnostics).
+//
+// It is also the list of harnesses a launcher supports: the harness-wrapper CLI
+// accepts exactly these names (blank-importing pkg/harness/all), resolving each
+// one's executable through BinaryName.
 func Registered() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
@@ -147,4 +151,26 @@ func Registered() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// BinaryNamer is an OPTIONAL interface a Profile implements to name the
+// executable a launcher looks up on PATH to start the harness ("claude" for
+// Claude Code). It lets a launcher derive its harness table from the registry
+// instead of keeping its own; see BinaryName.
+type BinaryNamer interface {
+	// BinaryName returns the harness executable's file name — a bare name to
+	// look up on PATH, never a path.
+	BinaryName() string
+}
+
+// BinaryName returns the executable name for p: its BinaryName when p
+// implements BinaryNamer and names one, else p.Name() — a harness whose binary
+// is named after its registry key need not implement the interface.
+func BinaryName(p Profile) string {
+	if b, ok := p.(BinaryNamer); ok {
+		if name := b.BinaryName(); name != "" {
+			return name
+		}
+	}
+	return p.Name()
 }

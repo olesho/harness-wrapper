@@ -6,7 +6,7 @@
 //
 //	harness-wrapper [wrapper-flags] <name> -- <harness args>
 //
-// Supported harness names: claude, codex, opencode (see supportedHarnesses).
+// Supported harness names: claude, codex, opencode (the pkg/harness registry; see lookupHarness).
 // Run with --help for the full usage text.
 package main
 

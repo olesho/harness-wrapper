@@ -25,6 +25,9 @@ type Resumer = harnesscore.Resumer
 // StreamParser is harnesscore.StreamParser.
 type StreamParser = harnesscore.StreamParser
 
+// BinaryNamer is harnesscore.BinaryNamer.
+type BinaryNamer = harnesscore.BinaryNamer
+
 // SpoolReceipt is harnesscore.SpoolReceipt.
 type SpoolReceipt = harnesscore.SpoolReceipt
 
@@ -116,6 +119,11 @@ func For(name string) (Profile, bool) {
 // Registered calls harnesscore.Registered.
 func Registered() []string {
 	return harnesscore.Registered()
+}
+
+// BinaryName calls harnesscore.BinaryName.
+func BinaryName(p Profile) string {
+	return harnesscore.BinaryName(p)
 }
 
 // IsManagedHookCommand calls harnesscore.IsManagedHookCommand.

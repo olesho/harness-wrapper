@@ -19,6 +19,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	_ "github.com/olesho/harness-wrapper/pkg/harness/claude" // registers the "claude" hook profile
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // maxPayload bounds what a hook may hand the handler on stdin.
@@ -27,7 +28,7 @@ const maxPayload = 16 << 20
 func main() { os.Exit(run(os.Args[1:], os.Environ(), os.Stdin, os.Stdout, os.Stderr)) }
 
 func run(args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) != 2 || args[0] != "claude" {
+	if len(args) != 2 || args[0] != harnessname.Claude {
 		_, _ = fmt.Fprintln(stderr, "usage: claude-code-hook claude <hook>")
 		return 0
 	}
@@ -40,7 +41,7 @@ func run(args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "claude-code-hook: payload over %d bytes, not recorded\n", maxPayload)
 		return 0
 	}
-	out, err := harnesscore.HandleHookEvent("claude", args[1], env, payload)
+	out, err := harnesscore.HandleHookEvent(harnessname.Claude, args[1], env, payload)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "claude-code-hook: %v\n", err)
 		return 0

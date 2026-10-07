@@ -23,13 +23,17 @@ import (
 	"strings"
 
 	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // Profile is the Codex CLI harness profile.
 type Profile struct{}
 
 // Name implements harness.Profile.
-func (Profile) Name() string { return "codex" }
+func (Profile) Name() string { return harnessname.Codex }
+
+// BinaryName implements harness.BinaryNamer: the Codex executable on PATH.
+func (Profile) BinaryName() string { return "codex" }
 
 // Resolve populates only the resume capability (see package doc for why the
 // others are deferred). ctx is unused.
@@ -61,5 +65,5 @@ func (resumer) ResumeArgs(sessionID string) []string {
 }
 
 func init() {
-	harness.Register("codex", Profile{})
+	harness.Register(harnessname.Codex, Profile{})
 }

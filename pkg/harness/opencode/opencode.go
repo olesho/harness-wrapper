@@ -18,13 +18,17 @@ import (
 	"encoding/json"
 
 	harness "github.com/olesho/harness-wrapper/internal/harnesscore"
+	"github.com/olesho/harness-wrapper/pkg/harnessname"
 )
 
 // Profile is the OpenCode CLI harness profile.
 type Profile struct{}
 
 // Name implements harness.Profile.
-func (Profile) Name() string { return "opencode" }
+func (Profile) Name() string { return harnessname.OpenCode }
+
+// BinaryName implements harness.BinaryNamer: the OpenCode executable on PATH.
+func (Profile) BinaryName() string { return "opencode" }
 
 // Resolve populates Resume + SessionID (see package doc; Hooks/Stream/Export are
 // deferred). ctx is unused.
@@ -70,5 +74,5 @@ func (sessionIDExtractor) ExtractSessionID(line string) (string, bool) {
 }
 
 func init() {
-	harness.Register("opencode", Profile{})
+	harness.Register(harnessname.OpenCode, Profile{})
 }

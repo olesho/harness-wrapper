@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
-	"slices"
 	"strings"
+
+	"github.com/olesho/harness-wrapper/pkg/harness"
+	// Registers every built-in harness profile: the CLI's supported harnesses
+	// are exactly the pkg/harness registry's names.
+	_ "github.com/olesho/harness-wrapper/pkg/harness/all"
 )
 
 // harnessSpec describes how to invoke a single harness from the CLI: only
@@ -16,20 +19,25 @@ type harnessSpec struct {
 	Bin string
 }
 
-// supportedHarnesses is the CLI's registry of harness short names and their
-// binaries. Per-harness behavior lives in internal/wrapcore/harness/<name>;
-// this map only names what the CLI accepts.
-var supportedHarnesses = map[string]harnessSpec{
-	"codex":    {Bin: "codex"},
-	"claude":   {Bin: "claude"},
-	"opencode": {Bin: "opencode"},
+// lookupHarness resolves a CLI harness name through the pkg/harness profile
+// registry — the single table of harnesses the CLI and RunTurn's callers share.
+// The name is matched EXACTLY against the registry keys (the short names
+// "claude", "codex", "opencode"); the "claude-code" alias is deliberately not
+// folded here (see applySandboxDefaults and transcriptReaderFor, which key on
+// the short name).
+func lookupHarness(name string) (harnessSpec, bool) {
+	p, ok := harness.For(name)
+	if !ok {
+		return harnessSpec{}, false
+	}
+	return harnessSpec{Bin: harness.BinaryName(p)}, true
 }
 
 // resolveHarness looks up a harness by short name and returns the
 // absolute path to its binary on PATH. Returns an error with a hint if
 // the name is unknown or if the binary is not installed.
 func resolveHarness(name string) (string, error) {
-	spec, ok := supportedHarnesses[name]
+	spec, ok := lookupHarness(name)
 	if !ok {
 		return "", fmt.Errorf("unsupported harness %q (supported: %s)", name, supportedHarnessNames())
 	}
@@ -61,5 +69,5 @@ func harnessBinaryOverride(name string) string {
 // supportedHarnessNames lists the registry's names, sorted and comma-separated,
 // for error messages and the usage text.
 func supportedHarnessNames() string {
-	return strings.Join(slices.Sorted(maps.Keys(supportedHarnesses)), ", ")
+	return strings.Join(harness.Registered(), ", ")
 }

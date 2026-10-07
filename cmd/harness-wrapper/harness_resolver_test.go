@@ -55,6 +55,22 @@ func TestResolveHarness_KnownInPath(t *testing.T) {
 	}
 }
 
+// The registry-derived table names the same binaries the CLI's former
+// hard-coded table did, and still rejects the "claude-code" alias.
+func TestLookupHarnessFromRegistry(t *testing.T) {
+	for name, bin := range map[string]string{"claude": "claude", "codex": "codex", "opencode": "opencode"} {
+		spec, ok := lookupHarness(name)
+		if !ok || spec.Bin != bin {
+			t.Errorf("lookupHarness(%q) = %+v, %v; want Bin %q", name, spec, ok, bin)
+		}
+	}
+	for _, name := range []string{"claude-code", "Claude", "pi", "gemini", ""} {
+		if _, ok := lookupHarness(name); ok {
+			t.Errorf("lookupHarness(%q) resolved; the CLI never accepted it", name)
+		}
+	}
+}
+
 func TestSupportedHarnessNamesIsStable(t *testing.T) {
 	got := supportedHarnessNames()
 	if got != "claude, codex, opencode" {
