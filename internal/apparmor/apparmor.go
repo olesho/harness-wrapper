@@ -82,6 +82,68 @@ func ValidateRoot(root string) error {
 	return nil
 }
 
+// agentSocketDirs lists where user agents and buses keep pathname sockets.
+// agents are gpg-agent's and ssh-agent's own directories: a root anywhere in
+// them, or above them, exposes their sockets. shared hold sockets among other
+// things (ssh-agent's default /tmp/ssh-*, the runtime directory's session bus,
+// gpg-agent and keyring sockets, the system's under /run): only a root at or
+// above them exposes those. home or runtimeDir may be "" when unknown.
+func agentSocketDirs(home, runtimeDir string) (agents, shared []string) {
+	shared = []string{"/tmp", "/run", "/var/run"}
+	if home != "" {
+		agents = append(agents, filepath.Join(home, ".gnupg"), filepath.Join(home, ".ssh"))
+	}
+	if runtimeDir != "" {
+		agents = append(agents, filepath.Join(runtimeDir, "gnupg"))
+		shared = append(shared, runtimeDir)
+	}
+	return agents, shared
+}
+
+// within reports whether path is dir or lies beneath it.
+func within(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, strings.TrimSuffix(dir, "/")+"/")
+}
+
+// BroadRootWarnings returns one warning for each root broad enough to expose
+// agent sockets: home itself, a root that contains a directory where agents
+// keep pathname sockets (~/.gnupg, ~/.ssh, the user's runtime directory,
+// /tmp, /run), or one inside an agent's own directory. Beneath a root the layer allows connecting
+// to every socket, so such a root hands a contained harness the user's
+// gpg-agent, ssh-agent or session bus. These roots stay valid — accepting
+// that is the host owner's call — so this only warns. roots, home and
+// runtimeDir are compared as given, so pass them canonical (symlinks
+// resolved); home or runtimeDir may be "".
+func BroadRootWarnings(roots []string, home, runtimeDir string) []string {
+	var out []string
+	for _, root := range roots {
+		if home != "" && root == home {
+			out = append(out, fmt.Sprintf("root %s is your home directory: a contained harness could connect to the agent sockets beneath it (%s, %s)",
+				root, filepath.Join(home, ".gnupg"), filepath.Join(home, ".ssh")))
+			continue
+		}
+		agents, shared := agentSocketDirs(home, runtimeDir)
+		if w := broadRootWarning(root, agents, shared); w != "" {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func broadRootWarning(root string, agents, shared []string) string {
+	for _, dir := range append(slices.Clone(agents), shared...) {
+		if within(dir, root) {
+			return fmt.Sprintf("root %s contains %s, where agents and buses keep their sockets: a contained harness could connect to them", root, dir)
+		}
+	}
+	for _, dir := range agents {
+		if within(root, dir) {
+			return fmt.Sprintf("root %s lies within %s, an agent's socket directory: a contained harness could connect to its sockets", root, dir)
+		}
+	}
+	return ""
+}
+
 // Profile returns the profile source for roots: sorted, duplicates removed,
 // each validated with ValidateRoot. It needs at least one root. The profile is
 // named ProfileName-<digest>, where digest is the SHA-256 of the same source

@@ -20,7 +20,9 @@ import (
 // so every directory a contained harness writes — working directories,
 // --contain-rw paths, --contain-state-dir and the managed-state directory
 // (XDG_STATE_HOME/harness-wrapper) — must lie beneath one. Each root must
-// exist; it is recorded with symlinks resolved. Root installs the output as
+// exist; it is recorded with symlinks resolved. A root broad enough to expose
+// agent sockets ($HOME, or one containing ~/.gnupg, ~/.ssh, the runtime
+// directory, /tmp or /run) is accepted with a warning on stderr. Root installs the output as
 // /etc/apparmor.d/harness-wrapper-contain and loads it with apparmor_parser -r.
 // Exit 0 on success, 2 on a usage error.
 func runContainAppArmorProfile(args []string, stdout, stderr io.Writer) int {
@@ -55,8 +57,34 @@ func runContainAppArmorProfile(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "harness-wrapper contain-apparmor-profile:", err)
 		return 2
 	}
+	home, runtimeDir := userSocketDirs()
+	for _, w := range apparmor.BroadRootWarnings(canonical, home, runtimeDir) {
+		_, _ = fmt.Fprintln(stderr, "harness-wrapper contain-apparmor-profile: warning:", w)
+	}
 	_, _ = io.WriteString(stdout, src)
 	return 0
+}
+
+// userSocketDirs returns the invoking user's home and runtime directories,
+// symlinks resolved where they exist, "" where unknown. Under sudo, HOME may
+// be root's, so generate the profile as the user and install it as root, as
+// the guide shows.
+func userSocketDirs() (home, runtimeDir string) {
+	resolve := func(p string) string {
+		if c, err := filepath.EvalSymlinks(p); err == nil {
+			return c
+		}
+		return p
+	}
+	if h, err := os.UserHomeDir(); err == nil && filepath.IsAbs(h) && filepath.Clean(h) != "/" {
+		home = resolve(filepath.Clean(h))
+	}
+	if r := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(r) && filepath.Clean(r) != "/" {
+		runtimeDir = resolve(filepath.Clean(r))
+	} else {
+		runtimeDir = resolve(fmt.Sprintf("/run/user/%d", os.Getuid()))
+	}
+	return home, runtimeDir
 }
 
 // canonicalDir resolves an existing directory to its absolute, symlink-free

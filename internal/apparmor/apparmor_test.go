@@ -185,3 +185,29 @@ func TestLabelHas(t *testing.T) {
 		}
 	}
 }
+
+func TestBroadRootWarnings(t *testing.T) {
+	home, run := "/home/u", "/run/user/1000"
+	for _, root := range []string{
+		"/home/u", "/home", "/home/u/.gnupg", "/home/u/.ssh/sub", "/run/user/1000/gnupg/x",
+		"/tmp", "/run", "/run/user", "/run/user/1000", "/var",
+	} {
+		if w := BroadRootWarnings([]string{root}, home, run); len(w) != 1 {
+			t.Errorf("BroadRootWarnings(%q) = %q, want one warning", root, w)
+		}
+	}
+	for _, root := range []string{
+		"/srv/work", "/home/u/work", "/home/u/.local/state/harness-wrapper", "/tmp/work",
+		"/run/user/1000/work", "/home/u2", "/home/u/.gnupgx",
+	} {
+		if w := BroadRootWarnings([]string{root}, home, run); len(w) != 0 {
+			t.Errorf("BroadRootWarnings(%q) = %q, want none", root, w)
+		}
+	}
+	if w := BroadRootWarnings([]string{"/srv/work"}, "", ""); len(w) != 0 {
+		t.Errorf("unknown home and runtime directory: %q", w)
+	}
+	if w := BroadRootWarnings([]string{"/home/u", "/srv/a"}, home, run); len(w) != 1 || !strings.Contains(w[0], "home directory") {
+		t.Errorf("home root: %q", w)
+	}
+}

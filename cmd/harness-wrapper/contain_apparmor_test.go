@@ -35,6 +35,30 @@ func TestContainAppArmorProfile(t *testing.T) {
 	}
 }
 
+// TestContainAppArmorProfileWarnsOnBroadRoot: a root that exposes the user's
+// agent sockets is still accepted, with a warning on stderr.
+func TestContainAppArmorProfileWarnsOnBroadRoot(t *testing.T) {
+	home := t.TempDir()
+	work := filepath.Join(home, "work")
+	if err := os.Mkdir(work, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	for root, warn := range map[string]bool{home: true, work: false} {
+		var out, errb bytes.Buffer
+		if code := runContainAppArmorProfile([]string{"--root", root}, &out, &errb); code != 0 {
+			t.Fatalf("--root %s: exit %d: %s", root, code, errb.String())
+		}
+		if !strings.Contains(out.String(), "profile ") {
+			t.Errorf("--root %s: no profile printed", root)
+		}
+		if got := strings.Contains(errb.String(), "warning:"); got != warn {
+			t.Errorf("--root %s: warned %v, want %v (stderr %q)", root, got, warn, errb.String())
+		}
+	}
+}
+
 func TestContainAppArmorProfileUsage(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "f")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
