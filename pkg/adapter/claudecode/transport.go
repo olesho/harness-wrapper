@@ -57,6 +57,13 @@ const (
 	stderrTail = 4 << 10
 )
 
+// killWait bounds Stop's wait for the group to end after SIGKILL: a process
+// of it nobody reaps (the Host as PID 1) never does. A var for tests.
+var killWait = 5 * time.Second
+
+// groupEmpty reports whether a process group ended; a var for tests.
+var groupEmpty = procgroup.Empty
+
 // untaskedTurns numbers claude's own turns that ended with no task named
 // (onResult), each of which gets a native id of its own.
 var untaskedTurns atomic.Uint64
@@ -228,13 +235,11 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	_, err = t.request(ictx, map[string]any{"subtype": "initialize", "hooks": nil})
 	cancel()
 	if foreign := t.foreignID(); foreign != "" {
-		t.Stop(context.Background(), 0)
-		<-t.exited
+		t.abandon()
 		return nil, openFailed(contract.OpenSessionInUse, "claude opened session %s, not %s: a copy, as of a session another process holds", foreign, id)
 	}
 	if err != nil {
-		t.Stop(context.Background(), 0)
-		<-t.exited
+		t.abandon()
 		stderr := t.stderr.String()
 		switch {
 		case strings.Contains(stderr, "already in use"):
@@ -889,9 +894,18 @@ func (t *transport) Stop(ctx context.Context, grace time.Duration) bool {
 		t.killed = true
 		t.mu.Unlock()
 		procgroup.Signal(t.cmd, true)
-		t.untilGone(ctx, time.Time{})
+		t.untilGone(ctx, time.Now().Add(killWait))
 	}
 	return t.gone()
+}
+
+// abandon stops a process Start gives up on, waiting at most killWait for
+// its group, and then for its exit.
+func (t *transport) abandon() {
+	ctx, cancel := context.WithTimeout(context.Background(), killWait)
+	defer cancel()
+	t.Stop(ctx, 0)
+	<-t.exited
 }
 
 // kill is a crash: SIGKILL to the group, with nothing asked first.
@@ -909,7 +923,7 @@ func (t *transport) gone() bool {
 	default:
 		return false
 	}
-	return procgroup.Empty(t.cmd)
+	return groupEmpty(t.cmd)
 }
 
 func (t *transport) until(ctx context.Context, ch <-chan struct{}, d time.Duration) {
@@ -925,11 +939,10 @@ func (t *transport) until(ctx context.Context, ch <-chan struct{}, d time.Durati
 	}
 }
 
-// untilGone polls for the group to end, until deadline (never, when zero) or
-// ctx ends.
+// untilGone polls for the group to end, until deadline or ctx ends.
 func (t *transport) untilGone(ctx context.Context, deadline time.Time) {
 	for !t.gone() {
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
+		if !time.Now().Before(deadline) {
 			return
 		}
 		select {

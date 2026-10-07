@@ -86,6 +86,13 @@ const (
 	nativeWait = 2 * time.Second
 )
 
+// killWait bounds Stop's wait for the group to end after SIGKILL: a process
+// of it nobody reaps (the Host as PID 1) never does. A var for tests.
+var killWait = 5 * time.Second
+
+// groupEmpty reports whether a process group ended; a var for tests.
+var groupEmpty = procgroup.Empty
+
 type transport struct {
 	report func(adapter.Event)
 	cmd    *exec.Cmd
@@ -268,8 +275,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		return nil, openFailed(contract.OpenBinaryNotFound, "start %s: %v", cfg.Binary, err)
 	}
 	fail := func(reason contract.OpenFailure, err error) (adapter.Transport, error) {
-		t.Stop(context.Background(), 0)
-		<-t.exited
+		t.abandon()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -1222,9 +1228,18 @@ func (t *transport) Stop(ctx context.Context, grace time.Duration) bool {
 		t.killed = true
 		t.mu.Unlock()
 		procgroup.Signal(t.cmd, true)
-		t.untilGone(ctx, time.Time{})
+		t.untilGone(ctx, time.Now().Add(killWait))
 	}
 	return t.gone()
+}
+
+// abandon stops a process Start gives up on, waiting at most killWait for
+// its group, and then for its exit.
+func (t *transport) abandon() {
+	ctx, cancel := context.WithTimeout(context.Background(), killWait)
+	defer cancel()
+	t.Stop(ctx, 0)
+	<-t.exited
 }
 
 // kill is a crash: SIGKILL to the group, with nothing asked first.
@@ -1242,7 +1257,7 @@ func (t *transport) gone() bool {
 	default:
 		return false
 	}
-	return procgroup.Empty(t.cmd)
+	return groupEmpty(t.cmd)
 }
 
 func (t *transport) until(ctx context.Context, ch <-chan struct{}, d time.Duration) {
@@ -1258,11 +1273,10 @@ func (t *transport) until(ctx context.Context, ch <-chan struct{}, d time.Durati
 	}
 }
 
-// untilGone polls for the group to end, until deadline (never, when zero) or
-// ctx ends.
+// untilGone polls for the group to end, until deadline or ctx ends.
 func (t *transport) untilGone(ctx context.Context, deadline time.Time) {
 	for !t.gone() {
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
+		if !time.Now().Before(deadline) {
 			return
 		}
 		select {
