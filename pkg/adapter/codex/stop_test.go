@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/adapter"
+	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 )
 
 // TestStopBoundedAfterKill: a group that never reads as empty after SIGKILL
@@ -28,7 +29,7 @@ func TestStopBoundedAfterKill(t *testing.T) {
 		report: func(adapter.Event) {},
 		calls:  map[int64]chan rpcResult{}, wake: make(chan struct{}),
 		exited: make(chan struct{}), readerEnd: make(chan struct{}),
-		stderr: newTailBuffer(stderrTail),
+		stderr: proc.NewTailBuffer(stderrTail),
 	}
 	if err := tr.start(bin, dir, nil); err != nil {
 		t.Fatal(err)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/adapter"
+	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
@@ -36,7 +37,7 @@ func pipeTransport(t *testing.T, scratch string, report func(adapter.Event)) (*t
 		id: "s", scratch: scratch, report: report,
 		waiting: map[string]chan rpcResult{},
 		exited:  make(chan struct{}), readerEnd: make(chan struct{}),
-		stderr: newTailBuffer(stderrTail),
+		stderr: proc.NewTailBuffer(stderrTail),
 		stdin:  inW, stdout: outR,
 	}
 	go tr.read()

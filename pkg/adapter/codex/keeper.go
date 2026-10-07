@@ -17,6 +17,7 @@ import (
 
 	"github.com/olesho/harness-wrapper/internal/procgroup"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
+	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
@@ -309,7 +310,7 @@ func (k *keeper) read() (keptLogin, error) {
 type appServer struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
-	stderr *tailBuffer
+	stderr *proc.TailBuffer
 	onNote func(method string, params json.RawMessage)
 	done   chan struct{}
 
@@ -344,7 +345,7 @@ func startAppServer(ctx context.Context, bin, home string, onNote func(string, j
 		return nil, err
 	}
 	_, _ = outW.Close(), errW.Close()
-	s := &appServer{cmd: cmd, stdin: stdin, stderr: newTailBuffer(stderrTail), onNote: onNote, done: make(chan struct{}), calls: map[int64]chan rpcResult{}}
+	s := &appServer{cmd: cmd, stdin: stdin, stderr: proc.NewTailBuffer(stderrTail), onNote: onNote, done: make(chan struct{}), calls: map[int64]chan rpcResult{}}
 	go func() {
 		_, _ = io.Copy(s.stderr, errR)
 		_ = errR.Close()
@@ -356,7 +357,7 @@ func startAppServer(ctx context.Context, bin, home string, onNote func(string, j
 		"clientInfo": map[string]string{"name": "harness-wrapper-keeper", "title": "harness-wrapper keeper", "version": adapter.Name()},
 	}); err != nil {
 		s.close()
-		if tail := lastLine(s.stderr.String()); tail != "" {
+		if tail := proc.LastLine(s.stderr.String()); tail != "" {
 			return nil, fmt.Errorf("initialize: %w: %s", err, tail)
 		}
 		return nil, fmt.Errorf("initialize: %w", err)
@@ -382,7 +383,7 @@ func (s *appServer) read(r io.ReadCloser) {
 	}()
 	br := bufio.NewReaderSize(r, 64<<10)
 	for {
-		line, err := readBoundedLine(br, frameMax)
+		line, err := proc.ReadBoundedLine(br, frameMax)
 		if len(bytes.TrimSpace(line)) > 0 {
 			var m message
 			if json.Unmarshal(line, &m) == nil {

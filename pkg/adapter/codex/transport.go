@@ -18,6 +18,7 @@ import (
 	"github.com/olesho/harness-wrapper/internal/procgroup"
 	"github.com/olesho/harness-wrapper/internal/sessionid"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
+	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 	tcodex "github.com/olesho/harness-wrapper/pkg/transcript/codex"
 )
@@ -97,7 +98,7 @@ type transport struct {
 	report func(adapter.Event)
 	cmd    *exec.Cmd
 	stdout *os.File
-	stderr *tailBuffer
+	stderr *proc.TailBuffer
 	// scratch and home are the layout's scratch root and CODEX_HOME: where
 	// the thread's native state is kept, and where codex keeps the thread.
 	scratch, home string
@@ -240,7 +241,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if c := req.Credential; c != nil {
 		switch c.Kind {
 		case CredentialAPIKey, CredentialAccessToken:
-			tok, err := readToken(c.File)
+			tok, err := proc.ReadToken(c.File)
 			if err != nil {
 				return nil, openFailed(contract.OpenAuthRequired, "%v", err)
 			}
@@ -261,7 +262,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		report: req.Report, scratch: req.Layout.Scratch, home: cfg.CodexHome,
 		calls: map[int64]chan rpcResult{}, wake: make(chan struct{}),
 		exited: make(chan struct{}), readerEnd: make(chan struct{}),
-		stderr: newTailBuffer(stderrTail),
+		stderr: proc.NewTailBuffer(stderrTail),
 	}
 	release, err := startLock(ctx, req.Layout.Scratch)
 	if err != nil {
@@ -279,7 +280,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if tail := lastLine(t.stderr.String()); tail != "" {
+		if tail := proc.LastLine(t.stderr.String()); tail != "" {
 			return nil, openFailed(reason, "%v: %s", err, tail)
 		}
 		return nil, openFailed(reason, "%v", err)
@@ -432,53 +433,12 @@ func (t *transport) syncNative() {
 	}
 }
 
-// readToken reads a credential file: one line, no control characters.
-func readToken(file string) (string, error) {
-	b, err := os.ReadFile(file) //nolint:gosec // the staged credential's path
-	if err != nil {
-		var pe *os.PathError
-		if errors.As(err, &pe) {
-			return "", fmt.Errorf("credential file: %w", pe.Err)
-		}
-		return "", errors.New("credential file unreadable")
-	}
-	tok := strings.TrimSpace(string(b))
-	if tok == "" || strings.ContainsAny(tok, "\n\r\x00") {
-		return "", errors.New("credential file is empty or malformed")
-	}
-	return tok, nil
-}
-
 func (t *transport) start(bin, dir string, env []string) error {
-	cmd := exec.Command(bin, "app-server")
-	cmd.Dir, cmd.Env = dir, env
-	procgroup.Set(cmd)
-	stdin, err := cmd.StdinPipe()
+	cmd, stdin, stdout, err := proc.Start(bin, []string{"app-server"}, dir, env, t.stderr)
 	if err != nil {
 		return err
 	}
-	// stdout and stderr are plain pipes read here, so Wait never waits on a
-	// descendant that inherited them.
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		_, _ = outR.Close(), outW.Close()
-		return err
-	}
-	cmd.Stdout, cmd.Stderr = outW, errW
-	if err := cmd.Start(); err != nil {
-		_, _, _, _ = outR.Close(), outW.Close(), errR.Close(), errW.Close()
-		return err
-	}
-	_, _ = outW.Close(), errW.Close()
-	t.cmd, t.stdin, t.stdout = cmd, stdin, outR
-	go func() {
-		_, _ = io.Copy(t.stderr, errR)
-		_ = errR.Close()
-	}()
+	t.cmd, t.stdin, t.stdout = cmd, stdin, stdout
 	go t.read()
 	go t.wait()
 	return nil
@@ -500,7 +460,7 @@ func (t *transport) read() {
 	defer close(t.readerEnd)
 	r := bufio.NewReaderSize(t.stdout, 64<<10)
 	for {
-		line, err := readBoundedLine(r, frameMax)
+		line, err := proc.ReadBoundedLine(r, frameMax)
 		if len(bytes.TrimSpace(line)) > 0 {
 			var m message
 			if json.Unmarshal(line, &m) == nil {
@@ -509,28 +469,6 @@ func (t *transport) read() {
 		}
 		if err != nil {
 			return
-		}
-	}
-}
-
-// readBoundedLine reads one line of at most max bytes; a longer one is
-// consumed and returned empty.
-func readBoundedLine(r *bufio.Reader, max int) ([]byte, error) {
-	var line []byte
-	over := false
-	for {
-		part, isPrefix, err := r.ReadLine()
-		if !over {
-			line = append(line, part...)
-			if len(line) > max {
-				over, line = true, nil
-			}
-		}
-		if err != nil {
-			return line, err
-		}
-		if !isPrefix {
-			return line, nil
 		}
 	}
 }
@@ -883,32 +821,10 @@ func (t *transport) wait() {
 	}
 	t.cmu.Unlock()
 
-	exit := contract.SessionExitedData{Class: contract.ExitCrashed}
-	var code int
-	sig := ""
-	if ps := t.cmd.ProcessState; ps != nil {
-		code, sig = ps.ExitCode(), procgroup.ExitSignal(ps)
-	}
-	if sig == "" && code >= 0 {
-		c := code
-		exit.ExitCode = &c
-	}
-	exit.Signal = sig
 	t.mu.Lock()
 	stopping, killed := t.stopping, t.killed
 	t.mu.Unlock()
-	switch {
-	case stopping && sig == "killed":
-		exit.Class = contract.ExitKilled
-	case stopping, sig == "" && code == 0:
-		exit.Class = contract.ExitClean
-	case sig != "" || killed:
-		exit.Class = contract.ExitKilled
-	}
-	exit.Detail = lastLine(t.stderr.String())
-	if exit.Detail == "" && err != nil && sig == "" && code != 0 {
-		exit.Detail = err.Error()
-	}
+	exit := proc.Exit(t.cmd, err, stopping, killed, t.stderr.String())
 	t.rmu.Lock()
 	t.report(adapter.Event{Kind: adapter.Exited, Exit: exit})
 	close(t.exited)
@@ -1285,37 +1201,4 @@ func (t *transport) untilGone(ctx context.Context, deadline time.Time) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-}
-
-// ---- helpers
-
-// tailBuffer keeps the last n bytes written to it.
-type tailBuffer struct {
-	mu  sync.Mutex
-	n   int
-	buf []byte
-}
-
-func newTailBuffer(n int) *tailBuffer { return &tailBuffer{n: n} }
-
-func (b *tailBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.buf = append(b.buf, p...)
-	if len(b.buf) > b.n {
-		b.buf = b.buf[len(b.buf)-b.n:]
-	}
-	return len(p), nil
-}
-
-func (b *tailBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return string(b.buf)
-}
-
-// lastLine is the last non-empty line of s.
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
 }
