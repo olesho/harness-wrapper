@@ -352,7 +352,9 @@ jobs:
           done; done
       - name: apidiff against the previous release
         run: |
-          go install golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
+          # This apidiff needs go >= 1.26; setup-go v6 sets GOTOOLCHAIN=local, so
+          # allow the switch to a newer toolchain for the install only.
+          GOTOOLCHAIN=auto go install golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba
           git worktree add --detach "$RUNNER_TEMP/prev" "${{ steps.prev.outputs.tag }}"
           for os in linux darwin; do
             (cd "$RUNNER_TEMP/prev" && GOOS=$os apidiff -m -w "$RUNNER_TEMP/prev-$os.bin" .)
