@@ -103,3 +103,33 @@ func TestHeadersScriptFailsOnAFailedRead(t *testing.T) {
 		t.Errorf("stdout %q, stderr %q", out, stderr)
 	}
 }
+
+// HeaderCommand prints a file's value with its CR and LF dropped, and fails,
+// printing nothing, on a file it cannot read or one holding a control
+// character.
+func TestHeaderCommand(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, v string) string {
+		f := filepath.Join(dir, name)
+		if err := os.WriteFile(f, []byte(v), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	run := func(f string) (string, error) {
+		out, err := exec.Command("/bin/sh", "-c", HeaderCommand(f)).Output()
+		return string(out), err
+	}
+	if out, err := run(write("crlf's", "Bearer\ttok\r\n")); err != nil || out != "Bearer\ttok" {
+		t.Errorf("CRLF file: %q, %v", out, err)
+	}
+	if out, err := run(write("ctl", "a\x01b")); err == nil || out != "" {
+		t.Errorf("a control character: %q, %v", out, err)
+	}
+	if out, err := run(filepath.Join(dir, "missing")); err == nil || out != "" {
+		t.Errorf("a missing file: %q, %v", out, err)
+	}
+	if out, err := run(dir); err == nil || out != "" {
+		t.Errorf("a directory: %q, %v", out, err)
+	}
+}

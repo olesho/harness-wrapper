@@ -90,7 +90,7 @@ func TestProvision(t *testing.T) {
 	if docs.URL != "https://mcp.example.com" || docs.Headers["X-Team"] != "t" || docs.Headers["Authorization"] != "${DOCS_TOKEN}" {
 		t.Errorf("http server: %+v", docs)
 	}
-	if kept.Headers["Authorization"] != `!cat '/w/secrets/kept auth'` {
+	if kept.Headers["Authorization"] != "!"+adapter.HeaderCommand("/w/secrets/kept auth") {
 		t.Errorf("a header from a file: %+v", kept)
 	}
 	for _, f := range []string{"config/skills/review/SKILL.md", "config/memory/notes.md"} {

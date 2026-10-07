@@ -49,6 +49,16 @@ func HeadersScript(name string, files map[string]string) string {
 	return b.String()
 }
 
+// HeaderCommand is a shell command that prints the value of a header read
+// from file as HeadersScript reads one: its CRs and newlines dropped. A file
+// it cannot read, or one holding another control character but a tab, fails
+// it, printing nothing. It holds the file's path and no value: a harness
+// whose configuration takes a command per header runs it each time it
+// connects.
+func HeaderCommand(file string) string {
+	return `export LC_ALL=C; v=$(tr -d '\r\n' <` + ShellQuote(file) + `) && [ -z "$(printf '%s' "$v" | tr -d '\t -~\200-\377')" ] && printf '%s' "$v"`
+}
+
 // ShellQuote is s as one shell word.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"

@@ -185,8 +185,9 @@ func settingsJSON() string {
 // mcpJSON is mcp.json: a server per connector, in Claude Code's format, its
 // tools declared to the model ("exposure": "direct"). A header's value from a
 // variable is ${VAR}, which pi reads from its environment; one from a file is
-// "!cat <file>", a command pi runs each time it connects, so the value is in
-// no configuration and no process's environment.
+// "!" and adapter.HeaderCommand, a command pi runs each time it connects,
+// so the value is in no configuration and no process's environment, read as
+// the other profiles' headers scripts read it.
 func mcpJSON(conns []contract.Connector) string {
 	servers := map[string]any{}
 	for _, c := range conns {
@@ -210,7 +211,7 @@ func mcpJSON(conns []contract.Connector) string {
 				headers[k] = "${" + v + "}"
 			}
 			for k, f := range c.HTTP.HeadersFile {
-				headers[k] = "!cat " + adapter.ShellQuote(f)
+				headers[k] = "!" + adapter.HeaderCommand(f)
 			}
 			if len(headers) > 0 {
 				s["headers"] = headers
