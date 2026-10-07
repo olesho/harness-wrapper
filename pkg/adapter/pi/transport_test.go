@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/adapter"
+	"github.com/olesho/harness-wrapper/pkg/contract"
 )
 
 // fakePi is the far end of a transport's pipes: it reads the commands the
@@ -65,6 +66,39 @@ func (f *fakePi) send(t *testing.T, v any) {
 	b, _ := json.Marshal(v)
 	if _, err := f.out.Write(append(b, '\n')); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestInterruptUnnoted: an interrupt whose note fails sends no abort and
+// leaves the turn unmarked, so an error that ends it is a failure, not an
+// interrupt.
+func TestInterruptUnnoted(t *testing.T) {
+	var ended []adapter.Event
+	tr, pi := pipeTransport(t, t.TempDir(), func(ev adapter.Event) {
+		if ev.Kind == adapter.Ended {
+			ended = append(ended, ev)
+		}
+	})
+	tr.mu.Lock()
+	tr.turn = &turnState{native: "not a tag!", started: true}
+	tr.mu.Unlock()
+	if err := tr.Interrupt(context.Background()); err == nil {
+		t.Fatal("Interrupt noted a bad tag")
+	}
+	pi.send(t, map[string]any{"type": "message_end", "message": map[string]any{"role": "assistant", "stopReason": "error", "errorMessage": abortedMessage}})
+	pi.send(t, map[string]any{"type": "agent_settled"})
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		tr.rmu.Lock()
+		n := len(ended)
+		tr.rmu.Unlock()
+		if n > 0 {
+			break
+		}
+	}
+	tr.rmu.Lock()
+	defer tr.rmu.Unlock()
+	if len(ended) != 1 || ended[0].Outcome != contract.TurnErrored {
+		t.Fatalf("ended %+v, want the turn errored", ended)
 	}
 }
 

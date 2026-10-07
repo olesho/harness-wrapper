@@ -703,14 +703,16 @@ func (t *transport) Submit(ctx context.Context, s adapter.Submission) error {
 func (t *transport) Interrupt(ctx context.Context) error {
 	t.mu.Lock()
 	ts := t.turn
-	if ts != nil {
-		ts.interrupted = true
-	}
 	t.mu.Unlock()
 	if ts != nil {
+		// Marked only once noted: an interrupt that sends no abort leaves
+		// the run's end read as pi recorded it.
 		if err := noteInterrupt(t.scratch, ts.native); err != nil {
 			return fmt.Errorf("noting the interrupt: %w", err)
 		}
+		t.mu.Lock()
+		ts.interrupted = true
+		t.mu.Unlock()
 	}
 	_, err := t.call(ctx, map[string]any{"type": "abort"})
 	return err
