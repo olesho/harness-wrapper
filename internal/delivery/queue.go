@@ -59,8 +59,8 @@ type Stats struct {
 	DeliveringSince time.Time
 	Delivered       uint64
 	// Undelivered counts events pushed and never delivered: refused after
-	// the queue closed, given up on while waiting for room, or left queued
-	// when it was abandoned.
+	// the queue closed, given up on while waiting for room, left queued
+	// when it was abandoned, or handed to a callback that panicked.
 	Undelivered uint64
 }
 
@@ -259,11 +259,29 @@ func (q *Queue[T]) run() {
 		q.delivering = time.Now()
 		q.mu.Unlock()
 
-		q.deliver(e.v)
+		ok := q.deliverOne(e.v)
 
 		q.mu.Lock()
 		q.delivering = time.Time{}
-		q.delivered++
+		if ok {
+			q.delivered++
+		} else {
+			q.lost++
+		}
 		q.mu.Unlock()
 	}
+}
+
+// deliverOne hands v to the callback, reporting whether it returned. A
+// callback that panics is recovered: a goroutine's unrecovered panic would end
+// the whole process, and the worker must keep delivering — and close Drained —
+// for the events behind it. The event it panicked on counts as undelivered.
+func (q *Queue[T]) deliverOne(v T) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	q.deliver(v)
+	return true
 }

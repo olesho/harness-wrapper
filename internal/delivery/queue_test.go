@@ -189,3 +189,35 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+func TestPanickingCallbackDoesNotStopDelivery(t *testing.T) {
+	var mu sync.Mutex
+	var got []int
+	q := New(Limits{}, one, func(v int) {
+		if v == 1 {
+			panic("callback failed")
+		}
+		mu.Lock()
+		got = append(got, v)
+		mu.Unlock()
+	})
+	for i := range 4 {
+		if err := q.Push(i, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q.Close()
+	select {
+	case <-q.Drained():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Drained did not close after a callback panicked")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 3 || got[0] != 0 || got[1] != 2 || got[2] != 3 {
+		t.Fatalf("delivered %v, want [0 2 3]", got)
+	}
+	if st := q.Stats(); st.Delivered != 3 || st.Undelivered != 1 {
+		t.Fatalf("stats delivered=%d undelivered=%d, want 3 and 1", st.Delivered, st.Undelivered)
+	}
+}
