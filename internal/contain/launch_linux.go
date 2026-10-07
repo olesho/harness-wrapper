@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -875,43 +876,104 @@ func sessionMembers(sid int) []int {
 	return out
 }
 
+// sweepInterval is the least time between two sweeps' starts. State is only
+// swept once it is a minute old, so sweeping more often finds nothing new.
+const sweepInterval = time.Minute
+
+var (
+	sweepMu      sync.Mutex
+	sweepRunning bool
+	sweepLast    time.Time
+	// sweepNow and sweepAsync are seams: tests drive the clock and run the
+	// background sweep themselves.
+	sweepNow   = time.Now
+	sweepAsync = func(fn func()) { go fn() }
+)
+
 // sweepStale removes ephemeral state whose launch is gone: its lock is free
 // (locks die with their holder) and its recorded cgroup, if any, can be
 // recovered. State whose launch ran unsupervised is kept, as reported when it
 // ran. Persistent state belongs to its stored conversation and is skipped.
+//
+// Recovering a cgroup can wait up to emptyBudget for it to empty, so the
+// removal runs in the background, one sweep at a time and at most one start
+// per sweepInterval, and Prepare never waits for it: Prepare only lists the
+// entries. That is safe because a swept entry is never reused: a launch with
+// ephemeral state creates a fresh one, and the sweep holds each entry's lock
+// while it recovers and removes it. An entry a sweep leaves (busy, still
+// young, or not yet recoverable) is retried by a later one.
 func sweepStale() {
+	sweepMu.Lock()
+	if sweepRunning || (!sweepLast.IsZero() && sweepNow().Sub(sweepLast) < sweepInterval) {
+		sweepMu.Unlock()
+		return
+	}
+	sweepRunning = true
+	sweepMu.Unlock()
+	done := func() {
+		sweepMu.Lock()
+		sweepRunning = false
+		sweepMu.Unlock()
+	}
+
 	parent, err := openStateParent()
 	if err != nil {
+		done()
 		return
 	}
-	defer parent.close()
+	names := staleCandidates(parent)
+	if len(names) == 0 {
+		parent.close()
+		done()
+		return
+	}
+	sweepMu.Lock()
+	sweepLast = sweepNow()
+	sweepMu.Unlock()
+	sweepAsync(func() {
+		defer done()
+		defer parent.close()
+		for _, name := range names {
+			sweepEntry(parent, name)
+		}
+	})
+}
+
+// staleCandidates lists the state entries old enough to sweep. Young state is
+// left alone: its creator may be between mkdir and taking the lock.
+func staleCandidates(parent *pinned) []string {
 	entries, err := os.ReadDir(parent.canonical)
 	if err != nil {
-		return
+		return nil
 	}
+	var names []string
 	for _, e := range entries {
 		if !e.IsDir() || !validID(e.Name()) {
 			continue
 		}
-		// Leave young state alone: its creator may be between mkdir and
-		// taking the lock.
-		if fi, err := e.Info(); err != nil || time.Since(fi.ModTime()) < time.Minute {
+		if fi, err := e.Info(); err != nil || sweepNow().Sub(fi.ModTime()) < time.Minute {
 			continue
 		}
-		root, err := pinAt(parent, e.Name())
-		if err != nil {
-			continue
-		}
-		s := &State{ID: e.Name(), parent: parent, root: root, lockFD: -1}
-		if s.lock() != nil {
-			root.close() // a live launch holds it
-			continue
-		}
-		rec, err := s.readLifecycle()
-		if err == nil && !rec.Persistent && s.recoverPrevious(context.Background()) == nil {
-			_ = s.removeTree()
-		}
-		s.unlock()
-		root.close()
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// sweepEntry recovers and removes one ephemeral state entry, if no launch
+// holds it.
+func sweepEntry(parent *pinned, name string) {
+	root, err := pinAt(parent, name)
+	if err != nil {
+		return
+	}
+	defer root.close()
+	s := &State{ID: name, parent: parent, root: root, lockFD: -1}
+	if s.lock() != nil {
+		return // a live launch holds it
+	}
+	defer s.unlock()
+	rec, err := s.readLifecycle()
+	if err == nil && !rec.Persistent && s.recoverPrevious(context.Background()) == nil {
+		_ = s.removeTree()
 	}
 }
