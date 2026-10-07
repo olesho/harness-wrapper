@@ -174,9 +174,12 @@ func identifyNative(m *manifest, exe *pinned) error {
 
 // identifyNPMShim checks codex's npm layout: bin/codex.js in an
 // @openai/codex package root at the pinned version, a matching vendored
-// platform package inside it, and the node its shebang resolves to on the
-// child's PATH. It grants the exact package root and the node executable,
-// never a guessed ancestor or a whole global npm prefix.
+// platform package inside it, and the node that /usr/bin/env, following the
+// shim's shebang, will find on the child's PATH. It grants the exact package
+// root and that node executable, never a guessed ancestor or a whole global
+// npm prefix. A PATH with an empty or relative entry is refused: env would
+// search it relative to the working directory, which the harness can write, so
+// the node it ran need not be the one checked here.
 func identifyNPMShim(m *manifest, in *install, env []string) error {
 	exe := in.exe
 	if filepath.Base(exe.canonical) != "codex.js" || filepath.Base(filepath.Dir(exe.canonical)) != "bin" {
@@ -254,13 +257,21 @@ func identifyNPMShim(m *manifest, in *install, env []string) error {
 }
 
 // lookPathIn finds file on the PATH of env (the child's environment, which is
-// what /usr/bin/env will search).
+// what /usr/bin/env will search). Every entry must be absolute: env (execvp)
+// treats an empty entry as the working directory and resolves a relative one
+// against it, so with PATH=:/usr/bin the shim would run ./node from the
+// harness's writable working directory instead of the node granted here.
+// Skipping such entries would check one node and run another; refusing keeps
+// the two the same.
 func lookPathIn(file string, env []string) (string, error) {
 	path, _ := lookupEnv(env, "PATH")
-	for _, dir := range filepath.SplitList(path) {
+	dirs := filepath.SplitList(path)
+	for _, dir := range dirs {
 		if dir == "" || !filepath.IsAbs(dir) {
-			continue
+			return "", fmt.Errorf("the harness PATH %q has an empty or relative entry, which /usr/bin/env would search in the working directory", path)
 		}
+	}
+	for _, dir := range dirs {
 		candidate := filepath.Join(dir, file)
 		if err := unix.Access(candidate, unix.X_OK); err == nil {
 			if st, err := os.Stat(candidate); err == nil && st.Mode().IsRegular() {
