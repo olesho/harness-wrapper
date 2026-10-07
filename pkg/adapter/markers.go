@@ -186,7 +186,7 @@ func (m *Markers) Withdraw(inputID string) error {
 		return fmt.Errorf("adapter: marker: %w", err)
 	}
 	var mk Marker
-	if json.Unmarshal(data, &mk) == nil && mk.Native != "" {
+	if m.loaded && json.Unmarshal(data, &mk) == nil && mk.Native != "" {
 		delete(m.byNative, mk.Native)
 	}
 	return nil

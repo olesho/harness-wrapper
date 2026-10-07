@@ -235,7 +235,7 @@ type harnessAdapter struct {
 	desc contract.Descriptor
 }
 
-func (a *harnessAdapter) Describe() contract.Descriptor { return a.p.Describe() }
+func (a *harnessAdapter) Describe() contract.Descriptor { return a.desc }
 
 func (a *harnessAdapter) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
 	if err := checkVersion(req.Contract); err != nil {

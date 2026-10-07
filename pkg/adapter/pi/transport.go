@@ -544,7 +544,8 @@ func ended(last *assistantMessage, interrupted bool, at time.Time) (contract.Tur
 }
 
 // wait turns pi's exit into the Session's: Exited, after every line pi
-// wrote was read. A turn still open ends with it.
+// wrote was read. A turn still open gets no Ended, as with the other
+// profiles: session_exited is the last of the Session, its turn's included.
 func (t *transport) wait() {
 	err := t.cmd.Wait()
 	select {
