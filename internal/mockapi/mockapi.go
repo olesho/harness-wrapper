@@ -105,7 +105,8 @@ func (s *Server) Close() {
 	s.srv.Close()
 }
 
-// Requests are the Messages requests answered so far.
+// Requests are the requests answered so far, Messages and Responses alike,
+// in the order they arrived.
 func (s *Server) Requests() []Request {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,6 +172,9 @@ func textOf(raw json.RawMessage) string {
 	return strings.Join(out, "\n")
 }
 
+// keywords are the words that start a scenario line, on either API. GOAL and
+// MKGOAL are Responses-only (responses.go): the Messages API recognises the
+// line as a scenario but has no case for it, so it answers "ok".
 var keywords = map[string]bool{
 	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
 	"GOAL": true, "MKGOAL": true,
@@ -434,8 +438,8 @@ func (s *Server) reply(w http.ResponseWriter, b body, rp reply) {
 	}
 	if rp.stall > 0 {
 		end := time.Now().Add(rp.stall)
-		for time.Now().Before(end) {
-			time.Sleep(time.Second)
+		for left := time.Until(end); left > 0; left = time.Until(end) {
+			time.Sleep(min(left, time.Second))
 			if !send("ping", map[string]string{"type": "ping"}) {
 				return
 			}
