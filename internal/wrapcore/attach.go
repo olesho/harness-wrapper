@@ -154,7 +154,10 @@ func (s *Session) WriteStdin(p []byte) (int, error) {
 		return 0, ErrSessionTerminated
 	default:
 	}
-	if s.ptmx == nil || s.ptmxClosed {
+	s.fdMu.Lock()
+	closed := s.ptmx == nil || s.ptmxClosed
+	s.fdMu.Unlock()
+	if closed {
 		return 0, ErrSessionTerminated
 	}
 	return s.ptmx.Write(p)
@@ -174,6 +177,8 @@ func (s *Session) Resize(cols, rows uint16) error {
 		return ErrSessionTerminated
 	default:
 	}
+	s.fdMu.Lock()
+	defer s.fdMu.Unlock()
 	if s.ptmx == nil || s.ptmxClosed {
 		return ErrSessionTerminated
 	}

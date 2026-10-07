@@ -114,10 +114,14 @@ type Session struct {
 	doneCh chan struct{}
 
 	fanout *outputFanout
-	// stdinMu serializes WriteStdin and Resize with each other and with the
-	// supervisor closing the PTY master; ptmxClosed (guarded by it) is set
-	// when that close happens, so neither touches a closed descriptor.
-	stdinMu    sync.Mutex
+	// stdinMu serializes WriteStdin and Resize with each other.
+	stdinMu sync.Mutex
+	// fdMu guards ptmxClosed and every use of the PTY master's raw descriptor
+	// (Resize's ioctl) against the supervisor's close. It is never held across
+	// a write: a WriteStdin blocked on a full PTY holds stdinMu, and only the
+	// close ends that write, so the close must not wait for stdinMu.
+	// os.File already makes a Write concurrent with Close safe; Fd() is not.
+	fdMu       sync.Mutex
 	ptmxClosed bool
 
 	// stoppingOutput is set when the supervisor ends the read of the PTY
@@ -1114,11 +1118,13 @@ func emitClassifierTrace(cfg Config, c Classification) {
 	})
 }
 
-// closePTY closes the PTY master under stdinMu, so a concurrent WriteStdin or
-// Resize sees ptmxClosed instead of racing the close on the descriptor.
+// closePTY closes the PTY master under fdMu, so a concurrent Resize cannot
+// use the descriptor while it is closed, and later WriteStdin/Resize calls
+// see ptmxClosed. A WriteStdin already blocked in the write is woken by the
+// close itself.
 func (s *Session) closePTY() {
-	s.stdinMu.Lock()
-	defer s.stdinMu.Unlock()
+	s.fdMu.Lock()
+	defer s.fdMu.Unlock()
 	if s.ptmxClosed {
 		return
 	}
