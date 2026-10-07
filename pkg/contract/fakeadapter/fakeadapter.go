@@ -146,8 +146,9 @@ const Version = "1.0.0"
 // ArchiveFormat is the archive format the fake's load recipe is written for.
 const ArchiveFormat = 2
 
-// Describe describes the fake: every capability, every spec field, and
-// MaxSessions Sessions of an agent side by side.
+// Describe describes the fake: every capability but subagents and
+// rate_limits, whose observations its prompt language has no way to raise;
+// every spec field; and MaxSessions Sessions of an agent side by side.
 func (a *Adapter) Describe() contract.Descriptor {
 	version := contract.Version
 	if a.breaks("capability-past-minor") {
