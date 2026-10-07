@@ -55,7 +55,7 @@ Linux 6.12–7.0, see [Kernels before Landlock ABI 9](#kernels-before-landlock-a
 | Surface | How |
 |---|---|
 | CLI | `--contain landlock`, plus `--contain-rw PATH`, `--contain-ro PATH`, `--contain-restrict-tcp`, `--contain-allow-tcp PORT`, `--contain-min-abi N`, `--contain-state-dir DIR`, `--contain-pass-env NAME` — on passthrough, `run`, `structured-run` and tmux runs. `contain-check` previews the policy; `contain-login` signs a harness in. See [CLI](cli.md#containment-flags). |
-| Go | `wrapper.Config.Containment`, `chat.Options.Containment` (and `ReopenOptions`), `harness.TurnConfig.Containment`, `oneshot.Config.Containment`, `pkg/env.StructuredTurnConfig.Containment`; `wrapper.StartLogin` and `wrapper.LoginStatus` for [signing in](#signing-in). |
+| Go | `wrapper.Config.Containment`, `chat.Options.Containment` (and `ReopenOptions`), `harness.TurnConfig.Containment`, `oneshot.Config.Containment`; `wrapper.StartLogin` and `wrapper.LoginStatus` for [signing in](#signing-in). |
 | HTTP | a `containment` object on `POST /v1/conversations` and `POST /v1/turns`, after checking `GET /v1/capabilities`. See [Gateway](gateway.md#containment). |
 | Clients | `containment` on the TypeScript and Python `open()`; both check the capability route first. |
 

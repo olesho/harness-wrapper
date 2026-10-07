@@ -622,7 +622,7 @@ func TestValidateConfig_PermissionMode(t *testing.T) {
 }
 
 // TestValidateConfig_PermissionModeMessages pins the two message texts the
-// CLI, pkg/env and the TypeScript meta-harness half quote verbatim. Reword
+// CLI and the TypeScript meta-harness half quote verbatim. Reword
 // them here only in lockstep with those consumers.
 func TestValidateConfig_PermissionModeMessages(t *testing.T) {
 	planOnCodex := validateConfig(&Config{

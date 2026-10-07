@@ -48,8 +48,7 @@ func AutoAcceptAnswer(req chat.InputRequest) (chat.InputAnswer, bool)
 reserved for something that could not be classified at all, which in practice means an invalid config
 (empty harness, binary path or prompt).
 
-This is the same shape as [`pkg/env.RunStructuredTurn`](env.md#running-a-turn-in-a-workspace) and for
-the same reason: "the harness hit its deadline" is information, not an exception.
+This is the same shape as a host reading a [structured turn](turnproto.md) and for the same reason: "the harness hit its deadline" is information, not an exception.
 
 ## How a turn is classified
 

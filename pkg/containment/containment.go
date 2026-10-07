@@ -239,9 +239,10 @@ func Equal(a, b *Request) bool {
 }
 
 // CLIFlags renders r as harness-wrapper's --contain* command-line flags:
-// every option when r is set, none when r is nil. The CLI's tmux re-exec and
-// pkg/env's guest-runner argv both use it, so an option added to Request is
-// forwarded on every path — a dropped one would run the harness uncontained.
+// every option when r is set, none when r is nil. The CLI's tmux re-exec uses
+// it, as does any host building a guest structured-run argv, so an option added
+// to Request is forwarded on every path — a dropped one would run the harness
+// uncontained.
 func (r *Request) CLIFlags() []string {
 	if r == nil {
 		return nil

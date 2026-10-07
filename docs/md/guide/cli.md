@@ -56,9 +56,7 @@ harness-wrapper structured-run --prompt-file /path/prompt.txt claude --
 
 The prompt comes from stdin, or from `--prompt-file <path>` — the host upload transport, so a prompt
 with quotes, newlines, or leading dashes can never corrupt argv. The same
-`HARNESS_WRAPPER_RUN_TIMEOUT` deadline applies. The Go host-side client for this subcommand is
-`pkg/env.RunStructuredTurn`, which mirrors this invocation shape (including `--sandbox-defaults` via
-`StructuredTurnConfig.SandboxDefaults`).
+`HARNESS_WRAPPER_RUN_TIMEOUT` deadline applies.
 
 ### The reported `permission_mode`
 

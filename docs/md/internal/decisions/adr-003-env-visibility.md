@@ -1,6 +1,6 @@
 # ADR-003: `pkg/env` pluggable-environments scope — keep the env core internal
 
-**Status:** Accepted (2026-07-21) — keep-internal
+**Status:** Accepted (2026-07-21) — keep-internal; amended 2026-10-07 (`pkg/env` removed)
 
 **Intent:** principle 6, *evolve public contracts deliberately*
 ([INTENT](../../../../INTENT.md#design-principles)) — a public Go surface is a contract other
@@ -126,3 +126,15 @@ decision to make, not a foregone conclusion:
 - **Promotion stays a cheap, reversible follow-up.** When an out-of-module consumer
   materializes, the path above turns the decision into a mechanical move plus five settled
   design questions — no re-analysis required.
+
+## Amendment (2026-10-07): `pkg/env` removed
+
+This ADR described `pkg/env.RunStructuredTurn` as "already public" and usable "over any
+`Workspace`". It was not usable: its `ws` parameter was an `internal/env.Workspace`, whose method
+types (`ExecOpts`, `PathKind`, `Outcome`) are internal too, so no code outside this module could
+construct or implement one. A survey of both consumers (agentd, loomcli) found no import of `pkg/env`,
+and nothing in this module called it outside its own tests. Under this ADR's own rule — publish for a
+named consumer — the package was removed rather than promoted. The env core stays in `internal/env`;
+hosts drive `harness-wrapper structured-run` over their workspace's transport (the TypeScript
+meta-harness does), and the [promotion path](#promotion-path) still applies if a Go consumer appears.
+

@@ -152,7 +152,7 @@ func runTmuxSpawn(args harnessWrapperArgs, binPath string) int {
 // followed by every execution-mode flag the parent was given and then
 // `<harness> -- <harness args...>`.
 //
-// It is a pure function (mirroring pkg/env.buildRunnerArgv) so the forwarding
+// It is a pure function so the forwarding
 // set is unit-testable without spawning tmux. That matters: this argv is
 // hand-rebuilt rather than derived from the original os.Args, so a flag that is
 // added to harnessWrapperArgs but forgotten HERE is silently dropped — and for

@@ -3,13 +3,11 @@
 Everything else in this repo answers *how do we drive a harness?* This layer answers **where does the
 harness run, and what is it allowed to touch?**
 
-It comes in two halves:
-
-- **`internal/env`** — the environment core: a `Provisioner` axis, a `Containment` axis, the
-  `Workspace` contract they meet at, the `Compose` combinator, and the `Env` lifecycle engine. It is
-  deliberately internal — see [ADR-003](decisions/adr-003-env-visibility.md).
-- **`pkg/env`** — the small **public** half: a host-side client that runs one
-  [structured turn](turnproto.md) inside any `Workspace`.
+It lives in **`internal/env`**: a `Provisioner` axis, a `Containment` axis, the `Workspace` contract
+they meet at, the `Compose` combinator, and the `Env` lifecycle engine. It is deliberately internal —
+see [ADR-003](decisions/adr-003-env-visibility.md). (A public `pkg/env` host client,
+`RunStructuredTurn`, was removed on 2026-10-07: it took an `internal/env.Workspace`, so no code
+outside this module could call it, and none did.)
 
 The model is **batch request/response**: exec a command, upload a file, download a file. No PTY, no
 streaming — the PTY lives inside the guest, under the harness-wrapper binary running there.
@@ -132,49 +130,17 @@ produces the same string — which is what makes a recorded command comparable a
 
 ## Running a turn in a workspace
 
-`pkg/env` is the public half — the host-side client for the
-[structured turn protocol](turnproto.md):
+A host runs one [structured turn](turnproto.md) in a workspace by driving the guest's
+`harness-wrapper structured-run` over the workspace's own transport:
 
-```go
-type StructuredTurnConfig struct {
-	Runner      []string // default: {"harness-wrapper", "structured-run"}
-	Harness     string   // required
-	HarnessArgs []string
+1. Upload the prompt as a file — it never touches argv, so quotes, newlines and leading dashes cannot
+   corrupt the command line.
+2. `Exec` `harness-wrapper structured-run --prompt-file <guest path> [flags] <harness> -- <args…>`.
+3. Parse the captured stdout with `turnproto.ParseLastJSONLine`. A non-zero guest exit is **not** an
+   error: `deadline` (124) and `errored` (1) come back as a parsed result with a status.
 
-	Effort, Model, PermissionMode string
-	SandboxDefaults               bool
-
-	Prompt string
-	Env    map[string]string
-
-	PromptGuestPath     string // "" = <guest tmp>/structured-turn-prompt.txt
-	TranscriptGuestPath string // both must be set to download a transcript
-	TranscriptHostPath  string
-}
-
-func RunStructuredTurn(ctx context.Context, ws ienv.Workspace, cfg StructuredTurnConfig) (*turnproto.StructuredTurnResult, error)
-```
-
-The round trip:
-
-1. Stage the prompt to a host temp file, `Upload` it, remove the host copy.
-2. `Exec` the runner as argv:
-   ```
-   <runner…> --prompt-file <guest prompt> [--effort E] [--model M] [--permission-mode P] [--sandbox-defaults] <harness> -- <harness args…>
-   ```
-3. Feed the captured stdout to `turnproto.ParseLastJSONLine`.
-4. Optionally `Download` the transcript.
-
-**The prompt never touches argv.** It travels as a file, so quotes, newlines, and leading dashes
-cannot corrupt the command line — the same reason the CLI exposes `--prompt-file`.
-
-**A non-zero guest exit is not an error here.** `deadline` (124) and `errored` (1) come back as a
-parsed result with a status, exactly like `completed`. An error means the exec itself failed or no
-JSON result appeared on stdout — in which case a bounded tail of stderr is included in the message.
-
-The `--sandbox-defaults` / `--permission-mode` composition rule is enforced **before** the exec, so an
-incompatible pairing fails on the host rather than burning a guest round trip. See
-[Permissions & sandboxing](../guide/permissions.md).
+The TypeScript meta-harness is the host client in use. The `--sandbox-defaults` / `--permission-mode`
+composition rule is enforced by the guest CLI; see [Permissions & sandboxing](../guide/permissions.md).
 
 ## Environment variables
 
@@ -189,7 +155,6 @@ The core reads nothing else from the ambient environment: what the guest sees co
 ## Why it is internal
 
 [ADR-003](decisions/adr-003-env-visibility.md) records the decision to keep the core in `internal/`:
-there are no out-of-module production consumers today, and the only public need — running a structured
-turn against a workspace — is already served by `pkg/env`. The ADR also records the promotion path
-(import direction, the concern collision in `pkg/env`, keeping the test-only container workspace out of
-any public surface) so a future consumer does not have to re-derive it.
+there are no out-of-module production consumers today. The ADR also records the promotion path
+(import direction, package layout, keeping the test-only container workspace out of any public
+surface) so a future consumer does not have to re-derive it.

@@ -46,9 +46,10 @@ func TestContainFlagsBuildRequest(t *testing.T) {
 	}
 }
 
-// TestContainFlagsRoundTrip: the flags a request renders to (tmux re-exec,
-// pkg/env's runner argv) parse back to the same request — a dropped option
-// would run the pane or guest uncontained, or under another policy.
+// TestContainFlagsRoundTrip: the flags a request renders to (tmux re-exec, or
+// a host driving structured-run in a guest) parse back to the same request — a
+// dropped option would run the pane or guest uncontained, or under another
+// policy.
 func TestContainFlagsRoundTrip(t *testing.T) {
 	req := &wrapper.Containment{
 		Kind: "landlock", ReadWrite: []string{"/w"}, ReadOnly: []string{"/r1", "/r2"},

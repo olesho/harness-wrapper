@@ -281,7 +281,7 @@ func wantExit(s turnproto.TurnStatus) int {
 
 // TestRunOneShot_ErrorContract asserts the parity-defining error contract: a
 // non-nil error appears ONLY for an unclassifiable/infra failure (an invalid
-// Config), never for a classified outcome. It mirrors pkg/env.RunStructuredTurn.
+// Config), never for a classified outcome, as a structured-run host expects.
 func TestRunOneShot_ErrorContract(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {

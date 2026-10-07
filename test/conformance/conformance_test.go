@@ -262,9 +262,10 @@ func TestConformance_CLIExitCodes(t *testing.T) {
 
 // TestConformance_CLIEmitPairing freezes the status → (exit code, stderr anchor)
 // table and asserts every row against turnproto.ExitCode — the single canonical
-// table both the guest structured-run emit (cmd/harness-wrapper/structured_run.go)
-// and the host client (pkg/env.RunStructuredTurn) delegate to. Pinning it here
-// keeps the cross-language copy from drifting from that authority.
+// table the guest structured-run emit (cmd/harness-wrapper/structured_run.go)
+// delegates to, and that host clients (the TypeScript meta-harness) mirror.
+// Pinning it here keeps the cross-language copy from drifting from that
+// authority.
 func TestConformance_CLIEmitPairing(t *testing.T) {
 	table := emitPairingTable()
 	data, err := json.MarshalIndent(table, "", "  ")

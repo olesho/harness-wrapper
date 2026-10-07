@@ -32,7 +32,6 @@ Where everything lives, what depends on what, and which page documents it.
 | `pkg/harness/*` | Profiles: `claude`, `codex`, `opencode`; `all` registers them | [Capability matrix](harness.md#capability-matrix) |
 | `pkg/oneshot` | One typed turn, headless, with an auto-accept policy | [One-shot turns](oneshot.md) |
 | `pkg/turnproto` | The frozen structured-turn wire format and its exit codes | [Structured turn protocol](turnproto.md) |
-| `pkg/env` | Host-side client for running a structured turn inside a workspace | [Execution environments](env.md#running-a-turn-in-a-workspace) |
 | `pkg/discovery` | Is a harness installed, at what version? | [Discovery](discovery.md) |
 | `pkg/discovery/models` | Offline model registry + the `/model` picker parser | [Discovery](discovery.md#which-models-offline) |
 | `pkg/versions` | The embedded pins binding each adapter to an upstream release | [Versions & Drift](versions-drift.md) |

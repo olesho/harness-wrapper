@@ -4,10 +4,10 @@
 // headless auto-accept-trust policy WITHOUT spawning a subprocess or crossing a
 // workspace transport.
 //
-// The typed union already exists two ways in this tree: the guest
-// `structured-run` subcommand (cmd/harness-wrapper) and the host-side
-// pkg/env.RunStructuredTurn client. Both go over a boundary — a spawned process
-// or a Workspace exec. oneshot fills the narrow remaining gap: an ordinary Go
+// The typed union already exists in this tree as the guest `structured-run`
+// subcommand (cmd/harness-wrapper), which a host drives over a boundary — a
+// spawned process or a workspace exec. oneshot fills the narrow remaining gap:
+// an ordinary Go
 // call that drives one real interactive harness turn via harness.RunTurn and
 // hands back turnproto.TurnStatus directly.
 //
@@ -120,7 +120,7 @@ type Outcome struct {
 
 // RunOneShot drives ONE headless turn and returns its typed status.
 //
-// Error contract (mirroring pkg/env.RunStructuredTurn): all four CLASSIFIED
+// Error contract (mirroring a structured-run host): all four CLASSIFIED
 // outcomes — completed / errored / deadline / startup_error — return the
 // classified status with a NIL error; the caller inspects Status, never the
 // error, to tell the arms apart. A non-nil error is reserved for a genuinely
@@ -188,8 +188,8 @@ func validateConfig(cfg Config) error {
 // claudecode.KindBypassAcceptance (the --dangerously-skip-permissions, "Bypass
 // Permissions mode", acceptance screen, whose first option is "proceed"-aliased).
 // These are DISTINCT kinds — claudecode.DetectInput used to stamp both screens
-// trust_prompt, so on this path (used by structured-run and therefore by
-// pkg/env.RunStructuredTurn, the containerized guest path) the entry written for
+// trust_prompt, so on this path (used by structured-run, the containerized
+// guest path) the entry written for
 // folder trust was what accepted a skip-all-permissions launch, and no policy
 // could tell the two apart. The kinds are split now; naming both here keeps this
 // config's unattended behaviour unchanged, and makes accepting the bypass screen

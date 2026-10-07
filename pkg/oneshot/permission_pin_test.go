@@ -97,8 +97,8 @@ func pinConfig() Config {
 // side effect of the folder-trust one. The screen's first option carries Alias
 // "proceed" ("Yes, I accept"), which is what the entry resolves to.
 //
-// turnConfig is the copy used by `structured-run` and therefore by
-// pkg/env.RunStructuredTurn — the containerized guest path, where a reachable
+// turnConfig is the copy used by `structured-run` — the containerized guest
+// path, where a reachable
 // `bypass` rung matters most. Its policy is UnattendedInputPolicy, which
 // cmd/harness-wrapper's unattended inputHandling shares (pinned there).
 //

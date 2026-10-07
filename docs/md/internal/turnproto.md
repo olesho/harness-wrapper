@@ -133,7 +133,6 @@ stdout: only the last well-formed JSON object is contractual.
 | Role | Where | What it does |
 |---|---|---|
 | Producer | `cmd/harness-wrapper structured-run` | Builds the result, sets `permission_mode` (guarded so `startup_error` never carries one), writes exactly one marshalled line, exits with `ExitCode(status)`, and prints `DeadlineLine` to stderr on a deadline. Its startup-error path falls back to a hand-rolled minimal object so a marshalling failure still produces valid output. |
-| Consumer | [`pkg/env.RunStructuredTurn`](env.md#running-a-turn-in-a-workspace) | The Go host client: uploads the prompt file into a workspace, execs `harness-wrapper structured-run`, feeds the captured stdout to `ParseLastJSONLine`. A non-zero guest exit is **not** an error there — only a spawn/transport failure is. |
 | Consumer | meta-harness (TypeScript) | The other half of the frozen contract. |
 
 Because the protocol is transport-agnostic, the same bytes work over a local pipe, a container `exec`,

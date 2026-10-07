@@ -47,7 +47,7 @@ func installPrevious(t *testing.T, version, cmd string) string {
 	return filepath.Join(bin, cmd)
 }
 
-// TestPreviousRunnerRejectsContain: pkg/env passes --contain* to the guest
+// TestPreviousRunnerRejectsContain: a host passes --contain* to the guest
 // runner only when containment is set; a runner built before containment
 // must fail on them, never run the turn uncontained.
 func TestPreviousRunnerRejectsContain(t *testing.T) {

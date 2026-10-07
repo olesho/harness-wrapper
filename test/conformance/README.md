@@ -106,12 +106,11 @@ not replace, the existing in-repo pins:
 
 - `pkg/turnproto/turnproto_test.go` already asserts the exit-code constants,
   `DeadlineLine`, and optional-key marshaling.
-- `pkg/env/turn.go` (`RunStructuredTurn`) documents the host-side exit-code
-  table, and `cmd/harness-wrapper/structured_run.go` performs the guest emit.
-  Both delegate to the ONE canonical `turnproto.ExitCode`; `emit_pairing.json`
+- `cmd/harness-wrapper/structured_run.go` performs the guest emit and
+  delegates to the ONE canonical `turnproto.ExitCode`; `emit_pairing.json`
   is asserted against that function so the cross-language copy cannot drift.
 - The `completed -> 0` row is already pinned end-to-end by
-  `TestStructuredRun_GoldenCompleted` and `pkg/env/turn_test.go`. The corpus's
+  `TestStructuredRun_GoldenCompleted`. The corpus's
   new guest-emit coverage is `deadline -> 124` **with `DeadlineLine` on stderr**,
   `errored -> 1`, and `startup_error -> 1`
   (`cmd/harness-wrapper/conformance_test.go`).

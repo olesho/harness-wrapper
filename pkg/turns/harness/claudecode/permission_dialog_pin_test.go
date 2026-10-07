@@ -49,7 +49,7 @@ const editPermissionScreen = `╭───────────────�
 // Consequence being pinned: an unattended `structured-run --permission-mode
 // manual claude` (or plan / acceptEdits) does not get denied or auto-answered —
 // it STALLS on the dialog until the run deadline, yielding status "deadline"
-// and process exit 124 (pkg/env/turn.go:97-99). The restrictive rungs are
+// and process exit 124 (turnproto.ExitCode). The restrictive rungs are
 // launch-time flags only; they bind nothing in this repo's input machinery.
 //
 // EXPECTED TO BREAK DELIBERATELY: the filed follow-up that teaches DetectInput
