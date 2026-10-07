@@ -17,7 +17,15 @@ import (
 // the idle-completion fallback from ending it early before. Exactly one
 // TurnComplete fires, after the wait.
 func TestSubagentCorpus_BusyWhileWaitingOnAgents(t *testing.T) {
-	raw := corpusBytes(t, "subagent-tool")
+	// The macOS recording and its Linux twin (claude draws "●" there, "⏺" on
+	// macOS) must both hold.
+	for _, cell := range []string{"subagent-tool", "subagent-tool-linux"} {
+		t.Run(cell, func(t *testing.T) { checkSubagentCell(t, cell) })
+	}
+}
+
+func checkSubagentCell(t *testing.T, cell string) {
+	raw := corpusBytes(t, cell)
 	scr := screen.New(120, 40)
 	a := New()
 	waiting, completes := 0, 0
