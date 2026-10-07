@@ -77,13 +77,17 @@ func main() {
 
 	var types, consts, vars, funcs []string
 	// An identifier declared once per build-constrained file (linux and
-	// other) is forwarded once.
-	seen := map[string]bool{}
-	first := func(n string) bool {
-		if seen[n] {
+	// other) is forwarded once — the first file's declaration, so every
+	// later one must have the same kind and, for a func, the same signature.
+	seen := map[string]string{}
+	first := func(n, sig string) bool {
+		if prev, ok := seen[n]; ok {
+			if prev != sig {
+				fatal(fmt.Errorf("%s is declared differently per build: %q vs %q", n, prev, sig))
+			}
 			return false
 		}
-		seen[n] = true
+		seen[n] = sig
 		return true
 	}
 	imports := map[string]string{} // name -> path, for funcs' signatures
@@ -104,20 +108,29 @@ func main() {
 					switch sp := sp.(type) {
 					case *ast.TypeSpec:
 						n := sp.Name.Name
-						if !ast.IsExported(n) || skip[n] || !first(n) {
+						if !ast.IsExported(n) || skip[n] || !first(n, "type") {
 							continue
 						}
 						if sp.TypeParams != nil {
 							fatal(fmt.Errorf("generic type %s: not supported", n))
 						}
-						types = append(types, fmt.Sprintf("// %s is %s.%s.\ntype %s = %s.%s\n", n, *alias, n, n, *alias, n))
+						doc := docOf(specDoc(d, sp.Doc), "", fmt.Sprintf("%s is %s.%s.", n, *alias, n), fmt.Sprintf("It is an alias of %s.%s.", *alias, n))
+						types = append(types, fmt.Sprintf("%stype %s = %s.%s\n", doc, n, *alias, n))
 					case *ast.ValueSpec:
+						doc := docOf(specDoc(d, sp.Doc), "\t", "", "")
 						for _, id := range sp.Names {
 							n := id.Name
-							if !ast.IsExported(n) || skip[n] || !first(n) {
+							if !ast.IsExported(n) || skip[n] || !first(n, d.Tok.String()) {
 								continue
 							}
-							line := fmt.Sprintf("\t%s = %s.%s\n", n, *alias, n)
+							// A spec's doc goes before its first forwarded name,
+							// and its line comment after a lone name.
+							line := fmt.Sprintf("%s\t%s = %s.%s", doc, n, *alias, n)
+							if c := sp.Comment; c != nil && len(sp.Names) == 1 && len(c.List) == 1 {
+								line += " " + c.List[0].Text
+							}
+							line += "\n"
+							doc = ""
 							if d.Tok == token.CONST {
 								consts = append(consts, line)
 							} else {
@@ -127,13 +140,16 @@ func main() {
 					}
 				}
 			case *ast.FuncDecl:
-				if d.Recv != nil || !ast.IsExported(d.Name.Name) || skip[d.Name.Name] || !first(d.Name.Name) {
+				if d.Recv != nil || !ast.IsExported(d.Name.Name) || skip[d.Name.Name] {
 					continue
 				}
 				if d.Type.TypeParams != nil {
 					fatal(fmt.Errorf("generic func %s: not supported", d.Name.Name))
 				}
-				funcs = append(funcs, renderFunc(fset, d, *alias, coreTypes, fileImports, imports))
+				sig, fn := renderFunc(fset, d, *alias, coreTypes, fileImports, imports)
+				if first(d.Name.Name, sig) {
+					funcs = append(funcs, fn)
+				}
 			}
 		}
 	}
@@ -193,7 +209,9 @@ func main() {
 	}
 }
 
-func renderFunc(fset *token.FileSet, d *ast.FuncDecl, alias string, coreTypes map[string]bool, fileImports, used map[string]string) string {
+// renderFunc returns a forwarding func for d: its signature, to compare
+// across build-constrained files, and its declaration, carrying d's doc.
+func renderFunc(fset *token.FileSet, d *ast.FuncDecl, alias string, coreTypes map[string]bool, fileImports, used map[string]string) (sig, decl string) {
 	qual := func(e ast.Expr) string {
 		// Qualify bare core type names; note imported packages used.
 		e = qualify(e, alias, coreTypes, fileImports, used)
@@ -257,7 +275,45 @@ func renderFunc(fset *token.FileSet, d *ast.FuncDecl, alias string, coreTypes ma
 	if len(results) == 0 {
 		body = call
 	}
-	return fmt.Sprintf("// %s calls %s.%s.\nfunc %s(%s)%s {\n\t%s\n}\n", d.Name.Name, alias, d.Name.Name, d.Name.Name, strings.Join(params, ", "), res, body)
+	n := d.Name.Name
+	sig = fmt.Sprintf("func %s(%s)%s", n, strings.Join(params, ", "), res)
+	doc := docOf(d.Doc, "", fmt.Sprintf("%s calls %s.%s.", n, alias, n), fmt.Sprintf("It forwards to %s.%s.", alias, n))
+	return sig, fmt.Sprintf("%s%s {\n\t%s\n}\n", doc, sig, body)
+}
+
+// specDoc is a type or value spec's doc comment: its own, or, for a
+// declaration of that one spec, the declaration's.
+func specDoc(d *ast.GenDecl, own *ast.CommentGroup) *ast.CommentGroup {
+	if own == nil && len(d.Specs) == 1 {
+		return d.Doc
+	}
+	return own
+}
+
+// docOf renders a doc comment for a forwarded declaration, each line prefixed
+// with indent: the core's comment cg followed by a paragraph saying what it
+// forwards to (trailer), or, when cg is nil, fallback alone. An empty result
+// part is left out.
+func docOf(cg *ast.CommentGroup, indent, fallback, trailer string) string {
+	var lines []string
+	if cg != nil {
+		for _, c := range cg.List {
+			if strings.HasPrefix(c.Text, "//go:") {
+				continue // a directive applies to the core's declaration only
+			}
+			lines = append(lines, strings.Split(c.Text, "\n")...)
+		}
+		if trailer != "" {
+			lines = append(lines, "//", "// "+trailer)
+		}
+	} else if fallback != "" {
+		lines = append(lines, "// "+fallback)
+	}
+	var b strings.Builder
+	for _, l := range lines {
+		b.WriteString(indent + l + "\n")
+	}
+	return b.String()
 }
 
 // qualify returns a copy of e with bare exported core type identifiers

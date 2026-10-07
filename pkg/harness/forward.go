@@ -7,176 +7,525 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 )
 
-// Profile is harnesscore.Profile.
+// Profile is the per-harness entry point. Implementations live in
+// pkg/harness/<name> and self-register via Register in their init().
+//
+// It is an alias of harnesscore.Profile.
 type Profile = harnesscore.Profile
 
-// ResolveContext is harnesscore.ResolveContext.
+// ResolveContext carries the RUN-DETECTION inputs Resolve needs — the binary,
+// its args/env, the working dir, and config roots to probe. It is deliberately
+// SEPARATE from HookContext (the hook-subprocess environment) and ReadContext
+// (the transcript read/export environment), both introduced in later phases.
+//
+// It is an alias of harnesscore.ResolveContext.
 type ResolveContext = harnesscore.ResolveContext
 
-// ResolvedProfile is harnesscore.ResolvedProfile.
+// ResolvedProfile is the post-detection capability set for ONE run. A field is
+// non-nil only when that capability is available this run. The orchestrator
+// dispatches on these fields, never on the static Profile.
+//
+// P1 populates SessionID + Resume (Claude). Later phases add capability fields
+// (StreamParser, HookProvider, TranscriptReader, Exporter) additively.
+//
+// It is an alias of harnesscore.ResolvedProfile.
 type ResolvedProfile = harnesscore.ResolvedProfile
 
-// SessionIDExtractor is harnesscore.SessionIDExtractor.
+// SessionIDExtractor recovers the harness-assigned session UUID from a single
+// line of the harness's headless stream output. Stateless and idempotent:
+// callers invoke it per line and keep the first non-empty result.
+//
+// It is an alias of harnesscore.SessionIDExtractor.
 type SessionIDExtractor = harnesscore.SessionIDExtractor
 
-// Resumer is harnesscore.Resumer.
+// Resumer produces the resume-specific CLI argument prefix for a given session
+// id. The caller appends its own policy flags (output format, prompt, etc.).
+//
+// Intentionally separate from turns.SessionResumer (pkg/turns/turns.go): this
+// one serves the headless pkg/harness registry (keyed e.g. "claude", not chat's
+// "claude-code") and composes into headless invocations, whereas the turns
+// counterpart is keyed the way chat looks adapters up and composes into the
+// interactive TUI argv. See turns.SessionResumer's doc for why the two must not
+// be merged.
+//
+// It is an alias of harnesscore.Resumer.
 type Resumer = harnesscore.Resumer
 
-// StreamParser is harnesscore.StreamParser.
+// StreamParser parses a single line of the harness's headless stream output
+// (e.g. `claude -p --output-format stream-json`) into canonical events. This is
+// the generic "stdout floor" acquisition strategy: the orchestrator feeds it
+// each raw line from the wrapper's durable line tap (wrapper.Config.OnLine) and
+// concatenates the results.
+//
+// Contract: stateless and idempotent per line; one input line yields zero or
+// more ParsedEvents (an assistant line can carry a text block AND a tool_use
+// block). It MUST tolerate non-event lines — non-JSON, ANSI-polluted, or
+// non-conversational (system/result) — by returning nil rather than erroring,
+// because the tap delivers raw PTY bytes. Each returned event is tagged
+// Source=live; the orchestrator stamps RunID/Harness and assigns the
+// authoritative monotonic Seq from arrival order (stream lines carry no native
+// per-line timestamp, so arrival order is the order).
+//
+// It is an alias of harnesscore.StreamParser.
 type StreamParser = harnesscore.StreamParser
 
-// BinaryNamer is harnesscore.BinaryNamer.
+// BinaryNamer is an OPTIONAL interface a Profile implements to name the
+// executable a launcher looks up on PATH to start the harness ("claude" for
+// Claude Code). It lets a launcher derive its harness table from the registry
+// instead of keeping its own; see BinaryName.
+//
+// It is an alias of harnesscore.BinaryNamer.
 type BinaryNamer = harnesscore.BinaryNamer
 
-// SpoolReceipt is harnesscore.SpoolReceipt.
+// SpoolReceipt identifies one spool file exactly as ReadSpool read it. A
+// consumer hands it back to AckSpool once it has durably committed the file's
+// events. It is comparable, so the consumer can record it in its own journal
+// and recognise the file when a crash makes ReadSpool return it again.
+//
+// It is an alias of harnesscore.SpoolReceipt.
 type SpoolReceipt = harnesscore.SpoolReceipt
 
-// SpoolBatch is harnesscore.SpoolBatch.
+// SpoolBatch is the events one spool file holds, with the receipt that
+// acknowledges it.
+//
+// It is an alias of harnesscore.SpoolBatch.
 type SpoolBatch = harnesscore.SpoolBatch
 
-// SpoolQuarantine is harnesscore.SpoolQuarantine.
+// SpoolQuarantine reports a file ReadSpool took out of the spool without
+// returning its events, because it could not trust or parse it.
+//
+// It is an alias of harnesscore.SpoolQuarantine.
 type SpoolQuarantine = harnesscore.SpoolQuarantine
 
-// SpoolContents is harnesscore.SpoolContents.
+// SpoolContents is what one ReadSpool call found.
+//
+// It is an alias of harnesscore.SpoolContents.
 type SpoolContents = harnesscore.SpoolContents
 
-// HookProvider is harnesscore.HookProvider.
+// HookProvider is the capability for hook-driven transcript acquisition. A
+// ResolvedProfile carries a non-nil Hooks only when hook support is confirmed
+// for the run (statically firm for Claude; runtime-probed for Codex).
+//
+// The two methods serve the two sides of the hook lifecycle:
+//   - HookSpec() describes WHAT to install (which native events map to which
+//     `loom hooks <harness> <arg>` subcommand) so the orchestrator can
+//     idempotently ensure the per-worktree hook config.
+//   - ParseHookPayload() runs inside the fired hook SUBPROCESS: it parses the
+//     harness's stdin payload (which HANDS OVER the transcript_path + session
+//     id — no path reconstruction) and returns the canonical events, reading
+//     the handed-over native transcript file on the file-bearing phases.
+//
+// ParseHookPayload is harness-STATIC (callable without Resolve): the hook
+// subprocess is a fresh process that trusts it was invoked because the main
+// run's resolution already passed, so it parses rather than re-detects.
+//
+// It is an alias of harnesscore.HookProvider.
 type HookProvider = harnesscore.HookProvider
 
-// ToolHookProvider is harnesscore.ToolHookProvider.
+// ToolHookProvider is an OPTIONAL interface a HookProvider implements when the
+// harness can report every tool call through its hooks: one event when a tool
+// starts, one when it finishes or fails. Its entries are not in HookSpec,
+// because they run a hook subprocess on every tool call; a consumer that wants
+// per-tool events — one reading the spool with ReadSpool — adds them to the
+// spec it ensures:
+//
+//	spec := *hp.HookSpec()
+//	if th, ok := hp.(ToolHookProvider); ok {
+//		spec.Events = append(spec.Events, th.ToolHookEntries()...)
+//	}
+//
+// Each fired entry spools one event (transcript.SourceHook) in a spool file
+// named after its Arg — HookArgPreToolUse, HookArgPostToolUse or
+// HookArgPostToolUseFailure — so a consumer tells a start from an end by the
+// file (ParseSpoolFileName) as well as by the event. The authority filter never admits these
+// events to Run's OnEvent.
+//
+// It is an alias of harnesscore.ToolHookProvider.
 type ToolHookProvider = harnesscore.ToolHookProvider
 
-// StaticHookProfile is harnesscore.StaticHookProfile.
+// StaticHookProfile is an OPTIONAL interface a Profile implements when the
+// harness has a (static) HookProvider. It lets the fired hook SUBPROCESS obtain
+// the payload parser WITHOUT running Resolve: static hook availability is a
+// harness fact, distinct from per-run capability resolution — which the
+// subprocess must not re-run (it would re-probe; review #1). The main run still
+// gates the DECISION to install/use hooks on the resolved ResolvedProfile.Hooks.
+//
+// It is an alias of harnesscore.StaticHookProfile.
 type StaticHookProfile = harnesscore.StaticHookProfile
 
-// ConfigDirResolver is harnesscore.ConfigDirResolver.
+// ConfigDirResolver is an OPTIONAL interface a Profile implements when the
+// harness takes its config ROOT from the launch environment (Claude Code's
+// CLAUDE_CONFIG_DIR, Codex's CODEX_HOME) rather than from $HOME alone. It lets
+// the harness-agnostic orchestrator forward that root to the hook subprocess as
+// HW_HARNESS_CONFIG_DIR without knowing any harness's env-var vocabulary.
+//
+// Without it, a fired hook naming a per-profile transcript is rejected by
+// validateTranscriptPath as "not under transcript root", because HookContext
+// .ConfigDir is empty and the check falls back to <Home>/.claude.
+//
+// It is an alias of harnesscore.ConfigDirResolver.
 type ConfigDirResolver = harnesscore.ConfigDirResolver
 
-// HookContext is harnesscore.HookContext.
+// HookContext is the hook-subprocess ENVIRONMENT, populated from the wrapper-set
+// HW_* env (never the subprocess cwd) — the authority for environment. It is
+// distinct from ResolveContext (run-detection inputs) and ReadContext (the
+// read/export environment).
+//
+// It is an alias of harnesscore.HookContext.
 type HookContext = harnesscore.HookContext
 
-// HookSpec is harnesscore.HookSpec.
+// HookSpec describes the hook entries the orchestrator idempotently + atomically
+// ensures in the harness's hook-config file. Per-harness variation is ONLY the
+// config path + native event names + arg mapping — the shell+stdin-JSON contract
+// is shared across Claude/Codex.
+//
+// It is an alias of harnesscore.HookSpec.
 type HookSpec = harnesscore.HookSpec
 
-// HookEntry is harnesscore.HookEntry.
+// HookEntry maps one native hook event to its loom subcommand.
+//
+// It is an alias of harnesscore.HookEntry.
 type HookEntry = harnesscore.HookEntry
 
-// Mode is harnesscore.Mode.
+// Mode selects how the orchestrator acquires the transcript for a run. It is
+// the F1 flag of the P3 rollout: default Off (no acquisition, no behavior
+// change) until a caller opts in.
+//
+// It is an alias of harnesscore.Mode.
 type Mode = harnesscore.Mode
 
-// SettingsHookMatcher is harnesscore.SettingsHookMatcher.
+// SettingsHookMatcher is one matcher group in a settings.json hook event.
+//
+// It is an alias of harnesscore.SettingsHookMatcher.
 type SettingsHookMatcher = harnesscore.SettingsHookMatcher
 
-// SettingsHookCmd is harnesscore.SettingsHookCmd.
+// SettingsHookCmd is a single command hook within a matcher group.
+//
+// It is an alias of harnesscore.SettingsHookCmd.
 type SettingsHookCmd = harnesscore.SettingsHookCmd
 
-// YieldControl is harnesscore.YieldControl.
+// YieldControl is the caller's handle to request cooperative preemption of a
+// running harness. The caller creates it, passes it in harness.Config.Yield
+// (the orchestrator wires its path into the harness env as HW_YIELD_FILE), and
+// calls Request mid-run to make the next tool block.
+//
+// It is safe to construct before the run and call from another goroutine while
+// the run is in flight (Request/Clear are single filesystem ops).
+//
+// It is an alias of harnesscore.YieldControl.
 type YieldControl = harnesscore.YieldControl
 
-// HookOutcome is harnesscore.HookOutcome.
+// HookOutcome is the result of HandleHookEvent. For capture events it is the
+// zero value. For the yield-guard control hook it may direct the caller to BLOCK
+// the tool: print BlockOutput to stdout and exit with a non-zero code the harness
+// interprets as "block" (Claude: exit 2).
+//
+// It is an alias of harnesscore.HookOutcome.
 type HookOutcome = harnesscore.HookOutcome
 
 // Constants of harnesscore.
 const (
-	EnvSpool                  = harnesscore.EnvSpool
-	EnvHookCwd                = harnesscore.EnvHookCwd
-	EnvHome                   = harnesscore.EnvHome
-	EnvConfigDir              = harnesscore.EnvConfigDir
-	EnvHarnessSessionID       = harnesscore.EnvHarnessSessionID
-	MaxSpoolFileBytes         = harnesscore.MaxSpoolFileBytes
-	SpoolQuarantineDir        = harnesscore.SpoolQuarantineDir
-	MaxSpoolQuarantine        = harnesscore.MaxSpoolQuarantine
-	HookArgPreToolUse         = harnesscore.HookArgPreToolUse
-	HookArgPostToolUse        = harnesscore.HookArgPostToolUse
+	EnvSpool     = harnesscore.EnvSpool     // spool dir; absent ⇒ handler inert
+	EnvHookCwd   = harnesscore.EnvHookCwd   // harness working dir (worktree)
+	EnvHome      = harnesscore.EnvHome      // user home
+	EnvConfigDir = harnesscore.EnvConfigDir //nolint:gosec // env var NAME, not a credential
+	// EnvHarnessSessionID is the native session id a RESUME launch is resuming.
+	// Set only on resume (and only when non-empty); it arms the resume session
+	// guard in HandleHookEvent that drops a stale/leftover hook fired for a
+	// DIFFERENT session lingering in the same per-run spool. Absent (fresh
+	// starts, codex, any non-resume launch) ⇒ the guard is disarmed.
+	EnvHarnessSessionID = harnesscore.EnvHarnessSessionID //nolint:gosec // env var NAME, not a credential
+	// MaxSpoolFileBytes bounds one spool file. ReadSpool sets a larger file aside
+	// unread, and AckSpool refuses a receipt that claims more. A Stop hook spools
+	// the whole parent conversation, so a file grows with its conversation; the
+	// bound is far above any real one and exists so that a planted file cannot
+	// exhaust the reader's memory.
+	MaxSpoolFileBytes = harnesscore.MaxSpoolFileBytes
+	// SpoolQuarantineDir is the subdirectory of a spool where ReadSpool sets aside
+	// the files it cannot read as events, for inspection.
+	SpoolQuarantineDir = harnesscore.SpoolQuarantineDir
+	// MaxSpoolQuarantine bounds the files SpoolQuarantineDir keeps. Once it holds
+	// this many, ReadSpool deletes further unreadable files instead, and says so.
+	MaxSpoolQuarantine = harnesscore.MaxSpoolQuarantine
+	// HookArgPreToolUse fires before a tool runs. Its event is a tool_use:
+	// the tool's name, its tool_use id and its input.
+	HookArgPreToolUse = harnesscore.HookArgPreToolUse
+	// HookArgPostToolUse fires after a tool succeeded. Its event is a
+	// tool_result: the tool's name, its tool_use id and its output.
+	HookArgPostToolUse = harnesscore.HookArgPostToolUse
+	// HookArgPostToolUseFailure fires after a tool failed. Its event is a
+	// tool_result whose output is the failure.
 	HookArgPostToolUseFailure = harnesscore.HookArgPostToolUseFailure
-	HookArgSubagentStart      = harnesscore.HookArgSubagentStart
-	HookArgSubagentStop       = harnesscore.HookArgSubagentStop
-	MaxToolHookBytes          = harnesscore.MaxToolHookBytes
-	ToolHookTruncated         = harnesscore.ToolHookTruncated
-	TranscriptOff             = harnesscore.TranscriptOff
-	TranscriptStreamParse     = harnesscore.TranscriptStreamParse
-	TranscriptHooks           = harnesscore.TranscriptHooks
-	TranscriptAuto            = harnesscore.TranscriptAuto
-	EnvYieldFile              = harnesscore.EnvYieldFile
+	// HookArgSubagentStart fires when a subagent starts. Its event is a
+	// transcript.EventSubagentStart tagged with the subagent's session under
+	// its parent's and carrying the subagent's type.
+	HookArgSubagentStart = harnesscore.HookArgSubagentStart
+	// HookArgSubagentStop fires when a subagent has finished. Its events are
+	// the subagent's transcript, tagged the same way and read once it holds
+	// the subagent's last reply (waiting at most a second for it), then a
+	// transcript.EventSubagentStop carrying the subagent's type and that
+	// reply, cut to MaxToolHookBytes.
+	HookArgSubagentStop = harnesscore.HookArgSubagentStop
+	// MaxToolHookBytes bounds what one per-tool hook event carries of the tool's
+	// input and of its output. Output over the bound is cut to that many bytes and
+	// ends with ToolHookTruncated. Input over it is replaced by a JSON string
+	// holding the same cut of its JSON text, so a consumer that expects an object
+	// sees the difference.
+	MaxToolHookBytes = harnesscore.MaxToolHookBytes
+	// ToolHookTruncated ends the text of a per-tool hook event's input or output
+	// that was cut to MaxToolHookBytes.
+	ToolHookTruncated = harnesscore.ToolHookTruncated
+	// TranscriptOff disables transcript acquisition entirely. The orchestrator
+	// still composes wrapper.Run (and may capture the session id for resume),
+	// but emits no events. This is the zero value / safe default.
+	TranscriptOff = harnesscore.TranscriptOff
+	// TranscriptStreamParse parses the harness's live headless stdout (the
+	// durable line tap → StreamParser) as the sole parent-conversation source.
+	// The generic floor: no hook config, no IPC.
+	TranscriptStreamParse = harnesscore.TranscriptStreamParse
+	// TranscriptHooks drives acquisition from the harness's hook mechanism (the
+	// on-disk transcript file is authoritative for the parent; the live stream
+	// contributes only session-id/usage). It needs a resolved HookProvider;
+	// with none it degrades to the StreamParse floor when the harness has a
+	// StreamParser, and to no acquisition when it has neither. With hooks, the
+	// live stream is buffered as a fallback for a run in which no hook fired.
+	TranscriptHooks = harnesscore.TranscriptHooks
+	// TranscriptAuto uses Hooks when installable for the run, else StreamParse.
+	// The effective parent strategy is decided once and latched (review #2);
+	// the authority filter is always invoked with the LATCHED effective mode
+	// (StreamParse or Hooks), never Auto.
+	TranscriptAuto = harnesscore.TranscriptAuto
+	// EnvYieldFile names the yield file in the harness launch env. The yield-guard
+	// hook (a PreToolUse hook that fires on ALL tools) checks it before each tool;
+	// when present it blocks the tool so the agent stops within a turn — sub-minute
+	// cooperative preemption for any hook-capable harness (the absorbed yield
+	// capability).
+	EnvYieldFile = harnesscore.EnvYieldFile
 )
 
 // Variables of harnesscore. Each holds the same value as its original, so errors.Is
 // and comparisons match either.
 var (
+	// ErrSpoolReceipt is the error AckSpool wraps when it refuses a receipt: its
+	// name is not a plain spool file name, or its file is no longer the one
+	// ReadSpool read — the contents changed, or something else took its place. A
+	// refused receipt deletes nothing.
 	ErrSpoolReceipt = harnesscore.ErrSpoolReceipt
 )
 
-// Register calls harnesscore.Register.
+// Register adds a Profile under name. Per-harness packages call this from their
+// init(); panics on a duplicate to catch double-registration at startup.
+//
+// It forwards to harnesscore.Register.
 func Register(name string, p Profile) {
 	harnesscore.Register(name, p)
 }
 
-// For calls harnesscore.For.
+// For returns the registered Profile for the named harness. ok=false means the
+// harness has no profile (caller degrades: resume→checkpoint, transcript→floor).
+// The relevant pkg/harness/<name> package must be imported for its init() to
+// run — blank-import pkg/harness/all to register all built-ins.
+//
+// It forwards to harnesscore.For.
 func For(name string) (Profile, bool) {
 	return harnesscore.For(name)
 }
 
-// Registered calls harnesscore.Registered.
+// Registered returns the sorted names of all registered profiles (for tests
+// and diagnostics).
+//
+// It is also the list of harnesses a launcher supports: the harness-wrapper CLI
+// accepts exactly these names (blank-importing pkg/harness/all), resolving each
+// one's executable through BinaryName.
+//
+// It forwards to harnesscore.Registered.
 func Registered() []string {
 	return harnesscore.Registered()
 }
 
-// BinaryName calls harnesscore.BinaryName.
+// BinaryName returns the executable name for p: its BinaryName when p
+// implements BinaryNamer and names one, else p.Name() — a harness whose binary
+// is named after its registry key need not implement the interface.
+//
+// It forwards to harnesscore.BinaryName.
 func BinaryName(p Profile) string {
 	return harnesscore.BinaryName(p)
 }
 
-// IsManagedHookCommand calls harnesscore.IsManagedHookCommand.
+// IsManagedHookCommand reports whether a rendered hook command is one loom owns
+// (by the marker), so a merge can replace/remove it idempotently.
+//
+// It forwards to harnesscore.IsManagedHookCommand.
 func IsManagedHookCommand(command string) bool {
 	return harnesscore.IsManagedHookCommand(command)
 }
 
-// RenderHookCommand calls harnesscore.RenderHookCommand.
+// RenderHookCommand builds the hook command string written into a harness's
+// config. It is ALWAYS a POSIX shell command with a pre-exec env guard so a
+// left-in-place entry is inert on a non-wrapper run (review #5):
+//
+//	sh -c 'test -n "$HW_EVENT_SPOOL" || exit 0; exec <loomArgv> <harness> <arg>' # harness-wrapper-hook:<owner>
+//
+// With HW_EVENT_SPOOL unset the guard exits 0 WITHOUT touching the binary, so a
+// stale/moved loom can never break someone else's run. loomArgv is the loom
+// binary path + subcommand (e.g. {"/abs/loom","hooks"}); every interpolated
+// value is POSIX-single-quoted, so spaces/quotes in the path are safe.
+//
+// It forwards to harnesscore.RenderHookCommand.
 func RenderHookCommand(loomArgv []string, harnessName string, arg string, owner string) string {
 	return harnesscore.RenderHookCommand(loomArgv, harnessName, arg, owner)
 }
 
-// WithLockedFile calls harnesscore.WithLockedFile.
+// WithLockedFile runs fn under an exclusive flock so concurrent same-worktree
+// ensures don't clobber each other, then writes fn's result atomically.
+//
+// The flock is taken on a STABLE SIDECAR (`<targetPath>.lock`, never renamed) —
+// flock is inode-based, so locking the file we then temp+rename-replace would
+// drop the guard (the new inode is unlocked). fn receives the current file
+// bytes (nil if absent) and returns the new content, or (nil, nil) to indicate
+// "no change" (nothing is written). The target itself is written via temp+rename
+// for torn-read safety.
+//
+// It forwards to harnesscore.WithLockedFile.
 func WithLockedFile(targetPath string, fn func(existing []byte) ([]byte, error)) error {
 	return harnesscore.WithLockedFile(targetPath, fn)
 }
 
-// HandleHookEvent calls harnesscore.HandleHookEvent.
+// HandleHookEvent is the entrypoint the thin `loom hooks <harness> <event>`
+// command delegates to. For capture events it parses the fired hook's stdin
+// payload into events and writes them to the spool; for the yield-guard control
+// event it returns a HookOutcome telling the caller whether to BLOCK the tool.
+//
+// It is INERT (zero outcome, writes nothing) when HW_EVENT_SPOOL is absent — so
+// a leftover hook entry can never perturb a non-wrapper run (review #5; this is
+// the runtime counterpart to the rendered shell guard). The subprocess does NOT
+// call Resolve: it obtains the harness's STATIC HookProvider and trusts that the
+// main run's resolution already decided to install hooks.
+//
+// It forwards to harnesscore.HandleHookEvent.
 func HandleHookEvent(harnessName string, event string, env []string, stdin []byte) (HookOutcome, error) {
 	return harnesscore.HandleHookEvent(harnessName, event, env, stdin)
 }
 
-// ParseSpoolFileName calls harnesscore.ParseSpoolFileName.
+// ParseSpoolFileName returns the hook event a spool file was written under
+// and the time, in Unix nanoseconds, it was named at. A consumer tells the
+// hook a file came from this way, never by the shape of the name.
+//
+// It reads both the current form, "<nanos:20>-<event>-<pid>-<seq>.json", and
+// the legacy one, "<event>-<nanos>-<pid>-<seq>.json", which spools written
+// before the change may still hold (a spool outlives its writer when its
+// consumer, agentd, does). Both are told apart unambiguously: no hook event
+// starts with a digit. ok is false for a name of neither form.
+//
+// It forwards to harnesscore.ParseSpoolFileName.
 func ParseSpoolFileName(name string) (string, int64, bool) {
 	return harnesscore.ParseSpoolFileName(name)
 }
 
-// DrainSpool calls harnesscore.DrainSpool.
+// DrainSpool reads every COMPLETED spool file (`.json`, never the in-flight
+// `.tmp`), returning all parsed events and removing each file it successfully
+// consumed so a later drain does not re-emit them. Run calls it after the
+// harness exits (the grace-window drain), then removes the per-run spool; the
+// consumer additionally dedups by Event.ID(), so a file left behind by a delete
+// failure is absorbed rather than duplicated.
+//
+// DrainSpool is destructive and not transactional: it deletes each file as
+// soon as it has parsed it, before the caller has done anything with the
+// events, so a crash in between loses them. That suits a consumer that lives
+// and dies with the run. One that must not lose events — agentd, whose
+// supervisor outlives its harness — reads with ReadSpool and acknowledges
+// with AckSpool after its own durable commit, and never calls DrainSpool.
+//
+// Files are drained in chronological order (compareSpoolNames). The spool is
+// read as ReadSpool reads it — confined to the directory, never through a
+// symlink, never blocking on a FIFO and never past MaxSpoolFileBytes — since
+// the hook subprocess that writes it may be less trusted than the reader.
+//
+// A missing spool dir is not an error (no hooks fired). A single unreadable,
+// untrusted or unparseable file is skipped (left in place) and collected into
+// err, but does not abort the drain of the rest.
+//
+// It forwards to harnesscore.DrainSpool.
 func DrainSpool(spoolDir string) ([]transcript.ParsedEvent, error) {
 	return harnesscore.DrainSpool(spoolDir)
 }
 
-// ReadSpool calls harnesscore.ReadSpool.
+// ReadSpool reads the completed spool files (`.json`, never an in-flight
+// `.tmp`) without consuming them. Each batch carries a receipt, and its file
+// stays in the spool until AckSpool is handed that receipt. A consumer commits
+// a batch's events durably first and acknowledges it second, so a crash at any
+// point loses nothing: ReadSpool returns every file not yet acknowledged again,
+// under the same receipt, for the consumer to recognise as committed (or to
+// dedup by Event.ID()).
+//
+// The spool is written by the hook subprocess, which may run as a less trusted
+// user than the reader, so ReadSpool trusts nothing in it. It refuses a spool
+// dir that is itself a symlink and confines every lookup to the directory. It
+// reads only regular, singly linked files of at most MaxSpoolFileBytes, and it
+// never follows a symlink or blocks on a FIFO. A file it cannot read as events
+// — any other kind of file, an oversize or hard-linked one, an unsafe name, or
+// contents that do not parse — is moved into SpoolQuarantineDir, or deleted
+// once that holds MaxSpoolQuarantine files, and reported in Quarantined. It
+// is never lost silently, and it cannot block the files behind it.
+//
+// One call handles a bounded amount of the spool and sets More when it leaves
+// files for the next call. A spool has one consumer: ReadSpool takes no lock,
+// so two concurrent readers would each return the same files. A missing spool
+// dir is not an error (no hook fired). A file that cannot be read for any
+// other reason stays where it is and is named in the error; the batches
+// returned alongside an error are still valid.
+//
+// It forwards to harnesscore.ReadSpool.
 func ReadSpool(spoolDir string) (SpoolContents, error) {
 	return harnesscore.ReadSpool(spoolDir)
 }
 
-// AckSpool calls harnesscore.AckSpool.
+// AckSpool deletes the spool files the receipts name, once the consumer has
+// durably committed their events, and fsyncs the directory so that the
+// deletions survive a crash. It deletes a file only while it is still exactly
+// the one ReadSpool read. A receipt whose name is not a plain spool file name,
+// or whose file changed or was replaced since, is refused — wrapped in
+// ErrSpoolReceipt — and deletes nothing, so contents nobody committed are
+// never lost: ReadSpool returns the changed file again under a new receipt.
+//
+// A receipt whose file is already gone counts as acknowledged, so repeating
+// an acknowledgement, say after a crash, is safe; the directory is fsynced
+// even then, which makes an earlier unsynced deletion durable. Until AckSpool
+// returns nil, a crash can leave any of its files in place to be read again,
+// and the consumer recognises them by receipt. The error joins every refusal
+// and failure; the other receipts are still acknowledged.
+//
+// It forwards to harnesscore.AckSpool.
 func AckSpool(spoolDir string, receipts ...SpoolReceipt) error {
 	return harnesscore.AckSpool(spoolDir, receipts...)
 }
 
-// EnvLookup calls harnesscore.EnvLookup.
+// EnvLookup returns the value of key in an os.Environ()-style "K=V" slice, or ""
+// if absent. The last occurrence wins (matching exec semantics). Exported so
+// per-harness Profile packages — which cannot see this package's unexported
+// helpers — read the launch env by exactly the same rule the hook subprocess
+// does; see ConfigDirResolver.
+//
+// It forwards to harnesscore.EnvLookup.
 func EnvLookup(env []string, key string) string {
 	return harnesscore.EnvLookup(env, key)
 }
 
-// EnsureSettingsJSONHooks calls harnesscore.EnsureSettingsJSONHooks.
+// EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
+// settings.json (the shared two-level hook format) at settingsPath, rendering each command from
+// loomArgv via RenderHookCommand (harnessName is the token in the command). It
+// preserves the user's hooks + unknown keys, marks loom's entries (owner), and
+// refreshes the loom path each call (self-healing). flock-guarded + atomic.
+//
+// It forwards to harnesscore.EnsureSettingsJSONHooks.
 func EnsureSettingsJSONHooks(settingsPath string, spec *HookSpec, loomArgv []string, harnessName string) error {
 	return harnesscore.EnsureSettingsJSONHooks(settingsPath, spec, loomArgv, harnessName)
 }
 
-// NewYieldControl calls harnesscore.NewYieldControl.
+// NewYieldControl allocates a private yield file under a fresh temp dir. The
+// caller owns the lifecycle and should Close it when the run is done.
+//
+// It forwards to harnesscore.NewYieldControl.
 func NewYieldControl() (*YieldControl, error) {
 	return harnesscore.NewYieldControl()
 }

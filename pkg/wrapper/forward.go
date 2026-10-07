@@ -8,159 +8,489 @@ import (
 	"github.com/olesho/harness-wrapper/internal/wrapcore"
 )
 
-// ClassifierInput is wrapcore.ClassifierInput.
+// ClassifierInput is the snapshot a Classifier inspects when deciding
+// whether to escalate the wrapper's status. It is rebuilt each time
+// the wrapper polls the classifier; classifiers are stateless.
+//
+// It is an alias of wrapcore.ClassifierInput.
 type ClassifierInput = wrapcore.ClassifierInput
 
-// Classification is wrapcore.Classification.
+// Classification is a Classifier's verdict for a single ClassifierInput.
+//
+// It is an alias of wrapcore.Classification.
 type Classification = wrapcore.Classification
 
-// Classifier is wrapcore.Classifier.
+// Classifier inspects recent harness output and reports actionable
+// status classifications. Implementations must be safe for concurrent
+// use.
+//
+// Classifiers are stateless: the wrapper rebuilds ClassifierInput on
+// each poll. Returning the same Classification across consecutive
+// polls is fine; the wrapper de-duplicates emitted events.
+//
+// It is an alias of wrapcore.Classifier.
 type Classifier = wrapcore.Classifier
 
-// ClassifierFunc is wrapcore.ClassifierFunc.
+// ClassifierFunc adapts a function to the Classifier interface.
+//
+// It is an alias of wrapcore.ClassifierFunc.
 type ClassifierFunc = wrapcore.ClassifierFunc
 
-// Containment is wrapcore.Containment.
+// Containment requests an optional Landlock boundary around the harness child
+// on Linux: an extra, kernel-enforced layer outside whatever the harness's own
+// sandbox and permission settings enforce, which keep their meanings. A nil
+// *Containment (the default everywhere) means no containment, and the
+// uncontained launch path is exactly the one used without this feature.
+//
+// See pkg/containment for the fields and docs/md/guide/permissions.md for what
+// the boundary covers and what it does not.
+//
+// It is an alias of wrapcore.Containment.
 type Containment = wrapcore.Containment
 
-// ErrorClass is wrapcore.ErrorClass.
+// ErrorClass is the canonical, lifecycle-free taxonomy of harness-output
+// errors. It is the *mechanism* half of the classification contract: the
+// wrapper assigns it from harness output; downstream consumers (loomcli,
+// the SDK) map it to their own *policy*. It is deliberately distinct from
+// Status, which mixes runtime lifecycle (idle, waiting_for_input, stale)
+// with error states.
+//
+// ErrorClass is additive public API consumed by multiple repos: new values
+// may be appended, but existing values and their String() forms are stable.
+//
+// It is an alias of wrapcore.ErrorClass.
 type ErrorClass = wrapcore.ErrorClass
 
-// LoginConfig is wrapcore.LoginConfig.
+// LoginConfig configures a human-led sign-in; see StartLogin.
+//
+// It is an alias of wrapcore.LoginConfig.
 type LoginConfig = wrapcore.LoginConfig
 
-// LoginPrompt is wrapcore.LoginPrompt.
+// LoginPrompt is what the person signing in needs from the harness.
+//
+// It is an alias of wrapcore.LoginPrompt.
 type LoginPrompt = wrapcore.LoginPrompt
 
-// LoginResult is wrapcore.LoginResult.
+// LoginResult reports how a sign-in ended.
+//
+// It is an alias of wrapcore.LoginResult.
 type LoginResult = wrapcore.LoginResult
 
-// Login is wrapcore.Login.
+// Login is a human-led sign-in in progress; see StartLogin.
+//
+// It is an alias of wrapcore.Login.
 type Login = wrapcore.Login
 
-// Snapshot is wrapcore.Snapshot.
+// Snapshot is the most recent state observation for a Session. Snapshot
+// is safe to read concurrently with the session running; it always
+// reflects a coherent point-in-time view.
+//
+// It is an alias of wrapcore.Snapshot.
 type Snapshot = wrapcore.Snapshot
 
-// SessionEvent is wrapcore.SessionEvent.
+// SessionEvent is a state transition observed by a Session. Events are
+// delivered on Session.Events() in order. Mid-run classifications
+// (waiting_for_input, blocked_by_cost, retry_later, api_error) flow as
+// Status events — under Config.KeepAliveOnClassification the terminal ones
+// too, with Terminated false. The final event is always Terminated, after
+// which the channel is closed.
+//
+// It is an alias of wrapcore.SessionEvent.
 type SessionEvent = wrapcore.SessionEvent
 
-// Session is wrapcore.Session.
+// Session is a live handle to a supervised harness process. Construct
+// one with Start; retrieve the terminal outcome with Wait. Stop
+// requests a graceful shutdown without forcing the caller to track
+// context cancellation. Concurrent calls to Wait, Stop, Snapshot, and
+// Events are safe.
+//
+// It is an alias of wrapcore.Session.
 type Session = wrapcore.Session
 
-// Config is wrapcore.Config.
+// Config configures a single Run.
+//
+// Fields with zero values get sensible defaults documented per-field.
+// Construct Config using keyed struct literals; positional initialization
+// is unsupported and will break across versions.
+//
+// It is an alias of wrapcore.Config.
 type Config = wrapcore.Config
 
-// Status is wrapcore.Status.
+// Status is the normalized run status returned by the wrapper.
+//
+// It is an alias of wrapcore.Status.
 type Status = wrapcore.Status
 
-// Result is wrapcore.Result.
+// Result describes the outcome of a Run.
+//
+// It is an alias of wrapcore.Result.
 type Result = wrapcore.Result
 
-// QueueLimits is wrapcore.QueueLimits.
+// QueueLimits bounds an OnEvent queue: the events it holds at once, and their
+// payload bytes. A zero field takes its default — 1024 events, 16 MiB.
+//
+// It is an alias of wrapcore.QueueLimits.
 type QueueLimits = wrapcore.QueueLimits
 
 // Constants of wrapcore.
 const (
-	ContainmentLandlock      = wrapcore.ContainmentLandlock
-	ErrNone                  = wrapcore.ErrNone
-	ErrRateLimited           = wrapcore.ErrRateLimited
-	ErrAuth                  = wrapcore.ErrAuth
-	ErrBilling               = wrapcore.ErrBilling
-	ErrModelNotFound         = wrapcore.ErrModelNotFound
-	ErrContextOverflow       = wrapcore.ErrContextOverflow
-	ErrTimeout               = wrapcore.ErrTimeout
-	ErrTransient             = wrapcore.ErrTransient
-	ErrUnknown               = wrapcore.ErrUnknown
-	RuleTimeoutUpgrade       = wrapcore.RuleTimeoutUpgrade
-	StatusIdle               = wrapcore.StatusIdle
-	StatusFailed             = wrapcore.StatusFailed
-	StatusBlockedByCost      = wrapcore.StatusBlockedByCost
-	StatusRetryLater         = wrapcore.StatusRetryLater
-	StatusAPIError           = wrapcore.StatusAPIError
-	StatusWaitingForInput    = wrapcore.StatusWaitingForInput
-	StatusStale              = wrapcore.StatusStale
-	StatusInterrupted        = wrapcore.StatusInterrupted
-	StatusUnknown            = wrapcore.StatusUnknown
-	StatusBinaryNotFound     = wrapcore.StatusBinaryNotFound
-	SkipPermissionsFlag      = wrapcore.SkipPermissionsFlag
+	// ContainmentLandlock is the only containment kind.
+	ContainmentLandlock = wrapcore.ContainmentLandlock
+	// ErrNone is the zero value: not an error (clean exit, waiting-for-input,
+	// idle). Callers handle clean outcomes before consulting any error policy.
+	ErrNone            = wrapcore.ErrNone
+	ErrRateLimited     = wrapcore.ErrRateLimited     // 429 / usage|session limit / rate limit — transient, resets
+	ErrAuth            = wrapcore.ErrAuth            // 401 / invalid key — fatal
+	ErrBilling         = wrapcore.ErrBilling         // 402 / payment required / insufficient credits / quota exceeded — fatal
+	ErrModelNotFound   = wrapcore.ErrModelNotFound   // 404 / model does not exist
+	ErrContextOverflow = wrapcore.ErrContextOverflow // context length / token limit exceeded (reserved; not yet emitted by built-in packs)
+	ErrTimeout         = wrapcore.ErrTimeout         // request/connection timeout / deadline exceeded
+	ErrTransient       = wrapcore.ErrTransient       // 5xx / transport reset / temporary failure
+	ErrUnknown         = wrapcore.ErrUnknown         // unclassifiable failure
+	// RuleTimeoutUpgrade is the Classification.Rule stamped on an ErrTransient
+	// result that ClassifyFinishedOutput refined to ErrTimeout.
+	//
+	// The "wrapper/" prefix is not a package name — it is the id loom already
+	// records for this rewrite in its evidence log (`source=wrapper_classifier
+	// rule=wrapper/timeout_upgrade`), which is what an operator reading a verdict
+	// sees. The rewrite moved here; the id stays what it was, because renaming it
+	// would silently change every record that names it.
+	RuleTimeoutUpgrade = wrapcore.RuleTimeoutUpgrade
+	// StatusIdle indicates the harness exited cleanly or its output
+	// remained unchanged past the configured classification threshold
+	// with no actionable state detected.
+	StatusIdle = wrapcore.StatusIdle
+	// StatusFailed indicates the harness exited with a non-zero code.
+	StatusFailed = wrapcore.StatusFailed
+	// StatusBlockedByCost indicates the harness cannot continue until
+	// budget, credits, quota, or rate limits allow continuation.
+	StatusBlockedByCost = wrapcore.StatusBlockedByCost
+	// StatusRetryLater indicates the harness hit a transient condition
+	// that the engine should re-attempt after a backoff. It is reported
+	// by classifiers when they recognize transient API errors, network
+	// blips, or "try again later" prompts.
+	StatusRetryLater = wrapcore.StatusRetryLater
+	// StatusAPIError indicates the harness's upstream model API returned
+	// a recognized error (HTTP 4xx/5xx, transport failure). Unlike
+	// StatusRetryLater this is non-terminal: the wrapper keeps the
+	// harness alive. The accompanying SessionEvent carries HTTPCode
+	// (0 when the harness's output did not include a numeric code,
+	// e.g. transport errors) and RetryAfter (0 when no retry hint was
+	// parseable). External clients subscribe to Session.Events and
+	// dispatch on HTTPCode to attach per-error behavior.
+	StatusAPIError = wrapcore.StatusAPIError
+	// StatusWaitingForInput indicates the harness is paused at an
+	// interactive prompt and needs a human (or attached client) to
+	// answer. Unlike the other actionable statuses, it is reported
+	// mid-run: the wrapper does not terminate the process.
+	StatusWaitingForInput = wrapcore.StatusWaitingForInput
+	// StatusStale is a non-terminal mid-run advisory: the harness has
+	// produced no PTY output for cfg.StaleThreshold and may need
+	// attention, but it is still alive and has not been classified as
+	// idle, blocked, or otherwise actionable. StatusStale never appears
+	// in Result.Status (which is the terminal status reported by Wait);
+	// it is only emitted on Session.Events() and as a harness_stale
+	// trace event.
+	StatusStale = wrapcore.StatusStale
+	// StatusInterrupted indicates the harness was terminated by signal,
+	// either because the caller cancelled the context or because the
+	// wrapper forwarded a foreground interrupt.
+	StatusInterrupted = wrapcore.StatusInterrupted
+	// StatusUnknown indicates the wrapper could not classify the run
+	// outcome. Result.Reason should explain why.
+	StatusUnknown = wrapcore.StatusUnknown
+	// StatusBinaryNotFound indicates the configured harness binary was
+	// not present on PATH (or at the configured BinaryPath). This is a
+	// terminal status reported by Run when Start returns
+	// ErrBinaryNotFound: ExitCode is -1, Reason carries the underlying
+	// "executable file not found" message. Consumers should treat this
+	// as non-retryable until the binary becomes available — burning
+	// restart budget against a missing CLI is wasted work.
+	StatusBinaryNotFound = wrapcore.StatusBinaryNotFound
+	// SkipPermissionsFlag is Claude Code's blanket permission-bypass flag. It is a
+	// flag, not a PermissionMode value: it is never emitted by
+	// argsWithHarnessPermissionMode and is never accepted as a mode, only
+	// recognized as an already-present token in Config.Args.
+	SkipPermissionsFlag = wrapcore.SkipPermissionsFlag
+	// AllowSkipPermissionsFlag is claude-code 2.1.261's UNLOCK flag: it makes the
+	// bypass rung selectable without selecting it ("Enable bypassing all permission
+	// checks as an option, without it being enabled by default"). It is therefore
+	// NOT bypass-enabling in validatePermissionMode's sense — a session carrying it
+	// launches RESTRICTED — but it does put bypass on the Shift+Tab ring. Never
+	// emitted; recognized in Config.Args only.
 	AllowSkipPermissionsFlag = wrapcore.AllowSkipPermissionsFlag
 )
 
 // Variables of wrapcore. Each holds the same value as its original, so errors.Is
 // and comparisons match either.
 var (
-	ErrSessionTerminated      = wrapcore.ErrSessionTerminated
+	// ErrSessionTerminated is returned by Session.WriteStdin and
+	// Session.Resize when the underlying PTY is no longer open.
+	ErrSessionTerminated = wrapcore.ErrSessionTerminated
+	// ErrContainmentUnsupported: containment was requested on a platform
+	// without Landlock (anything but Linux).
 	ErrContainmentUnsupported = wrapcore.ErrContainmentUnsupported
-	ErrContainmentRefused     = wrapcore.ErrContainmentRefused
-	ErrLaunchDenied           = wrapcore.ErrLaunchDenied
-	ErrInvalidConfig          = wrapcore.ErrInvalidConfig
-	ErrBinaryNotFound         = wrapcore.ErrBinaryNotFound
-	ErrPTYAllocation          = wrapcore.ErrPTYAllocation
-	ErrPTYRead                = wrapcore.ErrPTYRead
-	ErrClassifierPanic        = wrapcore.ErrClassifierPanic
+	// ErrContainmentRefused: the request is invalid, or a required
+	// protection cannot be enforced here — kernel support, profile, paths,
+	// state, supervision or an unsupported harness mode. The wrapped cause
+	// says which.
+	ErrContainmentRefused = wrapcore.ErrContainmentRefused
+	// ErrLaunchDenied: exec of the harness failed with EACCES on the contained
+	// path. It preserves the errno and names the binary but does not prove
+	// Landlock was responsible — DAC permissions and other LSMs deny too. It
+	// matches ErrPTYAllocation, the sentinel every other start failure matches.
+	ErrLaunchDenied   = wrapcore.ErrLaunchDenied
+	ErrInvalidConfig  = wrapcore.ErrInvalidConfig
+	ErrBinaryNotFound = wrapcore.ErrBinaryNotFound
+	ErrPTYAllocation  = wrapcore.ErrPTYAllocation
+	ErrPTYRead        = wrapcore.ErrPTYRead
+	// ErrClassifierPanic is returned by Wait (and Run) when the session's
+	// Classifier panicked; the wrapper recovers it at the call.
+	ErrClassifierPanic = wrapcore.ErrClassifierPanic
 )
 
-// ClassifyOutput calls wrapcore.ClassifyOutput.
+// ClassifyOutput runs the resolved per-harness classifier as a one-shot
+// over a finished output blob (e.g. a log tail, or the recent-output buffer
+// of an exited harness). Idle is forced on so the Cost/Retry/transport
+// patterns are eligible; Quiet is left off so a trailing interactive prompt
+// in a *dead* process's tail is not misreported as waiting_for_input.
+// Returns the zero Classification when nothing matches.
+//
+// It is the post-hoc counterpart to the live polling the wrapper performs
+// during a run — the single entry point external callers (e.g. loom's
+// agenterr adapter) should use to classify captured output with the same
+// patterns the wrapper applies internally.
+//
+// It forwards to wrapcore.ClassifyOutput.
 func ClassifyOutput(harness string, output string) Classification {
 	return wrapcore.ClassifyOutput(harness, output)
 }
 
-// ClassifyFinishedOutput calls wrapcore.ClassifyFinishedOutput.
+// ClassifyFinishedOutput classifies the output of a harness that has ALREADY
+// EXITED, applying the same classifier ClassifyOutput does and then a residual
+// fallback for the signals the per-harness anchored matchers miss.
+//
+// It is the post-exit entry point. ClassifyOutput remains the plain one-shot:
+// same classifier, no fallback, results unchanged for every caller. The split
+// exists because the residual rows below are the broadest patterns in the
+// library — `\bbilling\b`, `\bquota\b`, API-key variable names — and sharing
+// them with the live polling dispatcher would let an agent that merely PRINTS
+// such a word terminate its own quiet, healthy process. Post-exit there is no
+// process left to terminate, so breadth costs a misclassification at worst.
+//
+// Order:
+//  1. The resolved classifier (custom override → per-harness adapter →
+//     default), exactly as ClassifyOutput runs it.
+//  2. An actionable result is returned unchanged — including
+//     StatusBinaryNotFound, which is a statement about the launch, not the
+//     output.
+//  3. Only on ErrNone / ErrUnknown — "nothing actionable" — are the residual
+//     rows consulted. A hit REPLACES the result rather than decorating it:
+//     the rows are a different fingerprint of the same text, not a refinement
+//     of a verdict the classifier did not reach.
+//  4. An ErrTransient result whose surrounding text names a timeout is
+//     refined to ErrTimeout, which keeps a network timeout in its own class
+//     (and its own backoff bucket downstream) instead of a generic 5xx.
+//  5. A rate-limited result with no wait hint gets one from a Retry-After
+//     token anywhere in the output. The per-harness matchers only parse the
+//     hint when it sits inside the message they anchored on; a CLI that
+//     prints the header on its own line is the common case, and a caller
+//     that has to scrape it itself is maintaining a harness-output pattern
+//     outside the repository that owns them.
+//
+// Returns the classifier's own result when nothing matches, so a caller's
+// exit-code fallback still applies.
+//
+// It forwards to wrapcore.ClassifyFinishedOutput.
 func ClassifyFinishedOutput(harness string, output string) Classification {
 	return wrapcore.ClassifyFinishedOutput(harness, output)
 }
 
-// StartLogin calls wrapcore.StartLogin.
+// StartLogin starts the harness's own login command inside a contained
+// launch whose login is kept in cfg.StateDir, for a person to complete:
+//
+//   - Prompt returns the sign-in page to open, and codex's one-time code.
+//   - SubmitCode passes on the code claude's page shows after signing in.
+//   - Wait reports whether the harness is signed in once the command has
+//     ended. It runs the harness's own status command in the same StateDir to
+//     decide.
+//
+// A login runs only the login and status commands its harness profile pins,
+// so it works before the profile is activated for sessions. Neither command
+// receives the harness's credential variables, and neither runs tools, so
+// codex's bypass-rung requirement does not apply. Linux only, like every
+// contained launch.
+//
+// It forwards to wrapcore.StartLogin.
 func StartLogin(ctx context.Context, cfg LoginConfig) (*Login, error) {
 	return wrapcore.StartLogin(ctx, cfg)
 }
 
-// LoginStatus calls wrapcore.LoginStatus.
+// LoginStatus runs the harness's own status command, contained, in
+// cfg.StateDir, and reports whether the harness is signed in there. It starts
+// no login, so cfg.Output is unused.
+//
+// It forwards to wrapcore.LoginStatus.
 func LoginStatus(ctx context.Context, cfg LoginConfig) (LoginResult, error) {
 	return wrapcore.LoginStatus(ctx, cfg)
 }
 
-// Run calls wrapcore.Run.
+// Run starts the configured harness under a pseudoterminal, supervises
+// it until it exits or ctx is cancelled, and returns the normalized
+// outcome. It is a blocking convenience wrapper around Start+Wait
+// preserved for callers that don't need a live session handle.
+//
+// Errors are returned only when the wrapper itself fails to do its job
+// (invalid configuration, missing binary, PTY allocation failure, IO
+// errors on the master fd, a Classifier panic; see Session.Wait for the
+// Result that comes with the last two). Harness-level outcomes — clean exit,
+// non-zero exit, signal termination, idle classification — are always
+// reported through the returned Result with a nil error.
+//
+// Context cancellation is handled by sending the harness a termination
+// signal. The returned Result will have Status == StatusInterrupted;
+// ctx.Err() is not propagated as the returned error.
+//
+// It forwards to wrapcore.Run.
 func Run(ctx context.Context, cfg Config) (Result, error) {
 	return wrapcore.Run(ctx, cfg)
 }
 
-// Start calls wrapcore.Start.
+// Start launches the configured harness under a pseudoterminal and
+// returns a live Session. Unlike Run, Start returns immediately; the
+// caller observes lifecycle through Session.Events / Session.Snapshot
+// and retrieves the final outcome via Session.Wait.
+//
+// Errors are returned only when the wrapper itself fails to start
+// (invalid configuration, missing binary, PTY allocation failure).
+// Once Start has returned a non-nil Session, every harness outcome
+// flows through Wait with a nil error.
+//
+// It forwards to wrapcore.Start.
 func Start(ctx context.Context, cfg Config) (*Session, error) {
 	return wrapcore.Start(ctx, cfg)
 }
 
-// HarnessArgs calls wrapcore.HarnessArgs.
+// HarnessArgs validates cfg exactly as Start does and returns the argv Start
+// would launch the harness with: cfg.Args with the Effort, Model and
+// PermissionMode flags injected. It starts nothing. It is for a caller that
+// runs the harness itself over another transport — pkg/chat's claude-code
+// stream-json driver — and must honour the same knobs the same way. The I/O
+// fields are not needed: Stdout defaults to io.Discard here.
+//
+// It forwards to wrapcore.HarnessArgs.
 func HarnessArgs(cfg Config) ([]string, error) {
 	return wrapcore.HarnessArgs(cfg)
 }
 
-// IsBypassPermissionMode calls wrapcore.IsBypassPermissionMode.
+// IsBypassPermissionMode reports whether mode resolves to claude-code's
+// bypassPermissions directive — the canonical rung "bypass" and its
+// claude-native spelling "bypassPermissions", and NOTHING else.
+//
+// Three call sites, all of which need exactly this question:
+//  1. cmd/harness-wrapper.applySandboxDefaults — compose (env half only).
+//  2. cmd/harness-wrapper.parseHarnessWrapperArgs — the --sandbox-defaults
+//     exclusion check, which is deliberately harness-INDEPENDENT.
+//  3. pkg/wrapper.validateConfig — the contradictory-argv rejection.
+//
+// codex's "danger-full-access" is deliberately NOT included even though it is
+// codex's bypass-equivalent: call site 2 runs before the harness is known, so
+// treating it as bypass would let `--sandbox-defaults --permission-mode
+// danger-full-access codex --` slip past the exclusion check. codex's own
+// bypass handling lives in isCodexBypassMode.
+//
+// It forwards to wrapcore.IsBypassPermissionMode.
 func IsBypassPermissionMode(mode string) bool {
 	return wrapcore.IsBypassPermissionMode(mode)
 }
 
-// PermissionRungs calls wrapcore.PermissionRungs.
+// PermissionRungs returns the canonical rungs, ordered least to most
+// permissive — the same order the unexported consts are declared in.
+//
+// A fresh slice per call: callers (pkg/chat builds a permission ring out of it)
+// may sort, truncate or reverse the result without corrupting a later call.
+//
+// It forwards to wrapcore.PermissionRungs.
 func PermissionRungs() []string {
 	return wrapcore.PermissionRungs()
 }
 
-// MorePermissive calls wrapcore.MorePermissive.
+// MorePermissive reports whether rung a is strictly more permissive than b,
+// by index in PermissionRungs.
+//
+// Unknown rungs are never more permissive (fail closed): an empty string, a
+// native spelling ("acceptEdits", "danger-full-access") or a typo yields false
+// for a, so a caller asking "may I stay where I am?" never gets a yes it did
+// not earn. Note b being unknown ALSO yields false, so the answer is false
+// whenever either side is not a canonical rung.
+//
+// It forwards to wrapcore.MorePermissive.
 func MorePermissive(a string, b string) bool {
 	return wrapcore.MorePermissive(a, b)
 }
 
-// BypassEnablingFlags calls wrapcore.BypassEnablingFlags.
+// BypassEnablingFlags returns the harness argv flags that, when present at
+// launch, leave the harness able to reach the bypass rung. Single source of
+// truth for validatePermissionMode's contradiction check and pkg/chat's
+// ring-length calculation.
+//
+// Only two such flags exist: claude's SkipPermissionsFlag and codex's
+// --dangerously-bypass-approvals-and-sandbox. Harnesses with no launch-time
+// permission axis at all return nil.
+//
+// The unlock-only spelling AllowSkipPermissionsFlag is deliberately NOT here —
+// see BypassReachableFlags.
+//
+// It forwards to wrapcore.BypassEnablingFlags.
 func BypassEnablingFlags(harness string) []string {
 	return wrapcore.BypassEnablingFlags(harness)
 }
 
-// BypassReachableFlags calls wrapcore.BypassReachableFlags.
+// BypassReachableFlags returns the harness argv flags that, when present at
+// launch, leave bypass REACHABLE on the harness's own permission ring —
+// whether or not the launch is already unrestricted. This is the wider of the
+// two sets and the split matters: BypassEnablingFlags answers "is this launch
+// already unrestricted" and feeds validatePermissionMode's contradiction
+// check, while this one answers "can this session get to bypass at all" and
+// feeds pkg/chat's ring-length calculation.
+//
+// For claude that is BypassEnablingFlags plus AllowSkipPermissionsFlag, which
+// unlocks the rung without selecting it. Codex has no separate unlock flag, so
+// the two sets coincide there. The returned slice is freshly allocated; callers
+// may mutate it.
+//
+// It forwards to wrapcore.BypassReachableFlags.
 func BypassReachableFlags(harness string) []string {
 	return wrapcore.BypassReachableFlags(harness)
 }
 
-// EffectiveLaunchRung calls wrapcore.EffectiveLaunchRung.
+// EffectiveLaunchRung reports the rung the harness ACTUALLY launched with,
+// given the caller's argv and the Config.PermissionMode knob — i.e. it replays
+// argsWithHarnessPermissionMode's suppression rule rather than trusting the
+// knob alone. Unlike argsContainAnyFlag, which answers PRESENCE only, this
+// extracts the VALUE from both "--permission-mode=x" and the separated
+// "--permission-mode x" form and normalizes native spellings (acceptEdits ->
+// ask, bypassPermissions -> bypass, codex's -s values -> their rungs).
+//
+// A bypass-enabling flag (SkipPermissionsFlag, codexBypassFlag) in argv is
+// itself reported as a definite bypass: it suppresses injection AND leaves the
+// harness unrestricted, so there is nothing unknown about the result.
+//
+// Returns "" when argv carries a permission flag whose value cannot be resolved
+// (a trailing flag with no operand, an unrecognized spelling), when only
+// codex's -a axis is set (which suppresses injection but leaves the sandbox at
+// the harness default), and when neither argv nor mode says anything. "" means
+// UNKNOWN, never "default" — callers must not treat it as a definite non-bypass
+// answer.
+//
+// Passing ALREADY-INJECTED args is safe — the function is idempotent over
+// argsWithHarnessPermissionMode, because injection self-suppresses: once the
+// axis is in argv, argsContainAnyFlag short-circuits the second pass and the
+// argv arm reads back the value that was injected. Formally,
+// EffectiveLaunchRung(h, argsWithHarnessPermissionMode(h, args, mode), mode)
+// == EffectiveLaunchRung(h, args, mode).
+//
+// It forwards to wrapcore.EffectiveLaunchRung.
 func EffectiveLaunchRung(harness string, args []string, mode string) string {
 	return wrapcore.EffectiveLaunchRung(harness, args, mode)
 }

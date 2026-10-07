@@ -9,208 +9,681 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/discovery/models"
 )
 
-// Role is chatcore.Role.
+// Role identifies who produced a turn.
+//
+// It is an alias of chatcore.Role.
 type Role = chatcore.Role
 
-// TurnState is chatcore.TurnState.
+// TurnState is the lifecycle stage of a Turn.
+//
+// It is an alias of chatcore.TurnState.
 type TurnState = chatcore.TurnState
 
-// TurnCode is chatcore.TurnCode.
+// TurnCode is the machine-readable half of a terminal Turn.Reason: a short,
+// stable token a consumer switches on, with no prose attached.
+//
+// Reason is operator copy — it is worded for a human, it carries a trailing
+// "(…)" detail on the usage wall, and rewording it is an ordinary editorial
+// change. Consumers that matched on the reason therefore had to SUBSTRING it,
+// which makes every such reword a silent behaviour change downstream. Code is
+// what those consumers should read instead. Empty for every turn that is not
+// one of the terminal walls below, including ordinary task failures.
+//
+// It is an alias of chatcore.TurnCode.
 type TurnCode = chatcore.TurnCode
 
-// Turn is chatcore.Turn.
+// Turn is one message in the conversation.
+//
+// It is an alias of chatcore.Turn.
 type Turn = chatcore.Turn
 
-// Transport is chatcore.Transport.
+// Transport selects how a Conversation talks to its harness (Options.Transport).
+//
+// It is an alias of chatcore.Transport.
 type Transport = chatcore.Transport
 
-// EventType is chatcore.EventType.
+// EventType discriminates the variants of a ConversationEvent.
+//
+// It is an alias of chatcore.EventType.
 type EventType = chatcore.EventType
 
-// RateLimitStatus is chatcore.RateLimitStatus.
+// RateLimitStatus is where the account stands against its usage limit.
+//
+// It is an alias of chatcore.RateLimitStatus.
 type RateLimitStatus = chatcore.RateLimitStatus
 
-// RateLimit is chatcore.RateLimit.
+// RateLimit is the harness's report of the account's usage limit, as it stood
+// when the harness last reported it. Each field is the harness's own figure;
+// a zero field means the report did not include it.
+//
+// It is an alias of chatcore.RateLimit.
 type RateLimit = chatcore.RateLimit
 
-// RateLimitWindow is chatcore.RateLimitWindow.
+// RateLimitWindow is one usage window's standing.
+//
+// It is an alias of chatcore.RateLimitWindow.
 type RateLimitWindow = chatcore.RateLimitWindow
 
-// ConversationEvent is chatcore.ConversationEvent.
+// ConversationEvent is a discriminated event observed on
+// Conversation.Events(). Inspect Type to learn which payload is set: Turn
+// for EventTurn, Input for EventInputRequest / EventInputResolved, Exit for
+// EventExited, RateLimit for EventRateLimit.
+//
+// It is an alias of chatcore.ConversationEvent.
 type ConversationEvent = chatcore.ConversationEvent
 
-// Session is chatcore.Session.
+// Session is the chat-level session record. Distinct from
+// wrapper.Session: this is the persistence/metadata view, owned by Store.
+//
+// It is an alias of chatcore.Session.
 type Session = chatcore.Session
 
-// SessionContainment is chatcore.SessionContainment.
+// SessionContainment is the containment record of a contained conversation.
+// It is persisted BEFORE the conversation's first launch, and every later
+// launch — Reopen included — inherits it: a contained conversation can never
+// continue uncontained or under a different policy.
+//
+// Downgrade guard: in a contained Session the legacy HarnessSessionID field
+// stays empty for good, and the harness's own session id lives only here. An
+// older harness-wrapper, which knows nothing of this record, therefore sees a
+// session with no harness session id and refuses to resume it
+// (ErrNoHarnessSession) instead of resuming it unrestricted — even when its
+// decoder drops this field. Read the id through Session.HarnessID.
+//
+// It is an alias of chatcore.SessionContainment.
 type SessionContainment = chatcore.SessionContainment
 
-// ContainmentStore is chatcore.ContainmentStore.
+// ContainmentStore is the optional Store extension a store implements to
+// declare that it persists contained conversations faithfully. chat.Open and
+// Reopen refuse containment on a Store that does not implement it, rather than
+// trust a record the store may silently drop. chat.Store itself gains no
+// method: callers implement it.
+//
+// By implementing it a store commits that CreateSession, UpdateSession and
+// GetSession round-trip Session.Containment intact, and that it never
+// populates the legacy HarnessSessionID of a session that has one.
+//
+// It is an alias of chatcore.ContainmentStore.
 type ContainmentStore = chatcore.ContainmentStore
 
-// Options is chatcore.Options.
+// Options configures a single Conversation.
+//
+// It is an alias of chatcore.Options.
 type Options = chatcore.Options
 
-// Conversation is chatcore.Conversation.
+// Conversation owns one supervised harness process and serves the
+// chat-style API on top of it.
+//
+// It is an alias of chatcore.Conversation.
 type Conversation = chatcore.Conversation
 
-// ReopenOptions is chatcore.ReopenOptions.
+// ReopenOptions configures Reopen. It is the Options knobs that make sense when
+// re-attaching to an already-stored session: the harness, working dir, and
+// resume id come from the stored record (looked up by SessionID), so they are
+// intentionally omitted here (mirrors the TS Omit<Options,"harness"|"workingDir"|"resume">).
+//
+// It is an alias of chatcore.ReopenOptions.
 type ReopenOptions = chatcore.ReopenOptions
 
-// HistorySource is chatcore.HistorySource.
+// HistorySource identifies where a History result came from.
+//
+// It is an alias of chatcore.HistorySource.
 type HistorySource = chatcore.HistorySource
 
-// InputUnresolvedError is chatcore.InputUnresolvedError.
+// InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
+// PermissionModeBlockedError it carries the client-facing chat.InputRequest
+// (the value PendingInput returns and Answer accepts) plus the screen as it
+// looked when the driver gave up, so a failed run is diagnosable from the error
+// alone rather than from a 43-minute silence.
+//
+// It is an alias of chatcore.InputUnresolvedError.
 type InputUnresolvedError = chatcore.InputUnresolvedError
 
-// DiscoverModelsOptions is chatcore.DiscoverModelsOptions.
+// DiscoverModelsOptions configures DiscoverModels. It mirrors the chat/oneshot
+// launch surface (the fields Open needs), plus a picker render budget.
+//
+// It is an alias of chatcore.DiscoverModelsOptions.
 type DiscoverModelsOptions = chatcore.DiscoverModelsOptions
 
-// ExitInfo is chatcore.ExitInfo.
+// ExitInfo is how the harness process ended.
+//
+// It is an alias of chatcore.ExitInfo.
 type ExitInfo = chatcore.ExitInfo
 
-// State is chatcore.State.
+// State is a conversation's live state, read in one call (ADR-008).
+//
+// It is an alias of chatcore.State.
 type State = chatcore.State
 
-// DeliveryState is chatcore.DeliveryState.
+// DeliveryState is the event queue's pressure, for diagnostics: a consumer
+// that stops taking events shows here before anything else notices.
+//
+// It is an alias of chatcore.DeliveryState.
 type DeliveryState = chatcore.DeliveryState
 
-// InputRequest is chatcore.InputRequest.
+// InputRequest is the client-facing view of a blocking interactive prompt
+// the harness is showing (e.g. Claude Code's folder-trust dialog). It mirrors
+// turns.InputRequest but deliberately omits the per-option keystrokes: the
+// client answers semantically by option ID or Alias and the chat layer owns
+// the translation to keys.
+//
+// It is an alias of chatcore.InputRequest.
 type InputRequest = chatcore.InputRequest
 
-// InputOption is chatcore.InputOption.
+// InputOption is one selectable choice in an InputRequest.
+//
+// It is an alias of chatcore.InputOption.
 type InputOption = chatcore.InputOption
 
-// InputAnswer is chatcore.InputAnswer.
+// InputAnswer is how a caller answers an InputRequest. Set OptionID (an
+// option ID or Alias) for single-select menu/confirm/trust prompts; set Text
+// for free-text ("text_input") prompts; set OptionIDs (each an option ID or
+// Alias) to select one or more options on a MultiSelect request.
+//
+// OptionID and OptionIDs are mutually exclusive: setting both returns
+// ErrConflictingAnswer. OptionIDs on a request whose MultiSelect is false
+// returns ErrNotMultiSelect.
+//
+// It is an alias of chatcore.InputAnswer.
 type InputAnswer = chatcore.InputAnswer
 
-// DispositionKind is chatcore.DispositionKind.
+// DispositionKind is how a policy disposes of a matched InputRequest.
+//
+// It is an alias of chatcore.DispositionKind.
 type DispositionKind = chatcore.DispositionKind
 
-// Disposition is chatcore.Disposition.
+// Disposition is the action a policy takes for a matched request kind.
+//
+// It is an alias of chatcore.Disposition.
 type Disposition = chatcore.Disposition
 
-// InputPolicy is chatcore.InputPolicy.
+// InputPolicy pre-configures how interactive prompts are resolved without a
+// live client in the loop. It is JSON-serializable so it can be supplied at
+// open time over a transport (harness-chatd). When a request matches no rule
+// (or the matched disposition is "ask"), the request is surfaced on Events().
+//
+// It is an alias of chatcore.InputPolicy.
 type InputPolicy = chatcore.InputPolicy
 
-// InterruptResult is chatcore.InterruptResult.
+// InterruptResult is what Interrupt did.
+//
+// It is an alias of chatcore.InterruptResult.
 type InterruptResult = chatcore.InterruptResult
 
-// PermissionModeBlockedError is chatcore.PermissionModeBlockedError.
+// PermissionModeBlockedError is the concrete error behind
+// ErrPermissionModeBlockedByInput. It carries the client-facing
+// chat.InputRequest (NOT the internal turns.InputRequest): exactly the value
+// PendingInput returns and Answer accepts, so the documented
+// resolve-then-retry recovery round-trips without a type conversion the caller
+// cannot perform.
+//
+// Observed is the last posture read before the driver stopped pressing; it is
+// also returned as SetPermissionMode's string result.
+//
+// It is an alias of chatcore.PermissionModeBlockedError.
 type PermissionModeBlockedError = chatcore.PermissionModeBlockedError
 
-// ScreenAnchor is chatcore.ScreenAnchor.
+// ScreenAnchor is one identified screen pattern: the regex this package
+// matches with, and a stable id for it.
+//
+// The ids exist because a consumer that RECORDS which banner it saw needs a
+// name for it, and copying the regexes out to invent one is how a consumer
+// ends up tracking harness drift by hand. loom did exactly that: it mirrored
+// these patterns into internal/agenterr, pinned to v0.7.7, and by v0.10 held 4
+// of the 6 onboarding anchors — missing both of claude's OAuth sign-in walls —
+// with its copies unanchored where these are line-anchored.
+//
+// The id strings are a DOWNSTREAM CONTRACT. loom's
+// docs/adr/0002-authfailure-stays-terminal.md names them in its revisit
+// triggers, so a rename silently breaks the trigger it belongs to. Add anchors
+// freely; do not rename an existing id.
+//
+// It is an alias of chatcore.ScreenAnchor.
 type ScreenAnchor = chatcore.ScreenAnchor
 
-// Store is chatcore.Store.
+// Store persists chat-level session metadata and turn records.
+//
+// Store does NOT store transcript bodies. Harnesses persist their own
+// conversation logs (~/.codex/sessions/, ~/.claude/projects/); a future
+// pkg/transcript layer reads them for History reconstruction. Store
+// only holds the indexable metadata: who owns what, which chat session
+// maps to which harness session, what turn IDs have been issued, when
+// each turn started and finished.
+//
+// Implementations must be safe for concurrent use.
+//
+// It is an alias of chatcore.Store.
 type Store = chatcore.Store
 
 // Constants of chatcore.
 const (
-	RoleUser                  = chatcore.RoleUser
-	RoleAssistant             = chatcore.RoleAssistant
-	RoleSystem                = chatcore.RoleSystem
-	TurnStatePending          = chatcore.TurnStatePending
-	TurnStateStreaming        = chatcore.TurnStateStreaming
-	TurnStateComplete         = chatcore.TurnStateComplete
-	TurnStateErrored          = chatcore.TurnStateErrored
-	TurnStateInterrupted      = chatcore.TurnStateInterrupted
-	ReasonAuthRequired        = chatcore.ReasonAuthRequired
-	ReasonUsageLimited        = chatcore.ReasonUsageLimited
-	ReasonBillingWall         = chatcore.ReasonBillingWall
-	CodeAuthRequired          = chatcore.CodeAuthRequired
-	CodeUsageLimited          = chatcore.CodeUsageLimited
-	CodeBillingWall           = chatcore.CodeBillingWall
-	TransportTUI              = chatcore.TransportTUI
-	TransportStreamJSON       = chatcore.TransportStreamJSON
-	EventTurn                 = chatcore.EventTurn
-	EventInputRequest         = chatcore.EventInputRequest
-	EventInputResolved        = chatcore.EventInputResolved
-	EventExited               = chatcore.EventExited
-	EventRateLimit            = chatcore.EventRateLimit
-	RateLimitAllowed          = chatcore.RateLimitAllowed
-	RateLimitWarning          = chatcore.RateLimitWarning
-	RateLimitRejected         = chatcore.RateLimitRejected
-	RateLimitUnknown          = chatcore.RateLimitUnknown
-	ContainmentRecordVersion  = chatcore.ContainmentRecordVersion
-	HistorySourceTranscript   = chatcore.HistorySourceTranscript
-	HistorySourceStore        = chatcore.HistorySourceStore
-	DispositionAsk            = chatcore.DispositionAsk
-	DispositionAnswer         = chatcore.DispositionAnswer
-	DispositionDeny           = chatcore.DispositionDeny
-	InterruptStopped          = chatcore.InterruptStopped
-	InterruptCancelled        = chatcore.InterruptCancelled
-	InterruptNoTurn           = chatcore.InterruptNoTurn
-	InterruptTooLate          = chatcore.InterruptTooLate
+	RoleUser      = chatcore.RoleUser
+	RoleAssistant = chatcore.RoleAssistant
+	RoleSystem    = chatcore.RoleSystem
+	// TurnStatePending means the turn has been recorded but no output
+	// has streamed yet. Applies to assistant turns from the moment
+	// Send returns until the first byte is observed.
+	TurnStatePending = chatcore.TurnStatePending
+	// TurnStateStreaming means output is actively arriving. v1 does not
+	// surface per-delta events, so most assistant turns transition
+	// directly Pending → Complete.
+	TurnStateStreaming = chatcore.TurnStateStreaming
+	// TurnStateComplete means the turn finished cleanly — the adapter
+	// observed a turn-complete signal (Codex token footer, Claude Code
+	// thinking summary, or wrapper waiting_for_input).
+	TurnStateComplete = chatcore.TurnStateComplete
+	// TurnStateErrored means the turn ended in failure: the harness exited,
+	// or the adapter reported an unrecoverable error. Reason carries the
+	// detail.
+	TurnStateErrored = chatcore.TurnStateErrored
+	// TurnStateInterrupted means the turn was interrupted — by Interrupt, or
+	// at the harness's own terminal — and the harness acknowledged it. It is
+	// neither a success nor a failure (ADR-007). Text carries the partial
+	// reply when the harness had produced one; Reason says whether it stopped
+	// the turn or cancelled it before the first token, and who interrupted.
+	TurnStateInterrupted = chatcore.TurnStateInterrupted
+	// ReasonAuthRequired is the canonical Turn.Reason recorded when a turn ended in
+	// failure because the harness CLI is logged out / its login has expired
+	// (claude-code "Not logged in · Please run /login"; codex "401 Unauthorized" /
+	// "Not logged in"). The stable "auth_required:" prefix is a machine token
+	// consumers match to tell "renew the harness login" apart from a genuine task
+	// failure — instead of re-scraping the rendered screen themselves. Set only when
+	// a turn errored AND the terminal screen showed a logout banner (see
+	// Conversation.handleTurnsEvent); it explains a failure, it never completes one.
+	ReasonAuthRequired = chatcore.ReasonAuthRequired
+	// ReasonUsageLimited is the canonical Turn.Reason recorded when a turn produced no
+	// assistant reply because the harness subscription's usage/session window is
+	// exhausted — claude-code renders a wall ("You've hit your session limit · resets
+	// 10:20pm …") in place of a reply. Like ReasonAuthRequired the stable
+	// "usage_limit:" prefix is a machine token consumers match to tell a TRANSIENT
+	// quota outage (retry once the window resets) apart from a genuine task failure —
+	// so an orchestrator can reopen the task blamelessly instead of counting it toward
+	// a runaway/block guard. The specific reset time rides along in a trailing "(…)"
+	// detail. Set only at a turn's terminal point when the "reply" was in fact the wall
+	// (see Conversation.usageLimitRelabel).
+	ReasonUsageLimited = chatcore.ReasonUsageLimited
+	// ReasonBillingWall is the canonical Turn.Reason recorded when a turn failed
+	// because the account cannot be billed — a spent credit balance, an account on
+	// hold. Unlike the other two it is neither blameless nor self-healing: a quota
+	// window lifts on its own and an expired login is one command away, but nothing
+	// an orchestrator does will make the next turn succeed until a human pays. It
+	// exists so that fact can be NAMED instead of inferred from a rendered banner.
+	//
+	// Set only from a verdict the HARNESS itself recorded (see
+	// Conversation.apiErrorRelabel); no screen recogniser produces it. That is
+	// deliberate: the one screen-scrape wall detector that shipped in this fleet
+	// was removed after 11 detections with 0 true positives, all of them agent
+	// output quoting a banner, and a tag the harness wrote about its own API call
+	// cannot be quoted into existence by an agent.
+	ReasonBillingWall = chatcore.ReasonBillingWall
+	// CodeAuthRequired accompanies ReasonAuthRequired.
+	CodeAuthRequired = chatcore.CodeAuthRequired
+	// CodeUsageLimited accompanies ReasonUsageLimited.
+	CodeUsageLimited = chatcore.CodeUsageLimited
+	// CodeBillingWall accompanies ReasonBillingWall.
+	CodeBillingWall = chatcore.CodeBillingWall
+	// TransportTUI runs the harness on a PTY and reads its rendered screen.
+	// The zero value selects it.
+	TransportTUI = chatcore.TransportTUI
+	// TransportStreamJSON runs claude-code as `claude -p --input-format
+	// stream-json --output-format stream-json` on pipes and reads its protocol
+	// frames: turn results, retries, interrupts and message receipts arrive as
+	// frames, not as screen text (ADR-009). claude-code only.
+	TransportStreamJSON = chatcore.TransportStreamJSON
+	// EventTurn carries a Turn state transition. Turn is populated.
+	EventTurn = chatcore.EventTurn
+	// EventInputRequest signals the harness is blocked on an interactive
+	// prompt that needs an out-of-band answer. Input is populated; answer it
+	// with Conversation.Answer. Emitted only when no configured policy or
+	// handler resolved the request server-side.
+	EventInputRequest = chatcore.EventInputRequest
+	// EventInputResolved signals a previously-requested prompt is no longer
+	// pending (answered or dismissed). Input is populated with at least the
+	// resolved request's ID.
+	EventInputResolved = chatcore.EventInputResolved
+	// EventExited signals the harness process ended. Exit is populated. It
+	// follows the terminal event of the turn that was in flight, if any, and
+	// is the last event: Events() closes after it (ADR-008). Its Err is
+	// ErrHarnessSessionIDNotSaved when the harness session id never reached
+	// the Store.
+	EventExited = chatcore.EventExited
+	// EventRateLimit carries the harness's report of the account's usage
+	// limit. RateLimit is populated. Only the stream-json transport emits
+	// it: claude reports the limit of a claude.ai subscription account when
+	// it changes (ADR-009). It ends no turn and blocks nothing; a turn a
+	// wall refused still ends with its own Code and ResumeAt.
+	EventRateLimit = chatcore.EventRateLimit
+	// RateLimitAllowed: under the limit.
+	RateLimitAllowed = chatcore.RateLimitAllowed
+	// RateLimitWarning: still allowed, close to the limit (claude's
+	// allowed_warning).
+	RateLimitWarning = chatcore.RateLimitWarning
+	// RateLimitRejected: over the limit; requests are refused until the
+	// window resets.
+	RateLimitRejected = chatcore.RateLimitRejected
+	// RateLimitUnknown: the harness reported a status this build does not
+	// know. It is reported as unknown rather than guessed.
+	RateLimitUnknown = chatcore.RateLimitUnknown
+	// ContainmentRecordVersion is the schema of SessionContainment. Readers
+	// refuse records of any other version rather than guess at their meaning.
+	ContainmentRecordVersion = chatcore.ContainmentRecordVersion
+	// HistorySourceTranscript means the turns were read from the harness's own
+	// persisted session log (turns.TranscriptReader) — authoritative and
+	// complete, with no TUI chrome.
+	HistorySourceTranscript = chatcore.HistorySourceTranscript
+	// HistorySourceStore means the turns came from the chat store fallback:
+	// user-side text plus whatever screen-derived assistant text the watcher
+	// captured. Used when the adapter can't read transcripts, the harness
+	// session id is not known, or its transcript does not exist yet.
+	HistorySourceStore = chatcore.HistorySourceStore
+	// DispositionAsk surfaces the request to the client (the default).
+	DispositionAsk = chatcore.DispositionAsk
+	// DispositionAnswer auto-answers with Disposition.OptionID / Text.
+	DispositionAnswer = chatcore.DispositionAnswer
+	// DispositionDeny auto-answers with the request's "deny" option
+	// (declining the prompt; for a trust dialog this exits the harness).
+	DispositionDeny = chatcore.DispositionDeny
+	// InterruptStopped: the harness stopped the turn after it had produced
+	// output. The turn ended TurnStateInterrupted with its partial reply.
+	InterruptStopped = chatcore.InterruptStopped
+	// InterruptCancelled: the harness cancelled the turn before its first
+	// token. The turn ended TurnStateInterrupted with no text, and the prompt
+	// the harness put back in its composer was cleared.
+	InterruptCancelled = chatcore.InterruptCancelled
+	// InterruptNoTurn: no turn was in flight. Nothing was written.
+	InterruptNoTurn = chatcore.InterruptNoTurn
+	// InterruptTooLate: the turn ended on its own before the harness took the
+	// interrupt, and keeps that outcome.
+	InterruptTooLate = chatcore.InterruptTooLate
+	// DiagTranscriptUnavailable is the swallowed-prompt diag for a harness that is
+	// not persisting a transcript at all, which is a different fact from "the
+	// rollout held no assistant output": no rollout CAN exist, so no rescue was
+	// ever possible and the screen-only verdict is unappealable by construction.
+	//
+	// The cause is a nested launch — the spawned claude inherited CLAUDECODE /
+	// CLAUDE_CODE_CHILD_SESSION from its parent. pkg/harnessenv is the fix at the
+	// launch site. (PUPPET-671)
 	DiagTranscriptUnavailable = chatcore.DiagTranscriptUnavailable
 )
 
 // Variables of chatcore. Each holds the same value as its original, so errors.Is
 // and comparisons match either.
 var (
-	ErrInvalidOptions               = chatcore.ErrInvalidOptions
-	ErrUnknownHarness               = chatcore.ErrUnknownHarness
-	ErrNoControl                    = chatcore.ErrNoControl
-	ErrTurnInFlight                 = chatcore.ErrTurnInFlight
-	ErrClosed                       = chatcore.ErrClosed
-	ErrInputPending                 = chatcore.ErrInputPending
-	ErrAuthRequired                 = chatcore.ErrAuthRequired
-	ErrUnrecognizedDialog           = chatcore.ErrUnrecognizedDialog
-	ErrHarnessBusy                  = chatcore.ErrHarnessBusy
-	ErrInterruptUnsupported         = chatcore.ErrInterruptUnsupported
-	ErrInterruptUnconfirmed         = chatcore.ErrInterruptUnconfirmed
-	ErrComposerNotCleared           = chatcore.ErrComposerNotCleared
-	ErrExited                       = chatcore.ErrExited
-	ErrEventTooLarge                = chatcore.ErrEventTooLarge
-	ErrUndelivered                  = chatcore.ErrUndelivered
-	ErrHarnessSessionIDNotSaved     = chatcore.ErrHarnessSessionIDNotSaved
-	ErrNoInputPending               = chatcore.ErrNoInputPending
-	ErrStaleInputRequest            = chatcore.ErrStaleInputRequest
-	ErrUnknownOption                = chatcore.ErrUnknownOption
-	ErrNotMultiSelect               = chatcore.ErrNotMultiSelect
-	ErrConflictingAnswer            = chatcore.ErrConflictingAnswer
-	ErrQuitUnsupported              = chatcore.ErrQuitUnsupported
-	ErrResumeUnsupported            = chatcore.ErrResumeUnsupported
-	ErrNoHarnessSession             = chatcore.ErrNoHarnessSession
-	ErrHarnessSessionInUse          = chatcore.ErrHarnessSessionInUse
-	ErrContainmentUnavailable       = chatcore.ErrContainmentUnavailable
-	ErrInputUnresolved              = chatcore.ErrInputUnresolved
-	ErrPickerUnsupported            = chatcore.ErrPickerUnsupported
-	ErrPickerTimeout                = chatcore.ErrPickerTimeout
-	ErrPermissionModeUnsupported    = chatcore.ErrPermissionModeUnsupported
-	ErrPermissionModeUnreachable    = chatcore.ErrPermissionModeUnreachable
-	ErrPermissionModeSwitchFailed   = chatcore.ErrPermissionModeSwitchFailed
-	ErrPermissionModeIndeterminate  = chatcore.ErrPermissionModeIndeterminate
+	// ErrInvalidOptions is returned by Open when Options is incomplete
+	// or inconsistent.
+	ErrInvalidOptions = chatcore.ErrInvalidOptions
+	// ErrUnknownHarness is returned by Open when Options.Harness names
+	// no registered adapter.
+	ErrUnknownHarness = chatcore.ErrUnknownHarness
+	// ErrNoControl is returned by Send, Answer and SetPermissionMode when no
+	// caller holds control. Acquire via AcquireControl first; control is
+	// advisory (see AcquireControl).
+	ErrNoControl = chatcore.ErrNoControl
+	// ErrTurnInFlight is returned by Send when a previous assistant
+	// turn is still Pending or Streaming. Wait for it to complete (or
+	// error) before sending the next message.
+	ErrTurnInFlight = chatcore.ErrTurnInFlight
+	// ErrClosed is returned by methods called after Close.
+	ErrClosed = chatcore.ErrClosed
+	// ErrInputPending is returned by Send when the harness is blocked on an
+	// interactive prompt awaiting an external answer. Answer it (or wait for
+	// EventInputResolved) before sending. Not returned when a policy or
+	// handler is auto-answering the prompt — in that case Send waits.
+	ErrInputPending = chatcore.ErrInputPending
+	// ErrAuthRequired is returned by waitReadyForSend when the harness cannot
+	// reach a ready prompt because it is sitting in a logged-out / not-onboarded
+	// screen (a sign-in wizard, login-method picker, or re-auth banner) that
+	// never clears on its own. Send catches it and records a terminal assistant
+	// turn carrying ReasonAuthRequired, so the onboarding case surfaces the same
+	// canonical signal as the completion- and error-path cases instead of
+	// hanging to the run deadline.
+	ErrAuthRequired = chatcore.ErrAuthRequired
+	// ErrUnrecognizedDialog is returned by waitReadyForSend when the harness is
+	// sitting on a blocking dialog whose choices this build cannot parse: the
+	// anchor is up and choice-shaped lines are painted, but no answerable option
+	// set could be built (claudecode.DetectUnparseable). Like ErrAuthRequired
+	// the condition never clears on its own — nothing can answer the dialog — so
+	// Send fails in seconds with a named cause instead of typing the prompt into
+	// the menu or waiting out the deadline. It fires only after the state
+	// survives a re-check of the live screen, because a half-painted frame can
+	// look unparseable for one repaint.
+	ErrUnrecognizedDialog = chatcore.ErrUnrecognizedDialog
+	// ErrHarnessBusy is returned by Send when the harness was still working
+	// when ctx ended: Send types nothing into a harness that is mid-turn — its
+	// status line or footer says so (turns.BusyDetector) — and waits instead
+	// for it to settle, continuously, for the end-of-turn confirmation window.
+	// The error also wraps ctx.Err(). Nothing was typed and no turn recorded.
+	ErrHarnessBusy = chatcore.ErrHarnessBusy
+	// ErrInterruptUnsupported is returned by Interrupt when the harness adapter
+	// cannot interrupt a turn (it does not implement turns.Interrupter).
+	ErrInterruptUnsupported = chatcore.ErrInterruptUnsupported
+	// ErrInterruptUnconfirmed is returned by Interrupt when ctx ended before
+	// the harness acknowledged the interrupt. The interrupt keys may have gone
+	// out; the turn stays in flight and ends as the harness ends it. The error
+	// also wraps ctx.Err().
+	ErrInterruptUnconfirmed = chatcore.ErrInterruptUnconfirmed
+	// ErrComposerNotCleared is returned when the harness's composer still held
+	// text after chat pressed the keys that empty it: by Send, which then types
+	// nothing and records no turn, and by Interrupt alongside
+	// InterruptCancelled, when the prompt the harness put back would not clear.
+	ErrComposerNotCleared = chatcore.ErrComposerNotCleared
+	// ErrExited is returned by Send once the harness process has ended
+	// (EventExited): nothing can take the prompt.
+	ErrExited = chatcore.ErrExited
+	// ErrEventTooLarge rides, as ConversationEvent.Err, on an event whose
+	// payload exceeded the delivery queue's byte bound: it is delivered
+	// without its turn's text, which History still holds.
+	ErrEventTooLarge = chatcore.ErrEventTooLarge
+	// ErrUndelivered is returned by Close when its context ended before every
+	// event was delivered to OnEvent and Events(). The remaining events are
+	// dropped, and State().Delivery counts them.
+	ErrUndelivered = chatcore.ErrUndelivered
+	// ErrHarnessSessionIDNotSaved reports a harness session id the
+	// conversation knows but could not save to the Store, wrapping the
+	// Store's error: the stored record has no id, so Reopen cannot resume the
+	// harness session and History after the conversation ends reads no
+	// transcript. It is State().HarnessSessionIDErr while the conversation
+	// keeps retrying, and EventExited's Err when the id never reached the
+	// Store.
+	ErrHarnessSessionIDNotSaved = chatcore.ErrHarnessSessionIDNotSaved
+	// ErrNoInputPending is returned by Answer when no interactive prompt is
+	// currently awaiting an answer.
+	ErrNoInputPending = chatcore.ErrNoInputPending
+	// ErrStaleInputRequest is returned by Answer when the supplied request
+	// ID does not match the prompt currently on screen (it changed or was
+	// already resolved).
+	ErrStaleInputRequest = chatcore.ErrStaleInputRequest
+	// ErrUnknownOption is returned by Answer when the supplied option id or
+	// alias matches none of the request's options.
+	ErrUnknownOption = chatcore.ErrUnknownOption
+	// ErrNotMultiSelect is returned by Answer when OptionIDs is supplied for a
+	// request whose MultiSelect flag is false.
+	ErrNotMultiSelect = chatcore.ErrNotMultiSelect
+	// ErrConflictingAnswer is returned by Answer when both OptionID and
+	// OptionIDs are set (the singular and plural selection channels conflict).
+	ErrConflictingAnswer = chatcore.ErrConflictingAnswer
+	// ErrQuitUnsupported is returned by Quit when the harness adapter exposes
+	// no graceful-quit sequence (it does not implement turns.Quitter). The
+	// caller should fall back to Close, which signals the process.
+	ErrQuitUnsupported = chatcore.ErrQuitUnsupported
+	// ErrResumeUnsupported is returned by Open/Reopen when the harness adapter
+	// cannot build resume args (it does not implement turns.SessionResumer).
+	// Call sites wrap it with the harness name; errors.Is still matches.
+	ErrResumeUnsupported = chatcore.ErrResumeUnsupported
+	// ErrNoHarnessSession is returned by Reopen when the stored session carries
+	// no harness session id (never captured, so there is nothing to resume).
+	// Call sites wrap it with the session id; errors.Is still matches.
+	ErrNoHarnessSession = chatcore.ErrNoHarnessSession
+	// ErrHarnessSessionInUse is returned by Open, wrapped with ErrInvalidOptions,
+	// when Options.HarnessSessionID names a session the harness already has a
+	// transcript for — or one whose transcript could not be read to prove it
+	// unused. A fresh launch under it would be refused by the harness (claude) or
+	// would silently continue it (pi). Resume that session instead.
+	ErrHarnessSessionInUse = chatcore.ErrHarnessSessionInUse
+	// ErrContainmentUnavailable is returned when a contained conversation cannot
+	// be created or resumed: the Store does not implement ContainmentStore, the
+	// record is not resumable, its private state is gone, or its profile is no
+	// longer available. It wraps ErrInvalidOptions.
+	ErrContainmentUnavailable = chatcore.ErrContainmentUnavailable
+	// ErrInputUnresolved is the sentinel behind *InputUnresolvedError. An
+	// auto-answer was written to a blocking prompt and the prompt did not act on
+	// it — the harness is wedged on a dialog no keystroke this layer knows how to
+	// send will clear.
+	//
+	// It exists so a caller can classify the failure without depending on the
+	// concrete type:
+	//
+	//	if errors.Is(err, chat.ErrInputUnresolved) { ... }
+	//
+	// and recover the evidence with errors.As when it wants the screen.
+	ErrInputUnresolved = chatcore.ErrInputUnresolved
+	// ErrPickerUnsupported is returned by DiscoverModels for a harness whose
+	// `/model` picker is not recognized by the parser — anything but
+	// claude-code/claude and codex (mirrors models.ParseModelPicker's header
+	// gate, which yields [] for e.g. pi/opencode/generic). Call sites wrap it
+	// with the harness name; errors.Is still matches.
+	ErrPickerUnsupported = chatcore.ErrPickerUnsupported
+	// ErrPickerTimeout is returned by DiscoverModels when the `/model` picker
+	// never rendered a parseable screen within the render budget
+	// (DiscoverModelsOptions.RenderTimeout). This is the render-deadline arm,
+	// layered on top of the readiness wait — distinct from the auth fast-fail.
+	ErrPickerTimeout = chatcore.ErrPickerTimeout
+	// ErrPermissionModeUnsupported is returned by SetPermissionMode for a
+	// harness with no permission-mode cycle this driver can drive — anything
+	// but claude/claude-code and codex (opencode, pi, generic). Call sites wrap
+	// it with the harness name; errors.Is still matches.
+	ErrPermissionModeUnsupported = chatcore.ErrPermissionModeUnsupported
+	// ErrPermissionModeUnreachable is returned by SetPermissionMode when the
+	// target is not in the harness's reachable set. It is the single code path
+	// that also rejects the LAUNCH-ONLY spellings — claude's "dontAsk", codex's
+	// "read-only"/"workspace-write"/"danger-full-access", and every canonical
+	// rung other than "plan" on codex (whose cycle drives the collaboration
+	// axis only) — and the "bypass on a session that was not launched
+	// bypass-enabled" case, which fast-fails before a single keystroke is
+	// written.
+	ErrPermissionModeUnreachable = chatcore.ErrPermissionModeUnreachable
+	// ErrPermissionModeSwitchFailed is returned by SetPermissionMode when the
+	// target was never observed within the press bound AND the starting posture
+	// was successfully restored. The session is where it started; the switch
+	// simply did not happen.
+	ErrPermissionModeSwitchFailed = chatcore.ErrPermissionModeSwitchFailed
+	// ErrPermissionModeIndeterminate is returned by SetPermissionMode when the
+	// switch failed AND restoration also failed AND the last observed posture is
+	// strictly MORE PERMISSIVE than the starting one (wrapper.MorePermissive —
+	// unknown values are never more permissive, so this fails closed). It is the
+	// loud signal that the session was left looser than the caller found it.
+	ErrPermissionModeIndeterminate = chatcore.ErrPermissionModeIndeterminate
+	// ErrPermissionModeBlockedByInput is returned by SetPermissionMode when a
+	// BLOCKING interactive request (most importantly claude's bypass-acceptance
+	// dialog) appeared while cycling. The driver stops pressing immediately
+	// rather than typing Shift+Tab into an open modal.
+	//
+	// The concrete error is a *PermissionModeBlockedError carrying the
+	// chat.InputRequest — the client-facing shape PendingInput returns and
+	// Answer round-trips. Match it with errors.Is for the sentinel and
+	// errors.As for the request:
+	//
+	//	var blocked *chat.PermissionModeBlockedError
+	//	if errors.As(err, &blocked) {
+	//	    _ = conv.Answer(ctx, blocked.Request.ID, chat.InputAnswer{OptionID: "1"})
+	//	    mode, err = conv.SetPermissionMode(ctx, "bypass") // retry, token still held
+	//	}
 	ErrPermissionModeBlockedByInput = chatcore.ErrPermissionModeBlockedByInput
-	ErrCodexPlanRefusedBusy         = chatcore.ErrCodexPlanRefusedBusy
+	// ErrCodexPlanRefusedBusy is returned by SetPermissionMode(ctx, "plan") on
+	// codex when codex kept refusing the `/plan` command with
+	// "'/plan' is disabled while a task is in progress." for every one of
+	// codexPlanRetryAttempts submissions. Startup MCP-server boot counts as "a
+	// task in progress" while the `›` composer is already painted, so
+	// prompt-readiness is not a sufficient gate and this refusal — not
+	// ErrTurnInFlight — is the load-bearing guard on codex.
+	//
+	// It is ALSO returned, wrapped around ctx.Err(), when the CALLER'S ctx ended
+	// the drive after at least one refusal had been seen. The retry bound is an
+	// attempt count, so ctx is the only wall clock left (see codexEnterPlan): a
+	// caller whose ctx is shorter than the worst-case drive would otherwise get a
+	// bare context error and lose the one diagnosis whose remedy is "wait". Both
+	// sentinels match under errors.Is, so a caller should check ctx.Err() /
+	// errors.Is(err, context.Canceled) FIRST — a deliberate cancellation is not a
+	// busy codex, and the "wait for the task to finish, then retry" remedy does
+	// not apply to it.
+	ErrCodexPlanRefusedBusy = chatcore.ErrCodexPlanRefusedBusy
 )
 
-// DeleteContainmentState calls chatcore.DeleteContainmentState.
+// DeleteContainmentState removes the private state of a stored contained
+// conversation: it first ends whatever the conversation's last launch left in
+// its recorded cgroup, then deletes the directory and marks the record, which
+// can no longer be resumed. Deleting state a launch still uses is refused.
+//
+// It forwards to chatcore.DeleteContainmentState.
 func DeleteContainmentState(ctx context.Context, store Store, sessionID string) error {
 	return chatcore.DeleteContainmentState(ctx, store, sessionID)
 }
 
-// Open calls chatcore.Open.
+// Open starts a fresh harness session, wires the screen + turn watcher, and
+// returns a live Conversation. To resume a prior harness session instead, set
+// Options.Resume (or use Reopen with a stored chat session id).
+//
+// It forwards to chatcore.Open.
 func Open(ctx context.Context, opts Options) (*Conversation, error) {
 	return chatcore.Open(ctx, opts)
 }
 
-// Reopen calls chatcore.Reopen.
+// Reopen resumes a previously-stored chat session against its harness's own
+// persisted session, re-attaching a fresh live Conversation. It looks up the
+// stored record by SessionID, requires it to carry a harness session id, and
+// launches the harness with the adapter's resume args spliced in. Unlike Open
+// it does NOT create a new store record — the record already exists.
+//
+// It forwards to chatcore.Reopen.
 func Reopen(ctx context.Context, opts ReopenOptions) (*Conversation, error) {
 	return chatcore.Reopen(ctx, opts)
 }
 
-// DiscoverModels calls chatcore.DiscoverModels.
+// DiscoverModels launches the harness on an ephemeral memstore-backed session,
+// probes its `/model` picker read-only, and returns the models it lists. It is
+// read-only: it never selects a model — after writing `/model` the picker is
+// left open, but because the session is memstore-backed and Close'd immediately
+// in the defer, no Escape/cleanup keystroke is required.
+//
+// It gates on readiness up front (so an unauthenticated CLI fast-fails with
+// ErrAuthRequired rather than hanging to the render deadline), then writes
+// `/model` and polls the rendered screen against models.ParseModelPicker until
+// it yields a non-empty list or the render budget elapses.
+//
+// Error contract — three distinct outcomes:
+//   - ErrPickerUnsupported: the harness has no parseable picker (not
+//     claude-code/claude or codex).
+//   - ErrAuthRequired: the CLI is logged out / not onboarded (fast-fail).
+//   - ErrPickerTimeout: the picker never rendered within RenderTimeout.
+//
+// It forwards to chatcore.DiscoverModels.
 func DiscoverModels(ctx context.Context, opts DiscoverModelsOptions) ([]models.Info, error) {
 	return chatcore.DiscoverModels(ctx, opts)
 }
 
-// AuthAnchors calls chatcore.AuthAnchors.
+// AuthAnchors returns the screen anchors whose presence means the harness
+// cannot produce output until a human authenticates — onboarding wizard first,
+// then logged-out banner, which is authRequired's own precedence, so a caller
+// recording the FIRST hit names the arm this package would have taken.
+//
+// A harness this package has no banner set for returns nil. The empty string
+// returns every harness's anchors, for a caller that describes a screen
+// without knowing which harness drew it.
+//
+// It forwards to chatcore.AuthAnchors.
 func AuthAnchors(harness string) []ScreenAnchor {
 	return chatcore.AuthAnchors(harness)
 }
 
-// DialogAnchors calls chatcore.DialogAnchors.
+// DialogAnchors returns the literal lines a BLOCKING dialog paints — a
+// folder-trust prompt, a bypass-permissions confirmation. A screen showing one
+// is about a dialog, not a login, which is the distinction a caller recording
+// evidence needs in order to tell a real auth wall from a verdict taken over a
+// modal. Nil for a harness with no known dialogs. The empty string returns
+// every registered harness's anchors (turns.DialogAnchorer), for a caller that
+// describes a screen without knowing which harness drew it.
+//
+// It forwards to chatcore.DialogAnchors.
 func DialogAnchors(harness string) []string {
 	return chatcore.DialogAnchors(harness)
 }
