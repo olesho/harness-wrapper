@@ -213,12 +213,16 @@ func TestSend_BusyUntilContextEndsIsErrHarnessBusy(t *testing.T) {
 
 // The sub-agent flicker — footer and spinner gone for one frame mid-work —
 // is shorter than the confirmation window, so it never opens the gate.
+//
+// The window is widened from the package's 120 ms test default to 1 s here:
+// the flicker is one 60 ms frame of a child process, and on a host saturated
+// by a full parallel test run that frame alone was seen to outlast 120 ms.
 func TestSend_FlickerDoesNotOpenTheGate(t *testing.T) {
 	script := fakeharness.New("claude-code").ComposerBox().Idle().
 		Working(0, "Working").MarkerFlicker(60, "Baked", "1s", "exploring").Working(60, "Working").
 		Flicker(60, "exploring").Working(60, "Working").SettleIdle(60, "settled").
 		AwaitSubmit().Reply(40, "answered", "Brewed", "2s").StayAliveUntilStopped().Build()
-	conv := openFake(t, script)
+	conv := openFake(t, script, func(o *Options) { o.markerGap = time.Second })
 	awaitScreen(t, conv, "Working…")
 	sendOneTurn(t, conv, "go")
 	if !strings.Contains(conv.screen.Snapshot().Text, "settled") {
