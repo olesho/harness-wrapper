@@ -51,9 +51,13 @@ type session struct {
 	heard []string
 	// loadedAt is, for a loaded Session, where its record ended when it
 	// opened.
-	loadedAt  int64
-	ended     map[string]contract.InterruptOutcome // inputs whose turns ended: what an interrupt now finds
-	block     *contract.Block
+	loadedAt int64
+	ended    map[string]contract.InterruptOutcome // inputs whose turns ended: what an interrupt now finds
+	block    *contract.Block
+	// endBlock, set by fail before it ends a turn, closes the gate in the
+	// same step that ends the turn: the Session goes from working straight
+	// to blocked, never idle in between.
+	endBlock  *contract.Block
 	prompt    *contract.PromptInfo
 	answered  map[string]string // prompt id → the option it took
 	closing   bool
@@ -936,16 +940,12 @@ func (s *session) fail(t *turn, code int) {
 		class, block = contract.ErrorBilling, contract.BlockBilling
 	}
 	_, _ = s.record(contract.NewObservation(contract.KindAPIError, "e-"+t.in.InputID, contract.OriginRecord, time.Now(), contract.APIErrorData{Class: class, HTTPStatus: code}), t.in.InputID)
-	s.end(t, contract.TurnErrored, "", &contract.TurnError{Class: class, HTTPStatus: code, ResumeAt: resume}, "")
 	if block != "" {
 		s.mu.Lock()
-		if s.phase == contract.PhaseIdle {
-			s.block = &contract.Block{Reason: block, ResumeAt: resume}
-			s.phase = contract.PhaseBlocked
-		}
+		s.endBlock = &contract.Block{Reason: block, ResumeAt: resume}
 		s.mu.Unlock()
-		s.live(contract.KindBlocked, s.liveKey(), "", contract.Block{Reason: block, ResumeAt: resume})
 	}
+	s.end(t, contract.TurnErrored, "", &contract.TurnError{Class: class, HTTPStatus: code, ResumeAt: resume}, "")
 }
 
 // unblockLocked opens the gate again once a known resume time passed.
@@ -964,6 +964,7 @@ func (s *session) end(t *turn, outcome contract.TurnOutcome, text string, terr *
 	data := contract.TurnEndedData{Outcome: outcome, Text: truncate(text), Error: terr}
 	s.mu.Lock()
 	if s.turn != t || s.phase == contract.PhaseExited {
+		s.endBlock = nil
 		s.mu.Unlock()
 		return
 	}
@@ -976,12 +977,17 @@ func (s *session) end(t *turn, outcome contract.TurnOutcome, text string, terr *
 		_, _ = s.record(contract.NewObservation(contract.KindTurnEnded, in, contract.OriginRecord, time.Now(), data), in)
 	}
 	s.mu.Lock()
+	var blocked *contract.Block
 	if s.turn == t {
 		s.turn = nil
 		if s.phase != contract.PhaseExited {
 			s.phase = contract.PhaseIdle
+			if s.endBlock != nil {
+				s.block, s.phase, blocked = s.endBlock, contract.PhaseBlocked, s.endBlock
+			}
 		}
 	}
+	s.endBlock = nil
 	if intOutcome == "" {
 		intOutcome = contract.InterruptTooLate
 	}
@@ -989,6 +995,9 @@ func (s *session) end(t *turn, outcome contract.TurnOutcome, text string, terr *
 	// The harness takes its own work up once an input's turn completes.
 	s.rest = outcome != contract.TurnCompleted
 	s.mu.Unlock()
+	if blocked != nil {
+		s.live(contract.KindBlocked, s.liveKey(), "", *blocked)
+	}
 	select {
 	case t.outcome <- intOutcome:
 	default:
