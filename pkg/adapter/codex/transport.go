@@ -50,7 +50,9 @@ import (
 // until an input's turn ends or the thread resumes, so the input's turn is
 // the input's alone. Should codex start one in the instant before it reads
 // the input all the same, it folds the input into that turn: the turn is then
-// the input's from its user message on, and codex's own ends there.
+// the input's from its user message on, and codex's own ends there. An input
+// such a turn drops — it was interrupted first — is sent again; codex keeps
+// no record of a client id, so one a turn may still hold never is.
 
 const (
 	// frameMax bounds one stdout line; a longer one is skipped whole.
@@ -78,8 +80,10 @@ const (
 	chainWait = 3 * time.Second
 	// resendWait is how long an input codex dropped — it was queued for a
 	// turn of codex's own, which was interrupted first — waits before it is
-	// sent again; one queued for a turn that ended otherwise waits
-	// resendPatience, for codex to start it.
+	// sent again. One queued for a turn that ended otherwise, never taking it
+	// in, waits resendPatience for codex to start it, and then ends errored:
+	// codex takes such an input in before the turn ends (probes/codexturns),
+	// so it is the transport that missed it, or a codex that holds it still.
 	resendWait     = time.Second
 	resendPatience = 5 * time.Second
 	// nativeWait bounds the read of what codex keeps of the thread beside
@@ -160,6 +164,9 @@ type inputState struct {
 	// waits for that.
 	resent bool
 	again  *time.Timer
+	// held: a turn of codex's own held it and ended other than interrupted,
+	// never taking it in, so codex may hold it still: it is never sent again.
+	held bool
 }
 
 // runState is the turn codex is on.
@@ -681,6 +688,7 @@ func (t *transport) onNotification(method string, raw json.RawMessage) {
 			// interrupted turn drops what it held.
 			switch {
 			case e.Outcome != contract.TurnInterrupted:
+				in.held = true
 				t.resendLocked(in, resendPatience)
 			case in.interrupt:
 				t.in = nil
@@ -733,8 +741,8 @@ func (t *transport) onNotification(method string, raw json.RawMessage) {
 	}
 }
 
-// resendLocked arranges for an input codex no longer holds to be sent again,
-// once wait has passed with codex starting no turn for it.
+// resendLocked arranges for an input codex no longer holds to be sent again —
+// or, held, to end — once wait has passed with codex starting no turn for it.
 func (t *transport) resendLocked(in *inputState, wait time.Duration) {
 	if in.again != nil {
 		in.again.Stop()
@@ -743,7 +751,8 @@ func (t *transport) resendLocked(in *inputState, wait time.Duration) {
 }
 
 // resend sends an input codex dropped again; one an interrupt was asked of
-// meanwhile never ran, and ends cancelled.
+// meanwhile never ran, and ends cancelled. One codex may hold still ends
+// errored instead: codex would run it twice.
 func (t *transport) resend(in *inputState) {
 	t.rmu.Lock()
 	defer t.rmu.Unlock()
@@ -765,6 +774,12 @@ func (t *transport) resend(in *inputState) {
 		t.in = nil
 		t.mu.Unlock()
 		t.report(adapter.Event{Kind: adapter.Ended, Native: in.native, Outcome: contract.TurnCancelled})
+		return
+	}
+	if in.held {
+		t.in = nil
+		t.mu.Unlock()
+		t.report(adapter.Event{Kind: adapter.Ended, Native: in.native, Outcome: contract.TurnErrored, Error: &contract.TurnError{Class: contract.ErrorInternal}})
 		return
 	}
 	in.resent, in.answered, in.turnID = true, false, ""

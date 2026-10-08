@@ -105,6 +105,14 @@ binds an input to its turn by the id `turn/start` answered with, or by its `user
 - Should codex fold an input into a goal turn all the same, the goal turn ends where it took the
   input in and the rest is the input's turn. An input dropped with an interrupted goal turn is
   sent again, or ends `cancelled` when the interrupt was of the input.
+- A goal turn that ends otherwise without taking in the input it held is what codex never does: the
+  adapter missed the input's message, or a codex holds the input still. Sending it again could run
+  it twice, so the input is not sent again; unless a turn takes it in within a few seconds, it ends
+  `errored` (`internal`).
+- A goal turn codex starts in the instant before it reads an input is answered like the input's own
+  turn. When its `turn/started` comes before the answer, the adapter takes it as the input's from
+  its start: live, what codex said in it before the input's message is the input's turn's. The
+  rollout tells them apart.
 - Parking closes stdin when codex is on no input's turn, so a goal turn ends cleanly in the
   rollout.
 - The rollout cannot vouch for a goal, so the profile keeps what codex last said of the thread's
