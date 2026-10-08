@@ -75,14 +75,15 @@ func errorClass(name string) contract.ErrorClass {
 // failure is the contract's account of a failed turn: its class, its HTTP
 // status, and — at a usage wall — when the account can work again, from the
 // latest rate-limit report, or else from the message's "try again at 9:58
-// PM".
+// PM". That is a time of day in the Host's zone, whatever now's own: the
+// live transport's now is local, a record's entry time UTC.
 func failure(e turnError, limits *rateLimits, now time.Time) *contract.TurnError {
 	name, status := errorInfo(e.CodexErrorInfo)
 	te := &contract.TurnError{Class: errorClass(name), HTTPStatus: status}
 	if te.Class == contract.ErrorUsageLimit {
 		if at := limits.resumeAt(); at != nil {
 			te.ResumeAt = at
-		} else if at, ok := tryAgainAt(e.Message, now); ok {
+		} else if at, ok := tryAgainAt(e.Message, now.In(time.Local)); ok {
 			at = at.UTC()
 			te.ResumeAt = &at
 		}
