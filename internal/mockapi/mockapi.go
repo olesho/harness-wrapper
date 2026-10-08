@@ -172,12 +172,13 @@ func textOf(raw json.RawMessage) string {
 	return strings.Join(out, "\n")
 }
 
-// keywords are the words that start a scenario line, on either API. GOAL and
-// MKGOAL are Responses-only (responses.go): the Messages API recognises the
-// line as a scenario but has no case for it, so it answers "ok".
+// keywords are the words that start a scenario line, on either API. GOAL,
+// MKGOAL and FAILSLOW are Responses-only (responses.go): the Messages API
+// recognises the line as a scenario but has no case for it, so it answers
+// "ok".
 var keywords = map[string]bool{
 	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
-	"GOAL": true, "MKGOAL": true,
+	"GOAL": true, "MKGOAL": true, "FAILSLOW": true,
 }
 
 // route finds the scenario in the last user message: its keyword line, or

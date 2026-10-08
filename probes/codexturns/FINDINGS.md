@@ -1,11 +1,12 @@
 # Codex's own turns
 
-**Probed:** codex 0.144.5, the version hw pins, over `codex app-server` with no adapter between,
-against `internal/mockapi`, on 2026-09-30, macOS arm64. Rerun: [README.md](README.md).
+**Probed:** codex 0.160.0, the version hw pins, over `codex app-server` with no adapter between,
+against `internal/mockapi`, on 2026-10-08, macOS arm64. First probed on codex 0.144.5 (2026-09-30);
+what 0.160.0 does otherwise is marked. Rerun: [README.md](README.md).
 
 **Question:** a thread with an active goal makes codex start turns nobody sent an input for. What
-are those turns to a client, what happens to an input sent while one runs, and what does a thread
-keep of its goal when codex stops?
+are those turns to a client, what happens to an input sent while one runs — at its very end, into
+one that fails, sent twice — and what does a thread keep of its goal when codex stops?
 
 ## A goal starts turns
 
@@ -45,23 +46,36 @@ active. The adapter assumes one may, and waits a few seconds for it before the n
 
 ## An input sent while a turn runs
 
-`turn/start` during a running turn does not start a turn. codex answers at once with a turn id that
-**never starts**, and folds the input into the running turn at that turn's next model call: a
-`userMessage` item with the input's `clientUserMessageId`, whose `turnId` is the running turn, and
-a `user_message` event in that turn's rollout. The model then answers the input inside the goal
-turn, and `turn/completed` is the goal turn's.
+`turn/start` during a running turn does not start a turn. codex answers at once with **the running
+turn's id** — 0.144.5 answered with a turn id that never started — and folds the input into the
+running turn at that turn's next model call: a `userMessage` item with the input's
+`clientUserMessageId`, whose `turnId` is the running turn, and the user message in that turn's
+rollout (0.157 on records the client id on its `item_completed`, not on `user_message`). The model
+then answers the input inside that turn, and `turn/completed` is that turn's.
 
-If the running turn is **interrupted** before it takes the input in, the input is dropped: no turn
-starts for it, no model request carries it, and the rollout never holds it.
+- **At a turn's end**, an input is never held past it. Swept a millisecond at a time across the
+  instant the turn's last answer gives way to its end, an input codex answers with the running
+  turn's id is taken in by that turn — which goes on to another model call for it — and one it
+  answers with another id has that turn: a turn of its own, or the goal's next turn. Here the switch
+  fell 3 to 5 ms after the last `agentMessage` completed; the same held across a goal turn's end.
+- **Into a turn that fails** past its retries, the input is put in that turn as it fails: its user
+  message is the failed turn's, no model request carries it, and no turn starts for it after.
+- If the running turn is **interrupted** before it takes the input in, the input is dropped: no turn
+  starts for it, no model request carries it, and the rollout never holds it.
+- **A client id is no key.** The same input sent twice under one `clientUserMessageId` is taken in
+  twice, and one whose turn ran, sent again, runs again: codex deduplicates nothing.
 
 So a client that wants an input answered by a turn of its own must not send it while a goal turn
-runs, and must not send it in the instant before one starts.
+runs, and must not send it in the instant before one starts. And since codex answers a folded input
+and an input's own turn alike, with the turn that will take it in, the answer no longer tells a
+client which of the two it got; only the turn's items do.
 
 ## Stopping
 
 - Closing codex's stdin in the middle of a goal turn makes codex abort the turn — `turn_aborted`
   in the rollout — and exit 0, within tens of milliseconds.
-- SIGTERM in the middle of a turn leaves the turn with no end in the rollout.
+- SIGTERM in the middle of a turn aborts it the same way: `turn_aborted` in the rollout. 0.144.5
+  left the turn with no end.
 
 ## What a thread keeps of its goal, and where
 

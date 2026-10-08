@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 // respond posts one Responses request whose input ends with items, and
@@ -95,6 +96,15 @@ func TestResponsesScenarios(t *testing.T) {
 	}
 	if want := []string{"server_error", "server_error", "server_is_overloaded", "RECOVERED"}; strings.Join(ends, ",") != strings.Join(want, ",") {
 		t.Errorf("ERR 529 3: %v, want %v", ends, want)
+	}
+
+	// FAILSLOW: a server error after the stall, every time.
+	for range 2 {
+		start := time.Now()
+		_, _, events = respond(t, s, nil, user("FAILSLOW 1"))
+		if _, end := replyOf(events); end != "response.failed" || time.Since(start) < time.Second {
+			t.Errorf("FAILSLOW 1: %q after %v", end, time.Since(start))
+		}
 	}
 
 	code, h, _ = respond(t, s, nil, user("LIMIT"))
