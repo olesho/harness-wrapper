@@ -23,6 +23,8 @@ import (
 //	                with a server error codex retries; for 529, the attempt
 //	                after Server.RetryBudget such failures in a row answers
 //	                overloaded, which codex does not retry. Then "RECOVERED".
+//	FAILSLOW <s>    open the response, wait <s> seconds, then fail it with a
+//	                server error codex retries; every time
 //	LIMIT           a usage wall: 429 usage_limit_reached, the primary window
 //	                at 100% and resetting an hour away, every time
 //	BIG <kib>       reply with <kib> KiB of text, in 64 KiB deltas
@@ -147,6 +149,9 @@ func (s *Server) serveResponses(w http.ResponseWriter, raw []byte, auth string) 
 		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write(payload)
+		return
+	case len(words) > 0 && words[0] == "FAILSLOW":
+		s.stream(w, response{failed: "server_error", text: "mock failure after a stall", stall: time.Duration(arg(1, 2)) * time.Second})
 		return
 	case len(words) > 0 && words[0] == "ERR":
 		code, k := arg(1, 529), arg(2, 2)
@@ -282,14 +287,14 @@ func (s *Server) stream(w http.ResponseWriter, rp response) {
 	if !send("response.created", map[string]any{"response": map[string]any{"id": rid}}) {
 		return
 	}
+	if rp.stall > 0 {
+		time.Sleep(rp.stall)
+	}
 	if rp.failed != "" {
 		send("response.failed", map[string]any{"response": map[string]any{
 			"id": rid, "status": "failed", "error": map[string]string{"code": rp.failed, "message": rp.text},
 		}})
 		return
-	}
-	if rp.stall > 0 {
-		time.Sleep(rp.stall)
 	}
 	if c := rp.call; c != nil {
 		args, _ := json.Marshal(c.args)

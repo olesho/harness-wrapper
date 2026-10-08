@@ -136,3 +136,21 @@ fixture; that an archive holds no secret — a transcript may quote one.
 
 Add a claude or codex version to a profile's sources when its pin moves: record the old version's
 fixture before the move, and keep it.
+
+## Amendment (2026-10-08): codex 0.160.0's answer, and an input codex may hold
+
+Point 7 binds an input by the id `turn/start` answered with because codex 0.144.5 answered an input
+it folded into a goal turn with an id that never started. codex 0.160.0 answers with the running
+turn's id, as it answers an input's own turn. So in the instant codex starts a goal turn before it
+reads the input, the turn's `turn/started` coming first, the transport takes the turn as the input's
+from its start rather than from its message on, live; the rollout still tells them apart. The
+boundary above narrows accordingly. It costs attribution, not an input.
+
+codex deduplicates no `clientUserMessageId` (`probes/codexturns`, `TestClientIDIsNoKey`): an input
+sent again runs again, so sending one again is safe only where codex surely dropped it. A turn
+interrupted before it took in the input it held drops it, and the transport sends that input again,
+as before. A turn that ends otherwise takes in the input it holds before it ends
+(`TestInputAtATurnsEnd`, `TestInputAtAGoalTurnsEnd`, `TestInputIntoAFailingTurn`), so one that
+ended without it means the transport missed the input's message, or a codex that holds it still.
+The transport sent such an input again after a few seconds; it now ends it `errored` (`internal`)
+instead, unless a turn takes it in meanwhile.

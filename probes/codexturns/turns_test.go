@@ -46,12 +46,21 @@ func rollout(t *testing.T, l contract.Layout) []line {
 					Content  []struct {
 						Text string `json:"text"`
 					} `json:"content"`
+					Item struct {
+						Type     string `json:"type"`
+						ClientID string `json:"client_id"`
+					} `json:"item"`
 				} `json:"payload"`
 			}
 			if json.Unmarshal(sc.Bytes(), &env) != nil {
 				continue
 			}
 			ln := line{Type: env.Type, Kind: env.Payload.Type, Role: env.Payload.Role, TurnID: env.Payload.TurnID, ClientID: env.Payload.ClientID}
+			if ln.Kind == "item_completed" && env.Payload.Item.Type == "UserMessage" {
+				// codex 0.157 on records the client id on the user message's
+				// item_completed, not on user_message.
+				ln.Kind, ln.ClientID = "user_message", env.Payload.Item.ClientID
+			}
 			if len(env.Payload.Content) > 0 {
 				ln.Text = env.Payload.Content[0].Text
 			}
@@ -347,9 +356,9 @@ func TestInterruptedGoalRests(t *testing.T) {
 	s.call("thread/goal/set", map[string]any{"threadId": id, "status": "paused"})
 }
 
-// turn/start during a running turn starts no turn: codex answers with a turn
-// id that never starts, and folds the input into the running turn at its next
-// model call. If that turn is interrupted first, the input is dropped.
+// turn/start during a running turn starts no turn: codex answers with the
+// running turn's id, and folds the input into that turn at its next model
+// call. If that turn is interrupted first, the input is dropped.
 func TestInputDuringGoalTurn(t *testing.T) {
 	mock, s, _, l := setup(t)
 	id := newThread(s, l)
@@ -357,15 +366,14 @@ func TestInputDuringGoalTurn(t *testing.T) {
 	m := s.mark()
 	s.call("thread/goal/set", map[string]any{"threadId": id, "objective": "GOAL 9 10", "status": "active"})
 	own, m := s.started(t, m, "the goal's turn")
-	answered := s.input(id, "PING two", "client-2")
-	if answered == "" || answered == own {
-		t.Fatalf("turn/start during the goal turn answered turn %q; the goal turn is %s", answered, own)
+	if answered := s.input(id, "PING two", "client-2"); answered != own {
+		t.Fatalf("turn/start during the goal turn answered turn %q, want the goal turn %s", answered, own)
 	}
 	if status, _ := s.completed(t, m, own); status != "completed" {
 		t.Fatalf("the goal turn that took the input ended %s", status)
 	}
-	if in, ok := s.userMessage("client-2"); !ok || in != own {
-		t.Errorf("the input's user message is in turn %q (announced: %v), want the running goal turn %s", in, ok, own)
+	if turns := s.userMessages("client-2"); len(turns) != 1 || turns[0] != own {
+		t.Errorf("the input's user messages are in turns %v, want one, in the running goal turn %s", turns, own)
 	}
 	tl := turn(rollout(t, l), own)
 	if !has(tl, func(ln line) bool { return ln.Kind == "user_message" && ln.ClientID == "client-2" }) {
@@ -374,17 +382,13 @@ func TestInputDuringGoalTurn(t *testing.T) {
 	if !has(tl, func(ln line) bool { return ln.Kind == "message" && ln.Role == "assistant" && ln.Text == "PONG two" }) {
 		t.Error("the folded input was not answered in the goal turn")
 	}
-	s.mu.Lock()
-	for _, n := range s.notes {
-		if got, _ := turnNote(n); n.method == "turn/started" && got == answered {
-			t.Errorf("the turn %s that turn/start answered with started", answered)
-		}
-	}
-	s.mu.Unlock()
 
 	// The next goal turn is interrupted while it holds an input.
 	next, m := s.started(t, m, "the goal's next turn")
 	dropped := s.input(id, "PING three", "client-3")
+	if dropped != next {
+		t.Errorf("turn/start during the goal's next turn answered turn %q, want it, %s", dropped, next)
+	}
 	s.call("turn/interrupt", map[string]any{"threadId": id, "turnId": next})
 	if status, _ := s.completed(t, m, next); status != "interrupted" {
 		t.Fatalf("the goal turn ended %s", status)
@@ -410,7 +414,7 @@ func TestInputDuringGoalTurn(t *testing.T) {
 // say so in the rollout, and exit 0. What codex keeps of the thread beside
 // its rollout — its name, its goal — it answers before the thread resumes,
 // starting nothing; resumed, it goes back to an active goal. SIGTERM in the
-// middle of a turn leaves the turn with no end.
+// middle of a turn aborts it the same way.
 func TestStopAndResumeOnAGoal(t *testing.T) {
 	_, s, _, l := setup(t)
 	id := newThread(s, l)
@@ -464,8 +468,9 @@ func TestStopAndResumeOnAGoal(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	_ = s2.cmd.Process.Signal(syscall.SIGTERM)
 	_ = s2.cmd.Wait()
-	if tl := turn(rollout(t, l), resumed); has(tl, func(ln line) bool { return ln.Kind == "turn_aborted" || ln.Kind == "task_complete" }) {
-		t.Error("the turn codex was on at SIGTERM has an end in the rollout")
+	tl := turn(rollout(t, l), resumed)
+	if !has(tl, func(ln line) bool { return ln.Kind == "turn_aborted" && ln.TurnID == resumed }) || has(tl, func(ln line) bool { return ln.Kind == "task_complete" }) {
+		t.Error("the turn codex was on at SIGTERM has no turn_aborted, or completed")
 	}
 }
 

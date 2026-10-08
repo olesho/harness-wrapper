@@ -371,7 +371,9 @@ whose death would leave the native process holding the thread.
   interrupted, codex starts none until the input's turn ends. Should codex fold an input into a turn
   of its own all the same, that turn ends where it took the input in, and the rest is the input's. An
   input dropped with an interrupted turn is sent again, or ends `cancelled` when the interrupt was of
-  the input. `Close` on a codex that is on no input's turn closes its stdin: codex aborts a turn of
+  the input. One a turn that ended otherwise held and never took in — which codex never does — is
+  not sent again, since codex deduplicates no client id: unless a turn takes it in within a few
+  seconds, it ends `errored` (`internal`). `Close` on a codex that is on no input's turn closes its stdin: codex aborts a turn of
   its own, says so in the rollout, and exits.
 - **Record:** the thread's rollout under `CODEX_HOME/sessions`, followed from the checkpoint once codex
   writes it with the first turn (`pkg/transcript/codex`). A turn begins at `task_started` and belongs to
