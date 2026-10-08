@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
+	tcodex "github.com/olesho/harness-wrapper/pkg/transcript/codex"
 )
 
 // codex's errors, as its protocol and its rollout name them, in the
@@ -53,6 +54,31 @@ func TestUsageWallResumes(t *testing.T) {
 	e = failure(turnError{Message: "… or try again at 9:58 PM.", CodexErrorInfo: json.RawMessage(`"usageLimitExceeded"`)}, nil, now)
 	if e.ResumeAt == nil || e.ResumeAt.In(time.Local).Hour() != 21 || e.ResumeAt.In(time.Local).Minute() != 58 {
 		t.Errorf("from the message: %+v", e.ResumeAt)
+	}
+}
+
+// A usage wall's "try again at 9:58 PM" is a time of day in the Host's zone,
+// codex's own, on a Host whose zone is not UTC too: read so from the live
+// transport, whose now is local, and from the record, whose entry times are
+// UTC.
+func TestUsageWallResumesInTheHostZone(t *testing.T) {
+	local := time.Local
+	time.Local = time.FixedZone("UTC+2", 2*60*60)
+	t.Cleanup(func() { time.Local = local })
+	want := time.Date(2026, 9, 28, 21, 58, 0, 0, time.Local) // 19:58 UTC
+	wall := turnError{Message: "… or try again at 9:58 PM.", CodexErrorInfo: json.RawMessage(`"usageLimitExceeded"`)}
+	for _, now := range []time.Time{
+		time.Date(2026, 9, 28, 20, 0, 0, 0, time.Local), // the live transport's
+		time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC),   // a record's: the same instant
+	} {
+		if e := failure(wall, nil, now); e.ResumeAt == nil || !e.ResumeAt.Equal(want) {
+			t.Errorf("now %s: resumes at %v, want %s", now.Format(time.RFC3339), e.ResumeAt, want.UTC())
+		}
+	}
+	d, ok := ended(&tcodex.Entry{Kind: "task_complete", ErrorInfo: "usageLimitExceeded", ErrorMessage: wall.Message},
+		time.Date(2026, 9, 28, 18, 0, 0, 0, time.UTC))
+	if !ok || d.Error == nil || d.Error.ResumeAt == nil || !d.Error.ResumeAt.Equal(want) {
+		t.Errorf("the record's turn ended %+v, want it to resume at %s", d.Error, want.UTC())
 	}
 }
 
