@@ -299,6 +299,19 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
 - **Close** presses Ctrl-C until claude quits (the first press may cancel a turn or an armed
   automatic continue), then signals the group.
 
+**Known limits (accepted, 2026-10-08):**
+
+- **Automatic continue after a usage limit.** At a usage wall claude's TUI arms "continuing
+  automatically at <reset>", and once the limit lifts it may start a turn of its own; no setting is
+  known to turn it off. It is accepted rather than worked around.
+- **Input the TUI rewrites.** Text starting with `/`, `!` or `#` is read by the TUI as a command, a
+  shell escape or a memory note, and a very long single line may become a paste placeholder. claude
+  then submits something other than the text sent, the `UserPromptSubmit` receipt never matches, and
+  `Send` reports the input `maybe_submitted`. Callers keep such input out of this profile.
+- **Version policy.** `Start` refuses any claude but the pin. A *flexible* mode — run another
+  version, keeping only the capability checks (the debug log's `[engine]` lines) — is planned beside
+  this *strict* default and not yet built.
+
 Phase 1 declares `resume` and `assign_session_id` alone. Interrupts (`Interrupt` returns
 `unsupported`; the kit's `interrupt` scenarios are skipped), retries reported as they happen,
 prompts, turns claude starts itself, rate-limit reports, tools and subagents observed, side-by-side
