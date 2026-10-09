@@ -28,7 +28,7 @@ func started(t *testing.T) *tracker {
 	if !k.up || !k.engine || !k.settled() {
 		t.Fatalf("after start: up %v engine %v settled %v", k.up, k.engine, k.settled())
 	}
-	k.begin(native)
+	k.begin(native, 1)
 	if k.settled() {
 		t.Fatal("settled while an input is typed")
 	}
@@ -165,7 +165,7 @@ func TestTrackerGate(t *testing.T) {
 	k.debug(line("[engine] turn 1 start"), t0)
 	k.live(stop, t0)
 	k.debug(line("[engine] turn 1 end (turns=1 stop=end_turn resultLen=6)"), t0)
-	k.begin("second")
+	k.begin("second", 1)
 	k.live(live.Event{Hook: live.HookUserPrompt, PromptID: "p2", Native: "second"}, t0)
 	if s := k.live(live.Event{Hook: live.HookStop, PromptID: "p2", Message: "PONG 2"}, t0); len(s.events) != 1 || s.events[0].Outcome != contract.TurnCompleted {
 		t.Errorf("the second turn: %+v", s)

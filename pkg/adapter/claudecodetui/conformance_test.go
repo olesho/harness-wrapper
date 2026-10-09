@@ -76,12 +76,6 @@ func pointAt(mock *mockapi.Server) func(conformance.T, contract.Layout, *contrac
 	}
 }
 
-// later are the scenarios of what this phase of the profile does not do yet.
-var later = map[string]string{
-	"interrupt":       "interrupts come in a later phase of the TUI profile",
-	"interrupt-early": "interrupts come in a later phase of the TUI profile",
-}
-
 // The Claude Code TUI profile passes the conformance kit against the pinned
 // claude and the mock Messages API: every scenario its Descriptor's
 // capabilities ask for, with a real claude on a terminal, its hooks, its
@@ -184,7 +178,6 @@ func kitFixture(root string, mock *mockapi.Server) conformance.Fixture {
 		},
 		Timeout: 90 * time.Second,
 		MCP:     true,
-		Skip:    later,
 		NonPin:  nonPinClaude(claudecode.BinaryPath(root)),
 	}
 }
