@@ -248,7 +248,8 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   `turn_ended`. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop;
   a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
-  `unknown`.
+  `unknown`. The evidence comes before the next input's prompt and before a task notification, where
+  a turn of claude's own begins: that turn's end is never the input's.
 - **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
   traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
   token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.
