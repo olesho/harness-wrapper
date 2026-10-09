@@ -470,6 +470,25 @@ func (t *transport) Interrupt(ctx context.Context) error {
 	}
 	t.k.interrupting()
 	t.mu.Unlock()
+	return t.esc(ctx, f)
+}
+
+// InterruptTurn stops claude's own turn native, if claude is on it, as
+// Interrupt stops an input's: Esc, taken once the debug log logs [onCancel]
+// or the turn ends.
+func (t *transport) InterruptTurn(ctx context.Context, native string) error {
+	t.mu.Lock()
+	f := t.k.own
+	on := f != nil && f.native == native && !f.ended
+	t.mu.Unlock()
+	if !on {
+		return nil
+	}
+	return t.esc(ctx, f)
+}
+
+// esc presses Esc for turn f, and waits for claude to take it.
+func (t *transport) esc(ctx context.Context, f *flight) error {
 	if err := t.keys(keyEsc); err != nil {
 		return fmt.Errorf("pressing Esc: %w", err)
 	}

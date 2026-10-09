@@ -11,8 +11,11 @@
 // first phase opens Sessions fresh or reopened, runs inputs as turns that
 // complete or error, keeps the Claude Code profile's record, and stops claude
 // on Close. Its second interrupts a turn (Esc, confirmed by the debug log)
-// and reports each retry claude makes as it happens (retry_visible). Prompts,
-// turns of claude's own, rate-limit reports, tools and subagents observed and
+// and reports each retry claude makes as it happens (retry_visible). Its
+// third observes tools and subagents from the hooks, as the Claude Code
+// profile's record does (tools_observed, subagents), and reports the turns
+// claude starts itself to take up background work, and that work, live
+// (background_turns). Prompts, rate-limit reports, streaming text and
 // side-by-side Sessions come later; the Descriptor declares none of them.
 package claudecodetui
 
@@ -49,6 +52,7 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapRetryVisible,
+			contract.CapToolsObserved, contract.CapSubagents, contract.CapBackgroundTurns,
 		},
 		CheckpointFormat: claudecode.CheckpointFormat,
 		CredentialKinds:  []string{claudecode.CredentialKind},

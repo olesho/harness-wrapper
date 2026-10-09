@@ -8,9 +8,11 @@
 //
 //	events/   one file per hook fired, written atomically, which the
 //	          transport reads in order and removes
-//	prompts/  one file per prompt bound to an input: the prompt's id (claude's
-//	          promptId) names it, and it holds the input's native id; the
-//	          record reader matches the transcript's prompt entries by it
+//	prompts/  one file per prompt claude reported: the prompt's id (claude's
+//	          promptId) names it, and it holds the native id of the input it
+//	          was bound to, or nothing for a prompt of claude's own (a task
+//	          notification, say); the record reader matches the
+//	          transcript's prompt entries by it
 //	pending   the input the transport is typing, which the UserPromptSubmit
 //	          hook binds to the prompt claude reports
 //
@@ -79,12 +81,48 @@ type Event struct {
 	Error string `json:"error,omitempty"`
 	// Native is the input UserPromptSubmit bound the prompt to, "" when it
 	// bound none.
-	Native string    `json:"native,omitempty"`
-	Queued bool      `json:"queued,omitempty"`
-	At     time.Time `json:"at"`
+	Native string `json:"native,omitempty"`
+	Queued bool   `json:"queued,omitempty"`
+	// Background is the work claude runs in the background, as Stop and
+	// StopFailure list it (background_tasks); Listed says the hook listed
+	// it, even as none.
+	Background []Task    `json:"background,omitempty"`
+	Listed     bool      `json:"listed,omitempty"`
+	At         time.Time `json:"at"`
 
 	// Name is the event's file, for Remove.
 	Name string `json:"-"`
+}
+
+// Task is one piece of work claude runs in the background, as a hook lists
+// it (background_tasks).
+type Task struct {
+	ID string `json:"id"`
+	// Type is claude's: shell, subagent, ….
+	Type        string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// maxTasks bounds the background work an event keeps.
+const maxTasks = 256
+
+// TaskNotification reports whether prompt is one claude writes itself to
+// take up background work that ended, and the task it names first ("" for
+// none).
+func TaskNotification(prompt string) (bool, string) {
+	p := strings.TrimSpace(prompt)
+	if !strings.HasPrefix(p, taskNotification) {
+		return false, ""
+	}
+	_, rest, ok := strings.Cut(p, "<task-id>")
+	if !ok {
+		return true, ""
+	}
+	id, _, ok := strings.Cut(rest, "</task-id>")
+	if !ok {
+		return true, ""
+	}
+	return true, strings.TrimSpace(id)
 }
 
 // Dir is Session id's live directory under the agent's spool root.
@@ -175,6 +213,8 @@ func HandleHook(arg string, env []string, payload []byte) error {
 		Source    string `json:"source"`
 		Message   string `json:"last_assistant_message"`
 		Error     string `json:"error"`
+		// Background stays raw, so its shape never costs the event.
+		Background json.RawMessage `json:"background_tasks"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return fmt.Errorf("live hook %s: %w", arg, err)
@@ -182,6 +222,9 @@ func HandleHook(arg string, env []string, payload []byte) error {
 	ev := Event{
 		Hook: p.Hook, SessionID: p.SessionID, PromptID: p.PromptID, Prompt: p.Prompt, Source: p.Source,
 		Message: p.Message, Error: p.Error, At: time.Now().UTC(),
+	}
+	if ev.Hook == HookStop || ev.Hook == HookStopFailure {
+		ev.Background, ev.Listed = tasks(p.Background)
 	}
 	if ev.Hook == HookUserPrompt {
 		if err := bind(dir, &ev); err != nil {
@@ -201,36 +244,62 @@ func HandleHook(arg string, env []string, payload []byte) error {
 
 var seq atomic.Uint64
 
-// bind binds the prompt ev reports to the input being typed: a prompt of
-// claude's own (a task notification) is not the input's, nor is one claude
-// queued behind a running turn, which reports the running turn's prompt id.
+// tasks reads a hook's background_tasks: whether it listed them, and those
+// with an id.
+func tasks(raw json.RawMessage) ([]Task, bool) {
+	var list []Task
+	if len(raw) == 0 || json.Unmarshal(raw, &list) != nil {
+		return nil, false
+	}
+	out := make([]Task, 0, min(len(list), maxTasks))
+	for _, t := range list {
+		if t.ID != "" && len(out) < maxTasks {
+			out = append(out, t)
+		}
+	}
+	return out, true
+}
+
+// bind binds the prompt ev reports to the input being typed. A prompt claude
+// queued behind a running turn reports the running turn's prompt id, which
+// is known already: it binds nothing. A prompt of claude's own (a task
+// notification), or one with no input being typed, is not an input's: it is
+// recorded as claude's own, so that a prompt queued behind its turn is not
+// taken for an input's either.
 func bind(dir string, ev *Event) error {
 	if !validID.MatchString(ev.PromptID) {
 		return nil
 	}
-	if _, ok := Bound(dir, ev.PromptID); ok {
+	if known(dir, ev.PromptID) {
 		ev.Queued = true
 		return nil
 	}
-	if strings.HasPrefix(strings.TrimSpace(ev.Prompt), taskNotification) {
-		return nil
+	own := func() error { return writeAtomic(filepath.Join(dir, promptsDir), ev.PromptID, nil) }
+	if ok, _ := TaskNotification(ev.Prompt); ok {
+		return own()
 	}
 	b, err := os.ReadFile(filepath.Join(dir, pendingFile)) //nolint:gosec // the Session's own directory
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		return own()
 	}
 	if err != nil {
 		return err
 	}
 	var p pending
 	if json.Unmarshal(b, &p) != nil || p.Native == "" {
-		return nil
+		return own()
 	}
 	if err := writeAtomic(filepath.Join(dir, promptsDir), ev.PromptID, []byte(p.Native+"\n")); err != nil {
 		return err
 	}
 	ev.Native = p.Native
 	return ClearPending(dir)
+}
+
+// known reports whether the prompt promptID was reported before.
+func known(dir, promptID string) bool {
+	_, err := os.Stat(filepath.Join(dir, promptsDir, promptID))
+	return err == nil
 }
 
 // Read returns the events written so far, oldest first.

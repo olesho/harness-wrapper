@@ -16,7 +16,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/internal/procgroup"
@@ -296,12 +295,8 @@ func (t *transport) SessionID() string { return t.id }
 // HarnessVersion is claude's version, as `claude --version` said it.
 func (t *transport) HarnessVersion() string { return t.version }
 
-// maxTaskDescription bounds a background task's description, in bytes.
-const maxTaskDescription = 200
-
 // backgroundTasks is claude's list of the tasks it runs in the background, in
-// the contract's terms: a shell (local_bash) is a command, an agent a
-// subagent.
+// the contract's terms (BackgroundTask).
 func backgroundTasks(raw json.RawMessage) []contract.BackgroundTask {
 	var tasks []struct {
 		TaskID      string `json:"task_id"`
@@ -314,22 +309,7 @@ func backgroundTasks(raw json.RawMessage) []contract.BackgroundTask {
 		if x.TaskID == "" {
 			continue
 		}
-		kind := contract.BackgroundOther
-		switch {
-		case x.TaskType == "local_bash":
-			kind = contract.BackgroundCommand
-		case strings.HasSuffix(x.TaskType, "_agent"):
-			kind = contract.BackgroundSubagent
-		}
-		desc := x.Description
-		if len(desc) > maxTaskDescription {
-			cut := maxTaskDescription
-			for cut > 0 && !utf8.RuneStart(desc[cut]) {
-				cut--
-			}
-			desc = desc[:cut]
-		}
-		out = append(out, contract.BackgroundTask{ID: x.TaskID, Kind: kind, Description: desc})
+		out = append(out, BackgroundTask(x.TaskID, x.TaskType, x.Description))
 	}
 	return out
 }
