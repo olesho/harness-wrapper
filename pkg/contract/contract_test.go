@@ -228,6 +228,63 @@ func TestProvisionResultValidate(t *testing.T) {
 	}
 }
 
+// A rewrite names history, a field and a value it changes, and no two
+// rewrites' paths nest.
+func TestHistoryRewritesValidate(t *testing.T) {
+	sessions := RootPath{Root: RootConfig, Path: "sessions"}
+	base := ProvisionResult{HistoryRoots: []RootPath{sessions}, SecretPaths: []RootPath{{Root: RootConfig, Path: "sessions/auth.json"}}}
+	ok := base
+	ok.HistoryRewrites = []Rewrite{{Path: sessions, Field: "cwd", From: "/a", To: "/b"}}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for name, ws := range map[string][]Rewrite{
+		"not history": {{Path: RootPath{Root: RootConfig, Path: "settings.json"}, Field: "cwd", From: "/a", To: "/b"}},
+		"a secret":    {{Path: RootPath{Root: RootConfig, Path: "sessions/auth.json"}, Field: "cwd", From: "/a", To: "/b"}},
+		"no field":    {{Path: sessions, From: "/a", To: "/b"}},
+		"no change":   {{Path: sessions, Field: "cwd", From: "/a", To: "/a"}},
+		"nested": {
+			{Path: sessions, Field: "cwd", From: "/a", To: "/b"},
+			{Path: RootPath{Root: RootConfig, Path: "sessions/x"}, Field: "id", From: "1", To: "2"},
+		},
+	} {
+		r := base
+		r.HistoryRewrites = ws
+		if r.Validate() == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// RewriteFirstLine replaces the field's value alone, and only when it is the
+// one the rule names, in a file beneath the rule's path.
+func TestRewriteFirstLine(t *testing.T) {
+	rs := []Rewrite{{Path: RootPath{Root: RootConfig, Path: "sessions"}, Field: "cwd", From: "/src/ws", To: "/new/<ws> \"x\""}}
+	at := RootPath{Root: RootConfig, Path: "sessions/2026_a.jsonl"}
+	header := `{"type":"session","version":3,"id":"a","cwd": "/src/ws","nested":{"cwd":"/src/ws"}}`
+	got, ok := RewriteFirstLine(rs, at, []byte(header))
+	if want := `{"type":"session","version":3,"id":"a","cwd": "/new/<ws> \"x\"","nested":{"cwd":"/src/ws"}}`; !ok || string(got) != want {
+		t.Errorf("rewritten %v: %s\nwant %s", ok, got, want)
+	}
+	for name, c := range map[string]struct {
+		at   RootPath
+		line string
+	}{
+		"elsewhere":     {RootPath{Root: RootConfig, Path: "memory/a.jsonl"}, header},
+		"another value": {at, `{"cwd":"/other"}`},
+		"not a string":  {at, `{"cwd":7}`},
+		"nested only":   {at, `{"a":{"cwd":"/src/ws"}}`},
+		"not an object": {at, `["cwd","/src/ws"]`},
+		"not json":      {at, `cwd=/src/ws`},
+		"too long":      {at, `{"cwd":"/src/ws","pad":"` + strings.Repeat("x", MaxRewriteLine) + `"}`},
+		"broken after":  {at, `{"x":"y" "cwd":"/src/ws"}`},
+	} {
+		if got, ok := RewriteFirstLine(rs, c.at, []byte(c.line)); ok || string(got) != c.line {
+			t.Errorf("%s: rewritten %v: %s", name, ok, got)
+		}
+	}
+}
+
 func TestLayoutValidate(t *testing.T) {
 	l := Layout{Home: "/h", Config: "/c", Workspace: "/w", Secrets: "/s", Scratch: "/x"}
 	if err := l.Validate(); err != nil {

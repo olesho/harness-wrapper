@@ -262,8 +262,8 @@ func (a *harnessAdapter) Provision(req contract.ProvisionRequest) (contract.Prov
 	if err := res.Validate(); err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile rendered an invalid result: " + err.Error()}
 	}
-	if req.Load == nil && len(res.HistoryRelocations) > 0 {
-		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile relocated history for a request that loads none"}
+	if req.Load == nil && (len(res.HistoryRelocations) > 0 || len(res.HistoryRewrites) > 0) {
+		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: "the profile relocated or rewrote history for a request that loads none"}
 	}
 	return res, nil
 }

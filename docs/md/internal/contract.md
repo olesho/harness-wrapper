@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.6`.
+package is its normative form, contract version `harness-adapter/1.7`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -54,7 +54,10 @@ other roots, another machine, the source gone — the Supervisor:
    not where it was. The layout's paths are resolved in such a request: `Provision` is pure and
    resolves none;
 2. restores each saved file at `contract.Relocate`'s answer, which must lie beneath a history root
-   and outside every secret path (`ProvisionResult.Archived`), and rewrites nothing inside it;
+   and outside every secret path (`ProvisionResult.Archived`), and rewrites nothing inside it but
+   what `history_rewrites` name (since 1.7, [ADR-023](decisions/adr-023-history-rewrites.md)): in a
+   file beneath a rule's path whose first line is a JSON object with the rule's field equal to its
+   `from`, that value becomes its `to`, every other byte as it was (`contract.RewriteFirstLine`);
 3. reads the restored record to its end with `OpenRecord` and no checkpoint, publishing nothing: the
    checkpoint that read ends on is where the new agent's history begins. A record that reads empty
    is the sign, before any open, that the history is not where the harness looks;

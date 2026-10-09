@@ -1,6 +1,8 @@
 package contract
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -443,6 +445,84 @@ type ProvisionResult struct {
 	// The Supervisor restores each saved file at Relocate's answer, and
 	// rewrites nothing inside it.
 	HistoryRelocations []Relocation `json:"history_relocations,omitempty"`
+	// HistoryRewrites are, for a request that loads, the one change a
+	// restore makes inside a saved file (since 1.7): in each file at or
+	// beneath a rule's Path, where the relocations put it, whose first line
+	// (at most MaxRewriteLine bytes) is a JSON object with a top-level string
+	// Field equal to From, that value becomes To; every other byte of the
+	// file stays as it was. A harness that finds a Session by the working
+	// directory its record names needs it: pi's session header. Path is
+	// history and no secret path, and no two rules' paths are one another or
+	// nested. RewriteFirstLine applies them.
+	HistoryRewrites []Rewrite `json:"history_rewrites,omitempty"`
+}
+
+// Rewrite replaces, in the first line of each saved file at or beneath Path,
+// the value From of the JSON object's top-level field Field with To.
+type Rewrite struct {
+	Path  RootPath `json:"path"`
+	Field string   `json:"field"`
+	From  string   `json:"from"`
+	To    string   `json:"to"`
+}
+
+// MaxRewriteLine bounds the first line a rewrite reads: a longer one is left
+// as it is.
+const MaxRewriteLine = 64 << 10
+
+// RewriteFirstLine is line — a restored file's first line, at at, without
+// its newline — as rs rewrite it, and whether one did. Only the value is
+// replaced, encoded as JSON with no HTML escaping; the bytes around it stay.
+func RewriteFirstLine(rs []Rewrite, at RootPath, line []byte) ([]byte, bool) {
+	if len(line) > MaxRewriteLine {
+		return line, false
+	}
+	for _, r := range rs {
+		if !at.Within(r.Path) {
+			continue
+		}
+		if out, ok := rewriteField(line, r.Field, r.From, r.To); ok {
+			return out, true
+		}
+	}
+	return line, false
+}
+
+// rewriteField replaces the top-level string field's value from with to in
+// the JSON object line, or reports false.
+func rewriteField(line []byte, field, from, to string) ([]byte, bool) {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, false
+	}
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return nil, false
+		}
+		if key, _ := k.(string); key != field {
+			continue
+		}
+		var v string
+		if json.Unmarshal(raw, &v) != nil || v != from {
+			return nil, false
+		}
+		var b bytes.Buffer
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if enc.Encode(to) != nil {
+			return nil, false
+		}
+		end := int(dec.InputOffset())
+		start := end - len(raw)
+		out := append(append(append([]byte(nil), line[:start]...), bytes.TrimSuffix(b.Bytes(), []byte("\n"))...), line[end:]...)
+		return out, true
+	}
+	return nil, false
 }
 
 // Relocation moves a saved path, and everything beneath it, to another.
@@ -594,6 +674,23 @@ func (r ProvisionResult) Validate() error {
 			}
 			if m.To.Within(other.To) || other.To.Within(m.To) {
 				return invalid(field+".to", "%s collides with history_relocations[%d]'s %s", m.To, j, other.To)
+			}
+		}
+	}
+	for i, w := range r.HistoryRewrites {
+		field := "history_rewrites[" + strconv.Itoa(i) + "]"
+		if err := checkPath(field+".path", w.Path); err != nil {
+			return err
+		}
+		if !r.Archived(w.Path) {
+			return invalid(field+".path", "%s: must be history, and no secret path", w.Path)
+		}
+		if w.Field == "" || w.From == "" || w.From == w.To {
+			return invalid(field, "a field, and a value from that the rewrite changes")
+		}
+		for j, other := range r.HistoryRewrites[:i] {
+			if w.Path.Within(other.Path) || other.Path.Within(w.Path) {
+				return invalid(field+".path", "%s overlaps history_rewrites[%d]'s %s", w.Path, j, other.Path)
 			}
 		}
 	}

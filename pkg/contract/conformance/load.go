@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -80,7 +81,8 @@ func Save(d contract.Descriptor, format int, l contract.Layout, r contract.Provi
 // Restore writes saved files under a layout the way a Supervisor does before
 // the harness is first opened there: each at the place r's relocations send
 // it, which must be beneath one of r's history roots and outside its secret
-// paths, and never through a symbolic link.
+// paths, and never through a symbolic link; its first line as r's rewrites
+// make it.
 func Restore(l contract.Layout, r contract.ProvisionResult, s Saved) error {
 	if err := r.Validate(); err != nil {
 		return err
@@ -105,7 +107,7 @@ func Restore(l contract.Layout, r contract.ProvisionResult, s Saved) error {
 				return err
 			}
 		}
-		err = root.WriteFile(filepath.FromSlash(to.Path), f.Content, f.Mode)
+		err = root.WriteFile(filepath.FromSlash(to.Path), rewritten(r.HistoryRewrites, to, f.Content), f.Mode)
 		_ = root.Close()
 		if err != nil {
 			return err
@@ -542,4 +544,17 @@ func loadRefused(c *check) {
 	other = src
 	other.Harness.Name = "not-" + src.Harness.Name
 	refused("another harness's Session", "load.harness.name", other)
+}
+
+// rewritten is content, restored at at, with its first line as rs make it.
+func rewritten(rs []contract.Rewrite, at contract.RootPath, content []byte) []byte {
+	line, rest, nl := bytes.Cut(content, []byte("\n"))
+	out, ok := contract.RewriteFirstLine(rs, at, line)
+	if !ok {
+		return content
+	}
+	if nl {
+		out = append(append(out, '\n'), rest...)
+	}
+	return out
 }

@@ -32,6 +32,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-020](adr-020-placeholder-model.md) | Interface 1.5 gives Placeholder the agent's model, so one credential kind can serve several providers: a harness narrows each swap to the provider the model names, and refuses a model it cannot place | Accepted 2026-10-06 | 3, 6 |
 | [ADR-021](adr-021-pi-profile.md) | The Pi profile drives pi over its RPC mode: a tag extension names each input in pi's session, the record proves each run's end or leaves it unknown, and one `api_key` kind serves every provider in the profile's table | Accepted 2026-10-06 | 4, 2 · also 3, 7 |
 | [ADR-022](adr-022-sessions-side-by-side.md) | Interface 1.6 adds concurrent_sessions: several Sessions of one agent open at once, up to Limits.MaxSessions — the most the adapter's real-harness conformance has run; a Host holds its Session while its harness runs (session_in_use), claude's hooks spool per Session, codex's starts take turns, and the marker store is made whole | Accepted 2026-10-06 | 6, 2 · also 3, 7 |
+| [ADR-023](adr-023-history-rewrites.md) | Interface 1.7 adds history_rewrites: a load may replace one value in a saved file's first-line JSON (pi's header cwd), which the Supervisor applies as it restores; the Pi profile loads, and opens a loaded Session strictly | Accepted 2026-10-09 | 2, 3, 6 |
 
 ## Intent coverage
 
