@@ -1,9 +1,14 @@
 package claudecode
 
 import (
+	"context"
+	"errors"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/contract"
+	"github.com/olesho/harness-wrapper/pkg/versions"
 )
 
 // What the Claude Code profiles share. A profile that runs claude another way
@@ -28,6 +33,38 @@ func SessionSpool(root, id string) string { return sessionSpool(root, id) }
 // one under its id, or the one it resumes.
 func SessionArgs(mode contract.OpenMode, id string, cfg OpenConfig) []string {
 	return sessionArgs(mode, id, cfg)
+}
+
+// versionWait bounds `claude --version`.
+const versionWait = 30 * time.Second
+
+// versionOf runs `claude --version`; a var for tests.
+var versionOf = func(ctx context.Context, bin string, env []string) (string, error) {
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return "", errors.New("no version")
+	}
+	return f[0], nil
+}
+
+// Version is the version of the claude at bin, as `claude --version` run in
+// env says, within versionWait.
+func Version(ctx context.Context, bin string, env []string) (string, error) {
+	vctx, cancel := context.WithTimeout(ctx, versionWait)
+	defer cancel()
+	return versionOf(vctx, bin, env)
+}
+
+// Pinned is the claude version the profiles are verified against.
+func Pinned() string {
+	pin, _ := versions.Pinned(Name)
+	return pin
 }
 
 // TurnError is the contract's account of a model call claude reported failed:

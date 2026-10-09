@@ -72,6 +72,7 @@ const tagCommand = "hw-tag"
 
 type transport struct {
 	id      string
+	version string // pi's, from its package.json; "" when unknown
 	scratch string // the layout's scratch: the interrupt notes
 	report  func(adapter.Event)
 	cmd     *exec.Cmd
@@ -208,6 +209,14 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if _, err := os.Stat(cfg.Extension); err != nil {
 		return nil, openFailed(contract.OpenBinaryNotFound, "the tag extension: %v", err)
 	}
+	// pi's version, for Open's result and the version policy: the one the
+	// release's package.json beside it says, which pi reads its own from.
+	// Under flexible a pi other than the pin runs on: get_state and the tag
+	// extension's command still decide whether the profile can drive it.
+	version := packageVersion(cfg.Binary)
+	if err := adapter.CheckHarnessVersion(cfg.VersionPolicy, "pi", pinned(), version); err != nil {
+		return nil, err
+	}
 	auth := map[string]any{}
 	if c := req.Credential; c != nil {
 		if c.Kind != CredentialKind {
@@ -232,7 +241,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	args := append([]string{"--mode", "rpc", "--session-id", id, "--session-dir", cfg.SessionDir, "-e", cfg.Extension}, cfg.Args...)
 
 	t := &transport{
-		id: id, scratch: req.Layout.Scratch, report: req.Report,
+		id: id, version: version, scratch: req.Layout.Scratch, report: req.Report,
 		waiting: map[string]chan rpcResult{},
 		exited:  make(chan struct{}), readerEnd: make(chan struct{}),
 		stderr: proc.NewTailBuffer(stderrTail),
@@ -327,6 +336,25 @@ func (t *transport) start(bin string, args []string, dir string, env []string) e
 }
 
 func (t *transport) SessionID() string { return t.id }
+
+// HarnessVersion is pi's version, from its release's package.json.
+func (t *transport) HarnessVersion() string { return t.version }
+
+// packageVersion is the version the package.json beside pi's executable
+// names, "" when there is none to read.
+func packageVersion(bin string) string {
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(bin), "package.json"))
+	if err != nil {
+		return ""
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(b, &pkg) != nil {
+		return ""
+	}
+	return pkg.Version
+}
 
 // NewNative is an input's id in pi's terms: the tag the extension records.
 func (t *transport) NewNative(string) string { return sessionid.NewUUID() }

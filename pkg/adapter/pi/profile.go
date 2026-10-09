@@ -59,6 +59,12 @@ func init() { adapter.Register(Name, Profile{}) }
 // efforts are pi's thinking levels (--thinking).
 var efforts = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 
+// pinned is the pi version the profile is verified against.
+func pinned() string {
+	pin, _ := versions.Pinned(Name)
+	return pin
+}
+
 // Describe describes the profile. The harness version is hw's pin: the pi the
 // profile was verified against. The caller may choose a session's id; pi
 // raises no prompts, and starts no turn by itself. Behind an egress broker it
@@ -66,7 +72,7 @@ var efforts = []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"
 // and headers, and each placeholder's swap narrows it to the provider its
 // model names.
 func (Profile) Describe() contract.Descriptor {
-	pin, _ := versions.Pinned(Name)
+	pin := pinned()
 	hosts, headers := route()
 	return contract.Descriptor{
 		Contract: contract.Version,

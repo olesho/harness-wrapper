@@ -65,6 +65,12 @@ const MaxSessions = 8
 // efforts are the reasoning efforts codex takes (model_reasoning_effort).
 var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 
+// pinned is the codex version the profile is verified against.
+func pinned() string {
+	pin, _ := versions.Pinned(Name)
+	return pin
+}
+
 // Describe describes the profile. The harness version is hw's pin: the codex
 // the profile was verified against. codex chooses a thread's id itself. A
 // thread with an active goal makes codex start turns by itself. The profile
@@ -75,7 +81,7 @@ var efforts = []string{"minimal", "low", "medium", "high", "xhigh"}
 // tried that way, it does not. A runtime may keep a ChatGPT login for its
 // agents with the official codex (keeper.go).
 func (Profile) Describe() contract.Descriptor {
-	pin, _ := versions.Pinned(Name)
+	pin := pinned()
 	return contract.Descriptor{
 		Contract: contract.Version,
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},

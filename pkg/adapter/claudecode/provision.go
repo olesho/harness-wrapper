@@ -59,6 +59,9 @@ type openConfig struct {
 	// Session had a spool — are moved, under a lock, into the spools of the
 	// Sessions they name (migrateLegacySpool).
 	Spool string `json:"spool"`
+	// VersionPolicy is the spec's (1.7): under strict, Start refuses a claude
+	// that is not the pin.
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
 }
 
 // spoolDir holds each Session's hook spool, under the spool root.
@@ -235,8 +238,9 @@ func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.Provisi
 			"DISABLE_AUTOUPDATER=1",
 			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 		},
-		WorkingDir: l.Workspace,
-		Spool:      l.Scratch,
+		WorkingDir:    l.Workspace,
+		Spool:         l.Scratch,
+		VersionPolicy: spec.VersionPolicy,
 	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {

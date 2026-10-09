@@ -70,11 +70,12 @@ var groupEmpty = procgroup.Empty
 var untaskedTurns atomic.Uint64
 
 type transport struct {
-	id     string
-	report func(adapter.Event)
-	cmd    *exec.Cmd
-	stdout *os.File
-	stderr *proc.TailBuffer
+	id      string
+	version string // claude's, as it reports it; "" when unknown
+	report  func(adapter.Event)
+	cmd     *exec.Cmd
+	stdout  *os.File
+	stderr  *proc.TailBuffer
 
 	wmu         sync.Mutex // serializes frames on stdin, and closing it
 	stdin       io.WriteCloser
@@ -199,6 +200,17 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	// guard keeps out a hook of any other session.
 	spool := sessionSpool(cfg.Spool, id)
 	env := append(adapter.HostEnv(), cfg.Env...)
+	// The version claude reports, for Open's result and the version policy.
+	// A claude that cannot say runs on under flexible: system/init's
+	// capabilities, not its version, decide whether the transport can read
+	// it.
+	version, _ := Version(ctx, cfg.Binary, env)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err := adapter.CheckHarnessVersion(cfg.VersionPolicy, "claude", Pinned(), version); err != nil {
+		return nil, err
+	}
 	env = append(env, harnesscore.EnvSpool+"="+spool, harnesscore.EnvHarnessSessionID+"="+id)
 	if c := req.Credential; c != nil {
 		if c.Kind != CredentialKind {
@@ -223,7 +235,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	args := append(append(sessionArgs(req.Mode, id, cfg), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"), cfg.Args...)
 
 	t := &transport{
-		id: id, report: req.Report,
+		id: id, version: version, report: req.Report,
 		control:  map[string]chan controlResult{},
 		receipts: map[string]chan struct{}{},
 		exited:   make(chan struct{}), readerEnd: make(chan struct{}),
@@ -280,6 +292,9 @@ func (t *transport) start(bin string, args []string, dir string, env []string) e
 }
 
 func (t *transport) SessionID() string { return t.id }
+
+// HarnessVersion is claude's version, as `claude --version` said it.
+func (t *transport) HarnessVersion() string { return t.version }
 
 // maxTaskDescription bounds a background task's description, in bytes.
 const maxTaskDescription = 200

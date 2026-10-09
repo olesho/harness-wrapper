@@ -245,7 +245,11 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	st := s.stateLocked()
 	id := s.sessionID
 	s.mu.Unlock()
-	return contract.OpenResult{SessionID: id, State: st}, nil
+	version := ""
+	if v, ok := t.(Versioned); ok {
+		version = v.HarnessVersion()
+	}
+	return contract.OpenResult{SessionID: id, State: st, HarnessVersion: version}, nil
 }
 
 // ---- the harness's events

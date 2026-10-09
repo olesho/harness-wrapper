@@ -23,7 +23,6 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/adapter/claudecodetui/live"
 	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 	"github.com/olesho/harness-wrapper/pkg/contract"
-	"github.com/olesho/harness-wrapper/pkg/versions"
 )
 
 // The transport: claude runs as
@@ -53,8 +52,6 @@ const (
 	enterGap = 150 * time.Millisecond
 	// quitWait is how long claude may take to quit on Ctrl-C.
 	quitWait = 5 * time.Second
-	// versionWait bounds `claude --version`.
-	versionWait = 30 * time.Second
 	// outputTail is how much of the terminal's output an exit's detail
 	// reads.
 	outputTail = 16 << 10
@@ -76,29 +73,15 @@ const (
 // tests.
 var killWait = 5 * time.Second
 
-// versionOf runs `claude --version`; a var for tests.
-var versionOf = func(ctx context.Context, bin string, env []string) (string, error) {
-	cmd := exec.CommandContext(ctx, bin, "--version")
-	cmd.Env = env
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	f := strings.Fields(string(out))
-	if len(f) == 0 {
-		return "", errors.New("no version")
-	}
-	return f[0], nil
-}
-
 type transport struct {
-	id     string
-	dir    string // the live directory
-	report func(adapter.Event)
-	cmd    *exec.Cmd
-	tty    *os.File
-	out    *proc.TailBuffer // the terminal's output
-	diag   *proc.TailBuffer // what the transport says of claude's exit
+	id      string
+	version string // claude's, as `claude --version` said it
+	dir     string // the live directory
+	report  func(adapter.Event)
+	cmd     *exec.Cmd
+	tty     *os.File
+	out     *proc.TailBuffer // the terminal's output
+	diag    *proc.TailBuffer // what the transport says of claude's exit
 
 	wmu sync.Mutex // serializes keys
 
@@ -140,17 +123,18 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		return nil, openFailed(contract.OpenConfigInvalid, "%s loads no session", Name)
 	}
 	env := append(adapter.HostEnv(), cfg.Env...)
-	vctx, cancel := context.WithTimeout(ctx, versionWait)
-	v, err := versionOf(vctx, cfg.Binary, env)
-	cancel()
-	pin, _ := versions.Pinned(claudecode.Name)
+	// claude's version, for Open's result and the version policy. Under
+	// flexible a claude other than the pin runs, and the debug log's [engine]
+	// line (awaitUp) still decides whether the profile can read it.
+	v, err := claudecode.Version(ctx, cfg.Binary, env)
 	switch {
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
 	case err != nil:
 		return nil, openFailed(contract.OpenBinaryNotFound, "%s --version: %v", cfg.Binary, err)
-	case v != pin:
-		return nil, openFailed(contract.OpenVersionUnsupported, "claude %s; the profile reads claude %s's hooks and debug log alone", v, pin)
+	}
+	if err := adapter.CheckHarnessVersion(cfg.VersionPolicy, "claude", claudecode.Pinned(), v); err != nil {
+		return nil, err
 	}
 
 	dir := live.Dir(cfg.Spool, id)
@@ -184,7 +168,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	args := append(append(claudecode.SessionArgs(req.Mode, id, cfg), cfg.Args...), "--debug-file", debugFile)
 
 	t := &transport{
-		id: id, dir: dir, report: req.Report,
+		id: id, version: v, dir: dir, report: req.Report,
 		out: proc.NewTailBuffer(outputTail), diag: proc.NewTailBuffer(4 << 10),
 		k: newTracker(id), wake: make(chan struct{}),
 		debug:    tail{path: debugFile},
@@ -258,6 +242,9 @@ func (t *transport) start(bin string, args []string, dir string, env []string) e
 }
 
 func (t *transport) SessionID() string { return t.id }
+
+// HarnessVersion is claude's version, as `claude --version` said it.
+func (t *transport) HarnessVersion() string { return t.version }
 
 // NewNative is an input's id in this profile's terms: a uuid, which the
 // UserPromptSubmit hook binds claude's prompt id to.
