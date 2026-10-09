@@ -67,7 +67,8 @@ func pinned() string {
 
 // Describe describes the profile. The harness version is hw's pin: the pi the
 // profile was verified against. The caller may choose a session's id; pi
-// raises no prompts, and starts no turn by itself. Behind an egress broker it
+// raises no prompts, and starts no turn by itself. It loads the Sessions the
+// pinned pi saved. Behind an egress broker it
 // takes its API key as a placeholder: the route holds every provider's hosts
 // and headers, and each placeholder's swap narrows it to the provider its
 // model names.
@@ -79,8 +80,9 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
-			contract.CapRetryVisible, contract.CapBrokeredCredentials,
+			contract.CapRetryVisible, contract.CapBrokeredCredentials, contract.CapSessionLoad,
 		},
+		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
 		Egress: &contract.Egress{
 			Credentials: []contract.CredentialRoute{{Kind: CredentialKind, Hosts: hosts, Headers: headers}},
 		},

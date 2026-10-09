@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.7`.
+package is its normative form, contract version `harness-adapter/1.8`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -54,7 +54,10 @@ other roots, another machine, the source gone — the Supervisor:
    not where it was. The layout's paths are resolved in such a request: `Provision` is pure and
    resolves none;
 2. restores each saved file at `contract.Relocate`'s answer, which must lie beneath a history root
-   and outside every secret path (`ProvisionResult.Archived`), and rewrites nothing inside it;
+   and outside every secret path (`ProvisionResult.Archived`), and rewrites nothing inside it but
+   what `history_rewrites` name (since 1.8, [ADR-024](decisions/adr-024-history-rewrites.md)): in a
+   file beneath a rule's path whose first line is a JSON object with the rule's field equal to its
+   `from`, that value becomes its `to`, every other byte as it was (`contract.RewriteFirstLine`);
 3. reads the restored record to its end with `OpenRecord` and no checkpoint, publishing nothing: the
    checkpoint that read ends on is where the new agent's history begins. A record that reads empty
    is the sign, before any open, that the history is not where the harness looks;
@@ -529,13 +532,21 @@ TUI, its docs and images ([the probe](../../../probes/pirpc/FINDINGS.md)).
   with no end otherwise.
 - **Recover** finds the tag's user message, then the run's end: without either — pi never took the
   input in, or crashed before the run ended — `unknown`.
+- **Load:** the history is `config/sessions` and `config/memory`; nothing moves. `--session-id`
+  finds a session only among those whose header names pi's working directory, and starts an empty
+  one under the id otherwise, so a load rewrites the header's `cwd` from the source's workspace to
+  the new one ([ADR-024](decisions/adr-024-history-rewrites.md)). A loaded open is strict: the file
+  must be in the session dir naming pi's working directory, and `get_state` must name it with its
+  messages, or the open fails `session_not_found`. The profile loads the Sessions the pinned pi
+  saved.
 - **One Session of an agent at a time:** no `concurrent_sessions`, until a probe of pi's own shows
   its Sessions side by side keep apart ([ADR-022](decisions/adr-022-sessions-side-by-side.md)).
 
 `TestPiConforms` runs the conformance kit against a real pi driving `internal/mockapi`'s Responses
 API, and `TestPiConformsOnAnthropic` its Messages API (all but `usage-limit`: under an API key,
 Anthropic's 429 is a rate limit), when `HW_REAL_PI` names the pinned release's executable
-(`probes/pirpc/fetch.sh`). The record's tests read sessions the pinned pi wrote
+(`probes/pirpc/fetch.sh`). `TestPiLoadsSavedSessions` loads the Session each source version saved
+(`testdata/load`). The record's tests read sessions the pinned pi wrote
 (`pkg/transcript/pi/testdata`). The `harness-adapter` workflow runs the kit on Linux with the pinned
 release it downloads and verifies.
 

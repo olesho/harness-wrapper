@@ -167,9 +167,27 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			{Root: contract.RootConfig, Path: sessionsDir},
 			{Root: contract.RootConfig, Path: memoryDir},
 		},
-		SecretPaths: []contract.RootPath{{Root: contract.RootConfig, Path: authFile}},
+		SecretPaths:     []contract.RootPath{{Root: contract.RootConfig, Path: authFile}},
+		HistoryRewrites: rewrites(req.Load, l),
 	}, nil
 }
+
+// rewrites are, for a load, the session header's working directory: pi finds
+// a session by --session-id only among those whose header names its working
+// directory, and starts a new, empty one under the same id otherwise. The
+// session dir is in the config root, so nothing moves.
+func rewrites(load *contract.LoadSource, l contract.Layout) []contract.Rewrite {
+	if load == nil || load.Workspace == l.Workspace {
+		return nil
+	}
+	return []contract.Rewrite{{
+		Path:  contract.RootPath{Root: contract.RootConfig, Path: sessionsDir},
+		Field: headerCwd, From: load.Workspace, To: l.Workspace,
+	}}
+}
+
+// headerCwd is the session header's field naming its working directory.
+const headerCwd = "cwd"
 
 // maxRetries is how often pi retries a failed model call: its default.
 const maxRetries = 3

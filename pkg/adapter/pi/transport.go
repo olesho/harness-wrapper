@@ -22,6 +22,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/adapter/internal/proc"
 	"github.com/olesho/harness-wrapper/pkg/contract"
+	tpi "github.com/olesho/harness-wrapper/pkg/transcript/pi"
 )
 
 // The RPC transport: pi runs as
@@ -237,6 +238,15 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err := os.MkdirAll(cfg.SessionDir, 0o700); err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "the session dir: %v", err)
 	}
+	loaded := ""
+	if req.Loaded {
+		// A loaded Session is its file, where pi finds it: with none, or one
+		// whose header names another working directory, pi would start an
+		// empty session under the same id.
+		if loaded, err = loadedFile(cfg, id); err != nil {
+			return nil, openFailed(contract.OpenSessionNotFound, "the loaded session: %v", err)
+		}
+	}
 	env := append(adapter.HostEnv(), cfg.Env...)
 	args := append([]string{"--mode", "rpc", "--session-id", id, "--session-dir", cfg.SessionDir, "-e", cfg.Extension}, cfg.Args...)
 
@@ -263,10 +273,16 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 		return nil, fail(openFailed(contract.OpenConfigInvalid, "pi did not answer get_state: %v %s: %s", err, st.Error, proc.LastLine(t.stderr.String())))
 	}
 	var state struct {
-		SessionID string `json:"sessionId"`
+		SessionID    string `json:"sessionId"`
+		SessionFile  string `json:"sessionFile"`
+		MessageCount int    `json:"messageCount"`
 	}
 	if json.Unmarshal(st.Data, &state) != nil || state.SessionID != id {
 		return nil, fail(openFailed(contract.OpenConfigInvalid, "pi opened session %q, not %q", state.SessionID, id))
+	}
+	if loaded != "" && (!sameFile(state.SessionFile, loaded) || state.MessageCount == 0) {
+		return nil, fail(openFailed(contract.OpenSessionNotFound, "pi opened %s with %d messages, not the loaded session's %s: %s",
+			state.SessionFile, state.MessageCount, loaded, proc.LastLine(t.stderr.String())))
 	}
 	cmds, err := t.call(ictx, map[string]any{"type": "get_commands"})
 	if err != nil || !cmds.Success || !hasCommand(cmds.Data, tagCommand) {
@@ -744,4 +760,39 @@ func (t *transport) untilGone(ctx context.Context, deadline time.Time) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
+}
+
+// loadedFile is the session's file in the session dir, whose header names
+// the working directory pi runs in, resolved as pi resolves it.
+func loadedFile(cfg openConfig, id string) (string, error) {
+	path, err := tpi.SessionFile(cfg.SessionDir, id)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	line, err := bufio.NewReaderSize(f, contract.MaxRewriteLine).ReadSlice('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("%s: its header: %v", path, err)
+	}
+	var h struct {
+		Cwd string `json:"cwd"`
+	}
+	if json.Unmarshal(line, &h) != nil || h.Cwd == "" {
+		return "", fmt.Errorf("%s has no header naming its working directory", path)
+	}
+	if !sameFile(h.Cwd, cfg.WorkingDir) {
+		return "", fmt.Errorf("%s names the working directory %s, and pi runs in %s", path, h.Cwd, cfg.WorkingDir)
+	}
+	return path, nil
+}
+
+// sameFile reports whether two paths, resolved, are one.
+func sameFile(a, b string) bool {
+	ra, err1 := filepath.EvalSymlinks(a)
+	rb, err2 := filepath.EvalSymlinks(b)
+	return err1 == nil && err2 == nil && ra == rb
 }

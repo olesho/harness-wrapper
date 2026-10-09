@@ -43,4 +43,5 @@ an HTTPS proxy with a CA of its own that swaps placeholders for keys.
 | `TestMCPAtOpen` | pi connects to MCP servers when it starts; `!command` headers; direct exposure. |
 | `TestModelOutsideTheCatalog` | A model pi's catalog lacks, with and without a `models.json` entry. |
 | `TestDistribution` | Which of a release's files pi needs. |
+| `TestLoadCopyNotFound`, `TestLoadHeaderRewritten`, `TestLoadSameWorkspacePath`, `TestLoadByPathRefused`, `TestLoadAnotherProvider` | A saved session's file in a fresh agent: what `--session-id` finds, what a load must change in the file, and a model of another provider. |
 | `TestBehindABroker` | pi through an HTTPS proxy with its own CA: which CA variables work, each key's header, the hosts pi asks for. |

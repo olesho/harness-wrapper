@@ -80,6 +80,9 @@ type agent struct {
 	args     []string
 	env      []string
 	mcp      bool
+	// path, when set, opens the session by its file (--session PATH)
+	// instead of by its id.
+	path string
 }
 
 // newAgent lays out an agent whose model's provider answers at mock, with a
@@ -159,6 +162,9 @@ func (a *agent) writeJSON(name string, v any) {
 // model, and the tag extension.
 func (a *agent) argv() []string {
 	args := []string{"--mode", "rpc", "--session-id", a.id, "--session-dir", a.sessions, "--model", a.model}
+	if a.path != "" {
+		args = []string{"--mode", "rpc", "--session", a.path, "--session-dir", a.sessions, "--model", a.model}
+	}
 	if !a.mcp {
 		args = append(args, "--no-mcp")
 	}

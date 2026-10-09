@@ -1115,6 +1115,12 @@
           },
           "type": "array"
         },
+        "history_rewrites": {
+          "items": {
+            "$ref": "#/$defs/Rewrite"
+          },
+          "type": "array"
+        },
         "history_roots": {
           "items": {
             "$ref": "#/$defs/RootPath"
@@ -1302,6 +1308,29 @@
       "required": [
         "attempt",
         "max"
+      ],
+      "type": "object"
+    },
+    "Rewrite": {
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/RootPath"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "from",
+        "path",
+        "to"
       ],
       "type": "object"
     },
@@ -1705,5 +1734,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.7"
+  "title": "Harness Adapter Interface harness-adapter/1.8"
 }

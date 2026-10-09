@@ -40,6 +40,26 @@ The rows of the interface specification's adapter mappings, for `pi --mode rpc`.
 - **Commands after a tag.** A tagged input is no extension command (`/hw-tag` reaches the model), but
   prompt templates and skills still expand (`/greet` becomes its text). (`TestTags`)
 
+## Loading a saved session
+
+Probed on macOS arm64, 2026-10-09: an agent's session file, copied into a fresh agent (another agent
+dir, home and workspace; the source's gone), as a load would place it.
+
+- **`--session-id` looks only at the working directory's sessions.** It matches a file by its
+  header's `cwd`: a copy whose header names the source's workspace is not found, and pi silently
+  starts a new, empty session under the same id, in a new file — a warning on stderr ("No project
+  session found with id …") is all that says so. A load that only copies the file loses the
+  conversation. (`TestLoadCopyNotFound`)
+- **With the header's `cwd` naming the new workspace, the copy loads.** The same file goes on; the
+  next request carries the saved turns; tools run in the new workspace; pi appends a system message
+  with the new `cwd` and the new workspace's `AGENTS.md` (the source's stays in the history).
+  (`TestLoadHeaderRewritten`) A workspace at the source's very path needs no rewrite
+  (`TestLoadSameWorkspacePath`); agentd's workspaces are per environment, so its loads never have it.
+- **`--session PATH` is no way round it.** pi refuses a file whose header's `cwd` does not exist
+  ("Stored session working directory does not exist") and answers no RPC command. (`TestLoadByPathRefused`)
+- **Another provider's model goes on with the session.** Saved under Anthropic's, loaded under
+  OpenAI's (header rewritten): the Responses request carries the saved turns. (`TestLoadAnotherProvider`)
+
 ## Network
 
 Behind a broker — an HTTPS proxy that ends TLS with its own CA and swaps placeholders in headers — pi
