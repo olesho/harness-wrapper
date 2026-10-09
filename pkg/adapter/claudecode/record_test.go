@@ -689,3 +689,139 @@ func TestUnmarkedPromptTakesNoInput(t *testing.T) {
 		}
 	}
 }
+
+// thinkingSession is a session whose prompt (native id thinkingPrompt) claude
+// answered after thinking: a thinking-only entry, then the text, both with
+// stop_reason end_turn (claude 2.1.283/2.1.284).
+const (
+	thinkingSession = "a1f82cd3-6936-4ffd-8998-70b64b65dec9"
+	thinkingPrompt  = "11111111-1111-4111-8111-111111111111"
+	thinkingEntry   = "22222222-2222-4222-8222-222222222222"
+	replyEntry      = "33333333-3333-4333-8333-333333333333"
+)
+
+func thinkingLine(uuid, parent, at, content string) string {
+	return `{"parentUuid":"` + parent + `","isSidechain":false,"message":{"id":"msg_reply","type":"message","role":"assistant","content":[` + content + `],"stop_reason":"end_turn"},"type":"assistant","uuid":"` + uuid + `","timestamp":"` + at + `","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n"
+}
+
+var (
+	thinkingLines = `{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"REPORT"},"uuid":"` + thinkingPrompt + `","timestamp":"2026-10-08T18:05:00.000Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n" +
+		thinkingLine(thinkingEntry, thinkingPrompt, "2026-10-08T18:05:04.000Z", `{"type":"thinking","thinking":"…","signature":"…"}`)
+	replyLine = thinkingLine(replyEntry, thinkingEntry, "2026-10-08T18:05:34.000Z", `{"type":"text","text":"THE REPORT"}`)
+	nextLine  = `{"parentUuid":"` + replyEntry + `","isSidechain":false,"type":"user","message":{"role":"user","content":"NEXT"},"uuid":"44444444-4444-4444-8444-444444444444","timestamp":"2026-10-08T18:06:00.000Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n"
+)
+
+// thinkingAgent lays out an agent whose Session's transcript holds lines, and
+// returns the transcript's path for more.
+func thinkingAgent(t *testing.T, lines string) (contract.Layout, []byte, *adapter.Markers, string) {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(file, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, oc, m := recordAgent(t, thinkingSession, file, map[string]string{"in-report": thinkingPrompt})
+	cfg, _ := parseOpenConfig(oc)
+	f, err := claudecode.FollowEntries(thinkingSession, cfg.WorkingDir, cfg.Env, transcript.Checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l, oc, m, f.Path()
+}
+
+func appendLine(t *testing.T, path, line string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.WriteString(line)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// checkReply checks that the reply is the turn's, and that the turn ends once,
+// completed, with the reply's text at the reply's entry.
+func checkReply(t *testing.T, items []contract.Observation) {
+	t.Helper()
+	ends := 0
+	for _, o := range items {
+		switch o.Kind {
+		case contract.KindAssistantText:
+			if o.InputID != "in-report" || o.TurnID != adapter.TurnID("in-report") {
+				t.Errorf("the reply is input %q turn %q, want in-report's", o.InputID, o.TurnID)
+			}
+		case contract.KindTurnEnded:
+			ends++
+			var d contract.TurnEndedData
+			_ = o.Decode(&d)
+			if o.InputID != "in-report" || d.Outcome != contract.TurnCompleted || d.Text != "THE REPORT" || o.Entry != replyEntry {
+				t.Errorf("the turn's end: input %q entry %s %+v, want in-report's, completed with the reply at its entry", o.InputID, o.Entry, d)
+			}
+		}
+	}
+	if ends != 1 {
+		t.Errorf("%d turn ends, want 1", ends)
+	}
+}
+
+// A reply after thinking is the turn's, and the turn's end carries it: the
+// thinking entry's end_turn does not end the turn before its text, whether
+// the text is read with it, a record at a time, after a later read, or by a
+// reader reopened between them.
+func TestReplyAfterThinking(t *testing.T) {
+	t.Run("one read", func(t *testing.T) {
+		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine)
+		items, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), contract.MaxObserveBytes)
+		checkReply(t, items)
+	})
+	t.Run("a record at a time", func(t *testing.T) {
+		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine)
+		items, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), 1)
+		checkReply(t, items)
+	})
+	t.Run("text written later", func(t *testing.T) {
+		l, oc, m, path := thinkingAgent(t, thinkingLines)
+		r := openReader(t, thinkingSession, l, oc, m, nil)
+		items, _ := readAll(t, r, contract.MaxObserveBytes)
+		if ends := turnEnds(items); len(ends) != 0 {
+			t.Fatalf("the turn ended before its text: %+v", ends)
+		}
+		appendLine(t, path, replyLine)
+		more, _ := readAll(t, r, contract.MaxObserveBytes)
+		checkReply(t, append(items, more...))
+	})
+	t.Run("reopened before the text", func(t *testing.T) {
+		l, oc, m, path := thinkingAgent(t, thinkingLines)
+		items, chunks := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), contract.MaxObserveBytes)
+		cp := chunks[len(chunks)-1].Checkpoint
+		appendLine(t, path, replyLine)
+		more, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, cp), contract.MaxObserveBytes)
+		checkReply(t, append(items, more...))
+	})
+}
+
+// A message of thinking alone that ends the turn ends it at its entry, once
+// an entry of another message shows no text follows.
+func TestThinkingOnlyEnd(t *testing.T) {
+	l, oc, m, _ := thinkingAgent(t, thinkingLines+nextLine)
+	items, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), 1)
+	var ended []contract.Observation
+	for _, o := range items {
+		if o.Kind == contract.KindTurnEnded {
+			ended = append(ended, o)
+		}
+		if o.Kind == contract.KindUserInput && o.Entry != thinkingPrompt && o.InputID != "" {
+			t.Errorf("the unmarked prompt is attributed to %q", o.InputID)
+		}
+	}
+	if len(ended) != 1 || ended[0].InputID != "in-report" || ended[0].Entry != thinkingEntry {
+		t.Fatalf("turn ends %+v, want in-report's at the thinking entry", ended)
+	}
+	if d := turnEnds(items)["in-report"]; d.Outcome != contract.TurnCompleted || d.Text != "" {
+		t.Errorf("the end: %+v, want completed with no text", d)
+	}
+}

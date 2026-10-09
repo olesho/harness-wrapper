@@ -29,9 +29,10 @@ import (
 // tool_result and api_error, keyed by the entry's uuid (and block) or the
 // tool use id. The record tells which input a turn belongs to — the prompt
 // entry's uuid is the input's native id — and how it ended: an assistant
-// entry with stop_reason end_turn, a synthetic API-error entry, or an
-// interrupt entry, each a record-origin turn_ended. Hook spool files become
-// tool_started, tool_finished and the subagents' start and stop.
+// message with stop_reason end_turn (at its text, when thinking comes first),
+// a synthetic API-error entry, or an interrupt entry, each a record-origin
+// turn_ended. Hook spool files become tool_started, tool_finished and the
+// subagents' start and stop.
 type reader struct {
 	session string
 	cfg     openConfig
@@ -58,6 +59,19 @@ type recordState struct {
 	// (background_turns), when the record is in one.
 	own   string
 	ended bool
+	// msg is the API message that ended the turn, or is ending it. claude
+	// writes a message as one entry per content block, each with the
+	// message's stop_reason, and a reply after thinking as a thinking-only
+	// entry and then the text, up to half a minute later (claude 2.1.283):
+	// the message's later entries, up to the next user entry, are still the
+	// turn's.
+	msg string
+	// held is set while msg's entries hold only thinking: the turn's end
+	// waits for the message's text, and is the entry heldEntry's, at
+	// heldAt, when an entry of another message shows there is none.
+	held      bool
+	heldAt    time.Time
+	heldEntry string
 }
 
 type chunkToken struct {
@@ -440,6 +454,48 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 		if e.Sidechain {
 			continue
 		}
+		// Items belong to the input whose turn the record is in; after that
+		// turn's end, to none but the rest of the message that ended it,
+		// until the next prompt of an input with a marker. A prompt without
+		// one — sent by another host — never takes an ended turn's input.
+		stamp := func(o contract.Observation) contract.Observation {
+			o.Entry = e.UUID
+			switch {
+			case st.ended && (st.msg == "" || e.MessageID != st.msg):
+			case st.input != "":
+				o.InputID, o.TurnID = st.input, adapter.TurnID(st.input)
+			case st.own != "":
+				o.TurnID = st.own
+			}
+			return o
+		}
+		// end ends the turn at entry.
+		end := func(entry string, at time.Time, data contract.TurnEndedData) {
+			var key string
+			switch {
+			case st.ended:
+				return
+			case st.input != "":
+				key = st.input
+			case st.own != "":
+				key = st.own
+			default:
+				return
+			}
+			o := stamp(contract.NewObservation(contract.KindTurnEnded, key, contract.OriginRecord, at, data))
+			o.Entry = entry
+			out = append(out, o)
+			st.ended, st.held = true, false
+		}
+		if st.held && e.MessageID != st.msg {
+			// The message that ended the turn held only thinking.
+			end(st.heldEntry, st.heldAt, contract.TurnEndedData{Outcome: contract.TurnCompleted})
+		}
+		if e.Type == transcript.TypeUser && st.ended {
+			// A message's entries are consecutive: one after a user entry
+			// is another message's, whatever its id.
+			st.msg = ""
+		}
 		if n := r.native(e); e.Type == transcript.TypeUser && n != "" {
 			if mk, ok := r.markers.ByNative(n); ok && mk.SessionID == r.session {
 				st = recordState{input: mk.InputID}
@@ -449,34 +505,6 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			// claude tells the model background work ended: the turn it
 			// takes that up in is its own.
 			st = recordState{own: adapter.AutoTurnID(ownNative(e.TaskNotification))}
-		}
-		// Items belong to the input whose turn the record is in; after that
-		// turn's end, to none, until the next prompt of an input with a
-		// marker. A prompt without one — sent by another host — never takes
-		// an ended turn's input.
-		stamp := func(o contract.Observation) contract.Observation {
-			o.Entry = e.UUID
-			switch {
-			case st.ended:
-			case st.input != "":
-				o.InputID, o.TurnID = st.input, adapter.TurnID(st.input)
-			case st.own != "":
-				o.TurnID = st.own
-			}
-			return o
-		}
-		end := func(at time.Time, data contract.TurnEndedData) {
-			switch {
-			case st.ended:
-				return
-			case st.input != "":
-				out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.input, contract.OriginRecord, at, data)))
-			case st.own != "":
-				out = append(out, stamp(contract.NewObservation(contract.KindTurnEnded, st.own, contract.OriginRecord, at, data)))
-			default:
-				return
-			}
-			st.ended = true
 		}
 		var reply []string
 		var at time.Time
@@ -514,7 +542,7 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 					contract.APIErrorData{Class: fl.errorClass(), HTTPStatus: e.APIErrorStatus, Message: text}))
 				o.Truncated = cut
 				out = append(out, o)
-				end(at, contract.TurnEndedData{Outcome: contract.TurnErrored, Error: fl.turnError(at)})
+				end(e.UUID, at, contract.TurnEndedData{Outcome: contract.TurnErrored, Error: fl.turnError(at)})
 			case ev.Type == transcript.EventText && ev.Role == transcript.RoleAssistant:
 				text, cut := adapter.Truncate(ev.Text)
 				o := stamp(contract.NewObservation(contract.KindAssistantText, key, contract.OriginRecord, at,
@@ -526,13 +554,33 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 		}
 		switch {
 		case e.Interrupt:
-			end(at, contract.TurnEndedData{Outcome: contract.TurnInterrupted})
+			end(e.UUID, at, contract.TurnEndedData{Outcome: contract.TurnInterrupted})
 		case e.StopReason == "end_turn" && e.APIError == "":
+			if st.ended {
+				break
+			}
+			st.msg = e.MessageID
+			if e.MessageID != "" && thinkingOnly(run.events) {
+				// The message's text, if it has any, is in an entry to come.
+				st.held, st.heldAt, st.heldEntry = true, at, e.UUID
+				break
+			}
 			text, _ := adapter.Truncate(strings.Join(reply, ""))
-			end(at, contract.TurnEndedData{Outcome: contract.TurnCompleted, Text: text})
+			end(e.UUID, at, contract.TurnEndedData{Outcome: contract.TurnCompleted, Text: text})
 		}
 	}
 	return out, st
+}
+
+// thinkingOnly reports whether an entry's events are only the one an entry
+// with no content events gets: an assistant entry of thinking alone.
+func thinkingOnly(events []transcript.FollowedEvent) bool {
+	for _, fe := range events {
+		if fe.Event.Type != claudecode.EventEntry {
+			return false
+		}
+	}
+	return len(events) > 0
 }
 
 func toolKey(toolUseID, fallback string) string {
