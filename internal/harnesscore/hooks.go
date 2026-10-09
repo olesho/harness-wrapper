@@ -184,4 +184,7 @@ type HookEntry struct {
 	// Arg is the `loom hooks <harness> <Arg>` subcommand the fired hook invokes
 	// (e.g. "session-start", "stop", "subagent-start").
 	Arg string
+	// Timeout, in seconds, is how long the harness lets the hook run; zero
+	// leaves the harness's default.
+	Timeout int
 }

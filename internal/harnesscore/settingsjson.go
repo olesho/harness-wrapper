@@ -25,6 +25,9 @@ type SettingsHookMatcher struct {
 type SettingsHookCmd struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
+	// Timeout is the hook's timeout in seconds; omitted, the harness's
+	// default.
+	Timeout int `json:"timeout,omitempty"`
 }
 
 // EnsureSettingsJSONHooks idempotently + atomically installs spec's hooks into a
@@ -58,7 +61,7 @@ func RenderSettingsJSONHooks(existing []byte, spec *HookSpec, loomArgv []string,
 		cmd := RenderHookCommand(loomArgv, harnessName, e.Arg, spec.Owner)
 		byEvent[e.NativeEvent] = append(byEvent[e.NativeEvent], SettingsHookMatcher{
 			Matcher: e.Matcher,
-			Hooks:   []SettingsHookCmd{{Type: "command", Command: cmd}},
+			Hooks:   []SettingsHookCmd{{Type: "command", Command: cmd, Timeout: e.Timeout}},
 		})
 	}
 	for _, e := range spec.Events {
