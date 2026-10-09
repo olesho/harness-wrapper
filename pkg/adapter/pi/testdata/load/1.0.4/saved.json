@@ -1,0 +1,36 @@
+{
+  "source": {
+    "format": 2,
+    "harness": {
+      "name": "pi",
+      "version": "1.0.4",
+      "adapter": "harness-wrapper (devel)"
+    },
+    "layout": {
+      "home": "/private/tmp/hw-saved-session/pi/home",
+      "config": "/private/tmp/hw-saved-session/pi/config",
+      "workspace": "/private/tmp/hw-saved-session/pi/workspace",
+      "secrets": "/private/tmp/hw-saved-session/pi/secrets",
+      "scratch": "/private/tmp/hw-saved-session/pi/scratch"
+    },
+    "workspace": "/private/tmp/hw-saved-session/pi/workspace"
+  },
+  "session_id": "6584f791-a0dd-48c0-a84f-b3ce274388c7",
+  "remembers": [
+    "PING 1",
+    "PONG 1",
+    "TOOL echo saved"
+  ],
+  "files": [
+    {
+      "root": "config",
+      "path": "sessions/2026-10-09T04-48-57-128Z_6584f791-a0dd-48c0-a84f-b3ce274388c7.jsonl",
+      "mode": "0644"
+    },
+    {
+      "root": "config",
+      "path": "memory/notes.md",
+      "mode": "0600"
+    }
+  ]
+}

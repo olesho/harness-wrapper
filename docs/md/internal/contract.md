@@ -411,13 +411,21 @@ TUI, its docs and images ([the probe](../../../probes/pirpc/FINDINGS.md)).
   with no end otherwise.
 - **Recover** finds the tag's user message, then the run's end: without either — pi never took the
   input in, or crashed before the run ended — `unknown`.
+- **Load:** the history is `config/sessions` and `config/memory`; nothing moves. `--session-id`
+  finds a session only among those whose header names pi's working directory, and starts an empty
+  one under the id otherwise, so a load rewrites the header's `cwd` from the source's workspace to
+  the new one ([ADR-023](decisions/adr-023-history-rewrites.md)). A loaded open is strict: the file
+  must be in the session dir naming pi's working directory, and `get_state` must name it with its
+  messages, or the open fails `session_not_found`. The profile loads the Sessions the pinned pi
+  saved.
 - **One Session of an agent at a time:** no `concurrent_sessions`, until a probe of pi's own shows
   its Sessions side by side keep apart ([ADR-022](decisions/adr-022-sessions-side-by-side.md)).
 
 `TestPiConforms` runs the conformance kit against a real pi driving `internal/mockapi`'s Responses
 API, and `TestPiConformsOnAnthropic` its Messages API (all but `usage-limit`: under an API key,
 Anthropic's 429 is a rate limit), when `HW_REAL_PI` names the pinned release's executable
-(`probes/pirpc/fetch.sh`). The record's tests read sessions the pinned pi wrote
+(`probes/pirpc/fetch.sh`). `TestPiLoadsSavedSessions` loads the Session each source version saved
+(`testdata/load`). The record's tests read sessions the pinned pi wrote
 (`pkg/transcript/pi/testdata`). The `harness-adapter` workflow runs the kit on Linux with the pinned
 release it downloads and verifies.
 

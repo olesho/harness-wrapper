@@ -42,7 +42,12 @@ func realPi(t *testing.T) string {
 // extension.
 func distribution(t *testing.T, piBin string) string {
 	t.Helper()
-	root := t.TempDir()
+	return distributionAt(t, piBin, t.TempDir())
+}
+
+// distributionAt lays the distribution out at root.
+func distributionAt(t *testing.T, piBin, root string) string {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
