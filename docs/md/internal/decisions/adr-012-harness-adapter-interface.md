@@ -121,6 +121,14 @@ behind the same interface, so agentd adds no TUI code of its own (agentd ADR 000
 
 ## History
 
+- 2026-10-09: the TUI hybrid's phase 2: `claude-code-tui` interrupts a turn and reports retries.
+  `Interrupt` presses Esc and is confirmed by the debug log's `[onCancel]`; the turn's end with an
+  interrupt's stop reason (`null`, `tool_use`) ends it `interrupted`, before the first token too,
+  and Ctrl-U clears the prompt claude puts back in its composer. Each `API error (attempt k/N)`
+  claude retries is a `retrying` observation, and the Descriptor declares `retry_visible`. The kit's
+  `interrupt` scenarios run. Prompts, claude's own turns, tools and subagents observed and
+  side-by-side Sessions come later.
+
 - 2026-10-09: interface 1.7 adds a version policy ([ADR-023](adr-023-harness-version-policy.md)):
   `claude-code-tui` no longer refuses a claude other than the pin unless the agent's
   `version_policy` is `strict`; under `flexible`, the default, its `[engine]` gate alone decides.

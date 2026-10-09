@@ -7,12 +7,13 @@
 // "claude-code-tui" (contract.Lookup), beside "claude-code", whose
 // configuration, record and failure classes it shares (pkg/adapter/claudecode).
 //
-// It is agentd's fallback for when stream-json is unavailable or breaks. This
-// is its first phase: Sessions open fresh or reopen, inputs run as turns that
-// complete or error, the record is the Claude Code profile's, and Close stops
-// claude. Interrupts, retries reported as they happen, prompts, turns of
-// claude's own and rate-limit reports come later; the Descriptor declares
-// none of them.
+// It is agentd's fallback for when stream-json is unavailable or breaks. Its
+// first phase opens Sessions fresh or reopened, runs inputs as turns that
+// complete or error, keeps the Claude Code profile's record, and stops claude
+// on Close. Its second interrupts a turn (Esc, confirmed by the debug log)
+// and reports each retry claude makes as it happens (retry_visible). Prompts,
+// turns of claude's own, rate-limit reports, tools and subagents observed and
+// side-by-side Sessions come later; the Descriptor declares none of them.
 package claudecodetui
 
 import (
@@ -47,7 +48,7 @@ func (Profile) Describe() contract.Descriptor {
 		Contract: contract.Version,
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
-			contract.CapResume, contract.CapAssignSessionID,
+			contract.CapResume, contract.CapAssignSessionID, contract.CapRetryVisible,
 		},
 		CheckpointFormat: claudecode.CheckpointFormat,
 		CredentialKinds:  []string{claudecode.CredentialKind},

@@ -16,11 +16,13 @@ import (
 //	[engine] turn N start
 //	[engine] turn N end (… stop=<reason> resultLen=<n>)
 //	[ERROR] API error (attempt k/N): <status> <body>
+//	[onCancel] source=local streamMode=<mode>
 //
 // Any other line with "[engine] " says only that claude's engine logs, which
-// Start waits for. Phase 1 reads a turn's start and end and an API error's
-// status. Interrupts, which come later, add `[onCancel] …` (a cancel) and
-// read a turn end's stop reason; retries report each API error as it comes.
+// Start waits for. A turn's start and end bracket it; a turn end's stop
+// reason says how it ended (null or tool_use: an interrupt stopped it); an
+// API error is one failed model request, which claude retries while k < N;
+// [onCancel] is claude taking an interrupt (Esc).
 
 // lineKind is what a debug line says.
 type lineKind int
@@ -32,6 +34,7 @@ const (
 	lineTurnStart
 	lineTurnEnd
 	lineAPIError
+	lineCancel
 )
 
 // debugLine is one debug line, read.
@@ -48,6 +51,7 @@ var (
 	reTurnStart = regexp.MustCompile(`\[engine\] turn (\d+) start\s*$`)
 	reTurnEnd   = regexp.MustCompile(`\[engine\] turn (\d+) end \(.*\bstop=(\w+)`)
 	reAPIError  = regexp.MustCompile(`API error \(attempt (\d+)/(\d+)\): (\d{3})\b`)
+	reCancel    = regexp.MustCompile(`\[onCancel\]`)
 	reEngine    = regexp.MustCompile(`\[engine\] `)
 )
 
@@ -63,6 +67,8 @@ func parseDebugLine(s string) debugLine {
 	case reAPIError.MatchString(s):
 		m := reAPIError.FindStringSubmatch(s)
 		return debugLine{kind: lineAPIError, attempt: atoi(m[1]), max: atoi(m[2]), status: atoi(m[3])}
+	case reCancel.MatchString(s):
+		return debugLine{kind: lineCancel}
 	case reEngine.MatchString(s):
 		return debugLine{kind: lineEngine}
 	}

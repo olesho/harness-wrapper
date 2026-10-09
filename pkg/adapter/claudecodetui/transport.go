@@ -33,7 +33,9 @@ import (
 // typed into claude's composer, then Enter; nothing reads the screen. The
 // UserPromptSubmit hook binds the prompt claude takes to the input and is its
 // receipt; Stop and StopFailure end its turn; the debug log brackets the turn
-// (tracker). Close presses Ctrl-C until claude quits, then signals its group.
+// (tracker). Interrupt presses Esc, and the debug log's [onCancel] is claude
+// taking it; Ctrl-U clears the composer before the next input. Close presses
+// Ctrl-C until claude quits, then signals its group.
 
 const (
 	// pollEvery is how often the live hooks and the debug log are read.
@@ -50,6 +52,10 @@ const (
 	// enterGap is the pause between an input's text and its Enter: Enter in
 	// the same read as the text is taken as part of a paste.
 	enterGap = 150 * time.Millisecond
+	// cancelWait bounds Interrupt's wait for claude to take Esc.
+	cancelWait = 10 * time.Second
+	// clearGap is the pause after Ctrl-U, before the input is typed.
+	clearGap = 50 * time.Millisecond
 	// quitWait is how long claude may take to quit on Ctrl-C.
 	quitWait = 5 * time.Second
 	// outputTail is how much of the terminal's output an exit's detail
@@ -63,6 +69,12 @@ const (
 const (
 	keyEnter = "\r"
 	keyCtrlC = "\x03"
+	// keyEsc interrupts claude's turn: a lone ESC, which claude tells from
+	// the start of a sequence by the pause after it.
+	keyEsc = "\x1b"
+	// keyCtrlU clears claude's composer, where claude puts back a prompt
+	// interrupted before its first token.
+	keyCtrlU = "\x15"
 	// pasteStart and pasteEnd bracket a paste: how a multi-line input is
 	// typed, so its newlines do not submit it early.
 	pasteStart = "\x1b[200~"
@@ -400,11 +412,26 @@ func (t *transport) Submit(ctx context.Context, s adapter.Submission) error {
 	if err := t.waitFor(ctx, settleWait, t.k.settled); err != nil {
 		return fmt.Errorf("%w: claude has not ended the turn before: %v", adapter.ErrNotSubmitted, err)
 	}
+	t.mu.Lock()
+	wipe := t.k.wipe
+	t.k.wipe = 0
+	t.mu.Unlock()
+	if wipe > 0 {
+		// After an interrupt claude may have put the prompt back in its
+		// composer, where the input would be appended to it.
+		if err := t.keys(strings.Repeat(keyCtrlU, wipe)); err != nil {
+			if errors.Is(err, errExited) {
+				return &contract.Error{Code: contract.CodeExited, Certainty: contract.NotSubmitted, Message: "claude exited"}
+			}
+			return fmt.Errorf("%w: clearing the composer: %v", adapter.ErrNotSubmitted, err)
+		}
+		time.Sleep(clearGap)
+	}
 	if err := live.SetPending(t.dir, s.Native); err != nil {
 		return fmt.Errorf("%w: %v", adapter.ErrNotSubmitted, err)
 	}
 	t.mu.Lock()
-	t.k.begin(s.Native)
+	t.k.begin(s.Native, strings.Count(typed(s.Text), "\n")+1)
 	t.mu.Unlock()
 	if err := t.keys(typed(s.Text)); err != nil {
 		t.mu.Lock()
@@ -426,9 +453,30 @@ func (t *transport) Submit(ctx context.Context, s adapter.Submission) error {
 	return nil
 }
 
-// Interrupt: interrupts come in a later phase of this profile.
-func (t *transport) Interrupt(context.Context) error {
-	return contract.Errorf(contract.CodeUnsupported, "%s does not interrupt a turn yet", Name)
+// Interrupt presses Esc, and returns once claude took it: the debug log's
+// [onCancel], or the turn's end. The turn's end comes as its Ended event:
+// interrupted when claude stopped it, or as Stop or StopFailure say when it
+// finished as Esc landed (tracker).
+func (t *transport) Interrupt(ctx context.Context) error {
+	t.mu.Lock()
+	f := t.k.turn
+	switch {
+	case f == nil || !f.started:
+		t.mu.Unlock()
+		return errors.New("claude is on no input's turn")
+	case f.ended:
+		t.mu.Unlock()
+		return nil
+	}
+	t.k.interrupting()
+	t.mu.Unlock()
+	if err := t.keys(keyEsc); err != nil {
+		return fmt.Errorf("pressing Esc: %w", err)
+	}
+	if err := t.waitFor(ctx, cancelWait, func() bool { return f.cancel || f.ended }); err != nil {
+		return fmt.Errorf("claude did not take the interrupt: %w", err)
+	}
+	return nil
 }
 
 // Answer: at bypass claude raises no prompts.

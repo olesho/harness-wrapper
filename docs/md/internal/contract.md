@@ -327,15 +327,41 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   the prompt to its transcript, so the binding is on disk first. `Stop` completes the turn with
   `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
   the HTTP status from the debug log's `API error` lines or claude's text.
-- **Debug log:** only `[engine] turn N start`, `… end (… stop=…)` and `API error (attempt k/N):
-  <status>`, kept in `testdata/debug-2.1.283.log`, and read only while the one input's turn is in
-  flight. The next input is typed once the debug log logged the turn's end. The gate: a first turn
-  whose start the log never logs ends `errored` (`internal`), and claude is stopped.
+- **Debug log:** only `[engine] turn N start`, `… end (… stop=…)`, `API error (attempt k/N):
+  <status>` and `[onCancel]`, kept in `testdata/debug-2.1.283.log` and
+  `testdata/debug-2.1.283-interrupt.log`, and read only while the one input's turn is in flight. The
+  next input is typed once the debug log logged the turn's end. The gate: a first turn whose start
+  the log never logs ends `errored` (`internal`), and claude is stopped.
+- **Interrupts:** `Interrupt` presses Esc (a lone ESC) and returns once claude took it: the debug
+  log's `[onCancel]`, or the turn's end. No hook fires for an interrupt, so the debug log ends the
+  turn: after `[onCancel]`, a turn end whose stop reason is an interrupt's (`null`: a reply or a
+  request stopped; `tool_use`: a running tool stopped) ends it `interrupted`, and `Interrupt`
+  reports `stopped`. That holds before the first token too, where claude may log `[onCancel]` before
+  the turn's start, writes no interrupt record and withdraws the prompt: the outcome is
+  `interrupted`, not `cancelled`, since the request may have reached the model
+  ([the probe](../../../probes/tui-hybrid/FINDINGS.md)). The profile never reports `cancelled`. If
+  the turn finished as Esc landed (another stop reason), `Stop` or `StopFailure` ends it as they say
+  and `Interrupt` reports `too_late`; with neither within 2 s it ends `interrupted`. `no_turn` and
+  `too_late` for an input that is not running are the Session's, as for every profile. An `Esc` that
+  claude never takes leaves `Interrupt` `interrupt_unconfirmed` at its deadline; the profile presses
+  it once and never again, since a second Esc on an idle composer opens claude's rewind menu.
+  claude puts an interrupted prompt back in its composer, so before the next input the profile
+  presses Ctrl-U twice per line of the interrupted input (Ctrl-U clears a line, and joins an empty
+  one to the line before), at most 2048.
+- **Retries:** each `API error (attempt k/N)` with `k < N` is retry `k` of `N-1`, reported as a
+  `retrying` observation (`attempt`, `max`, `http_status`; the log carries no delay) while the turn
+  runs; the last attempt is not a retry. claude retries its first failure at once without advancing
+  `k`, so attempt 1 comes twice and is reported once. Errors logged before the receipt are reported
+  just after the turn's start.
 - **Record:** `claude-code`'s, except that a prompt entry is matched to its input by its prompt id
   (`promptId`), through the binding, since its uuid is claude's own. claude's TUI may write a fresh
   session's first reply to the transcript before its prompt, so the record orders a read's entries
   by timestamp and holds a reply of no turn back for up to 3 s while its prompt is written.
   File checkpointing (`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`) is off, as under stream-json.
+  An interrupt after the first token leaves claude's interrupt record, a record-origin
+  `turn_ended` `interrupted`, as under stream-json. One before the first token leaves the prompt
+  entry alone, which claude has withdrawn from the conversation: the record has no end for that
+  turn (the live `turn_ended` is the only one), and `Recover` reports it `unknown`.
 - **Close** presses Ctrl-C until claude quits (the first press may cancel a turn or an armed
   automatic continue), then signals the group.
 
@@ -356,11 +382,13 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   them otherwise opens, and its turns may not end where the profile reads them. A runtime that wants
   the pin alone asks for `strict`.
 
-Phase 1 declares `resume` and `assign_session_id` alone. Interrupts (`Interrupt` returns
-`unsupported`; the kit's `interrupt` scenarios are skipped), retries reported as they happen,
-prompts, turns claude starts itself, rate-limit reports, tools and subagents observed, side-by-side
-Sessions, load and brokered credentials come in later phases. `TestClaudeTUIConforms` runs the kit
-against the pinned claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it.
+Phase 1 (2026-10-07) declared `resume` and `assign_session_id`; phase 2 (2026-10-09) adds
+interrupts, which need no capability, and `retry_visible`, and the kit's `interrupt` and
+`interrupt-early` scenarios run. Still to come, none declared: prompts (`PermissionRequest`),
+background turns and turns claude starts itself (`autonomous_turns`, `background_turns`),
+rate-limit reports, streaming text, tools and subagents observed, side-by-side Sessions, load and
+brokered credentials. `TestClaudeTUIConforms` runs the kit against the pinned claude and
+`internal/mockapi` when `HW_REAL_CLAUDE` names it.
 
 ## The Codex profile
 
