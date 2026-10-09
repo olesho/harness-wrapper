@@ -121,6 +121,18 @@ behind the same interface, so agentd adds no TUI code of its own (agentd ADR 000
 
 ## History
 
+- 2026-10-09: the TUI hybrid's phase 3: `claude-code-tui` declares `tools_observed`, `subagents` and
+  `background_turns`, as `claude-code` does. Tools and subagents come from the hook spool through
+  the shared record. A prompt the `UserPromptSubmit` hook binds to no input starts a turn of
+  claude's own — a task notification's named `task-<task id>`, as the record names it — and `Stop`'s
+  `background_tasks` and the notification's task report the background work live. claude's TUI runs
+  every subagent in the background, so the input's turn ends at its launch and claude takes its
+  result up in a turn of its own (`probes/tui-hybrid`, *Phase 3*: macOS and Linux). Prompts stay
+  undeclared, as an owner decision: the `PermissionRequest` hook's `allow` and `deny` decide and it
+  may block for minutes, but claude's TUI draws its own dialog meanwhile, falls back to it, needing
+  keystrokes, when the hook answers nothing, and neither Claude profile has a posture that prompts.
+  Rate-limit reports, streaming text and side-by-side Sessions come later.
+
 - 2026-10-09: the TUI hybrid's phase 2: `claude-code-tui` interrupts a turn and reports retries.
   `Interrupt` presses Esc and is confirmed by the debug log's `[onCancel]`; the turn's end with an
   interrupt's stop reason (`null`, `tool_use`) ends it `interrupted`, before the first token too,

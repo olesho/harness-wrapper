@@ -172,6 +172,79 @@ Two probe faults surfaced here, both fixed:
 - `probe.py` named the transcript's directory by replacing only `/` and `.` in the working directory. claude replaces every non-alphanumeric character with `-`, and the real scenarios' directories contain `_`, so the first real run read no transcript.
 - The mid-tool check counted every `sleep 30` on the machine, including another session's 10-minute-old `sleep 30; gh run watch …`. It now counts only processes started during the scenario.
 
+## Phase 3: subagents, background work and PermissionRequest
+
+**Probed:** claude 2.1.283 (hw's pin), macOS arm64 and Ubuntu 26.04 arm64 (Lima, `agentd-ubuntu`),
+2026-10-09, against `internal/mockapi`, with `phase3_test.go` and `scenarios_test.go`: claude's TUI
+on a pseudo-terminal as the profile runs it (no `-p`, `--debug-file`), every hook registered, and
+the test binary as the hook command, which can block `PermissionRequest` until the probe answers.
+Four runs per scenario and platform. Rerun: `HW_REAL_CLAUDE=… HW_TUI_PROBE_RUNS=4
+HW_TUI_PROBE_OUT=<dir> go test -count=1 -v ./probes/tui-hybrid/` (`HW_TUI_PROBE_LONG=1` runs the
+11-minute case alone).
+
+### Subagents (`AGENT PING 7`): 8 runs, 8 pass
+
+| Signal | Evidence |
+|---|---|
+| `PreToolUse` | `tool_name: Agent`, the call's input, its `tool_use_id` |
+| `SubagentStart` | `agent_id`, `agent_type: general-purpose`, the parent's `prompt_id` |
+| `PostToolUse` | `tool_response.isAsync: true`, `status: async_launched`, `agentId`; before `SubagentStart` in 4 runs, after it in 4 |
+| `SubagentStop` | the same `agent_id`, `last_assistant_message: PONG 7`, `agent_transcript_path`, and `background_tasks` listing the subagent still `running` |
+| Transcript | `<session>/subagents/agent-<agent_id>.jsonl` |
+| The input's turn | ends at `Stop` with `TOOL DONE: Async agent launched…` |
+| Then | `UserPromptSubmit` with `<task-notification><task-id><agent_id></task-id>…<result>PONG 7</result>`, its own `[engine]` turn, and a `Stop` with `BG DONE` |
+
+**claude's TUI runs every `Agent` call in the background** (claude 2.1.283), though the mock's call
+asks for the foreground (`run_in_background: false`, which `PreToolUse`'s input drops). The
+subagent's result is then taken up in a turn of claude's own, exactly as a background command's is.
+The hooks the record reads (`SubagentStart` and `SubagentStop`, by `agent_id`) are the same as under
+stream-json.
+
+### Background work (`BG sleep 2; echo bg-out`): 8 runs, 8 pass
+
+- `PostToolUse` of the `Bash` call carries `tool_response.backgroundTaskId`.
+- The input's `Stop` carries `background_tasks: [{id, type: shell, command, description, status:
+  running}]`; the notification turn's `Stop` carries `[]`.
+- The notification's prompt names the task (`<task-id>`), and the transcript's entry for it has
+  `origin.kind: task-notification`, which the record already reads.
+
+So the list of background work is live at each turn's end (`Stop`, and `SubagentStop`), and a
+notification says which task ended. No hook carries the list when a task is launched, so the
+profile reports it at the end of the turn that launched it.
+
+### PermissionRequest, claude's `default` mode (no `--dangerously-skip-permissions`)
+
+The input is `TOOL touch <file>`, a write, which `default` mode asks about. The hook answers
+`{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny",…}}}`.
+
+| Case | macOS | Linux | Evidence |
+|---|---|---|---|
+| Fires | 24/24 | 24/24 | 0.09–1.6 s after `PreToolUse`, with `tool_name`, `tool_input`, `permission_suggestions` and the turn's `prompt_id`; no `tool_use_id` |
+| `allow` after 1 s | 3/4 | 4/4 | the tool runs (`PostToolUse`) and the turn completes. **In one macOS run the answer was written and never taken:** claude logged `executePermissionRequestHooks called` and nothing after, and the turn waited on the dialog past 90 s. It did not recur; the machine was running two other claude suites at the time |
+| `deny` with a message | 4/4 | 4/4 | no `PostToolUse`; the model gets the message as the tool's result (`TOOL DONE: probe says no`) |
+| `allow` after 45 s | 4/4 | 4/4 | honoured; `permissionDecisionMs` ≈ 45 000 |
+| `allow` after 11 min, hook timeout 86400 s | 1/1 | — | honoured at 660 s: the hook may block past the 600 s default when its own timeout allows |
+| The hook times out (5 s) | 4/4 | 4/4 | `timed out after 5000ms`; claude falls back to its dialog, and the turn waits on keystrokes (no `Stop` within 90 s) |
+| The hook answers nothing | 4/4 | 4/4 | the same: the dialog waits on keystrokes |
+| Esc while the hook blocks | 4/4 | 4/4 | `[engine] turn N end … stop=tool_use`, no `Stop`; the tool never runs and the hook's later answer is ignored: an interrupt as the profile already reads one |
+
+**claude's TUI draws its own dialog while the hook blocks**, in every run: "Do you want to proceed?
+1. Yes / 2. Yes, and always allow access to <dir> from this project / 3. No · Esc to cancel". It
+fires `Notification` (`notification_type: permission_prompt`) 6–12 s into the wait. The hook's
+answer dismisses the dialog. So the hook is an answer path but not the only one: a keystroke that
+reaches the terminal while a prompt waits answers the dialog, and a hook that times out, fails or
+answers nothing leaves a dialog that only keystrokes can answer.
+
+### What phase 3 builds on this
+
+- **Tools and subagents:** the hook spool, through `claude-code`'s record. No new hook.
+- **Claude's own turns and background work:** `UserPromptSubmit` bound to no input, `Stop`'s
+  `background_tasks`, and the notification's task id.
+- **Prompts: not built.** The hook decides when it answers, but declaring `prompts` takes a posture
+  that prompts, which neither Claude profile has (both render `bypass`), and the TUI's fallback
+  dialog needs keystrokes. It is left as an owner decision (contract.md, *The Claude Code TUI
+  profile*).
+
 ## Costs and risks
 
 - **The debug log is not a documented interface.** Its lines can change in any release. The adapter pins claude, parses only the six lines above, keeps them in the conformance kit's fixtures, and refuses to run when the log shows no `[engine] turn N start` for its first turn. That is the same kind of gate stream-json applies through `system/init` capabilities.
@@ -192,8 +265,6 @@ Two probe faults surfaced here, both fixed:
   - real account;
   - Linux;
   - a real usage wall (`StopFailure` `rate_limit`?);
-  - `PermissionRequest` answering;
-  - subagents;
   - compaction (`PreCompact`/`PostCompact`);
   - `--resume`;
   - an idle session over 60 s (`Notification` idle_prompt);

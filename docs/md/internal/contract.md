@@ -324,8 +324,8 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   `claude-code-hook tui <hook>`, which writes what each reports to `scratch/tui/<session id>`
   (`pkg/adapter/claudecodetui/live`). `UserPromptSubmit` binds claude's prompt id to the input being
   typed; that is `Send`'s receipt and the turn's start. claude waits for the hook before it writes
-  the prompt to its transcript, so the binding is on disk first. `Stop` completes the turn with
-  `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
+  the prompt to its transcript, so the binding is on disk first; a prompt it binds to no input it
+  records as claude's own. `Stop` completes the turn with `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
   the HTTP status from the debug log's `API error` lines or claude's text.
 - **Debug log:** only `[engine] turn N start`, `… end (… stop=…)`, `API error (attempt k/N):
   <status>` and `[onCancel]`, kept in `testdata/debug-2.1.283.log` and
@@ -348,6 +348,26 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   claude puts an interrupted prompt back in its composer, so before the next input the profile
   presses Ctrl-U twice per line of the interrupted input (Ctrl-U clears a line, and joins an empty
   one to the line before), at most 2048.
+- **Tools and subagents** (`tools_observed`, `subagents`) come from the hook spool, through the
+  record `claude-code` reads: `PreToolUse`, `PostToolUse` and `PostToolUseFailure` are
+  `tool_started` and `tool_finished` keyed by the tool use id, and `SubagentStart` and `SubagentStop`
+  are `subagent_started` and `subagent_stopped` keyed by the agent id, with the same ids and data as
+  under stream-json. They are record-origin there and here. claude's TUI runs every `Agent` call in
+  the background (claude 2.1.283, `isAsync`, even when the call asks for the foreground): the input's
+  turn ends once the subagent is launched, and claude takes its result up in a turn of its own.
+- **Claude's own turns** (`background_turns`): a `UserPromptSubmit` whose prompt the hook bound to no
+  input, while no input's turn runs, starts a turn of claude's own, reported live as `turn_started`
+  and `turn_ended` naming a turn and no input. A task notification's (`<task-notification>`) is
+  named `task-<task id>`, as the record names it from the notification's entry, so its end comes
+  from the record too; it ends as an input's turn does (`Stop`, `StopFailure`, or an interrupt,
+  which `InterruptRequest.TurnID` may name). The hook records each such prompt id as claude's own, so
+  a prompt queued behind its turn is never bound to an input, and `Send` waits while the debug log
+  has a turn open. The automatic continue after a usage limit (below) is reported the same way,
+  named `prompt-<prompt id>`; the record has no end for it.
+- **Background work** (`background_tasks`): the list `Stop` and `StopFailure` carry
+  (`background_tasks`: a `shell` is a command, a `subagent` a subagent), and a task notification's
+  task taken off it, each change reported live. Work is reported at the end of the turn that
+  launched it, not at its launch as under stream-json.
 - **Retries:** each `API error (attempt k/N)` with `k < N` is retry `k` of `N-1`, reported as a
   `retrying` observation (`attempt`, `max`, `http_status`; the log carries no delay) while the turn
   runs; the last attempt is not a retry. claude retries its first failure at once without advancing
@@ -369,7 +389,18 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
 
 - **Automatic continue after a usage limit.** At a usage wall claude's TUI arms "continuing
   automatically at <reset>", and once the limit lifts it may start a turn of its own; no setting is
-  known to turn it off. It is accepted rather than worked around.
+  known to turn it off. It is accepted rather than worked around. Since phase 3, if that turn fires
+  `UserPromptSubmit`, it is reported as a turn of claude's own (`prompt-<prompt id>`), live only;
+  if it fires none, it is not reported, and `Send` waits for the debug log's turn end
+  (`settleWait`, 10 s) before refusing as not submitted. Neither path has been observed: the mock
+  cannot lift a usage wall.
+- **A task that notifies twice.** claude says a subagent's task "may notify more than once" when it
+  is resumed. Both turns would be named `task-<task id>`, and the Session ignores a turn id that
+  already ended, so the second turn is not reported. `claude-code` names its own turns the same way.
+- **An input typed as claude starts its own turn.** If a background task ends while an input is
+  being typed, claude queues the input behind its own turn; the queued prompt reports the own
+  turn's prompt id and binds nothing, so `Send` reports the input `maybe_submitted`. The window is
+  the few milliseconds between the debug log's turn start, which `Send` waits on, and the typing.
 - **Input the TUI rewrites.** Text starting with `/`, `!` or `#` is read by the TUI as a command, a
   shell escape or a memory note, and a very long single line may become a paste placeholder. claude
   then submits something other than the text sent, the `UserPromptSubmit` receipt never matches, and
@@ -384,11 +415,27 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
 
 Phase 1 (2026-10-07) declared `resume` and `assign_session_id`; phase 2 (2026-10-09) adds
 interrupts, which need no capability, and `retry_visible`, and the kit's `interrupt` and
-`interrupt-early` scenarios run. Still to come, none declared: prompts (`PermissionRequest`),
-background turns and turns claude starts itself (`autonomous_turns`, `background_turns`),
-rate-limit reports, streaming text, tools and subagents observed, side-by-side Sessions, load and
-brokered credentials. `TestClaudeTUIConforms` runs the kit against the pinned claude and
-`internal/mockapi` when `HW_REAL_CLAUDE` names it.
+`interrupt-early` scenarios run. Phase 3 (2026-10-09) adds `tools_observed`, `subagents` and
+`background_turns`, as `claude-code` declares them (not `autonomous_turns`, which neither Claude
+profile declares); the kit's `background` scenario runs, and `TestClaudeTUIObservations` checks tools
+and subagents, which no kit scenario covers outside side-by-side Sessions. Still to come, none
+declared: prompts, which wait on an owner decision (below), rate-limit reports, streaming text,
+side-by-side Sessions, load and brokered credentials. `TestClaudeTUIConforms` runs the kit against
+the pinned claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it.
+
+**Prompts: an owner decision.** The `PermissionRequest` hook answers claude's permission prompts
+([the probe](../../../probes/tui-hybrid/FINDINGS.md), *Phase 3*): it fires for a tool that needs
+permission in claude's `default` mode, its `allow` or `deny` decides, and it may block for as long
+as its timeout allows (11 minutes held, with a timeout of a day); in 23 of 24 answered runs claude
+took the answer, and in one (macOS, under load) it never did. But claude's TUI draws its own
+permission dialog while the hook blocks, and when the hook times out or answers nothing, that
+dialog waits for keystrokes. And neither Claude profile has a posture that prompts: both render
+`bypass` alone, through the shared `ProvisionWith`, and `claude-code` refuses every `can_use_tool`.
+Declaring `prompts` here would take a `gated` posture for claude (which tools ask, and how the
+contract's options map onto claude's three), a mock prompt for the kit's `prompts` scenario, and a
+kit run of its own under that posture. Which profiles get `gated`, and whether a fallback dialog
+that only keystrokes can answer is acceptable, are the owner's to decide; the profile does not
+declare `prompts` meanwhile.
 
 ## The Codex profile
 
