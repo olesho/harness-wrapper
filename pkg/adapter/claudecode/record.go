@@ -659,6 +659,12 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 					return unknown, nil
 				}
 			}
+			if e.TaskNotification != "" {
+				// claude began a turn of its own, which it does only once the
+				// input's has ended: nothing said how that one ended, and the
+				// end that follows is claude's own turn's.
+				return unknown, nil
+			}
 			switch {
 			case e.Interrupt:
 				return contract.Recovered{Outcome: contract.RecoveredInterrupted}, nil
