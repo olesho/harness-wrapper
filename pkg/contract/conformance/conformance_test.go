@@ -57,6 +57,13 @@ func fakeFixture(t *testing.T, breaks string) Fixture {
 		Timeout: 10 * time.Second,
 		Quiet:   300 * time.Millisecond,
 		MCP:     true,
+		NonPin: func(t T) (string, func()) {
+			const other = "1.1.0"
+			if err := os.WriteFile(fakeadapter.VersionPath(root), []byte(other+"\n"), 0o644); err != nil {
+				t.Errorf("making the binary %s: %v", other, err)
+			}
+			return other, func() { _ = os.Remove(fakeadapter.VersionPath(root)) }
+		},
 	}
 }
 
@@ -151,6 +158,11 @@ var broken = map[string]struct{ rule, scenario string }{
 	"bg-tasks-unreported":         {"bg.tasks", "background"},
 	"bg-not-taken-up":             {"bg.reported", "background"},
 	"headers-file-unread":         {"headers.reach", "headers"},
+	"version-policy-unchecked":    {"version.invalid", "version-policy"},
+	"version-policy-ignored":      {"version.strict", "version-policy"},
+	"version-flexible-refuses":    {"version.flexible", "version-policy"},
+	"version-unreported":          {"version.reported", "version-policy"},
+	"version-reports-pin":         {"version.running", "version-policy"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule
@@ -175,7 +187,7 @@ func TestBrokenAdaptersFail(t *testing.T) {
 				Run(r, Fixture{
 					Adapter: f.Adapter, HarnessRoot: f.HarnessRoot, Spec: f.Spec, Credential: f.Credential, Kill: f.Kill,
 					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: 3 * time.Second, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
-					Approve: f.Approve, MCP: f.MCP,
+					Approve: f.Approve, MCP: f.MCP, NonPin: f.NonPin,
 				})
 			}
 			if !ran {
@@ -188,6 +200,18 @@ func TestBrokenAdaptersFail(t *testing.T) {
 			}
 			t.Errorf("breaking %q: no [%s] failure; got %q", b, want.rule, r.failures)
 		})
+	}
+}
+
+// The version-policy scenario asks nothing of an adapter declaring a minor
+// before 1.7.
+func TestVersionPolicySkipsOlderMinors(t *testing.T) {
+	f := fakeFixture(t, "capability-past-minor")
+	f.Skip = skipAllBut("version-policy")
+	r := &recorder{t: t}
+	Run(r, f)
+	if len(r.failures) > 0 {
+		t.Errorf("an adapter of %s: %q", f.Adapter.Describe().Contract, r.failures)
 	}
 }
 

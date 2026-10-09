@@ -190,6 +190,23 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	if _, err := os.Stat(s.cfg.Binary); err != nil {
 		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenBinaryNotFound, Message: err.Error()})
 	}
+	running := binaryVersion(s.cfg.Binary)
+	policy := s.cfg.VersionPolicy
+	switch {
+	case s.adapter.breaks("version-policy-ignored"):
+		policy = contract.VersionFlexible
+	case s.adapter.breaks("version-flexible-refuses"):
+		policy = contract.VersionStrict
+	}
+	if !policy.Admits(Version, running) {
+		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenVersionUnsupported, Message: fmt.Sprintf("%s %s is not the pinned %s", Name, running, Version)})
+	}
+	switch {
+	case s.adapter.breaks("version-unreported"):
+		running = ""
+	case s.adapter.breaks("version-reports-pin"):
+		running = Version
+	}
 	if c := s.req.Credential; c == nil || c.Kind != CredentialKind {
 		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenAuthRequired, Message: "no " + CredentialKind})
 	} else if b, err := os.ReadFile(c.File); err != nil || len(strings.TrimSpace(string(b))) == 0 {
@@ -262,7 +279,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	go s.connectMCP()
 	// A Session with an active goal goes back to work as it opens.
 	s.work()
-	return contract.OpenResult{SessionID: id, State: state}, nil
+	return contract.OpenResult{SessionID: id, State: state, HarnessVersion: running}, nil
 }
 
 // watchKill turns a crash into the Session's exit.

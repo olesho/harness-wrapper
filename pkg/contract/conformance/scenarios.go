@@ -50,6 +50,7 @@ var scenarios = []scenario{
 	{"concurrent-crash", concurrentCrash},
 	{"concurrent-record", concurrentRecord},
 	{"concurrent-load", concurrentLoad},
+	{"version-policy", versionPolicy},
 }
 
 // describe: the Descriptor is well formed.
