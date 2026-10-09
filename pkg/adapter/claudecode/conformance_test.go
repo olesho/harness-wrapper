@@ -192,7 +192,9 @@ func TestClaudeConforms(t *testing.T) {
 	mock.KeepBodies = true
 	defer mock.Close()
 	root := distribution(t, bin)
-	conformance.Run(conformance.Testing(t), kitFixture(root, mock))
+	f := kitFixture(root, mock)
+	f.Skip = map[string]string{"prompts": "claude asks nothing at bypass: TestClaudeConformsGated runs it"}
+	conformance.Run(conformance.Testing(t), f)
 	var persona bool
 	for _, r := range mock.Requests() {
 		persona = persona || strings.Contains(r.System, "PERSONA-MARKER")
@@ -200,4 +202,18 @@ func TestClaudeConforms(t *testing.T) {
 	if !persona {
 		t.Error("the persona never reached the model's system prompt")
 	}
+}
+
+// At the gated posture claude asks for each permission a tool needs, and the
+// profile raises it as the Session's prompt: the kit's prompts scenario,
+// against the pinned claude and the mock's ASK, a write claude's default mode
+// asks about.
+func TestClaudeConformsGated(t *testing.T) {
+	bin := realClaude(t)
+	mock := mockapi.Start()
+	defer mock.Close()
+	f := kitFixture(distribution(t, bin), mock)
+	f.Spec.PermissionPosture = contract.PostureGated
+	f.Skip = conformance.Only("prompts")
+	conformance.Run(conformance.Testing(t), f)
 }

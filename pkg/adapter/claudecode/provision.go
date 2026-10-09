@@ -125,7 +125,22 @@ func relocations(load *contract.LoadSource, l contract.Layout) []contract.Reloca
 // open_config with claude's arguments and environment. For a request that
 // loads a saved Session it names the history's one relocation.
 func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
-	return ProvisionWith(req, Hooks{})
+	return provision(req, Hooks{}, promptToolArgs)
+}
+
+// promptToolArgs are what the stream-json transport adds to claude's
+// arguments at the gated posture: claude asks the host, over the stream, for
+// each permission (can_use_tool control requests).
+var promptToolArgs = []string{"--permission-prompt-tool", "stdio"}
+
+// permissionArgs are claude's arguments for the permission posture: at bypass
+// every tool runs (isolation is the runtime's); at gated claude's default
+// mode, in which a tool that needs permission asks, and then gated's own.
+func permissionArgs(posture string, gated []string) []string {
+	if posture == contract.PostureGated {
+		return append([]string{"--permission-mode", "default"}, gated...)
+	}
+	return []string{"--permission-mode", "bypassPermissions"}
 }
 
 // Hooks are hooks a profile that runs claude with this profile's
@@ -138,8 +153,16 @@ type Hooks struct {
 }
 
 // ProvisionWith renders claude's configuration for the spec as Provision
-// does, with extra's hooks in settings.json too.
+// does, with extra's hooks in settings.json too. At the gated posture claude
+// runs in its default mode, and how it asks is the caller's: its hooks
+// (PermissionRequest), say.
 func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.ProvisionResult, error) {
+	return provision(req, extra, nil)
+}
+
+// provision renders claude's configuration, with gated added to claude's
+// arguments at the gated posture.
+func provision(req contract.ProvisionRequest, extra Hooks, gated []string) (contract.ProvisionResult, error) {
 	spec, l := req.Spec, req.Layout
 	invalid := func(field, format string, args ...any) error {
 		return &contract.Error{Code: contract.CodeInvalidSpec, Field: field, Message: fmt.Sprintf(format, args...)}
@@ -216,8 +239,7 @@ func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.Provisi
 		return contract.ProvisionResult{}, invalid("", "%d bytes of files, more than %d", total, MaxProfileSize)
 	}
 
-	// The permission posture is bypass: isolation is the runtime's.
-	args = append(args, "--permission-mode", "bypassPermissions")
+	args = append(args, permissionArgs(spec.PermissionPosture, gated)...)
 	if spec.Model != "" {
 		args = append(args, "--model", spec.Model)
 	}
@@ -294,7 +316,7 @@ func settingsJSON(harnessRoot, config string, extra Hooks) ([]byte, error) {
 			}
 		}
 		g, err := json.Marshal(harnesscore.SettingsHookMatcher{Matcher: e.Matcher, Hooks: []harnesscore.SettingsHookCmd{{
-			Type: "command", Command: harnesscore.RenderHookCommand(argv, extra.Harness, e.Arg, hookOwner),
+			Type: "command", Command: harnesscore.RenderHookCommand(argv, extra.Harness, e.Arg, hookOwner), Timeout: e.Timeout,
 		}}})
 		if err != nil {
 			return nil, err

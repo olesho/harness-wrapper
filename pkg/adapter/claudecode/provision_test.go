@@ -263,7 +263,6 @@ func TestProvisionRefuses(t *testing.T) {
 		t.Fatalf("two renderings differ: %v %v", err1, err2)
 	}
 	for name, mutate := range map[string]func(*contract.ProvisionRequest){
-		"gated posture": func(r *contract.ProvisionRequest) { r.Spec.PermissionPosture = contract.PostureGated },
 		"an api key": func(r *contract.ProvisionRequest) {
 			r.Spec.Credential = &contract.CredentialRef{Kind: "anthropic_api_key"}
 		},
@@ -275,6 +274,45 @@ func TestProvisionRefuses(t *testing.T) {
 		if _, err := a.Provision(bad); err == nil {
 			t.Errorf("%s: rendered", name)
 		}
+	}
+}
+
+// At the gated posture claude runs in its default mode and asks the stream for
+// each permission; everything else is bypass's, byte for byte. ProvisionWith
+// leaves how claude asks to its caller.
+func TestProvisionGated(t *testing.T) {
+	g := loadGolden(t)
+	bypass, err := Profile{}.Provision(goldenRequest(t, g))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := goldenRequest(t, g)
+	req.Spec.PermissionPosture = contract.PostureGated
+	gated, err := Profile{}.Provision(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(bypass.Files, gated.Files) {
+		t.Error("gated renders other files than bypass")
+	}
+	args := func(r contract.ProvisionResult) []string {
+		cfg, err := parseOpenConfig(r.OpenConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.Args
+	}
+	want := strings.Replace(strings.Join(args(bypass), " "), "--permission-mode bypassPermissions",
+		"--permission-mode default --permission-prompt-tool stdio", 1)
+	if got := strings.Join(args(gated), " "); got != want {
+		t.Errorf("gated args\n%s\nwant\n%s", got, want)
+	}
+	with, err := ProvisionWith(req, Hooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(args(with), " "); strings.Contains(got, "--permission-prompt-tool") || !strings.Contains(got, "--permission-mode default") {
+		t.Errorf("ProvisionWith at gated: %s", got)
 	}
 }
 

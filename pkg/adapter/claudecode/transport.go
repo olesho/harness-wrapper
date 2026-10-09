@@ -84,6 +84,12 @@ type transport struct {
 	control map[string]chan controlResult
 	ctlSeq  int
 
+	// amu serializes the permissions claude asks for (gated), and their
+	// events; asks are those it waits on, the first raised as the Session's
+	// prompt, the rest after it in turn.
+	amu  sync.Mutex
+	asks []*ask
+
 	mu       sync.Mutex
 	receipts map[string]chan struct{} // by native id: closed once claude has the message
 	turn     *turnState               // the input claude is on, nil when none
@@ -429,11 +435,21 @@ func (t *transport) onFrame(f *frame, raw []byte) {
 		}
 		ch <- controlResult{response: f.Response.Response}
 	case "control_request":
-		// At bypass claude asks the host nothing; refuse whatever it asks,
-		// so it never waits on a request this transport does not serve.
+		var req struct {
+			Subtype string `json:"subtype"`
+		}
+		_ = json.Unmarshal(f.Request, &req)
+		if req.Subtype == "can_use_tool" {
+			t.onAsk(f.RequestID, f.Request)
+			return
+		}
+		// Refuse whatever else claude asks, so it never waits on a request
+		// this transport does not serve.
 		_ = t.write(map[string]any{"type": "control_response", "response": map[string]any{
 			"subtype": "error", "request_id": f.RequestID, "error": "not supported by this host",
 		}})
+	case "control_cancel_request":
+		t.onCancelAsk(f.RequestID)
 	}
 }
 
@@ -629,6 +645,9 @@ func (t *transport) onResult(f *frame) {
 		ev.Outcome, ev.Text = contract.TurnCompleted, f.Result
 	}
 	t.report(ev)
+	if !own {
+		t.dropAsks(ts.native)
+	}
 }
 
 // wait turns claude's exit into the Session's: Exited, after every frame
@@ -651,6 +670,7 @@ func (t *transport) wait() {
 		delete(t.control, id)
 	}
 	t.cmu.Unlock()
+	t.dropAsks("")
 
 	t.mu.Lock()
 	stopping, killed := t.stopping, t.killed
@@ -762,11 +782,6 @@ func (t *transport) Submit(ctx context.Context, s adapter.Submission) error {
 func (t *transport) Interrupt(ctx context.Context) error {
 	_, err := t.request(ctx, map[string]any{"subtype": "interrupt"})
 	return err
-}
-
-// Answer: at bypass claude raises no prompts.
-func (t *transport) Answer(context.Context, string, contract.Choice) error {
-	return contract.Errorf(contract.CodeUnsupported, "claude raises no prompts at bypass")
 }
 
 // Stop ends claude's process group: an idle claude is asked to quit by

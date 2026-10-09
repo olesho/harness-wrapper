@@ -91,6 +91,12 @@ type liveAgent struct {
 
 func newLiveAgent(t *testing.T, root string, mock *mockapi.Server) liveAgent {
 	t.Helper()
+	return newLiveAgentAt(t, root, mock, contract.PostureBypass)
+}
+
+// newLiveAgentAt is newLiveAgent at the permission posture named.
+func newLiveAgentAt(t *testing.T, root string, mock *mockapi.Server, posture string) liveAgent {
+	t.Helper()
 	base := t.TempDir()
 	l := contract.Layout{
 		Home: filepath.Join(base, "home"), Config: filepath.Join(base, "config"), Workspace: filepath.Join(base, "workspace"),
@@ -103,7 +109,7 @@ func newLiveAgent(t *testing.T, root string, mock *mockapi.Server) liveAgent {
 	}
 	a := adapter.New(Profile{})
 	res, err := a.Provision(contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: root, Layout: l, Spec: contract.AgentSpec{
-		PermissionPosture: contract.PostureBypass, Credential: &contract.CredentialRef{Kind: CredentialKind},
+		PermissionPosture: posture, Credential: &contract.CredentialRef{Kind: CredentialKind},
 	}})
 	if err != nil {
 		t.Fatal(err)

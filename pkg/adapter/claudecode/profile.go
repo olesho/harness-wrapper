@@ -68,7 +68,7 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible, contract.CapBackgroundTurns,
-			contract.CapSessionLoad, contract.CapBrokeredCredentials, contract.CapConcurrentSessions,
+			contract.CapSessionLoad, contract.CapBrokeredCredentials, contract.CapConcurrentSessions, contract.CapPrompts,
 		},
 		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{"2.1.283", pin}},
 		Egress: &contract.Egress{
@@ -84,7 +84,7 @@ func (Profile) Describe() contract.Descriptor {
 			Skills:             true,
 			Memory:             true,
 			Connectors:         []string{contract.ConnectorStdio, contract.ConnectorHTTP},
-			PermissionPostures: []string{contract.PostureBypass},
+			PermissionPostures: []string{contract.PostureBypass, contract.PostureGated},
 			InputContent:       []string{contract.ContentText},
 		},
 		Limits: contract.Limits{MaxInputBytes: contract.MaxInputBytes, MaxSessions: MaxSessions},
