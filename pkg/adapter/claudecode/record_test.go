@@ -708,7 +708,10 @@ var (
 	thinkingLines = `{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"REPORT"},"uuid":"` + thinkingPrompt + `","timestamp":"2026-10-08T18:05:00.000Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n" +
 		thinkingLine(thinkingEntry, thinkingPrompt, "2026-10-08T18:05:04.000Z", `{"type":"thinking","thinking":"…","signature":"…"}`)
 	replyLine = thinkingLine(replyEntry, thinkingEntry, "2026-10-08T18:05:34.000Z", `{"type":"text","text":"THE REPORT"}`)
-	nextLine  = `{"parentUuid":"` + replyEntry + `","isSidechain":false,"type":"user","message":{"role":"user","content":"NEXT"},"uuid":"44444444-4444-4444-8444-444444444444","timestamp":"2026-10-08T18:06:00.000Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n"
+	// claude's summary of the Stop hooks that ran after the reply: the
+	// claude profile always has one.
+	summaryLine = `{"parentUuid":"` + replyEntry + `","isSidechain":false,"type":"system","subtype":"stop_hook_summary","hookCount":1,"preventedContinuation":false,"uuid":"55555555-5555-4555-8555-555555555555","timestamp":"2026-10-08T18:05:34.100Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n"
+	nextLine    = `{"parentUuid":"` + replyEntry + `","isSidechain":false,"type":"user","message":{"role":"user","content":"NEXT"},"uuid":"44444444-4444-4444-8444-444444444444","timestamp":"2026-10-08T18:06:00.000Z","sessionId":"` + thinkingSession + `","version":"2.1.283"}` + "\n"
 )
 
 // thinkingAgent lays out an agent whose Session's transcript holds lines, and
@@ -774,12 +777,12 @@ func checkReply(t *testing.T, items []contract.Observation) {
 // reader reopened between them.
 func TestReplyAfterThinking(t *testing.T) {
 	t.Run("one read", func(t *testing.T) {
-		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine)
+		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine+summaryLine)
 		items, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), contract.MaxObserveBytes)
 		checkReply(t, items)
 	})
 	t.Run("a record at a time", func(t *testing.T) {
-		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine)
+		l, oc, m, _ := thinkingAgent(t, thinkingLines+replyLine+summaryLine)
 		items, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), 1)
 		checkReply(t, items)
 	})
@@ -792,13 +795,19 @@ func TestReplyAfterThinking(t *testing.T) {
 		}
 		appendLine(t, path, replyLine)
 		more, _ := readAll(t, r, contract.MaxObserveBytes)
+		items = append(items, more...)
+		if ends := turnEnds(items); len(ends) != 0 {
+			t.Fatalf("the turn ended before its Stop hooks ran: %+v", ends)
+		}
+		appendLine(t, path, summaryLine)
+		more, _ = readAll(t, r, contract.MaxObserveBytes)
 		checkReply(t, append(items, more...))
 	})
 	t.Run("reopened before the text", func(t *testing.T) {
 		l, oc, m, path := thinkingAgent(t, thinkingLines)
 		items, chunks := readAll(t, openReader(t, thinkingSession, l, oc, m, nil), contract.MaxObserveBytes)
 		cp := chunks[len(chunks)-1].Checkpoint
-		appendLine(t, path, replyLine)
+		appendLine(t, path, replyLine+summaryLine)
 		more, _ := readAll(t, openReader(t, thinkingSession, l, oc, m, cp), contract.MaxObserveBytes)
 		checkReply(t, append(items, more...))
 	})
@@ -824,4 +833,117 @@ func TestThinkingOnlyEnd(t *testing.T) {
 	if d := turnEnds(items)["in-report"]; d.Outcome != contract.TurnCompleted || d.Text != "" {
 		t.Errorf("the end: %+v, want completed with no text", d)
 	}
+}
+
+// The 2.1.283 fixture of a turn a Stop hook carried on: claude replied APPLE,
+// the hook blocked the stop asking for BANANA, and claude replied BANANA in
+// the same turn (one result, num_turns 2, in its stream).
+const (
+	stopHookSession  = "c3d555c7-136d-4098-b79d-6d0c79894666"
+	stopHookPrompt   = "2d679f3d-7461-447c-bfa5-e63824065211"
+	stopHookApple    = "0dcd34e3-9653-4d40-b6cc-1c9c9d88aaab"
+	stopHookFeedback = "05670955-150d-4b9a-8df3-1d22f3f86cdd"
+	stopHookBanana   = "20004e3a-6382-453a-8604-350c36e95640"
+)
+
+// checkStopHookTurn checks that both replies are the turn's, that the hook's
+// feedback is no input, and that the turn ends once, with the last reply.
+func checkStopHookTurn(t *testing.T, items []contract.Observation) {
+	t.Helper()
+	var ends []contract.Observation
+	for _, o := range items {
+		switch {
+		case o.Entry == stopHookFeedback:
+			t.Errorf("the Stop hook's feedback gave %s", o.ID)
+		case o.Kind == contract.KindAssistantText && o.TurnID != adapter.TurnID("in-apple"):
+			t.Errorf("the reply %s is turn %q, want in-apple's", o.Entry, o.TurnID)
+		case o.Kind == contract.KindTurnEnded:
+			ends = append(ends, o)
+		}
+	}
+	if len(ends) != 1 {
+		t.Fatalf("%d turn ends, want 1", len(ends))
+	}
+	var d contract.TurnEndedData
+	_ = ends[0].Decode(&d)
+	if ends[0].InputID != "in-apple" || d.Outcome != contract.TurnCompleted || d.Text != "BANANA" || ends[0].Entry != stopHookBanana {
+		t.Errorf("the turn's end: input %q entry %s %+v, want in-apple's, completed with BANANA at its entry", ends[0].InputID, ends[0].Entry, d)
+	}
+}
+
+// A Stop hook that blocks a turn's stop carries the turn on: the reply after
+// its feedback is the turn's, and the turn ends with it, read whole, a record
+// at a time, or as claude writes it.
+func TestStopHookCarriesTheTurnOn(t *testing.T) {
+	const fixture = "testdata/stophook-2.1.283.jsonl"
+	inputs := map[string]string{"in-apple": stopHookPrompt}
+	for _, max := range []int{contract.MaxObserveBytes, 1} {
+		l, oc, m := recordAgent(t, stopHookSession, fixture, inputs)
+		items, _ := readAll(t, openReader(t, stopHookSession, l, oc, m, nil), max)
+		checkStopHookTurn(t, items)
+	}
+
+	lines := fixtureLines(t, fixture)
+	l, oc, m := recordAgent(t, stopHookSession, fixture, inputs)
+	cfg, _ := parseOpenConfig(oc)
+	f, err := claudecode.FollowEntries(stopHookSession, cfg.WorkingDir, cfg.Env, transcript.Checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(f.Path(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := openReader(t, stopHookSession, l, oc, m, nil)
+	var items []contract.Observation
+	for i, line := range lines {
+		appendLine(t, f.Path(), line)
+		more, _ := readAll(t, r, contract.MaxObserveBytes)
+		items = append(items, more...)
+		if ends := turnEnds(items); len(ends) != 0 && i < len(lines)-1 {
+			t.Fatalf("the turn ended at line %d of %d: %+v", i+1, len(lines), ends)
+		}
+	}
+	checkStopHookTurn(t, items)
+}
+
+// Recover takes a reply a Stop hook's feedback follows for no end of the
+// turn: the turn went on, and only what follows says how it ended.
+func TestRecoverPastStopHookFeedback(t *testing.T) {
+	lines := fixtureLines(t, "testdata/stophook-2.1.283.jsonl")
+	for _, c := range []struct {
+		name  string
+		lines int
+		want  contract.RecoveredOutcome
+	}{
+		{"whole", len(lines), contract.RecoveredCompleted},
+		{"after the first reply", 3, contract.RecoveredCompleted},
+		{"after the hook's feedback", 5, contract.RecoveredUnknown},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "t.jsonl")
+			if err := os.WriteFile(file, []byte(strings.Join(lines[:c.lines], "")), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			l, oc, m := recordAgent(t, stopHookSession, file, map[string]string{"in-apple": stopHookPrompt})
+			mk, _, _ := m.Lookup("in-apple")
+			got, err := openReader(t, stopHookSession, l, oc, m, nil).Recover(context.Background(), mk)
+			if err != nil || got.Outcome != c.want {
+				t.Errorf("Recover = %+v %v, want %s", got, err, c.want)
+			}
+		})
+	}
+}
+
+// fixtureLines are a transcript fixture's lines, each with its newline.
+func fixtureLines(t *testing.T, file string) []string {
+	t.Helper()
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }

@@ -43,15 +43,28 @@ type Entry struct {
 	// A prompt typed into claude's TUI is matched to its input by it, since
 	// the entry's uuid is claude's own (claude 2.1.283).
 	PromptID string
+	// StopHookFeedback marks the user entry claude writes when a Stop hook
+	// blocked the stop of a turn (isMeta, "Stop hook feedback:"): the hook's
+	// words to the model, and the turn goes on (claude 2.1.283).
+	StopHookFeedback bool
+	// StopHooksRan marks the system entry claude writes once the Stop hooks
+	// of a reply ran (stop_hook_summary), after their feedback when one
+	// blocked: a reply before it that ended its turn did.
+	StopHooksRan bool
 }
 
 // EventEntry is the Type of the one event FollowEntries gives an entry that
 // holds facts and no events: an assistant entry whose content is all
-// thinking, say, but whose stop_reason ends its turn.
+// thinking, say, but whose stop_reason ends its turn, or a Stop hooks'
+// summary.
 const EventEntry = "entry"
 
 // interruptText begins every user entry claude writes for an interrupt.
 const interruptText = "[Request interrupted by user"
+
+// stopHookFeedbackText begins the user entry claude writes when a Stop hook
+// blocked a turn's stop.
+const stopHookFeedbackText = "Stop hook feedback:"
 
 // originTaskNotification is the origin kind of what claude writes to tell
 // the model background work ended, and of the turn that takes it up.
@@ -87,8 +100,11 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 	}
 	var raw struct {
 		Type              string          `json:"type"`
+		Subtype           string          `json:"subtype"`
 		UUID              string          `json:"uuid"`
+		Timestamp         string          `json:"timestamp"`
 		IsSidechain       bool            `json:"isSidechain"`
+		IsMeta            bool            `json:"isMeta"`
 		IsAPIErrorMessage bool            `json:"isApiErrorMessage"`
 		Error             json.RawMessage `json:"error"`
 		APIErrorStatus    int             `json:"apiErrorStatus"`
@@ -134,14 +150,21 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 			if be.Event.Type == transcript.EventText && strings.HasPrefix(be.Event.Text, interruptText) {
 				e.Interrupt = true
 			}
+			if be.Event.Type == transcript.EventText && raw.IsMeta && strings.HasPrefix(be.Event.Text, stopHookFeedbackText) {
+				e.StopHookFeedback = true
+			}
 		}
 	}
 	for i := range events {
 		events[i].Meta = e
 	}
-	if len(events) == 0 && (e.StopReason != "" || e.APIError != "") {
+	e.StopHooksRan = raw.Type == "system" && raw.Subtype == "stop_hook_summary"
+	if len(events) == 0 && (e.StopReason != "" || e.APIError != "" || e.StopHooksRan) {
+		// The entry's time orders it among the others, as a reader that
+		// sorts a read by time does (RecordOptions.PromptLag).
 		events = append(events, transcript.BlockEvent{Meta: e, Event: transcript.Event{
 			Role: raw.Type, Type: EventEntry, UUID: raw.UUID, Source: transcript.SourceFile,
+			Timestamp: parseLineTimestamp(raw.Timestamp),
 		}})
 	}
 	return events, nil
