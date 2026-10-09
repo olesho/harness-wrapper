@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.6`.
+package is its normative form, contract version `harness-adapter/1.7`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -166,6 +166,41 @@ another works, which still observes its own tool calls (`concurrent-record`); an
 together load together, each opening under its saved id with its own conversation and not its
 sibling's (`concurrent-load`).
 
+## The version policy
+
+Since 1.7 an agent chooses how strictly its harness is held to the version the adapter pins
+(`Descriptor.harness.version`), and every Session says which version it runs
+([ADR-023](decisions/adr-023-harness-version-policy.md)). Both are part of 1.7 itself, behind no
+capability: every 1.7 adapter honours them.
+
+- `AgentSpec.version_policy` is `strict` or `flexible`; empty is `flexible`. Under **strict**, `Open`
+  refuses a harness binary whose version is not the pin, or cannot be learned, with
+  `open_failed`/`version_unsupported` naming both versions. Under **flexible** no version is checked;
+  every check an adapter makes of what it relies on — a protocol feature, a log line — still holds,
+  with the reason it always failed with.
+- `OpenResult.harness_version` is the version the Session's harness reports, under either policy;
+  empty when the adapter could not learn it.
+- `CheckSpec` refuses a policy outside the set (`invalid_spec`, field `version_policy`), and a policy
+  for an adapter that declares a minor before 1.7 (`unsupported`). `contract.CheckMinor` refuses a
+  request written in a minor before 1.7 that carries one (`protocol`, field `spec.version_policy`):
+  an adapter of that minor would drop the field unread.
+
+How each profile learns the version, and what it still checks under flexible:
+
+| Profile | Version from | Checked under either policy |
+|---|---|---|
+| `claude-code` | `claude --version`, before claude starts; none if it fails (strict then refuses) | `system/init`'s `interrupt_receipt_v1` and `msg_lifecycle_v1`: a claude without them is stopped |
+| `claude-code-tui` | `claude --version`, before claude starts; a failure is `binary_not_found` | the debug log's `[engine]` lines (`capability_missing`), and the first turn's `[engine] turn N start` |
+| `codex` | the user agent of its `initialize` answer (`<client>/<version> …`) | `initialize`, `thread/start` or `thread/resume` |
+| `pi` | `version` in the release's `package.json` beside the executable, which pi reads its own from | `get_state` naming the session, and the tag extension's command |
+
+The kit's `version-policy` scenario, asked only of an adapter declaring 1.7 or later, holds the
+rules: an unknown policy is refused; the pin opens under the default and `strict` and reports
+itself; and, given a fixture's `NonPin`, a harness other than the pin opens under the default and
+`flexible` reporting its own version, and is refused under `strict` with `version_unsupported`. The
+Claude Code profiles' fixtures take the non-pin claude from `HW_NONPIN_CLAUDE`
+(`TestClaudeVersionPolicy`, `TestClaudeTUIVersionPolicy`).
+
 ## harness-wrapper's Harness Adapter
 
 `pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
@@ -277,9 +312,10 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
 `NewRecord`, `TurnError`), and differs in how claude runs:
 
 - **Transport:** claude runs interactively, without `-p`, on a pseudo-terminal, with
-  `--debug-file`. `Start` refuses a claude other than the pin (`version_unsupported`), and waits for
-  the Session's `SessionStart` hook and the debug log's `[engine]` lines (`capability_missing`
-  without them). An input is typed into the composer — a paste when it holds a newline or a control
+  `--debug-file`. `Start` holds claude to the agent's version policy — under `strict` a claude other
+  than the pin is refused (`version_unsupported`), under `flexible`, the default, it runs — and waits
+  for the Session's `SessionStart` hook and the debug log's `[engine]` lines (`capability_missing`
+  without them) under either. An input is typed into the composer — a paste when it holds a newline or a control
   character — then Enter. Nothing reads the screen.
 - **Live hooks:** `SessionStart`, `UserPromptSubmit`, `Stop` and `StopFailure` run the hook helper as
   `claude-code-hook tui <hook>`, which writes what each reports to `scratch/tui/<session id>`
@@ -309,9 +345,13 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   shell escape or a memory note, and a very long single line may become a paste placeholder. claude
   then submits something other than the text sent, the `UserPromptSubmit` receipt never matches, and
   `Send` reports the input `maybe_submitted`. Callers keep such input out of this profile.
-- **Version policy.** `Start` refuses any claude but the pin. A *flexible* mode — run another
-  version, keeping only the capability checks (the debug log's `[engine]` lines) — is planned beside
-  this *strict* default and not yet built.
+- **Version policy.** Since 1.7 the agent's `version_policy` decides
+  ([ADR-023](decisions/adr-023-harness-version-policy.md)): `flexible`, the default, runs a claude
+  other than the pin with only the capability checks (the debug log's `[engine]` lines); `strict`
+  refuses it, as every open did before. Under `flexible` the debug lines the profile parses are known
+  only for the pin (`testdata/debug-2.1.283.log`); another claude that logs `[engine]` but words
+  them otherwise opens, and its turns may not end where the profile reads them. A runtime that wants
+  the pin alone asks for `strict`.
 
 Phase 1 declares `resume` and `assign_session_id` alone. Interrupts (`Interrupt` returns
 `unsupported`; the kit's `interrupt` scenarios are skipped), retries reported as they happen,
