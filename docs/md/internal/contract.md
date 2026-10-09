@@ -283,8 +283,12 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   `tool_use`, `tool_result` and `api_error`, keyed by the entry's uuid (and block) or the tool use id,
   with `entry` set to the entry's uuid. A turn's end is in the record as its final assistant entry
   (`stop_reason: end_turn`), a synthetic API-error entry or an interrupt entry, each a record-origin
-  `turn_ended`. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop;
-  a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
+  `turn_ended`. claude writes a message as one entry per content block, each with the message's
+  `stop_reason`, and a reply after thinking as a thinking-only entry, then the text up to half a minute
+  later: the turn ends at the text, which is the turn's and the end's, or, when the message has none,
+  at the thinking entry once an entry of another message is in the record. Spool files become
+  `tool_started`, `tool_finished` and the subagents' start and stop; a file is deleted once its chunk
+  is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
   `unknown`. The evidence comes before the next input's prompt and before a task notification, where
   a turn of claude's own begins: that turn's end is never the input's.
