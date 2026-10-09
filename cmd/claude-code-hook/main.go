@@ -10,7 +10,9 @@
 //
 // The second form is the Claude Code TUI profile's live hooks
 // (pkg/adapter/claudecodetui/live): what claude reports as it runs, written
-// for its transport, which drives claude's TUI.
+// for its transport, which drives claude's TUI. Its permission-request hook
+// (PermissionRequest, at the gated posture) blocks until the transport
+// answers, and writes the decision on stdout for claude.
 //
 // It exits 2 when the handler says to block the tool (its decision on
 // stdout), and 0 otherwise: a failure is reported on stderr and never blocks
@@ -45,6 +47,13 @@ func run(args, env []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if len(payload) > maxPayload {
 		_, _ = fmt.Fprintf(stderr, "claude-code-hook: payload over %d bytes, not recorded\n", maxPayload)
+		return 0
+	}
+	if args[0] == live.Harness && args[1] == live.PermissionArg {
+		// Blocks until the transport answers: its decision is claude's.
+		if err := live.HandlePermission(env, payload, stdout); err != nil {
+			_, _ = fmt.Fprintf(stderr, "claude-code-hook: %v\n", err)
+		}
 		return 0
 	}
 	if args[0] == live.Harness {

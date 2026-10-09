@@ -67,6 +67,12 @@ type tracker struct {
 	wipe int
 	// tasks is the background work last reported.
 	tasks []contract.BackgroundTask
+	// asks are the permissions the hook waits on (gated), the first raised
+	// as the Session's prompt; sent are those answered, until claude takes
+	// the answer (asks.go).
+	asks, sent []*pendingAsk
+	// alive reports whether a hook's process is; nil is processAlive.
+	alive func(pid int) bool
 }
 
 // flight is a turn the tracker follows: an input's, or claude's own.
@@ -96,6 +102,13 @@ type flight struct {
 	// endAt is when the debug log logged the turn's end after a cancel, with
 	// a stop reason no interrupt gives: Stop or StopFailure may still come.
 	endAt time.Time
+	// lost: a permission prompt of the turn was lost, at lostAt, and Esc
+	// pressed to stop it; it ends errored.
+	lost   bool
+	lostAt time.Time
+	// escPrompt: Esc was pressed while a permission prompt of the turn
+	// waited, where claude logs no [onCancel] (interrupting).
+	escPrompt bool
 }
 
 // event is the flight's event of kind: naming its input, or the turn.
@@ -111,12 +124,24 @@ type step struct {
 	events []adapter.Event
 	// fatal, when set, says why claude must be stopped.
 	fatal string
+	// answers are for the permission hooks waiting; esc, a turn to press Esc
+	// for, whose prompt was lost; note, what the transport notes of it.
+	answers []askAnswer
+	esc     *flight
+	note    string
 }
 
 func (s *step) add(o step) {
 	s.events = append(s.events, o.events...)
+	s.answers = append(s.answers, o.answers...)
 	if s.fatal == "" {
 		s.fatal = o.fatal
+	}
+	if s.esc == nil {
+		s.esc = o.esc
+	}
+	if s.note == "" {
+		s.note = o.note
 	}
 }
 
@@ -135,9 +160,19 @@ const maxWipe = 2048
 // its prompt back in the composer. Ctrl-U clears a line, and on an empty line
 // joins it to the one before (claude 2.1.283), so a prompt of n lines takes
 // 2n-1.
+//
+// Esc while a permission prompt of the turn waits lands on claude's dialog:
+// claude logs no [onCancel], ends the turn (stop=tool_use) and cancels the
+// hook (probes/tui-hybrid, Phase 3), so the turn's end alone says Esc was
+// taken (escPrompt).
 func (k *tracker) interrupting() {
 	if f := k.turn; f != nil {
 		k.wipe = max(k.wipe, min(2*f.lines, maxWipe))
+		for _, p := range k.asks {
+			if p.flight == f {
+				f.escPrompt = true
+			}
+		}
 	}
 }
 
@@ -192,6 +227,10 @@ func (k *tracker) live(ev live.Event, now time.Time) step {
 		}
 		f.retries = nil
 		return step{events: evs}
+	case live.HookPermission:
+		return k.ask(ev, now)
+	case live.HookDelivered:
+		k.delivered(ev)
 	case live.HookStop, live.HookStopFailure:
 		var s step
 		if ev.Listed {
@@ -299,6 +338,7 @@ func (k *tracker) end(f *flight, ev live.Event, gate bool, now time.Time) step {
 		e.Error = claudecode.TurnError(ev.Error, status, ev.Message, false, now)
 	}
 	s.events = []adapter.Event{e}
+	s.answers = k.withdraw(f)
 	return s
 }
 
@@ -358,12 +398,14 @@ func (k *tracker) debug(l debugLine, now time.Time) step {
 		if f.started && !f.ended {
 			f.cancel = true
 		}
+	case lineDecision:
+		k.decided()
 	case lineTurnEnd:
 		f.endLine = true
 		if f.parked != nil {
 			return k.end(f, *f.parked, !f.turnLine, now)
 		}
-		if f.cancel && f.started && !f.ended {
+		if (f.cancel || f.escPrompt) && f.started && !f.ended {
 			if l.stop == "null" || l.stop == "tool_use" {
 				return k.interrupted(f, now)
 			}
@@ -387,7 +429,11 @@ func (k *tracker) interrupted(f *flight, now time.Time) step {
 	}
 	e := f.event(adapter.Ended, now)
 	e.Outcome = contract.TurnInterrupted
-	return step{events: []adapter.Event{e}}
+	if f.lost {
+		// Esc was the profile's, for a prompt lost: no one interrupted it.
+		e.Outcome, e.Error = contract.TurnErrored, &contract.TurnError{Class: contract.ErrorInternal}
+	}
+	return step{events: []adapter.Event{e}, answers: k.withdraw(f)}
 }
 
 // tick fails the gate once a first turn's end has waited gateGrace for the
@@ -402,8 +448,15 @@ func (k *tracker) tick(now time.Time) step {
 			s.add(k.end(f, *f.parked, true, now))
 		case !f.endAt.IsZero() && now.Sub(f.endAt) >= hookGrace:
 			s.add(k.interrupted(f, now))
+		case f.lost && now.Sub(f.lostAt) >= lostWait:
+			// claude did not take the Esc either: nothing ends the turn
+			// but stopping claude.
+			ended := k.interrupted(f, now)
+			ended.fatal = "a permission prompt was lost and claude did not stop the turn on Esc"
+			s.add(ended)
 		}
 	}
+	s.add(k.checkAsks(now))
 	return s
 }
 

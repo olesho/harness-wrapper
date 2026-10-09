@@ -53,6 +53,37 @@ func TestDebugFixture(t *testing.T) {
 	}
 }
 
+// The pinned claude at the gated posture (testdata/debug-2.1.283-permission.log:
+// a permission denied, one allowed, and Esc while one waits) logs each
+// decision it takes from the PermissionRequest hook, and nothing else the
+// profile reads as one; Esc on the prompt logs no [onCancel], and ends the
+// turn with stop=tool_use.
+func TestDebugPermissionFixture(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "debug-2.1.283-permission.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []debugLine
+	for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		if d := parseDebugLine(l); d.kind != lineOther && d.kind != lineEngine {
+			got = append(got, d)
+		}
+	}
+	want := []debugLine{
+		{kind: lineTurnStart, turn: 1},
+		{kind: lineDecision},
+		{kind: lineTurnEnd, turn: 1, stop: "end_turn"},
+		{kind: lineTurnStart, turn: 2},
+		{kind: lineDecision},
+		{kind: lineTurnEnd, turn: 2, stop: "end_turn"},
+		{kind: lineTurnStart, turn: 3},
+		{kind: lineTurnEnd, turn: 3, stop: "tool_use"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parsed\n%+v\nwant\n%+v", got, want)
+	}
+}
+
 // The tail returns whole lines, as claude appends them, and starts over when
 // the file is truncated.
 func TestTail(t *testing.T) {

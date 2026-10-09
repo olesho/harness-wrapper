@@ -80,6 +80,14 @@ func (p *pump) await(t *testing.T, what string, pred func(contract.Observation) 
 // tuiSession opens a fresh Session of the profile against the mock.
 func tuiSession(t *testing.T, mock *mockapi.Server) (contract.Session, *pump) {
 	t.Helper()
+	s, p, _ := tuiSessionAt(t, mock, contract.PostureBypass)
+	return s, p
+}
+
+// tuiSessionAt is tuiSession at the permission posture named, with the
+// agent's layout.
+func tuiSessionAt(t *testing.T, mock *mockapi.Server, posture string) (contract.Session, *pump, contract.Layout) {
+	t.Helper()
 	root := distribution(t, realClaude(t))
 	// claude keys its workspace trust by the real path.
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -97,7 +105,7 @@ func tuiSession(t *testing.T, mock *mockapi.Server) (contract.Session, *pump) {
 	}
 	a := adapter.New(Profile{})
 	res, err := a.Provision(contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: root, Layout: l, Spec: contract.AgentSpec{
-		PermissionPosture: contract.PostureBypass, Credential: &contract.CredentialRef{Kind: claudecode.CredentialKind},
+		PermissionPosture: posture, Credential: &contract.CredentialRef{Kind: claudecode.CredentialKind},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -125,7 +133,7 @@ func tuiSession(t *testing.T, mock *mockapi.Server) (contract.Session, *pump) {
 		_, _ = s.Close(context.Background(), contract.ClosePark, 5*time.Second)
 		p.halt()
 	})
-	return s, p
+	return s, p, l
 }
 
 // Against the pinned claude on a terminal and the mock: a tool call is

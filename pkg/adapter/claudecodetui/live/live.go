@@ -13,6 +13,9 @@
 //	          was bound to, or nothing for a prompt of claude's own (a task
 //	          notification, say); the record reader matches the
 //	          transcript's prompt entries by it
+//	answers/  the transport's answer to each permission the
+//	          PermissionRequest hook asks for (gated), named by the ask's id,
+//	          which the hook takes and removes (permission.go)
 //	pending   the input the transport is typing, which the UserPromptSubmit
 //	          hook binds to the prompt claude reports
 //
@@ -86,9 +89,12 @@ type Event struct {
 	// Background is the work claude runs in the background, as Stop and
 	// StopFailure list it (background_tasks); Listed says the hook listed
 	// it, even as none.
-	Background []Task    `json:"background,omitempty"`
-	Listed     bool      `json:"listed,omitempty"`
-	At         time.Time `json:"at"`
+	Background []Task `json:"background,omitempty"`
+	Listed     bool   `json:"listed,omitempty"`
+	// Ask is the permission PermissionRequest asks for, and HookDelivered
+	// names the one whose answer the hook handed claude.
+	Ask *Ask      `json:"ask,omitempty"`
+	At  time.Time `json:"at"`
 
 	// Name is the event's file, for Remove.
 	Name string `json:"-"`
@@ -146,7 +152,7 @@ type pending struct {
 // and the pending input of an earlier launch gone. Bindings stay: the record
 // is read by them.
 func Prepare(dir string) error {
-	for _, d := range []string{eventsDir, promptsDir} {
+	for _, d := range []string{eventsDir, promptsDir, answersDir} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o700); err != nil {
 			return err
 		}
@@ -154,12 +160,14 @@ func Prepare(dir string) error {
 	if err := ClearPending(dir); err != nil {
 		return err
 	}
-	ents, err := os.ReadDir(filepath.Join(dir, eventsDir))
-	if err != nil {
-		return err
-	}
-	for _, e := range ents {
-		_ = os.Remove(filepath.Join(dir, eventsDir, e.Name()))
+	for _, d := range []string{eventsDir, answersDir} {
+		ents, err := os.ReadDir(filepath.Join(dir, d))
+		if err != nil {
+			return err
+		}
+		for _, e := range ents {
+			_ = os.Remove(filepath.Join(dir, d, e.Name()))
+		}
 	}
 	return nil
 }
@@ -231,6 +239,11 @@ func HandleHook(arg string, env []string, payload []byte) error {
 			return err
 		}
 	}
+	return writeEvent(dir, arg, ev)
+}
+
+// writeEvent writes ev, which the hook arg reported, to dir's events.
+func writeEvent(dir, arg string, ev Event) error {
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return err

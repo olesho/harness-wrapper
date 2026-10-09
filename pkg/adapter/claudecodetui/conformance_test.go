@@ -84,7 +84,9 @@ func TestClaudeTUIConforms(t *testing.T) {
 	bin := realClaude(t)
 	mock := mockapi.Start()
 	defer mock.Close()
-	conformance.Run(conformance.Testing(t), kitFixture(distribution(t, bin), mock))
+	f := kitFixture(distribution(t, bin), mock)
+	f.Skip = map[string]string{"prompts": "claude asks nothing at bypass: TestClaudeTUIConformsGated runs it"}
+	conformance.Run(conformance.Testing(t), f)
 	var persona bool
 	for _, r := range mock.Requests() {
 		persona = persona || strings.Contains(r.System, "PERSONA-MARKER")
@@ -92,6 +94,20 @@ func TestClaudeTUIConforms(t *testing.T) {
 	if !persona {
 		t.Error("the persona never reached the model's system prompt")
 	}
+}
+
+// At the gated posture claude's PermissionRequest hook asks the transport for
+// each permission a tool needs, and the profile raises it as the Session's
+// prompt: the kit's prompts scenario, against the pinned claude and the
+// mock's ASK, a write claude's default mode asks about.
+func TestClaudeTUIConformsGated(t *testing.T) {
+	bin := realClaude(t)
+	mock := mockapi.Start()
+	defer mock.Close()
+	f := kitFixture(distribution(t, bin), mock)
+	f.Spec.PermissionPosture = contract.PostureGated
+	f.Skip = conformance.Only("prompts")
+	conformance.Run(conformance.Testing(t), f)
 }
 
 // The version policy against a claude other than the pin, HW_NONPIN_CLAUDE

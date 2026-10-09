@@ -17,12 +17,14 @@ import (
 //	[engine] turn N end (… stop=<reason> resultLen=<n>)
 //	[ERROR] API error (attempt k/N): <status> <body>
 //	[onCancel] source=local streamMode=<mode>
+//	Hook PermissionRequest (<command>) returned permissionDecision: <allow|deny>
 //
 // Any other line with "[engine] " says only that claude's engine logs, which
 // Start waits for. A turn's start and end bracket it; a turn end's stop
 // reason says how it ended (null or tool_use: an interrupt stopped it); an
 // API error is one failed model request, which claude retries while k < N;
-// [onCancel] is claude taking an interrupt (Esc).
+// [onCancel] is claude taking an interrupt (Esc); a PermissionRequest hook's
+// decision is claude taking the answer the hook handed it (gated).
 
 // lineKind is what a debug line says.
 type lineKind int
@@ -35,6 +37,8 @@ const (
 	lineTurnEnd
 	lineAPIError
 	lineCancel
+	// lineDecision: claude took a PermissionRequest hook's decision.
+	lineDecision
 )
 
 // debugLine is one debug line, read.
@@ -53,6 +57,7 @@ var (
 	reAPIError  = regexp.MustCompile(`API error \(attempt (\d+)/(\d+)\): (\d{3})\b`)
 	reCancel    = regexp.MustCompile(`\[onCancel\]`)
 	reEngine    = regexp.MustCompile(`\[engine\] `)
+	reDecision  = regexp.MustCompile(`Hook PermissionRequest \(.*\) returned permissionDecision: \w+`)
 )
 
 func parseDebugLine(s string) debugLine {
@@ -69,6 +74,8 @@ func parseDebugLine(s string) debugLine {
 		return debugLine{kind: lineAPIError, attempt: atoi(m[1]), max: atoi(m[2]), status: atoi(m[3])}
 	case reCancel.MatchString(s):
 		return debugLine{kind: lineCancel}
+	case reDecision.MatchString(s):
+		return debugLine{kind: lineDecision}
 	case reEngine.MatchString(s):
 		return debugLine{kind: lineEngine}
 	}

@@ -96,6 +96,9 @@ type transport struct {
 	diag    *proc.TailBuffer // what the transport says of claude's exit
 
 	wmu sync.Mutex // serializes keys
+	// rmu serializes reading what claude reported, and reporting it, with
+	// Answer: a prompt is resolved before its turn can end.
+	rmu sync.Mutex
 
 	mu       sync.Mutex
 	k        *tracker
@@ -286,14 +289,16 @@ func (t *transport) loop() {
 func (t *transport) poll() {
 	lines := t.debug.lines()
 	evs, _ := live.Read(t.dir)
-	var out []adapter.Event
+	var all step
 	var fatal []string
 	take := func(s step) {
-		out = append(out, s.events...)
+		all.add(s)
 		if s.fatal != "" {
 			fatal = append(fatal, s.fatal)
 		}
 	}
+	t.rmu.Lock()
+	defer t.rmu.Unlock()
 	now := time.Now()
 	t.mu.Lock()
 	for _, l := range lines {
@@ -303,7 +308,7 @@ func (t *transport) poll() {
 		take(t.k.live(ev, now))
 	}
 	take(t.k.tick(now))
-	if len(lines) == 0 && len(evs) == 0 && len(out) == 0 {
+	if len(lines) == 0 && len(evs) == 0 && len(all.events) == 0 && len(all.answers) == 0 && all.esc == nil && all.note == "" {
 		t.mu.Unlock()
 		return
 	}
@@ -313,14 +318,32 @@ func (t *transport) poll() {
 	for _, ev := range evs {
 		live.Remove(t.dir, ev)
 	}
-	for _, ev := range out {
+	for _, ev := range all.events {
 		t.report(ev)
+	}
+	t.writeAnswers(all.answers)
+	if all.note != "" {
+		_, _ = fmt.Fprintln(t.diag, all.note)
+	}
+	if all.esc != nil {
+		// A lost prompt: Esc stops the turn (probes/tui-hybrid, Phase 3:
+		// Esc while a permission waits stops the turn, the tool unrun).
+		_ = t.keys(keyEsc)
 	}
 	for _, f := range fatal {
 		_, _ = fmt.Fprintln(t.diag, f)
 	}
 	if len(fatal) > 0 {
 		go t.Stop(context.Background(), quitWait)
+	}
+}
+
+// writeAnswers writes the answers the permission hooks wait for.
+func (t *transport) writeAnswers(answers []askAnswer) {
+	for _, a := range answers {
+		if err := live.WriteAnswer(t.dir, a.id, a.answer); err != nil {
+			_, _ = fmt.Fprintf(t.diag, "answering the permission hook %s: %v\n", a.id, err)
+		}
 	}
 }
 
@@ -498,9 +521,29 @@ func (t *transport) esc(ctx context.Context, f *flight) error {
 	return nil
 }
 
-// Answer: at bypass claude raises no prompts.
-func (t *transport) Answer(context.Context, string, contract.Choice) error {
-	return contract.Errorf(contract.CodeUnsupported, "claude raises no prompts at bypass")
+// Answer answers the permission promptID as the choice says: the answer its
+// PermissionRequest hook waits for, which hands claude the decision. The
+// prompt is resolved before the answer is written, so its turn cannot end
+// first.
+func (t *transport) Answer(_ context.Context, promptID string, c contract.Choice) error {
+	t.rmu.Lock()
+	defer t.rmu.Unlock()
+	t.mu.Lock()
+	s, err := t.k.answer(promptID, c, time.Now())
+	t.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	for _, ev := range s.events {
+		t.report(ev)
+	}
+	for _, a := range s.answers {
+		if err := live.WriteAnswer(t.dir, a.id, a.answer); err != nil {
+			// The hook never gets it: the tracker finds the prompt lost.
+			return fmt.Errorf("answering the permission hook: %w", err)
+		}
+	}
+	return nil
 }
 
 // Stop ends claude's process group: Ctrl-C until claude quits — the first

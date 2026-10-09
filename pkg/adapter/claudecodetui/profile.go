@@ -52,7 +52,7 @@ func (Profile) Describe() contract.Descriptor {
 		Harness:  contract.HarnessInfo{Name: Name, Version: pin, Adapter: adapter.Name()},
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapAssignSessionID, contract.CapRetryVisible,
-			contract.CapToolsObserved, contract.CapSubagents, contract.CapBackgroundTurns,
+			contract.CapToolsObserved, contract.CapSubagents, contract.CapBackgroundTurns, contract.CapPrompts,
 		},
 		CheckpointFormat: claudecode.CheckpointFormat,
 		CredentialKinds:  []string{claudecode.CredentialKind},
@@ -63,7 +63,7 @@ func (Profile) Describe() contract.Descriptor {
 			Skills:             true,
 			Memory:             true,
 			Connectors:         []string{contract.ConnectorStdio, contract.ConnectorHTTP},
-			PermissionPostures: []string{contract.PostureBypass},
+			PermissionPostures: []string{contract.PostureBypass, contract.PostureGated},
 			InputContent:       []string{contract.ContentText},
 		},
 		Limits: contract.Limits{MaxInputBytes: MaxInputBytes},
@@ -71,11 +71,17 @@ func (Profile) Describe() contract.Descriptor {
 }
 
 // liveHooks are the hooks the transport reads as claude runs, beside the
-// Claude Code profile's.
-func liveHooks() claudecode.Hooks {
+// Claude Code profile's; at the gated posture, PermissionRequest too, which
+// blocks for the transport's answer for as long as claude lets it.
+func liveHooks(posture string) claudecode.Hooks {
 	h := claudecode.Hooks{Harness: live.Harness}
 	for _, e := range live.Hooks {
 		h.Events = append(h.Events, harnesscore.HookEntry{NativeEvent: e.Native, Arg: e.Arg})
+	}
+	if posture == contract.PostureGated {
+		h.Events = append(h.Events, harnesscore.HookEntry{
+			NativeEvent: live.HookPermission, Arg: live.PermissionArg, Timeout: live.PermissionTimeout,
+		})
 	}
 	return h
 }
@@ -84,5 +90,5 @@ func liveHooks() claudecode.Hooks {
 // with the live hooks too. The open_config is the same: the transport adds
 // what running claude on a terminal takes.
 func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
-	return claudecode.ProvisionWith(req, liveHooks())
+	return claudecode.ProvisionWith(req, liveHooks(req.Spec.PermissionPosture))
 }
