@@ -158,5 +158,4 @@ func TestClaudePrompts(t *testing.T) {
 		}
 	}
 	p.mu.Unlock()
-
 }
