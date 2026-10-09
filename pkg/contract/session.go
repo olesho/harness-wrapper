@@ -86,6 +86,11 @@ type OpenResult struct {
 	// and reopens with it, even when it differs from the id it asked for.
 	SessionID string `json:"session_id"`
 	State     State  `json:"state"`
+	// HarnessVersion is the version of the harness binary the Session runs,
+	// as the harness reports it: the pin, or under a flexible version policy
+	// whatever version is installed (1.7). Empty when the adapter could not
+	// learn it.
+	HarnessVersion string `json:"harness_version,omitempty"`
 }
 
 // Input is one input to Send.

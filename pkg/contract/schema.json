@@ -49,6 +49,9 @@
             "$ref": "#/$defs/Skill"
           },
           "type": "array"
+        },
+        "version_policy": {
+          "$ref": "#/$defs/VersionPolicy"
         }
       },
       "type": "object"
@@ -930,6 +933,9 @@
     },
     "OpenResult": {
       "properties": {
+        "harness_version": {
+          "type": "string"
+        },
         "session_id": {
           "type": "string"
         },
@@ -1688,9 +1694,16 @@
         "refused"
       ],
       "type": "string"
+    },
+    "VersionPolicy": {
+      "enum": [
+        "strict",
+        "flexible"
+      ],
+      "type": "string"
     }
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.6"
+  "title": "Harness Adapter Interface harness-adapter/1.7"
 }
