@@ -15,8 +15,10 @@
 // third observes tools and subagents from the hooks, as the Claude Code
 // profile's record does (tools_observed, subagents), and reports the turns
 // claude starts itself to take up background work, and that work, live
-// (background_turns). Prompts, rate-limit reports, streaming text and
-// side-by-side Sessions come later; the Descriptor declares none of them.
+// (background_turns). At the gated posture it raises the permissions claude
+// asks for through its PermissionRequest hook as prompts (prompts). Rate-limit
+// reports, streaming text and side-by-side Sessions come later; the
+// Descriptor declares none of them.
 package claudecodetui
 
 import (
