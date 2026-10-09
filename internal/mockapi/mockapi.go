@@ -11,6 +11,9 @@
 //	STALL <s>       send message_start, then only pings for <s> seconds (default 60)
 //	TOOL <command>  a tool_use running <command> in a shell, after its result "TOOL DONE:
 //	                <output>": claude's Bash, or pi's bash when the request offers that one
+//	ASK             a tool_use that needs permission unless every tool is allowed: claude's
+//	                Bash writing a file (askCommand), or pi's bash; after its result,
+//	                allowed or denied, "TOOL DONE: <output>"
 //	AGENT <prompt>  an Agent tool_use running a general-purpose subagent on <prompt>, in the
 //	                foreground; the subagent's own request routes on <prompt>, and after its
 //	                result, "TOOL DONE: <output>"
@@ -172,12 +175,17 @@ func textOf(raw json.RawMessage) string {
 	return strings.Join(out, "\n")
 }
 
+// askCommand is ASK's command: a write in the working directory, which
+// claude asks permission for in its default mode (probes/tui-hybrid, Phase 3),
+// and prints what it did, so an allowed run is told from a denied one.
+const askCommand = "touch asked && echo asked"
+
 // keywords are the words that start a scenario line, on either API. GOAL,
 // MKGOAL and FAILSLOW are Responses-only (responses.go): the Messages API
 // recognises the line as a scenario but has no case for it, so it answers
-// "ok".
+// "ok"; ASK is Messages-only, and the Responses API answers it "ok".
 var keywords = map[string]bool{
-	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
+	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "ASK": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
 	"GOAL": true, "MKGOAL": true, "FAILSLOW": true,
 }
 
@@ -319,6 +327,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	case words[0] == "TOOL":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
 		s.reply(w, b, reply{tool: shell(b, cmd, false)})
+	case words[0] == "ASK":
+		s.reply(w, b, reply{tool: shell(b, askCommand, false)})
 	case words[0] == "BG":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "BG"))
 		s.reply(w, b, reply{tool: shell(b, cmd, true)})

@@ -2,6 +2,7 @@ package mockapi
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -102,17 +103,19 @@ func TestScenarios(t *testing.T) {
 }
 
 // TOOL runs its command in claude's Bash, or in pi's bash when the request
-// offers that one and no Bash.
+// offers that one and no Bash; ASK runs a write there.
 func TestToolIsTheShellTheRequestOffers(t *testing.T) {
 	s := Start()
 	defer s.Close()
 	for _, c := range []struct {
-		tools []string
-		name  string
-		input map[string]any
+		tools  []string
+		name   string
+		input  map[string]any
+		prompt string
 	}{
-		{nil, "Bash", map[string]any{"command": "echo hi", "description": "mock"}},
-		{[]string{"read", "bash"}, "bash", map[string]any{"command": "echo hi"}},
+		{nil, "Bash", map[string]any{"command": "echo hi", "description": "mock"}, ""},
+		{[]string{"read", "bash"}, "bash", map[string]any{"command": "echo hi"}, ""},
+		{nil, "Bash", map[string]any{"command": askCommand, "description": "mock"}, "ASK"},
 	} {
 		tools := []map[string]string{}
 		for _, n := range c.tools {
@@ -120,7 +123,7 @@ func TestToolIsTheShellTheRequestOffers(t *testing.T) {
 		}
 		b, _ := json.Marshal(map[string]any{
 			"model": "m", "tools": tools,
-			"messages": []any{map[string]any{"role": "user", "content": "TOOL echo hi"}},
+			"messages": []any{map[string]any{"role": "user", "content": cmp.Or(c.prompt, "TOOL echo hi")}},
 		})
 		resp, err := http.Post(s.URL()+"/v1/messages", "application/json", strings.NewReader(string(b)))
 		if err != nil {
