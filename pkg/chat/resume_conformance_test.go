@@ -73,12 +73,13 @@ func fakeLaunchEnv(t *testing.T, script fakeharness.Script, argvOut string) []st
 
 // readArgv polls the argv-dump file the fake writes at startup; the write races
 // the Open return, so retry briefly before reading. Mirrors the TS readArgv.
-// readArgv waits up to ten seconds: the first test in this package to launch
-// the freshly built fake pays for its first exec, which on macOS includes the
-// system's assessment of a new binary.
+// readArgv waits up to thirty seconds: the first test in this package to
+// launch the freshly built fake pays for its first exec, which on macOS
+// includes the system's assessment of a new binary, and under a full parallel
+// run (the pre-push hook) that took longer than ten.
 func readArgv(t *testing.T, path string) []string {
 	t.Helper()
-	for i := 0; i < 500; i++ {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			var got []string
