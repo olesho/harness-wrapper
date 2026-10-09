@@ -132,7 +132,55 @@ func kitFixture(root string, mock *mockapi.Server) conformance.Fixture {
 		Heard:   heard(mock),
 		Timeout: 90 * time.Second,
 		MCP:     true,
+		NonPin:  nonPinClaude(BinaryPath(root)),
 	}
+}
+
+// nonPinClaude makes the distribution's claude, at bin, the one
+// HW_NONPIN_CLAUDE names — a claude other than the pin — until restored; nil
+// without one.
+func nonPinClaude(bin string) func(conformance.T) (string, func()) {
+	other := os.Getenv("HW_NONPIN_CLAUDE")
+	if other == "" {
+		return nil
+	}
+	return func(t conformance.T) (string, func()) {
+		out, err := exec.Command(other, "--version").Output()
+		f := strings.Fields(string(out))
+		if err != nil || len(f) == 0 {
+			t.Errorf("%s --version: %v", other, err)
+			return "", func() {}
+		}
+		pin, err := os.Readlink(bin)
+		if err != nil {
+			t.Errorf("the distribution's claude: %v", err)
+			return f[0], func() {}
+		}
+		relink := func(to string) {
+			_ = os.Remove(bin)
+			if err := os.Symlink(to, bin); err != nil {
+				t.Errorf("linking %s: %v", to, err)
+			}
+		}
+		relink(other)
+		return f[0], func() { relink(pin) }
+	}
+}
+
+// The version policy against a claude other than the pin, HW_NONPIN_CLAUDE
+// (and the pin, HW_REAL_CLAUDE): flexible opens it and reports its version,
+// strict refuses it with version_unsupported. Only the kit's version-policy
+// scenario runs.
+func TestClaudeVersionPolicy(t *testing.T) {
+	if os.Getenv("HW_NONPIN_CLAUDE") == "" {
+		t.Skip("HW_NONPIN_CLAUDE does not name a claude other than the pin")
+	}
+	bin := realClaude(t)
+	mock := mockapi.Start()
+	defer mock.Close()
+	f := kitFixture(distribution(t, bin), mock)
+	f.Skip = conformance.Only("version-policy")
+	conformance.Run(conformance.Testing(t), f)
 }
 
 // The Claude Code profile passes the conformance kit against the pinned claude

@@ -36,6 +36,13 @@ type Entry struct {
 	// first task id it names, or "unknown". The turn it starts is claude's
 	// own (claude 2.1.283).
 	TaskNotification string
+	// PromptID is the id claude gave the prompt a user entry holds
+	// (promptId), on that entry alone: the one that says where the prompt
+	// came from (promptSource). The entries of the turn it starts — tool
+	// results, an interrupt — carry the same promptId, and no PromptID here.
+	// A prompt typed into claude's TUI is matched to its input by it, since
+	// the entry's uuid is claude's own (claude 2.1.283).
+	PromptID string
 }
 
 // EventEntry is the Type of the one event FollowEntries gives an entry that
@@ -93,6 +100,8 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		Origin *struct {
 			Kind string `json:"kind"`
 		} `json:"origin"`
+		PromptID     string `json:"promptId"`
+		PromptSource string `json:"promptSource"`
 	}
 	if json.Unmarshal(record, &raw) != nil {
 		return events, nil
@@ -116,6 +125,9 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 				e.TaskNotification = id
 			}
 		}
+	}
+	if raw.Type == transcript.TypeUser && raw.PromptSource != "" {
+		e.PromptID = raw.PromptID
 	}
 	if raw.Type == transcript.TypeUser {
 		for _, be := range events {

@@ -248,6 +248,72 @@ func TestRecoverFromRecord(t *testing.T) {
 	}
 }
 
+// ownTurnTranscript is a Session's transcript in which the input's turn
+// starts background work and claude, once it ends, takes the result up in a
+// turn of its own (ADR-017). With inputEnd, the input's turn ends first, as
+// claude ends it; without, the record holds no end of it.
+func ownTurnTranscript(t *testing.T, session, native string, inputEnd bool) string {
+	t.Helper()
+	entry := func(uuid, parent, typ string, extra map[string]any) string {
+		e := map[string]any{"type": typ, "uuid": uuid, "parentUuid": parent, "sessionId": session, "isSidechain": false, "timestamp": "2026-10-09T10:00:00.000Z"}
+		for k, v := range extra {
+			e[k] = v
+		}
+		b, _ := json.Marshal(e)
+		return string(b)
+	}
+	lines := []string{
+		entry(native, "", "user", map[string]any{"message": map[string]any{"role": "user", "content": "BG sleep 3; echo bg-done"}}),
+		entry("a1", native, "assistant", map[string]any{"message": map[string]any{
+			"id": "msg_1", "role": "assistant", "stop_reason": "tool_use",
+			"content": []any{map[string]any{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": map[string]any{"command": "sleep 3; echo bg-done", "run_in_background": true}}},
+		}}),
+		entry("u2", "a1", "user", map[string]any{"message": map[string]any{
+			"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "toolu_1", "content": "Command running in background with ID: b1"}},
+		}}),
+	}
+	parent := "u2"
+	if inputEnd {
+		lines = append(lines, entry("a3", parent, "assistant", map[string]any{"message": map[string]any{
+			"id": "msg_2", "role": "assistant", "stop_reason": "end_turn", "content": []any{map[string]any{"type": "text", "text": "TOOL DONE"}},
+		}}))
+		parent = "a3"
+	}
+	lines = append(
+		lines,
+		entry("u4", parent, "user", map[string]any{"origin": map[string]any{"kind": "task-notification"}, "message": map[string]any{
+			"role": "user", "content": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
+		}}),
+		entry("a5", "u4", "assistant", map[string]any{"message": map[string]any{
+			"id": "msg_3", "role": "assistant", "stop_reason": "end_turn", "content": []any{map[string]any{"type": "text", "text": "BG DONE"}},
+		}}),
+	)
+	file := filepath.Join(t.TempDir(), "transcript.jsonl")
+	if err := os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+// The turn claude starts itself after an input's turn is not that turn: the
+// end of the one is no evidence of the other's. An input whose turn the
+// record holds no end of is unknown, however claude's own turn after it
+// ended.
+func TestRecoverStopsAtAnOwnTurn(t *testing.T) {
+	const session, native = "7c1a5c0e-3a52-4b8e-9d3e-0b8d1f2a6c11", "1b6f0a3e-58c4-4f43-a1d2-6a7e9c0d4b25"
+	for _, tc := range []struct {
+		inputEnd bool
+		want     contract.RecoveredOutcome
+	}{{true, contract.RecoveredCompleted}, {false, contract.RecoveredUnknown}} {
+		l, oc, m := recordAgent(t, session, ownTurnTranscript(t, session, native, tc.inputEnd), map[string]string{"in-bg": native})
+		r := openReader(t, session, l, oc, m, nil)
+		mk, _, _ := m.Lookup("in-bg")
+		if got, err := r.Recover(context.Background(), mk); err != nil || got.Outcome != tc.want {
+			t.Errorf("Recover with the input's own end %v = %+v %v, want %s", tc.inputEnd, got, err, tc.want)
+		}
+	}
+}
+
 // Checkpoint format 1 is what agentd stored before this profile: a
 // checkpoint copied from a runtime's node.db, over the transcript it covers,
 // resumes exactly where it stood — and over a copy of that transcript (another

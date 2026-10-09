@@ -67,13 +67,24 @@ func (p *fakeProfile) Describe() contract.Descriptor {
 }
 
 type fakeConfig struct {
-	Binary string `json:"binary"`
+	Binary        string                 `json:"binary"`
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
+}
+
+// fakeVersion is the version the fake harness's binary is: the content of a
+// file beside it, or the pin.
+func fakeVersion(bin string) string {
+	b, err := os.ReadFile(bin + ".version")
+	if err != nil {
+		return "1.0.0"
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func fakeBinary(root string) string { return filepath.Join(root, "bin", "fake") }
 
 func (p *fakeProfile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
-	cfg, _ := json.Marshal(fakeConfig{Binary: fakeBinary(req.HarnessRoot)})
+	cfg, _ := json.Marshal(fakeConfig{Binary: fakeBinary(req.HarnessRoot), VersionPolicy: req.Spec.VersionPolicy})
 	res := contract.ProvisionResult{
 		Files:        []contract.File{contract.TextFile(contract.RootConfig, "persona.md", "0600", req.Spec.Instructions.Persona)},
 		OpenConfig:   cfg,
@@ -106,6 +117,10 @@ func (p *fakeProfile) Start(ctx context.Context, req Start) (Transport, error) {
 	if _, err := os.Stat(cfg.Binary); err != nil {
 		return nil, &contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenBinaryNotFound, Message: err.Error()}
 	}
+	version := fakeVersion(cfg.Binary)
+	if err := CheckHarnessVersion(cfg.VersionPolicy, fakeName, "1.0.0", version); err != nil {
+		return nil, err
+	}
 	id := req.SessionID
 	if id == "" {
 		id = "s-" + randomHex(8)
@@ -124,7 +139,7 @@ func (p *fakeProfile) Start(ctx context.Context, req Start) (Transport, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	t := &fakeTransport{p: p, id: id, dir: dir, report: req.Report, dead: make(chan struct{})}
+	t := &fakeTransport{p: p, id: id, version: version, dir: dir, report: req.Report, dead: make(chan struct{})}
 	p.mu.Lock()
 	p.procs[id] = t
 	p.mu.Unlock()
@@ -153,10 +168,11 @@ func (p *fakeProfile) Record(src RecordSource) (Reader, error) {
 // ---- the harness
 
 type fakeTransport struct {
-	p      *fakeProfile
-	id     string
-	dir    string
-	report func(Event)
+	p       *fakeProfile
+	id      string
+	version string
+	dir     string
+	report  func(Event)
 
 	mu   sync.Mutex
 	turn *fakeTurn
@@ -207,6 +223,8 @@ func (t *fakeTransport) setGoal(g fakeGoal) {
 }
 
 func (t *fakeTransport) SessionID() string { return t.id }
+
+func (t *fakeTransport) HarnessVersion() string { return t.version }
 
 // entry is one line of the fake's record.
 type fakeEntry struct {

@@ -52,9 +52,16 @@ func fakeScriptEnvArgv(t *testing.T, s fakeharness.Script, argvOut string) []str
 // cases launch a real PTY child while the rest of `go test -race ./...` saturates
 // the box, and an observed miss took just over 2s. Only the WAIT is longer — a
 // dump that never appears still fails.
+// appearWait bounds how long a test polls for something a freshly launched
+// harness produces — a screen line, an argv dump, a shim record. It returns as
+// soon as the thing appears; the bound only matters on a host saturated by a
+// full parallel `veracity ci` run (with coverage), where 5–8 s budgets were seen
+// to expire. A thing that never appears still fails.
+const appearWait = 30 * time.Second
+
 func readArgvDump(t *testing.T, path string) []string {
 	t.Helper()
-	for i := 0; i < 400; i++ {
+	for deadline := time.Now().Add(appearWait); time.Now().Before(deadline); {
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			var got []string
@@ -380,7 +387,7 @@ func readShimRecord(t *testing.T, path string) string {
 	t.Helper()
 	// Generous: the shim runs within milliseconds normally, but under a full
 	// parallel `veracity ci` (coverage on) an 8 s budget was seen to expire.
-	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(appearWait); time.Now().Before(deadline); {
 		if raw, err := os.ReadFile(path); err == nil && bytes.Contains(raw, []byte("IS_SANDBOX=")) {
 			return string(raw)
 		}

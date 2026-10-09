@@ -51,6 +51,10 @@
 // server with one initialize request, carrying the connector's headers: a
 // header from a file (HTTPConnector.HeadersFile) is read from it then, and is
 // in no rendered file or open configuration.
+//
+// Its binary is the pinned Version unless VersionPath names another; Open
+// reports the version it runs, and under a strict version policy refuses one
+// that is not the pin.
 package fakeadapter
 
 import (
@@ -118,6 +122,8 @@ var Breaks = []string{
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
 	"ack-fails", "capability-past-minor", "bg-tasks-unreported", "bg-not-taken-up", "headers-file-unread",
+	"version-policy-unchecked", "version-policy-ignored", "version-flexible-refuses", "version-unreported",
+	"version-reports-pin",
 }
 
 // Adapter is the fake harness's adapter.
@@ -247,11 +253,28 @@ type openConfig struct {
 	// MCP are the http connectors the harness connects to as a Session
 	// opens.
 	MCP []mcpServer `json:"mcp,omitempty"`
+	// VersionPolicy is the spec's (1.7).
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
 }
 
 // BinaryPath is where Provision tells the fake harness's binary to be, under
 // the harness root: Open refuses with binary_not_found when it is absent.
 func BinaryPath(harnessRoot string) string { return filepath.Join(harnessRoot, "bin", "fake-harness") }
+
+// VersionPath is the file, beside the binary, that holds the version the fake
+// harness's binary is: Version when there is none. A test writes another
+// version there to run a harness other than the pin (1.7).
+func VersionPath(harnessRoot string) string { return BinaryPath(harnessRoot) + ".version" }
+
+// binaryVersion is the version of the binary at bin: VersionPath's content,
+// or Version.
+func binaryVersion(bin string) string {
+	b, err := os.ReadFile(bin + ".version")
+	if err != nil {
+		return Version
+	}
+	return strings.TrimSpace(string(b))
+}
 
 // Provision renders the fake's configuration.
 func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
@@ -264,7 +287,14 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 	if !filepath.IsAbs(req.HarnessRoot) {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInvalidSpec, Field: "harness_root", Message: "not absolute"}
 	}
-	if err := contract.CheckSpec(a.Describe(), req.Spec); err != nil {
+	if err := contract.CheckMinor(req); err != nil {
+		return contract.ProvisionResult{}, err
+	}
+	checked := req.Spec
+	if a.breaks("version-policy-unchecked") {
+		checked.VersionPolicy = ""
+	}
+	if err := contract.CheckSpec(a.Describe(), checked); err != nil {
 		return contract.ProvisionResult{}, err
 	}
 	var moves []contract.Relocation
@@ -306,7 +336,7 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 			files = append(files, contract.TextFile(contract.RootConfig, filepath.ToSlash(filepath.Join("memory", f.Path)), "0600", f.Content))
 		}
 	}
-	cfg, _ := json.Marshal(openConfig{Binary: BinaryPath(req.HarnessRoot), Model: req.Spec.Model, MCP: mcpServers(req.Spec)})
+	cfg, _ := json.Marshal(openConfig{Binary: BinaryPath(req.HarnessRoot), Model: req.Spec.Model, MCP: mcpServers(req.Spec), VersionPolicy: req.Spec.VersionPolicy})
 	return contract.ProvisionResult{
 		Files:              files,
 		OpenConfig:         cfg,

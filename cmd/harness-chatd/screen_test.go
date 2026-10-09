@@ -30,7 +30,7 @@ func TestScreen_SnapshotOfLiveConversation(t *testing.T) {
 	// The harness starts and renders asynchronously; poll until its startup
 	// banner shows up on the emulated screen (or give up).
 	var snap screenResponse
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(appearWait)
 	for time.Now().Before(deadline) {
 		snap = getScreen(t, ts, id, http.StatusOK)
 		if strings.Contains(snap.Text, "Mock Agent CLI") {

@@ -111,6 +111,34 @@ type SelfStarter interface {
 	InterruptTurn(ctx context.Context, native string) error
 }
 
+// Versioned is the Transport of a harness that knows its own version: the one
+// Open reports (OpenResult.HarnessVersion). A Transport that is not reports
+// none.
+type Versioned interface {
+	// HarnessVersion is the version of the harness binary running, "" when
+	// it could not be learned.
+	HarnessVersion() string
+}
+
+// CheckHarnessVersion is a Start's version policy (AgentSpec.VersionPolicy,
+// rendered into the open_config): nil when policy admits the harness at
+// version running — "" when it could not be learned — and the profile pins
+// pinned; open_failed version_unsupported, naming both, when it does not.
+// Only strict refuses: a profile's other checks of what it relies on stay its
+// own, under either policy.
+func CheckHarnessVersion(policy contract.VersionPolicy, harness, pinned, running string) error {
+	if policy.Admits(pinned, running) {
+		return nil
+	}
+	if running == "" {
+		running = "of an unknown version"
+	}
+	return &contract.Error{
+		Code: contract.CodeOpenFailed, Reason: contract.OpenVersionUnsupported,
+		Message: fmt.Sprintf("%s %s is not the pinned %s %s, and the version policy is %s", harness, running, harness, pinned, policy),
+	}
+}
+
 // ErrNotSubmitted marks a Submit failure that reached nothing.
 var ErrNotSubmitted = errors.New("adapter: input not submitted")
 
@@ -239,6 +267,9 @@ func (a *harnessAdapter) Describe() contract.Descriptor { return a.desc }
 
 func (a *harnessAdapter) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
 	if err := checkVersion(req.Contract); err != nil {
+		return contract.ProvisionResult{}, err
+	}
+	if err := contract.CheckMinor(req); err != nil {
 		return contract.ProvisionResult{}, err
 	}
 	if err := req.Layout.Validate(); err != nil {

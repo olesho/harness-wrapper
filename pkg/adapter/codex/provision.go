@@ -44,6 +44,9 @@ type openConfig struct {
 	// CodexHome is CODEX_HOME: the configuration root, where codex writes
 	// the thread's rollout.
 	CodexHome string `json:"codex_home"`
+	// VersionPolicy is the spec's (1.7): under strict, Start refuses a codex
+	// that is not the pin.
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
 }
 
 func parseOpenConfig(raw []byte) (openConfig, error) {
@@ -114,8 +117,9 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			"USER=" + filepath.Base(l.Home),
 			"CODEX_HOME=" + l.Config,
 		},
-		WorkingDir: l.Workspace,
-		CodexHome:  l.Config,
+		WorkingDir:    l.Workspace,
+		CodexHome:     l.Config,
+		VersionPolicy: req.Spec.VersionPolicy,
 	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {

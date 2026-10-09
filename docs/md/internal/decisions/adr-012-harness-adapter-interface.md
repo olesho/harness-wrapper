@@ -1,6 +1,6 @@
 # ADR-012: harness-wrapper implements the Harness Adapter Interface
 
-**Status:** Accepted (2026-09-28); amended 2026-10-06
+**Status:** Accepted (2026-09-28); amended 2026-10-06, 2026-10-09
 
 **Intent:** principle 3, *normalize, don't leak*, principle 5, *keep the stack one-way*, and principle
 6, *evolve public contracts deliberately* ([INTENT](../../../../INTENT.md#design-principles)). Under
@@ -76,7 +76,8 @@ The migration plan is
    including one before the first token, and each failed API attempt (`API error (attempt k/N)`).
    Those two facts would rest on a log whose format claude doesn't document, while stream-json
    carries them as frames, with a retry's delay that the log lacks. A hybrid transport, if built,
-   pins claude, keeps the debug lines it parses in the conformance fixtures, and refuses to start
+   pins claude (and holds it to the pin under a strict version policy, ADR-023), keeps the debug
+   lines it parses in the conformance fixtures, and refuses to start
    when its first turn logs no `[engine] turn` line. It reads the log's turn lines only while one
    turn is in flight: when two overlap, claude can log them, and fire their hooks, out of order.
 
@@ -114,10 +115,26 @@ The migration plan is
 
 In the order of the migration plan: the chat split (`internal/chatcore`, `internal/wrapcore`); the
 contract package and conformance kit; the Harness Adapter with its Claude Code profile; the Codex
-profile over `codex app-server`. Optionally, the TUI hybrid as a second transport of the Claude Code
-profile (Decision 6).
+profile over `codex app-server`. Then, **planned**, the TUI hybrid as a second transport of the
+Claude Code profile (Decision 6): agentd's fallback for when stream-json is unavailable or breaks,
+behind the same interface, so agentd adds no TUI code of its own (agentd ADR 0002 and 0004, 2026-10-07).
 
 ## History
+
+- 2026-10-09: interface 1.7 adds a version policy ([ADR-023](adr-023-harness-version-policy.md)):
+  `claude-code-tui` no longer refuses a claude other than the pin unless the agent's
+  `version_policy` is `strict`; under `flexible`, the default, its `[engine]` gate alone decides.
+  Every profile reports the version it runs.
+
+- 2026-10-07: the TUI hybrid's phase 1 lands as a harness of its own, `claude-code-tui`
+  (`pkg/adapter/claudecodetui`), beside `claude-code`, which is unchanged: open and reopen, turns
+  that complete or error, the shared record, Close. It pins claude, keeps the debug lines it parses
+  in a fixture, gates the first turn on `[engine] turn N start`, and reads turn lines only while one
+  turn is in flight. Interrupts, retries, prompts and claude's own turns come in later phases.
+
+- 2026-10-07: the TUI hybrid moves from optional to planned, as agentd's Claude fallback. agentd's
+  earlier fallback, hw's TUI driver behind `pkg/chat`, has been unreachable there since agentd moved
+  onto this interface (its ADR 0004); its ADRs 0002 and 0004 now name the hybrid instead.
 
 - 2026-10-06: the TUI hybrid's two gaps, an interrupt before the first token and retries in
   progress, close on claude's debug log (`probes/tui-hybrid`: claude 2.1.283 and 2.1.284, macOS

@@ -140,6 +140,61 @@ type AgentSpec struct {
 	// Credential names the kind of the credential Open will stage; nil for a
 	// harness that needs none.
 	Credential *CredentialRef `json:"credential,omitempty"`
+	// VersionPolicy is how strictly Open holds the harness binary to the
+	// version the adapter pins (Descriptor.Harness.Version): strict refuses
+	// any other, flexible — and empty, the default — runs whatever version
+	// is installed, keeping every check of what the adapter relies on (1.7).
+	// Every adapter of 1.7 or later honours it, behind no capability; a
+	// request of an earlier minor carries none (CheckMinor).
+	VersionPolicy VersionPolicy `json:"version_policy,omitempty"`
+}
+
+// VersionPolicy is how strictly a Session's harness is held to the adapter's
+// pinned version (1.7).
+type VersionPolicy string
+
+// Version policies.
+const (
+	// VersionStrict: Open refuses a harness binary whose version is not the
+	// pin, or cannot be learned, with open_failed version_unsupported.
+	VersionStrict VersionPolicy = "strict"
+	// VersionFlexible: Open checks no version. Whatever else the adapter
+	// checks of the harness's protocol or capabilities it still checks,
+	// failing with the reason it always did. An empty policy is flexible.
+	VersionFlexible VersionPolicy = "flexible"
+)
+
+// Values lists the set.
+func (VersionPolicy) Values() []string { return []string{"strict", "flexible"} }
+
+// VersionPolicySince is the minor that added AgentSpec.VersionPolicy.
+const VersionPolicySince = 7
+
+// Valid reports whether p is in the set, or empty.
+func (p VersionPolicy) Valid() bool {
+	return p == "" || p == VersionStrict || p == VersionFlexible
+}
+
+// Admits reports whether a Session under p may run the harness at version
+// running, "" when it could not be learned, when the adapter pins pinned:
+// under strict only the pin, under flexible any version.
+func (p VersionPolicy) Admits(pinned, running string) bool {
+	return p != VersionStrict || (running != "" && running == pinned)
+}
+
+// CheckMinor refuses a request that uses what a newer minor than the one it
+// is written in added, with CodeProtocol naming the field: a caller sends an
+// adapter requests no newer than the adapter's minor (Compatible), and an
+// adapter of that minor would drop such a field unread.
+func CheckMinor(req ProvisionRequest) error {
+	minor, err := MinorOf(req.Contract)
+	if err != nil {
+		return &Error{Code: CodeProtocol, Field: "contract", Message: err.Error()}
+	}
+	if req.Spec.VersionPolicy != "" && minor < VersionPolicySince {
+		return &Error{Code: CodeProtocol, Field: "spec.version_policy", Message: fmt.Sprintf("from %s%d.%d, and the request is %s", versionPrefix, Major, VersionPolicySince, req.Contract)}
+	}
+	return nil
 }
 
 // Instructions are an agent's standing instructions.
@@ -299,6 +354,12 @@ func CheckSpec(d Descriptor, s AgentSpec) error {
 	}
 	if s.Credential != nil && !supports(d.CredentialKinds, s.Credential.Kind) {
 		return unsupported("credential.kind", "%q", s.Credential.Kind)
+	}
+	if !s.VersionPolicy.Valid() {
+		return invalid("version_policy", "%q, want strict or flexible", s.VersionPolicy)
+	}
+	if minor, err := MinorOf(d.Contract); s.VersionPolicy != "" && (err != nil || minor < VersionPolicySince) {
+		return unsupported("version_policy", "%s declares %s, before version policies", d.Harness.Name, d.Contract)
 	}
 	skills := map[string]bool{}
 	for i, sk := range s.Skills {

@@ -55,6 +55,9 @@ type openConfig struct {
 	// MaxRetries is how often pi retries a failed model call
 	// (settings.json): after that many, a failure is the run's end.
 	MaxRetries int `json:"max_retries"`
+	// VersionPolicy is the spec's (1.7): under strict, Start refuses a pi
+	// that is not the pin.
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
 }
 
 func parseOpenConfig(raw []byte) (openConfig, error) {
@@ -144,12 +147,13 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			"PI_OFFLINE=1",
 			"PI_TELEMETRY=0",
 		},
-		Args:       args,
-		WorkingDir: l.Workspace,
-		AgentDir:   l.Config,
-		SessionDir: filepath.Join(l.Config, sessionsDir),
-		Provider:   name,
-		MaxRetries: maxRetries,
+		Args:          args,
+		WorkingDir:    l.Workspace,
+		AgentDir:      l.Config,
+		SessionDir:    filepath.Join(l.Config, sessionsDir),
+		Provider:      name,
+		MaxRetries:    maxRetries,
+		VersionPolicy: req.Spec.VersionPolicy,
 	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {

@@ -59,6 +59,9 @@ type openConfig struct {
 	// Session had a spool — are moved, under a lock, into the spools of the
 	// Sessions they name (migrateLegacySpool).
 	Spool string `json:"spool"`
+	// VersionPolicy is the spec's (1.7): under strict, Start refuses a claude
+	// that is not the pin.
+	VersionPolicy contract.VersionPolicy `json:"version_policy,omitempty"`
 }
 
 // spoolDir holds each Session's hook spool, under the spool root.
@@ -122,6 +125,21 @@ func relocations(load *contract.LoadSource, l contract.Layout) []contract.Reloca
 // open_config with claude's arguments and environment. For a request that
 // loads a saved Session it names the history's one relocation.
 func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResult, error) {
+	return ProvisionWith(req, Hooks{})
+}
+
+// Hooks are hooks a profile that runs claude with this profile's
+// configuration adds to it: each entry runs the distribution's hook helper
+// as `<helper> <Harness> <arg>`, beside the hooks this profile's record
+// reads.
+type Hooks struct {
+	Harness string
+	Events  []harnesscore.HookEntry
+}
+
+// ProvisionWith renders claude's configuration for the spec as Provision
+// does, with extra's hooks in settings.json too.
+func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.ProvisionResult, error) {
 	spec, l := req.Spec, req.Layout
 	invalid := func(field, format string, args ...any) error {
 		return &contract.Error{Code: contract.CodeInvalidSpec, Field: field, Message: fmt.Sprintf(format, args...)}
@@ -130,7 +148,7 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 		return contract.ProvisionResult{}, invalid("instructions.persona", "%d bytes, more than %d", len(spec.Instructions.Persona), MaxPersona)
 	}
 
-	settings, err := settingsJSON(req.HarnessRoot, l.Config)
+	settings, err := settingsJSON(req.HarnessRoot, l.Config, extra)
 	if err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
 	}
@@ -220,8 +238,9 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 			"DISABLE_AUTOUPDATER=1",
 			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 		},
-		WorkingDir: l.Workspace,
-		Spool:      l.Scratch,
+		WorkingDir:    l.Workspace,
+		Spool:         l.Scratch,
+		VersionPolicy: spec.VersionPolicy,
 	}
 	oc, err := json.Marshal(cfg)
 	if err != nil {
@@ -241,8 +260,8 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 
 // settingsJSON is claude's settings.json: transcripts kept, the bypass
 // prompt skipped, memory in the config root, and the hooks, each running the
-// distribution's hook helper.
-func settingsJSON(harnessRoot, config string) ([]byte, error) {
+// distribution's hook helper; extra's after them, for the events they name.
+func settingsJSON(harnessRoot, config string, extra Hooks) ([]byte, error) {
 	base, err := json.Marshal(map[string]any{
 		"cleanupPeriodDays":                 cleanupPeriodDays,
 		"skipDangerousModePermissionPrompt": true,
@@ -251,7 +270,40 @@ func settingsJSON(harnessRoot, config string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return harnesscore.RenderSettingsJSONHooks(base, hookSpec(), []string{HookPath(harnessRoot)}, "claude")
+	argv := []string{HookPath(harnessRoot)}
+	out, err := harnesscore.RenderSettingsJSONHooks(base, hookSpec(), argv, "claude")
+	if err != nil || len(extra.Events) == 0 {
+		return out, err
+	}
+	var settings, hooks map[string]json.RawMessage
+	if err := json.Unmarshal(out, &settings); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(settings["hooks"], &hooks); err != nil {
+		return nil, err
+	}
+	for _, e := range extra.Events {
+		var groups []json.RawMessage
+		if raw, ok := hooks[e.NativeEvent]; ok {
+			if err := json.Unmarshal(raw, &groups); err != nil {
+				return nil, err
+			}
+		}
+		g, err := json.Marshal(harnesscore.SettingsHookMatcher{Matcher: e.Matcher, Hooks: []harnesscore.SettingsHookCmd{{
+			Type: "command", Command: harnesscore.RenderHookCommand(argv, extra.Harness, e.Arg, hookOwner),
+		}}})
+		if err != nil {
+			return nil, err
+		}
+		if hooks[e.NativeEvent], err = json.Marshal(append(groups, g)); err != nil {
+			return nil, err
+		}
+	}
+	if settings["hooks"], err = json.Marshal(hooks); err != nil {
+		return nil, err
+	}
+	out, err = json.MarshalIndent(settings, "", "  ")
+	return append(out, '\n'), err
 }
 
 // mcpJSON is mcp.json: one server per connector, and the files it needs

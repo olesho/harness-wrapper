@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -90,6 +91,11 @@ type Fixture struct {
 	// a Session opens: the kit checks that a header read from its file
 	// reaches one. False skips that check.
 	MCP bool
+	// NonPin makes the harness binary the fixture provides one of a version
+	// other than the Descriptor's pin until restore is called, and returns
+	// that version (1.7: AgentSpec.VersionPolicy); nil skips the checks that
+	// need one.
+	NonPin func(t T) (version string, restore func())
 }
 
 func (f Fixture) timeout() time.Duration {
@@ -119,6 +125,17 @@ func Scenarios() []string {
 		out = append(out, s.name)
 	}
 	return out
+}
+
+// Only is a Fixture.Skip that skips every scenario but those named.
+func Only(names ...string) map[string]string {
+	skip := map[string]string{}
+	for _, s := range Scenarios() {
+		if !slices.Contains(names, s) {
+			skip[s] = "not under test"
+		}
+	}
+	return skip
 }
 
 // Run runs every scenario against the fixture, each as a subtest.

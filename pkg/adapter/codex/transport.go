@@ -106,6 +106,8 @@ type transport struct {
 	// scratch and home are the layout's scratch root and CODEX_HOME: where
 	// the thread's native state is kept, and where codex keeps the thread.
 	scratch, home string
+	// version is codex's, from its initialize answer; "" when unknown.
+	version string
 
 	wmu         sync.Mutex // serializes lines on stdin, and closing it
 	stdin       io.WriteCloser
@@ -294,12 +296,23 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	}
 	ictx, cancel := context.WithTimeout(ctx, initWait)
 	defer cancel()
-	_, err = t.call(ictx, "initialize", map[string]any{
+	initRaw, err := t.call(ictx, "initialize", map[string]any{
 		"clientInfo": map[string]string{"name": "harness-wrapper", "title": "harness-wrapper", "version": adapter.Name()},
 	})
 	release() // codex has initialized the home: the next start may go
 	if err != nil {
 		return fail(contract.OpenConfigInvalid, fmt.Errorf("initialize: %w", err))
+	}
+	// codex's version, for Open's result and the version policy: its user
+	// agent carries it. Under flexible a codex other than the pin runs on.
+	var initRes struct {
+		UserAgent string `json:"userAgent"`
+	}
+	_ = json.Unmarshal(initRaw, &initRes)
+	t.version = versionOfUserAgent(initRes.UserAgent)
+	if err := adapter.CheckHarnessVersion(cfg.VersionPolicy, "codex", pinned(), t.version); err != nil {
+		t.abandon()
+		return nil, err
 	}
 	if err := t.notify("initialized", nil); err != nil {
 		return fail(contract.OpenConfigInvalid, err)
@@ -449,6 +462,20 @@ func (t *transport) start(bin, dir string, env []string) error {
 	go t.read()
 	go t.wait()
 	return nil
+}
+
+// HarnessVersion is codex's version, from its initialize answer.
+func (t *transport) HarnessVersion() string { return t.version }
+
+// versionOfUserAgent is codex's version in the user agent its initialize
+// answer carries: "<client>/<version> (<os>) …".
+func versionOfUserAgent(ua string) string {
+	first, _, _ := strings.Cut(ua, " ")
+	_, v, ok := strings.Cut(first, "/")
+	if !ok {
+		return ""
+	}
+	return v
 }
 
 // SessionID is the Session's thread id.

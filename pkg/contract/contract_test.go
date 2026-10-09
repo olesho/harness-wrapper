@@ -474,3 +474,53 @@ func TestCheckSpecHeaders(t *testing.T) {
 		}
 	}
 }
+
+// A version policy is strict, flexible or empty; an adapter of a minor
+// before 1.7 takes none, and a request of such a minor carries none.
+func TestVersionPolicy(t *testing.T) {
+	d := testDescriptor()
+	spec := AgentSpec{Model: "m", PermissionPosture: PostureBypass}
+	for _, p := range []VersionPolicy{"", VersionStrict, VersionFlexible} {
+		spec.VersionPolicy = p
+		if err := CheckSpec(d, spec); err != nil {
+			t.Errorf("policy %q: %v", p, err)
+		}
+	}
+	var e *Error
+	spec.VersionPolicy = "lenient"
+	if err := CheckSpec(d, spec); !errors.As(err, &e) || e.Code != CodeInvalidSpec || e.Field != "version_policy" {
+		t.Errorf("unknown policy: %v, want invalid_spec on version_policy", err)
+	}
+	spec.VersionPolicy = VersionStrict
+	d.Contract = "harness-adapter/1.6"
+	if err := CheckSpec(d, spec); !errors.As(err, &e) || e.Code != CodeUnsupported || e.Field != "version_policy" {
+		t.Errorf("a 1.6 adapter: %v, want unsupported on version_policy", err)
+	}
+	req := ProvisionRequest{Contract: "harness-adapter/1.6", Spec: spec}
+	if err := CheckMinor(req); !errors.As(err, &e) || e.Code != CodeProtocol || e.Field != "spec.version_policy" {
+		t.Errorf("a 1.6 request with a policy: %v, want protocol on spec.version_policy", err)
+	}
+	req.Spec.VersionPolicy = ""
+	if err := CheckMinor(req); err != nil {
+		t.Errorf("a 1.6 request without a policy: %v", err)
+	}
+	req = ProvisionRequest{Contract: Version, Spec: spec}
+	if err := CheckMinor(req); err != nil {
+		t.Errorf("a %s request with a policy: %v", Version, err)
+	}
+	for _, tc := range []struct {
+		p               VersionPolicy
+		pinned, running string
+		want            bool
+	}{
+		{"", "1.0", "2.0", true},
+		{VersionFlexible, "1.0", "", true},
+		{VersionStrict, "1.0", "1.0", true},
+		{VersionStrict, "1.0", "2.0", false},
+		{VersionStrict, "1.0", "", false},
+	} {
+		if got := tc.p.Admits(tc.pinned, tc.running); got != tc.want {
+			t.Errorf("%q.Admits(%q, %q) = %v, want %v", tc.p, tc.pinned, tc.running, got, tc.want)
+		}
+	}
+}

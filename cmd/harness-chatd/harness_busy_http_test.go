@@ -47,7 +47,7 @@ func TestSendMessage_HarnessBusyIs409(t *testing.T) {
 	srv.mu.RLock()
 	entry := srv.convs[open.ID]
 	srv.mu.RUnlock()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(appearWait)
 	for !strings.Contains(entry.conv.ScreenSnapshot().Text, "Working…") {
 		if time.Now().After(deadline) {
 			t.Fatal("the harness never started working")

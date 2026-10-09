@@ -65,7 +65,7 @@ func TestInterrupt_Route(t *testing.T) {
 	srv.mu.RLock()
 	entry := srv.convs[id]
 	srv.mu.RUnlock()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(appearWait)
 	for !strings.Contains(entry.conv.ScreenSnapshot().Text, "esc to interrupt") {
 		if time.Now().After(deadline) {
 			t.Fatal("the turn never started")

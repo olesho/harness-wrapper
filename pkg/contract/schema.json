@@ -49,6 +49,9 @@
             "$ref": "#/$defs/Skill"
           },
           "type": "array"
+        },
+        "version_policy": {
+          "$ref": "#/$defs/VersionPolicy"
         }
       },
       "type": "object"
@@ -930,6 +933,9 @@
     },
     "OpenResult": {
       "properties": {
+        "harness_version": {
+          "type": "string"
+        },
         "session_id": {
           "type": "string"
         },
@@ -1715,6 +1721,13 @@
         "interrupted",
         "cancelled",
         "refused"
+      ],
+      "type": "string"
+    },
+    "VersionPolicy": {
+      "enum": [
+        "strict",
+        "flexible"
       ],
       "type": "string"
     }

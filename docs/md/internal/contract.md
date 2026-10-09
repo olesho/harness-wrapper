@@ -169,6 +169,41 @@ another works, which still observes its own tool calls (`concurrent-record`); an
 together load together, each opening under its saved id with its own conversation and not its
 sibling's (`concurrent-load`).
 
+## The version policy
+
+Since 1.7 an agent chooses how strictly its harness is held to the version the adapter pins
+(`Descriptor.harness.version`), and every Session says which version it runs
+([ADR-023](decisions/adr-023-harness-version-policy.md)). Both are part of 1.7 itself, behind no
+capability: every 1.7 adapter honours them.
+
+- `AgentSpec.version_policy` is `strict` or `flexible`; empty is `flexible`. Under **strict**, `Open`
+  refuses a harness binary whose version is not the pin, or cannot be learned, with
+  `open_failed`/`version_unsupported` naming both versions. Under **flexible** no version is checked;
+  every check an adapter makes of what it relies on — a protocol feature, a log line — still holds,
+  with the reason it always failed with.
+- `OpenResult.harness_version` is the version the Session's harness reports, under either policy;
+  empty when the adapter could not learn it.
+- `CheckSpec` refuses a policy outside the set (`invalid_spec`, field `version_policy`), and a policy
+  for an adapter that declares a minor before 1.7 (`unsupported`). `contract.CheckMinor` refuses a
+  request written in a minor before 1.7 that carries one (`protocol`, field `spec.version_policy`):
+  an adapter of that minor would drop the field unread.
+
+How each profile learns the version, and what it still checks under flexible:
+
+| Profile | Version from | Checked under either policy |
+|---|---|---|
+| `claude-code` | `claude --version`, before claude starts; none if it fails (strict then refuses) | `system/init`'s `interrupt_receipt_v1` and `msg_lifecycle_v1`: a claude without them is stopped |
+| `claude-code-tui` | `claude --version`, before claude starts; a failure is `binary_not_found` | the debug log's `[engine]` lines (`capability_missing`), and the first turn's `[engine] turn N start` |
+| `codex` | the user agent of its `initialize` answer (`<client>/<version> …`) | `initialize`, `thread/start` or `thread/resume` |
+| `pi` | `version` in the release's `package.json` beside the executable, which pi reads its own from | `get_state` naming the session, and the tag extension's command |
+
+The kit's `version-policy` scenario, asked only of an adapter declaring 1.7 or later, holds the
+rules: an unknown policy is refused; the pin opens under the default and `strict` and reports
+itself; and, given a fixture's `NonPin`, a harness other than the pin opens under the default and
+`flexible` reporting its own version, and is refused under `strict` with `version_unsupported`. The
+Claude Code profiles' fixtures take the non-pin claude from `HW_NONPIN_CLAUDE`
+(`TestClaudeVersionPolicy`, `TestClaudeTUIVersionPolicy`).
+
 ## harness-wrapper's Harness Adapter
 
 `pkg/adapter` is hw's implementation of the interface: one adapter, with a **profile** per harness.
@@ -251,7 +286,8 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   `turn_ended`. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop;
   a file is deleted once its chunk is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
-  `unknown`.
+  `unknown`. The evidence comes before the next input's prompt and before a task notification, where
+  a turn of claude's own begins: that turn's end is never the input's.
 - **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
   traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
   token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.
@@ -268,6 +304,63 @@ checks, against a real claude driving `internal/mockapi` — a Go port of agentd
 API — when `HW_REAL_CLAUDE` names the pinned binary. `TestClaudeLoadsSavedSessions` loads the Session
 each source version saved (`testdata/load`). The `harness-adapter` workflow runs them on Linux with
 the pinned claude it downloads and verifies.
+
+## The Claude Code TUI profile
+
+`pkg/adapter/claudecodetui` registers `claude-code-tui`: the TUI hybrid of
+[ADR-012](decisions/adr-012-harness-adapter-interface.md) (decision 6), agentd's fallback for when
+stream-json is unavailable or breaks. It is a harness name of its own, beside `claude-code`, with its
+own Descriptor and conformance run; `claude-code` is unchanged. It shares the Claude Code profile's
+distribution, pin, `open_config`, record and failure classes (`claudecode.ProvisionWith`,
+`NewRecord`, `TurnError`), and differs in how claude runs:
+
+- **Transport:** claude runs interactively, without `-p`, on a pseudo-terminal, with
+  `--debug-file`. `Start` holds claude to the agent's version policy — under `strict` a claude other
+  than the pin is refused (`version_unsupported`), under `flexible`, the default, it runs — and waits
+  for the Session's `SessionStart` hook and the debug log's `[engine]` lines (`capability_missing`
+  without them) under either. An input is typed into the composer — a paste when it holds a newline or a control
+  character — then Enter. Nothing reads the screen.
+- **Live hooks:** `SessionStart`, `UserPromptSubmit`, `Stop` and `StopFailure` run the hook helper as
+  `claude-code-hook tui <hook>`, which writes what each reports to `scratch/tui/<session id>`
+  (`pkg/adapter/claudecodetui/live`). `UserPromptSubmit` binds claude's prompt id to the input being
+  typed; that is `Send`'s receipt and the turn's start. claude waits for the hook before it writes
+  the prompt to its transcript, so the binding is on disk first. `Stop` completes the turn with
+  `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
+  the HTTP status from the debug log's `API error` lines or claude's text.
+- **Debug log:** only `[engine] turn N start`, `… end (… stop=…)` and `API error (attempt k/N):
+  <status>`, kept in `testdata/debug-2.1.283.log`, and read only while the one input's turn is in
+  flight. The next input is typed once the debug log logged the turn's end. The gate: a first turn
+  whose start the log never logs ends `errored` (`internal`), and claude is stopped.
+- **Record:** `claude-code`'s, except that a prompt entry is matched to its input by its prompt id
+  (`promptId`), through the binding, since its uuid is claude's own. claude's TUI may write a fresh
+  session's first reply to the transcript before its prompt, so the record orders a read's entries
+  by timestamp and holds a reply of no turn back for up to 3 s while its prompt is written.
+  File checkpointing (`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`) is off, as under stream-json.
+- **Close** presses Ctrl-C until claude quits (the first press may cancel a turn or an armed
+  automatic continue), then signals the group.
+
+**Known limits (accepted, 2026-10-08):**
+
+- **Automatic continue after a usage limit.** At a usage wall claude's TUI arms "continuing
+  automatically at <reset>", and once the limit lifts it may start a turn of its own; no setting is
+  known to turn it off. It is accepted rather than worked around.
+- **Input the TUI rewrites.** Text starting with `/`, `!` or `#` is read by the TUI as a command, a
+  shell escape or a memory note, and a very long single line may become a paste placeholder. claude
+  then submits something other than the text sent, the `UserPromptSubmit` receipt never matches, and
+  `Send` reports the input `maybe_submitted`. Callers keep such input out of this profile.
+- **Version policy.** Since 1.7 the agent's `version_policy` decides
+  ([ADR-023](decisions/adr-023-harness-version-policy.md)): `flexible`, the default, runs a claude
+  other than the pin with only the capability checks (the debug log's `[engine]` lines); `strict`
+  refuses it, as every open did before. Under `flexible` the debug lines the profile parses are known
+  only for the pin (`testdata/debug-2.1.283.log`); another claude that logs `[engine]` but words
+  them otherwise opens, and its turns may not end where the profile reads them. A runtime that wants
+  the pin alone asks for `strict`.
+
+Phase 1 declares `resume` and `assign_session_id` alone. Interrupts (`Interrupt` returns
+`unsupported`; the kit's `interrupt` scenarios are skipped), retries reported as they happen,
+prompts, turns claude starts itself, rate-limit reports, tools and subagents observed, side-by-side
+Sessions, load and brokered credentials come in later phases. `TestClaudeTUIConforms` runs the kit
+against the pinned claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it.
 
 ## The Codex profile
 

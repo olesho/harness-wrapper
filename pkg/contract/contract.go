@@ -24,7 +24,11 @@
 // gives Placeholder the agent's model (PlaceholderRequest.Model), so a
 // credential kind that serves several providers keeps each credential on its
 // own provider's hosts. Minor 6 lets several Sessions of one agent be open at
-// once (concurrent_sessions: Limits.MaxSessions).
+// once (concurrent_sessions: Limits.MaxSessions). Minor 7 lets an agent
+// choose how strictly its harness is held to the adapter's pinned version
+// (AgentSpec.VersionPolicy: strict, or flexible by default), and reports the
+// version a Session runs (OpenResult.HarnessVersion); every 1.7 adapter
+// honours both, behind no capability.
 //
 // Two callers use an Adapter:
 //
@@ -83,8 +87,9 @@ func ParseVersion(v string) (major, minor int, err error) {
 }
 
 // MinorOf is the minor of contract version v: the newest requests a caller
-// may send an adapter declaring v (Compatible), and the newest capabilities
-// that adapter may declare (Capability.Since).
+// may send an adapter declaring v (Compatible; CheckMinor refuses a request
+// newer than the minor it is written in), and the newest capabilities that
+// adapter may declare (Capability.Since).
 func MinorOf(v string) (int, error) {
 	_, minor, err := ParseVersion(v)
 	return minor, err

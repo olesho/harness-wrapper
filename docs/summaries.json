@@ -246,7 +246,7 @@
       "summary": "Classifier patterns for the OpenCode CLI. Because OpenCode is provider-agnostic and has no anchored API-error format, it carries conservative cross-provider cost and retry fingerprints and leaves the API-error matcher unset until a recorded corpus exists."
     },
     "github.com/olesho/harness-wrapper/pkg/adapter": {
-      "summaryHash": "20f0978b74f9349d85cb88b8cf4cccbce42e002b3dfcdb5d09f22dff3ce90a6a",
+      "summaryHash": "4c8ba9227be54fc41b1c82694a6543782627a6445ae79c9aebf50bb7ca24551e",
       "summary": "harness-wrapper's Harness Adapter: one implementation of the Harness Adapter Interface (pkg/contract, ADR-012) with a profile per harness. This shared part names no harness — it owns the Session state machine, Observe and Ack over live events and the profile's record, and submission markers for OpenRecord and Recover — while each profile supplies its Descriptor, Provision, Transport and record Reader and registers itself by name.",
       "interfaces": {
         "Keeping": {
@@ -318,7 +318,7 @@
       "summary": "The data types of harness-wrapper's optional Landlock containment: the Request a caller sends, the Applied record reported once enforcement succeeded, and their canonical, normalized and fingerprinted forms. It is a leaf that touches no OS facility, so wire layers and the stored chat record can carry these types; a nil Request means no containment."
     },
     "github.com/olesho/harness-wrapper/pkg/contract": {
-      "summaryHash": "0a3dca692e5233115015657d2fb513c21e944d7ccd14f6c5c9214ce2941b14f8",
+      "summaryHash": "e0a6108537416ab7ec2a6bed4e3799fa5ae0e5ed77cc98b162a05ecf2dda046d",
       "summary": "The Harness Adapter Interface (ADR-012): the Go interface a Harness Adapter implements and a runtime's Agent Adapter calls to drive a coding-agent harness without naming it, in normative form with a JSON Schema for every type. The Supervisor uses its pure Describe, Provision and Placeholder; the Host opens Sessions and record handles; adapters register by harness name and are found with Lookup. It imports only the standard library.",
       "interfaces": {
         "Adapter": {
@@ -334,8 +334,8 @@
           "description": "A read-only handle on one Session's durable record: Observe delivers record-origin items from a checkpoint to the current end, Ack acknowledges committed batches, and Recover reports what became of an input."
         },
         "Session": {
-          "descHash": "80105155d53fd99f4c49b19b1f23a2d86fc30046b2a88c0546b1290f6dd6292b",
-          "description": "One harness conversation, safe for concurrent use: Open, Send one input, Interrupt a named turn, Answer prompts, Observe and Ack batches, read an observational State, and Close, which is terminal for the handle."
+          "descHash": "48f0abc8077294c69c23c0bbe7eb4cde2cbee4df03f7803903aa22ee20b46f50",
+          "description": "One harness conversation, safe for concurrent use: Open, Send one input, Interrupt a named turn, Answer prompts, Observe and Ack batches, read an observational State, and Close, which is terminal for the handle; an Open whose ctx is cancelled or times out fails open_failed with no reason."
         }
       }
     },
@@ -350,7 +350,7 @@
       }
     },
     "github.com/olesho/harness-wrapper/pkg/contract/fakeadapter": {
-      "summaryHash": "ae19e1b83132240fdfb98c05c7db8133e19d5ee5181c92fa460b1bc288f59253",
+      "summaryHash": "be64140c1783c3dc61748b4dc6920976be4dd7e057da458768a820594b35143a",
       "summary": "A Harness Adapter for a harness that exists only in-process: the reference the conformance kit is proved against and a stand-in harness for a runtime's tests. Its harness runs one goroutine per Session and answers the mock Messages API prompt language, including errors, usage limits, prompts, crashes and self-started goal turns."
     },
     "github.com/olesho/harness-wrapper/pkg/discovery": {
