@@ -40,8 +40,8 @@ active goal is loaded with one.
      resolved it. `Provision` stays pure, so the layout's paths arrive resolved.
    - `ProvisionResult.history_relocations` are prefix rules from saved paths to their places in the
      new environment. Both ends are history and no secret path; rules do not overlap. A path no rule
-     names keeps its place. Nothing inside a file is rewritten, but for the one value a 1.7
-     `history_rewrites` rule names ([ADR-023](adr-023-history-rewrites.md)).
+     names keeps its place. Nothing inside a file is rewritten, but for the one value a 1.8
+     `history_rewrites` rule names ([ADR-024](adr-024-history-rewrites.md)).
    - `OpenRequest.loaded` makes a reopen strict: `session_not_found` when the record is not where
      the harness looks, the saved id or none, and, on the first open in the new environment,
      `state_mismatch` when what the harness keeps of the Session outside its record did not come
@@ -158,5 +158,5 @@ instead, unless a turn takes it in meanwhile.
 
 ## History
 
-- 2026-10-09: #1 narrowed by [ADR-023](adr-023-history-rewrites.md): a 1.7 rewrite may change one
+- 2026-10-09: #1 narrowed by [ADR-024](adr-024-history-rewrites.md): a 1.8 rewrite may change one
   value in a saved file's first line.

@@ -1,14 +1,14 @@
-# ADR-023: a load may rewrite one value in a saved file's first line
+# ADR-024: a load may rewrite one value in a saved file's first line
 
 **Status:** Accepted (2026-10-09). It narrows [ADR-013](adr-013-session-load-and-own-turns.md) #1:
-a restore still rewrites nothing inside a saved file, but for the one value a 1.7 rewrite names.
+a restore still rewrites nothing inside a saved file, but for the one value a 1.8 rewrite names.
 
 **Intent:** principle 2, *a wrong verdict is worse than no verdict*, principle 3, *normalize, don't
 leak*, and principle 6, *evolve public contracts deliberately*
 ([INTENT](../../../../INTENT.md#design-principles)). Under principle 2, a loaded pi Session continues
 or does not open; it never becomes an empty one under the saved id. Under principle 3, which field of
 which file names a working directory stays the profile's to know: the Supervisor applies a rule, and
-knows no harness. Under principle 6, it is a minor version: an optional result field a 1.6 caller
+knows no harness. Under principle 6, it is a minor version: an optional result field a 1.7 caller
 never meets, since no profile renders it for a request with no `load`.
 
 ## Context
@@ -30,7 +30,7 @@ since `Provision` is pure.
 
 ## Decision
 
-1. **Interface 1.7 adds `ProvisionResult.history_rewrites`**, for a request that loads. A rule names
+1. **Interface 1.8 adds `ProvisionResult.history_rewrites`**, for a request that loads. A rule names
    a history path (a file or a directory, where the relocations put it), a top-level field, and the
    value `from` it replaces with `to`. In each restored file beneath the path whose first line — at
    most `MaxRewriteLine` bytes — is a JSON object whose field is a string equal to `from`, that
@@ -63,4 +63,7 @@ messages name the source's workspace.
 
 ## History
 
-- 2026-10-09: accepted, with interface 1.7 and the Pi profile's `session_load`.
+- 2026-10-09: accepted, with interface 1.8 and the Pi profile's `session_load`.
+- 2026-10-09: renumbered from ADR-023 and interface 1.7 when it merged after the harness version
+  policy, which took both ([ADR-023](adr-023-harness-version-policy.md)). The tag v0.35.0 carries
+  it as 1.7; v0.37.0 is the first release with both.

@@ -16,7 +16,7 @@ TZ=UTC HW_RECORD_SAVED_SESSION=/tmp/hw-saved-session/pi HW_REAL_PI=<the pinned p
 
 `HW_RECORD_SAVED_SESSION` is where the Session's roots are while it is recorded. The session's
 header names that workspace, which a load rewrites to its own
-([ADR-023](../../../../../docs/md/internal/decisions/adr-023-history-rewrites.md)); the distribution
+([ADR-024](../../../../../docs/md/internal/decisions/adr-024-history-rewrites.md)); the distribution
 sits beside it, at the same path with `-harness` added. Both are removed once the Session is saved.
 
 | Version | Recorded | Holds |

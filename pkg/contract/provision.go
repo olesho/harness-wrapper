@@ -507,7 +507,7 @@ type ProvisionResult struct {
 	// rewrites nothing inside it.
 	HistoryRelocations []Relocation `json:"history_relocations,omitempty"`
 	// HistoryRewrites are, for a request that loads, the one change a
-	// restore makes inside a saved file (since 1.7): in each file at or
+	// restore makes inside a saved file (since 1.8): in each file at or
 	// beneath a rule's Path, where the relocations put it, whose first line
 	// (at most MaxRewriteLine bytes) is a JSON object with a top-level string
 	// Field equal to From, that value becomes To; every other byte of the
