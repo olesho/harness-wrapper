@@ -277,6 +277,25 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   interrupted or failed, too. A failed turn is classed by the synthetic message's tag, the HTTP status
   and, for a 429, whether the account refused it: a usage wall (`You've hit your … limit · resets …`)
   closes the gate until its reset; the server's 429 (`not your usage limit`) is an `api` error.
+- **Permission posture:** `bypass` runs claude with `--permission-mode bypassPermissions`: every
+  tool runs, and isolation is the runtime's. `gated` (since 2026-10-09) runs it in claude's
+  `default` mode, where a tool that needs permission (a write, a command claude does not take for
+  read-only) asks, with `--permission-prompt-tool stdio`: claude asks the host over the stream.
+  Everything else `gated` renders is `bypass`'s, byte for byte.
+- **Prompts** (`prompts`, at `gated`): each `can_use_tool` control request is a prompt of kind
+  `permission`, named by the request's id (a UUID), its text the tool and what it would run or touch
+  (`Allow Bash: touch asked?`). Its options are claude's own: `yes` runs the tool once; `always`
+  runs it and keeps the rules claude suggests (`permission_suggestions`: a rule in the workspace's
+  `.claude/settings.local.json`, so later Sessions of the agent take it too, and possibly
+  accept-edits mode for the Session), offered only when claude suggests one; `no` refuses it, and
+  the model is told the user denied it and goes on. The answer is the control response (`allow`
+  with the input unchanged, or `deny`), written after `prompt_resolved` (`answer`), so the turn
+  cannot end first. Prompts asked together are raised one at a time. claude withdrawing a request
+  (`control_cancel_request`), an interrupt, the turn's end and claude's exit resolve the one
+  raised by `harness`; an interrupt while one waits stops the turn (`interrupted`), and `Close`
+  stops claude. A permission asked while claude is on no input's turn — a turn of its own — is
+  denied at once: the Session raises prompts only in an input's turn, and claude would wait for
+  ever.
 - **Record:** the session transcript, followed from the checkpoint, and the Session's spool. Checkpoint
   format 1 is the transcript follower's checkpoint — the one agentd stored — so stored checkpoints
   resume where they stood (`TestNodeDBCheckpoint`). Entries become `user_input`, `assistant_text`,
@@ -306,7 +325,8 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   `config/projects/<new workspace>` — a subagent's transcript, beneath it, with it — and nothing
   inside is rewritten. The profile loads the Sessions the pinned claude saved.
 
-`TestClaudeConforms` runs the conformance kit, and `TestClaudeObservations` the profile's own
+`TestClaudeConforms` runs the conformance kit at `bypass`, `TestClaudeConformsGated` its `prompts`
+scenario at `gated`, and `TestClaudeObservations` and `TestClaudePrompts` the profile's own
 checks, against a real claude driving `internal/mockapi` — a Go port of agentd's P11 mock Messages
 API — when `HW_REAL_CLAUDE` names the pinned binary. `TestClaudeLoadsSavedSessions` loads the Session
 each source version saved (`testdata/load`). The `harness-adapter` workflow runs them on Linux with
@@ -335,8 +355,10 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   records as claude's own. `Stop` completes the turn with `last_assistant_message`; `StopFailure` errors it, classed as `claude-code` classes failures, with
   the HTTP status from the debug log's `API error` lines or claude's text.
 - **Debug log:** only `[engine] turn N start`, `… end (… stop=…)`, `API error (attempt k/N):
-  <status>` and `[onCancel]`, kept in `testdata/debug-2.1.283.log` and
-  `testdata/debug-2.1.283-interrupt.log`, and read only while the one input's turn is in flight. The
+  <status>`, `[onCancel]` and, at `gated`, `Hook PermissionRequest (…) returned
+  permissionDecision: …`, kept in `testdata/debug-2.1.283.log`,
+  `testdata/debug-2.1.283-interrupt.log` and `testdata/debug-2.1.283-permission.log`, and read only
+  while the one input's turn is in flight. The
   next input is typed once the debug log logged the turn's end. The gate: a first turn whose start
   the log never logs ends `errored` (`internal`), and claude is stopped.
 - **Interrupts:** `Interrupt` presses Esc (a lone ESC) and returns once claude took it: the debug
@@ -355,6 +377,30 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   claude puts an interrupted prompt back in its composer, so before the next input the profile
   presses Ctrl-U twice per line of the interrupted input (Ctrl-U clears a line, and joins an empty
   one to the line before), at most 2048.
+- **Permission posture:** as `claude-code`'s, except that at `gated` claude asks through its
+  `PermissionRequest` hook, not the stream: the hook runs the helper as `claude-code-hook tui
+  permission-request`, with a timeout of 2 000 000 s (23 days; claude's timer takes at most
+  2^31-1 ms, and a longer timeout would fire at once). `bypass` renders no such hook.
+- **Prompts** (`prompts`, at `gated`): the hook writes each ask to the live directory under an id
+  of its own, and blocks — with no deadline of its own, so it outwaits any caller — until the
+  transport writes its answer (`answers/<id>`); it then hands claude the decision and says so. Each
+  ask is a prompt of kind `permission`, named by that id, with `claude-code`'s text, options and
+  mapping (`yes`, `always`, `no`), raised one at a time in the input's turn; `prompt_resolved`
+  (`answer`) comes before the answer is written. The turn's end withdraws the asks left (their
+  hooks end handing claude nothing) and the Session resolves the one raised by `harness`. An ask on
+  a turn of claude's own is denied at once, as under stream-json. **Interrupt** while a prompt waits
+  is Esc, which lands on claude's dialog: claude logs no `[onCancel]` there, ends the turn
+  (`stop=tool_use`), and cancels the hook ([the probe](../../../probes/tui-hybrid/FINDINGS.md),
+  *Phase 3*: 8/8); the profile takes that end for the interrupt, and reports `interrupted`.
+- **claude's own dialog** is drawn while the hook blocks, and is claude's fallback when the hook
+  ends with no decision (it timed out, failed or was killed): then only keystrokes answer it. The
+  profile never answers it; the hook's unbounded wait keeps it from being the answer path, and the
+  profile watches for that path breaking. A prompt is **lost** when the hook's process is gone
+  before it handed claude an answer, or when claude has not logged taking an answer (the debug
+  log's `Hook PermissionRequest (…) returned permissionDecision: …`) within 30 s of it. A lost
+  prompt is resolved by `harness`, Esc stops the turn, which ends `errored` (`internal`) — no one
+  interrupted it — and the Session goes on; if claude does not end the turn within 15 s of the Esc,
+  the turn ends `errored` and claude is stopped. Nothing hangs silently.
 - **Tools and subagents** (`tools_observed`, `subagents`) come from the hook spool, through the
   record `claude-code` reads: `PreToolUse`, `PostToolUse` and `PostToolUseFailure` are
   `tool_started` and `tool_finished` keyed by the tool use id, and `SubagentStart` and `SubagentStop`
@@ -425,24 +471,24 @@ interrupts, which need no capability, and `retry_visible`, and the kit's `interr
 `interrupt-early` scenarios run. Phase 3 (2026-10-09) adds `tools_observed`, `subagents` and
 `background_turns`, as `claude-code` declares them (not `autonomous_turns`, which neither Claude
 profile declares); the kit's `background` scenario runs, and `TestClaudeTUIObservations` checks tools
-and subagents, which no kit scenario covers outside side-by-side Sessions. Still to come, none
-declared: prompts, which wait on an owner decision (below), rate-limit reports, streaming text,
-side-by-side Sessions, load and brokered credentials. `TestClaudeTUIConforms` runs the kit against
-the pinned claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it.
+and subagents, which no kit scenario covers outside side-by-side Sessions. Prompts (2026-10-09)
+add the `gated` posture and `prompts`, as `claude-code` declares them, through the
+`PermissionRequest` hook (above). Still to come, none declared: rate-limit reports, streaming
+text, side-by-side Sessions, load and brokered credentials. `TestClaudeTUIConforms` runs the kit
+at `bypass` and `TestClaudeTUIConformsGated` its `prompts` scenario at `gated`, against the pinned
+claude and `internal/mockapi` when `HW_REAL_CLAUDE` names it; `TestClaudeTUIPrompts` and
+`TestClaudeTUIPromptLost` check the options, an interrupt and `Close` while a prompt waits, and a
+hook killed while it waits.
 
-**Prompts: an owner decision.** The `PermissionRequest` hook answers claude's permission prompts
+**Prompts: the evidence.** The `PermissionRequest` hook decides claude's permission prompts
 ([the probe](../../../probes/tui-hybrid/FINDINGS.md), *Phase 3*): it fires for a tool that needs
 permission in claude's `default` mode, its `allow` or `deny` decides, and it may block for as long
-as its timeout allows (11 minutes held, with a timeout of a day); in 23 of 24 answered runs claude
-took the answer, and in one (macOS, under load) it never did. But claude's TUI draws its own
-permission dialog while the hook blocks, and when the hook times out or answers nothing, that
-dialog waits for keystrokes. And neither Claude profile has a posture that prompts: both render
-`bypass` alone, through the shared `ProvisionWith`, and `claude-code` refuses every `can_use_tool`.
-Declaring `prompts` here would take a `gated` posture for claude (which tools ask, and how the
-contract's options map onto claude's three), a mock prompt for the kit's `prompts` scenario, and a
-kit run of its own under that posture. Which profiles get `gated`, and whether a fallback dialog
-that only keystrokes can answer is acceptable, are the owner's to decide; the profile does not
-declare `prompts` meanwhile.
+as its timeout allows (11 minutes held, with a timeout of a day). In one of the probe's 24 answered
+runs (macOS, under load) claude never took the answer; the probe kept no record of whether its hook
+had read it, so whether the hook or claude lost it is not known. The profile's hook says when it
+handed an answer over, and the profile treats an answer claude does not take as a lost prompt
+(above), so the case is reported, not waited on. Attempts to reproduce it took every answer: 40 of
+40 on macOS and on Linux, each beside both Claude profiles' kits (the probe's findings, *Prompts*).
 
 ## The Codex profile
 
@@ -626,7 +672,10 @@ The scenarios speak the prompt language of agentd's P11 mock Messages API — `P
 limit refused, which a harness does not retry; `ERR 429 <k>` is the server's load, which it does) —
 so a real harness runs them against such a mock. A harness with `autonomous_turns` also takes
 `MKGOAL <text>`, which gives the Session a goal, and `GOAL <n> <k>`, a goal's objective: `n` turns of
-`k` steps, then done.
+`k` steps, then done. `ASK` must make the harness raise a prompt: `internal/mockapi` answers it with
+a write the Claude profiles' `gated` posture asks permission for, so a profile whose prompts need a
+posture other than the one its kit runs at runs the `prompts` scenario in a run of its own
+(`TestClaudeConformsGated`), and skips it in the other.
 
 The load scenarios play the Supervisor's part with `conformance.Save` and `conformance.Restore`, in a
 second set of roots, the first removed: the record read with no harness, the strict open, only new

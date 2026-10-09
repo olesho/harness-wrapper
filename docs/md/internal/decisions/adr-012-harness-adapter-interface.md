@@ -121,6 +121,20 @@ behind the same interface, so agentd adds no TUI code of its own (agentd ADR 000
 
 ## History
 
+- 2026-10-09: prompts for both Claude profiles. `claude-code` and `claude-code-tui` declare the
+  `gated` posture beside `bypass`, and `prompts`: at `gated` claude runs in its `default` mode and a
+  tool that needs permission asks; `bypass` renders as before, byte for byte. Under stream-json the
+  ask is a `can_use_tool` control request (`--permission-prompt-tool stdio`) and the answer its
+  control response; in the TUI hybrid it is the `PermissionRequest` hook, which blocks with no
+  deadline of its own (claude's timeout for it: 2 000 000 s) until the transport answers, so claude's
+  own dialog is never the answer path. The contract's options are claude's three (`yes`, `always`
+  when claude suggests a rule, `no`); a permission asked on a turn of claude's own is denied, as
+  nothing can answer it there. In the TUI, Esc on a waiting prompt is the interrupt, and a prompt
+  whose hook ended unanswered, or whose answer claude did not take, is lost: resolved by the
+  harness, the turn stopped with Esc and ended `errored`. The mock answers the kit's `ASK` with a
+  write claude asks about, and each profile runs the `prompts` scenario at `gated` in a kit run of
+  its own. No contract change.
+
 - 2026-10-09: the TUI hybrid's phase 3: `claude-code-tui` declares `tools_observed`, `subagents` and
   `background_turns`, as `claude-code` does. Tools and subagents come from the hook spool through
   the shared record. A prompt the `UserPromptSubmit` hook binds to no input starts a turn of

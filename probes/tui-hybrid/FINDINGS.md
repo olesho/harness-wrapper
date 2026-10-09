@@ -245,6 +245,44 @@ answers nothing leaves a dialog that only keystrokes can answer.
   dialog needs keystrokes. It is left as an owner decision (contract.md, *The Claude Code TUI
   profile*).
 
+## Prompts (2026-10-09): the gated posture built, and the lost answer
+
+**Built:** both Claude profiles declare `gated` and `prompts` (contract.md, both Claude profile
+sections). In the TUI the `PermissionRequest` hook blocks with no deadline of its own until the
+transport answers, with claude's timeout for it set to 2 000 000 s (claude's timer takes at most
+2^31-1 ms), so claude's own dialog is never the answer path.
+
+**What claude 2.1.283 logs at `gated`** (`pkg/adapter/claudecodetui/testdata/debug-2.1.283-permission.log`):
+
+- `executePermissionRequestHooks called for tool: <tool>` when it asks.
+- `Hook PermissionRequest (<command>) returned permissionDecision: allow|deny` once it takes a hook's
+  decision, for `allow` and `deny` alike. The profile reads this line as claude taking an answer.
+- Esc while the hook blocks: no `[onCancel]`. claude logs `turn N end (… stop=tool_use)`, then
+  `turn ended in error: … stop_reason=tool_use`, then `Hook PermissionRequest:<tool> [<command>]
+  cancelled`. claude kills the hook itself, so a hook gone after Esc is not a lost prompt.
+- A hook killed while it waits: claude falls back to its dialog, and Esc stops the turn (stop
+  `tool_use`), as above. `TestClaudeTUIPromptLost` passed 3 of 3 runs on Linux and every run on
+  macOS, each in 5–9 s.
+
+**The one answer in 24 that was lost (macOS, under load).** The probe's evidence
+(`TestPermission/allow/1`) has `executePermissionRequestHooks called` and then no `Hooks: Checking
+first line`. claude never read a decision from the hook. The probe kept no record of whether its
+hook had read the answer file, so whether the hook or claude lost the answer is not known. In the
+passing runs of the same suite, `touch` took 4–10 s (`duration_ms`), so the host was heavily loaded.
+Attempts to reproduce it with the profile's hook, which reports when it hands an answer over:
+
+| Platform | Load | Prompts answered `yes` | Lost |
+|---|---|---|---|
+| macOS arm64 | both Claude profiles' bypass kits running beside it | 40 | 0 |
+| Ubuntu 26.04 arm64 (Lima, 4 CPUs) | both Claude profiles' bypass kits running beside it | 40 | 0 |
+
+The run is `HW_TUI_PROMPT_RUNS=40 go test -run TestClaudeTUIPromptsRepeated
+./pkg/adapter/claudecodetui/`. The loss did not reproduce, so its cause is still unknown. The profile
+detects it instead of waiting on it. If the hook does not hand claude the answer, or claude does not
+log taking it, within 30 s of the answer, the prompt counts as lost. It is resolved by `harness`, Esc
+stops the turn, and the turn ends `errored` (`internal`). The profile records which of the two
+failed in claude's exit detail.
+
 ## Costs and risks
 
 - **The debug log is not a documented interface.** Its lines can change in any release. The adapter pins claude, parses only the six lines above, keeps them in the conformance kit's fixtures, and refuses to run when the log shows no `[engine] turn N start` for its first turn. That is the same kind of gate stream-json applies through `system/init` capabilities.
