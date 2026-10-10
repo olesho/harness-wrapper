@@ -57,7 +57,7 @@ func TestQuestionAccountLive(t *testing.T) {
 		}
 	}
 	writeJSON(filepath.Join(cfg, ".claude.json"), map[string]any{
-		"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true,
+		"hasCompletedOnboarding": true, "bypassPermissionsModeAccepted": true, "hasSeenAutoDefaultNudge": true,
 		"projects": map[string]any{realWD: map[string]any{"hasTrustDialogAccepted": true}},
 	})
 	writeJSON(filepath.Join(cfg, "settings.json"), map[string]any{

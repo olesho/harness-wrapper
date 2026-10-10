@@ -10,7 +10,7 @@ import (
 // session not-ready and blocks every later send until the text scrolls off.
 func TestDetectInputDetail_QuotedAnchorAboveComposer(t *testing.T) {
 	rule := strings.Repeat("─", 80)
-	for _, anchor := range []string{trustAnchor, trustAnchorAlt, bypassAnchor} {
+	for _, anchor := range []string{trustAnchor, trustAnchorAlt, bypassAnchor, autoNudgeAnchor} {
 		frame := strings.Join([]string{
 			"❯ what does the startup dialog say?",
 			"⏺ It asks: \"" + anchor + "\" and offers:",

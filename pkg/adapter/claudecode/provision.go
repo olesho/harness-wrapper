@@ -152,9 +152,13 @@ func ProvisionWith(req contract.ProvisionRequest, extra Hooks) (contract.Provisi
 	if err != nil {
 		return contract.ProvisionResult{}, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
 	}
+	// .claude.json answers the first-run screens in advance; with
+	// hasSeenAutoDefaultNudge claude (2.1.296) does not offer to make auto
+	// mode the default permission mode.
 	onboarding, err := json.MarshalIndent(map[string]any{
 		"hasCompletedOnboarding":        true,
 		"bypassPermissionsModeAccepted": true,
+		"hasSeenAutoDefaultNudge":       true,
 		"numStartups":                   1,
 		"projects": map[string]any{
 			l.Workspace: map[string]any{"hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true},

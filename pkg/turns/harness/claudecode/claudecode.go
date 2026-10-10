@@ -162,6 +162,14 @@ const (
 	// trust made "trust this folder, but never silently accept a
 	// skip-all-permissions launch" inexpressible.
 	bypassAnchor = "Bypass Permissions mode"
+	// autoNudgeAnchor is the one-time offer claude 2.1.296 makes at startup
+	// when the user settings name a defaultMode: "Yes, set auto mode as my
+	// default permission mode" (highlighted) or "No, keep <that mode>". Its
+	// "Yes" rewrites the settings' defaultMode to auto, so a prompt typed into
+	// it must never confirm it: it is a dialog of its own kind
+	// (KindAutoModeNudge), and the configs hw writes mark it seen
+	// (hasSeenAutoDefaultNudge), which keeps claude from showing it.
+	autoNudgeAnchor = "Make auto mode your default permission mode?"
 )
 
 // DialogAnchors returns the literal lines a BLOCKING dialog paints, for a
@@ -173,7 +181,7 @@ const (
 // answer exactly that question, which is one more place a claude-code UI
 // change has to be chased by hand.
 func DialogAnchors() []string {
-	return []string{trustAnchor, trustAnchorAlt, bypassAnchor}
+	return []string{trustAnchor, trustAnchorAlt, bypassAnchor, autoNudgeAnchor}
 }
 
 // Input kinds this adapter stamps on turns.InputRequest.Kind. They are the keys
@@ -188,6 +196,10 @@ const (
 	// screen. Split out of KindTrustPrompt so a policy can trust a folder
 	// without also accepting a skip-all-permissions launch.
 	KindBypassAcceptance = "bypass_acceptance"
+	// KindAutoModeNudge is claude's offer to make auto mode the default
+	// permission mode. Its "proceed"-aliased option changes the user's
+	// settings; "deny" ("No, keep …") leaves them as they are.
+	KindAutoModeNudge = "auto_mode_nudge"
 )
 
 // menuRE matches a numbered menu item line, e.g. "(selector) 1. Yes, proceed"
@@ -325,6 +337,7 @@ var dialogAnchors = []struct{ anchor, kind string }{
 	{trustAnchor, KindTrustPrompt},
 	{trustAnchorAlt, KindTrustPrompt},
 	{bypassAnchor, KindBypassAcceptance},
+	{autoNudgeAnchor, KindAutoModeNudge},
 }
 
 // liveAnchor returns the first dialog anchor (in dialogAnchors order) that is
@@ -353,8 +366,8 @@ func liveAnchor(text string) (anchor string, idx int, kind string, ok bool) {
 
 // composerFollows reports whether text contains Claude Code's composer frame:
 // a horizontal rule (composerRuleRE) directly followed by a "❯" input line.
-// The startup dialogs (folder trust, bypass acceptance) are drawn instead of
-// the composer, so they never have one below them.
+// The startup dialogs (folder trust, bypass acceptance, the auto-mode nudge)
+// are drawn instead of the composer, so they never have one below them.
 func composerFollows(text string) bool {
 	lines := strings.Split(text, "\n")
 	for i := 0; i+1 < len(lines); i++ {

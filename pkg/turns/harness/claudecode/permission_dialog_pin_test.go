@@ -68,7 +68,7 @@ func TestDetectInput_PerToolPermissionDialogNotDetected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Guard the fixture itself: if it ever grows one of the known
 			// anchors the pin would pass for the wrong reason.
-			for _, anchor := range []string{trustAnchor, trustAnchorAlt, bypassAnchor} {
+			for _, anchor := range []string{trustAnchor, trustAnchorAlt, bypassAnchor, autoNudgeAnchor} {
 				if strings.Contains(tc.screen, anchor) {
 					t.Fatalf("fixture contains the known anchor %q; it no longer models an UNKNOWN dialog", anchor)
 				}

@@ -385,7 +385,7 @@ chat layer owns the keystrokes (see [ADR-002](../internal/decisions/adr-002-inte
 ```go
 type InputRequest struct {
 	ID          string        // stable per prompt; correlates the answer
-	Kind        string        // e.g. "trust_prompt", "bypass_acceptance", "update_menu", "model_migration", "question"
+	Kind        string        // e.g. "trust_prompt", "bypass_acceptance", "auto_mode_nudge", "update_menu", "model_migration", "question"
 	Prompt      string        // the question text
 	Header      string        // a short label for the prompt, e.g. a question's tab
 	MultiSelect bool          // more than one option may be chosen
@@ -427,6 +427,15 @@ A detected prompt is resolved in this order:
 
 `trust_prompt` and `bypass_acceptance` answer aliases are both `proceed` and `deny`, so a policy
 need not know the exact wording.
+
+claude 2.1.296 adds a third startup dialog, `auto_mode_nudge`: a one-time offer to make auto mode
+the default permission mode, shown when the user settings name a `defaultMode`. Its `proceed`
+answer ("Yes, set auto mode as my default permission mode", highlighted) rewrites the settings'
+`defaultMode` to `auto`; `deny` ("No, keep …") leaves them alone. Answering either marks it seen
+(`hasSeenAutoDefaultNudge` in `.claude.json`), so it does not come back. The configs hw writes set
+that key, and the unattended policy (`oneshot.UnattendedInputPolicy`) answers `deny`. In a
+config without the key, the nudge paints about 100 ms after the composer, so a prompt sent in that
+window is lost to it: the turn fails rather than going through. That happens once per config.
 While a prompt awaits an external answer `Send` returns `ErrInputPending`; while a policy/handler is
 auto-answering, `Send` waits for the prompt to clear.
 

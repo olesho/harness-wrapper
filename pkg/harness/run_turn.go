@@ -157,7 +157,10 @@ type TurnConfig struct {
 	//   - "bypass_acceptance" (claudecode.KindBypassAcceptance) — the
 	//     --dangerously-skip-permissions ("Bypass Permissions mode") acceptance
 	//     screen, which needs its OWN entry. A folder-trust entry no longer
-	//     accepts a skip-all-permissions launch by accident.
+	//     accepts a skip-all-permissions launch by accident;
+	//   - "auto_mode_nudge" (claudecode.KindAutoModeNudge) — claude 2.1.296's
+	//     one-time offer to make auto mode the default permission mode. Its
+	//     "proceed" option rewrites the user's settings; answer "deny".
 	// A policy alone also cannot gate what is never surfaced: claude's per-tool
 	// permission dialog is not detected, so it reaches no policy at all and
 	// stalls the turn to the deadline.

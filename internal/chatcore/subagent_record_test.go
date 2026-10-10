@@ -59,8 +59,9 @@ func TestRecordSubAgent(t *testing.T) {
 		}
 	}
 	seed(".claude.json", map[string]any{
-		"hasCompletedOnboarding": true,
-		"projects":               map[string]any{realWD: map[string]any{"hasTrustDialogAccepted": true}},
+		"hasCompletedOnboarding":  true,
+		"hasSeenAutoDefaultNudge": true,
+		"projects":                map[string]any{realWD: map[string]any{"hasTrustDialogAccepted": true}},
 	})
 	seed("settings.json", map[string]any{"permissions": map[string]any{"defaultMode": "bypassPermissions"}})
 
