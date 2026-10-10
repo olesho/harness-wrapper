@@ -132,6 +132,7 @@ func (c *Conversation) handleInputRequested(req *turns.InputRequest) {
 	}
 	c.mu.Lock()
 	c.currentInput = req
+	c.currentInputAt = time.Now()
 	c.inputSurfaced = false
 	c.inputUnresolved = nil
 	c.mu.Unlock()
@@ -256,9 +257,15 @@ func (c *Conversation) tryResolveInput(req *turns.InputRequest) bool {
 	if opt := c.policyOption(req); opt != nil {
 		// context.Background() for the same reason the handler branch below
 		// uses it: this runs on the watcher pump goroutine, which has no caller
-		// context. answerAndConfirm is bounded by its own render budget and
-		// selects on c.closed, so Close still unblocks it.
-		if err := c.answerAndConfirm(context.Background(), req, opt); err != nil {
+		// context. The answer is bounded by its own render budget and selects
+		// on c.closed, so Close still unblocks it.
+		//
+		// writeAnswer, not answerAndConfirm, so a dialog the adapter plans its
+		// answers to (turns.AnswerPlanner) gets its plan from a policy too;
+		// writeAnswer takes any other single option to answerAndConfirm, as
+		// this did. The disposition's text is a planned "other" answer's.
+		d, _ := c.opts.InputPolicy.resolve(req.Kind)
+		if err := c.writeAnswer(context.Background(), req, InputAnswer{OptionID: opt.ID, Text: d.Text}); err != nil {
 			c.recordUnresolvedInput(err)
 			return false
 		}
@@ -307,6 +314,10 @@ func (c *Conversation) policyOption(req *turns.InputRequest) *turns.InputOption 
 //  2. OptionIDs set AND req is single-select   → ErrNotMultiSelect
 //  3. OptionIDs set AND req is MultiSelect      → multi-select toggle path
 //  4. OptionIDs empty                          → single-select / free-text path
+//
+// An adapter that plans its answers (turns.AnswerPlanner) gets every request
+// first, after the guards in 1 and 2; one it does not plan takes the paths
+// above as before.
 func (c *Conversation) writeAnswer(ctx context.Context, req *turns.InputRequest, ans InputAnswer) error {
 	if len(ans.OptionIDs) > 0 {
 		if ans.OptionID != "" {
@@ -315,6 +326,21 @@ func (c *Conversation) writeAnswer(ctx context.Context, req *turns.InputRequest,
 		if !req.MultiSelect {
 			return ErrNotMultiSelect
 		}
+	}
+	if ap, ok := c.adapter.(turns.AnswerPlanner); ok {
+		ids, err := answerOptionIDs(req, ans)
+		if err != nil {
+			return err
+		}
+		steps, planned, err := ap.PlanAnswer(req, ids, ans.Text)
+		if err != nil {
+			return err
+		}
+		if planned {
+			return c.runAnswerPlan(ctx, req, steps)
+		}
+	}
+	if len(ans.OptionIDs) > 0 {
 		return c.writeMultiSelect(req, ans.OptionIDs)
 	}
 
@@ -667,6 +693,18 @@ func (c *Conversation) answerBackoff(ctx context.Context, answered int) error {
 // must never be reported as a quiet expiry), then the budget. See closedNow for
 // the measured bugs that shape costs when it is written the other way round.
 func (c *Conversation) awaitDialog(ctx context.Context, dr turns.DialogReader, req *turns.InputRequest, label string, done func(dialogState) bool) (dialogState, string, error) {
+	var st dialogState
+	_, cur, err := c.awaitScreen(ctx, func(text string) bool {
+		st = dialogStateOf(dr, text, req, label)
+		return done(st)
+	})
+	return st, cur, err
+}
+
+// awaitScreen polls the live screen until done holds for its text or the
+// render budget expires, and returns whether done held and the last screen
+// read. It is awaitDialog's loop, for any condition on the screen.
+func (c *Conversation) awaitScreen(ctx context.Context, done func(text string) bool) (bool, string, error) {
 	budget := c.permModeRenderBudget()
 	expiry := time.Now().Add(budget)
 	deadline := time.NewTimer(budget)
@@ -679,18 +717,17 @@ func (c *Conversation) awaitDialog(ctx context.Context, dr turns.DialogReader, r
 
 	for {
 		cur := c.screen.Snapshot().Text
-		st := dialogStateOf(dr, cur, req, label)
-		if done(st) {
-			return st, cur, nil
+		if done(cur) {
+			return true, cur, nil
 		}
 		if ctx.Err() != nil {
-			return st, cur, ctx.Err()
+			return false, cur, ctx.Err()
 		}
 		if closedNow(c.closed) {
-			return st, cur, ErrClosed
+			return false, cur, ErrClosed
 		}
 		if time.Now().After(expiry) {
-			return st, cur, nil
+			return false, cur, nil
 		}
 		select {
 		case <-ctx.Done():

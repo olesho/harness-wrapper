@@ -302,6 +302,9 @@ type Conversation struct {
 	currentInput  *turns.InputRequest
 	inputSurfaced bool
 	inputStateCh  chan struct{}
+	// currentInputAt is when currentInput was raised: the clock an
+	// AnswerStep's After counts from.
+	currentInputAt time.Time
 
 	// inputUnresolved is set when an auto-answer was written but the dialog
 	// never acted on it, after the bounded retries in answerAndConfirm. It is

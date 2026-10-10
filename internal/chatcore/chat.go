@@ -18,6 +18,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
+	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
 // Role identifies who produced a turn.
@@ -447,6 +449,12 @@ var (
 	// ErrConflictingAnswer is returned by Answer when both OptionID and
 	// OptionIDs are set (the singular and plural selection channels conflict).
 	ErrConflictingAnswer = errors.New("chat: option_id and option_ids both set")
+
+	// ErrInvalidAnswer is wrapped by Answer's error for an answer the dialog
+	// cannot take, refused before anything is written: on a claude-code
+	// question, text without its "other" option, "other" without text, or
+	// "chat" with another option. It is turns.ErrInvalidAnswer.
+	ErrInvalidAnswer = turns.ErrInvalidAnswer
 
 	// ErrQuitUnsupported is returned by Quit when the harness adapter exposes
 	// no graceful-quit sequence (it does not implement turns.Quitter). The
