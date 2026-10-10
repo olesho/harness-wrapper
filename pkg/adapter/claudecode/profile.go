@@ -70,7 +70,7 @@ func (Profile) Describe() contract.Descriptor {
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible, contract.CapBackgroundTurns,
 			contract.CapSessionLoad, contract.CapBrokeredCredentials, contract.CapConcurrentSessions,
 		},
-		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{pin}},
+		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{"2.1.283", pin}},
 		Egress: &contract.Egress{
 			Hosts:       []string{APIHost},
 			Credentials: []contract.CredentialRoute{{Kind: CredentialKind, Hosts: []string{APIHost}, Headers: []string{"Authorization"}}},

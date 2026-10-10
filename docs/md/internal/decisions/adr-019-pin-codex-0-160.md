@@ -1,6 +1,7 @@
 # ADR-019: the codex pin moves to 0.160.0; claude stays at 2.1.283
 
-**Status:** Accepted (2026-10-05)
+**Status:** Accepted (2026-10-05); the claude hold in decision 1 superseded by
+[ADR-026](adr-026-pin-claude-2-1-296.md) (2026-10-10)
 
 **Intent:** principle 4, *prefer the harness's own record*, and principle 6, *evolve public contracts
 deliberately* ([INTENT](../../../../INTENT.md#design-principles)). Under principle 4, what a loaded

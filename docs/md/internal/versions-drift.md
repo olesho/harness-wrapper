@@ -13,7 +13,7 @@ against. It is embedded into `pkg/versions` at build time.
 ```json
 {
   "codex":       {"package": "@openai/codex",              "binary": "codex",    "pinned": "0.160.0", "verified_at": "2026-10-05"},
-  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.283", "verified_at": "2026-09-26"},
+  "claude-code": {"package": "@anthropic-ai/claude-code",  "binary": "claude",   "pinned": "2.1.296", "verified_at": "2026-10-10"},
   "opencode":    {"package": "opencode-ai",                "binary": "opencode", "pinned": "",        "verified_at": ""},
   "pi":          {"package": "@earendil-works/pi-coding-agent", "binary": "pi",  "pinned": "1.0.4",   "verified_at": "2026-10-06"}
 }
@@ -31,14 +31,19 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 
 > **Bumping a pin here bumps the snapshot too.** The parity test is hermetic, so a pin raised in
 > `pkg/versions/versions.json` without the matching edit to the vendored snapshot fails `make test`.
-> Both files carry claude-code `2.1.283` as of 2026-09-26, verified live against the installed
-> 2.1.283 binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`,
+> Both files carry claude-code `2.1.296` as of 2026-10-10
+> ([ADR-026](decisions/adr-026-pin-claude-2-1-296.md)), verified live against the 2.1.296 release
+> binary by `pkg/harness`'s `TestRunTurn_RealClaude*` and `pkg/chat`'s `TestTrustDialogLive`,
 > `TestKeepAliveLive` and `TestSessionAssignedLive`: end-of-turn detection, reply extraction, the
 > multi-turn keep-alive path, a large prompt arriving intact, session assignment, and the folder-trust
-> dialog, both reported and answered. The stream-json transport (ADR-009) passed `TestStreamLive`,
-> `TestInterruptLive` and `TestStreamAccountLive` on 2.1.283, and the claude hook surfaces passed
+> dialog answered (`TestRunTurn_RealClaudeUntrustedDirSurfacesTrustDialog`, the dialog reported, needs
+> a config dir with stored credentials and last ran on 2.1.283). The stream-json transport (ADR-009)
+> passed `TestStreamLive`, `TestInterruptLive` and `TestStreamAccountLive` on 2.1.296, `TestQuestionLive` and
+> `TestQuestionAccountLive` passed there, and the claude hook surfaces passed
 > `pkg/harness`'s `TestToolHooksLive` (per-tool hooks, ADR-010) and `TestSubagentHooksLive`
-> (subagent hooks, ADR-011) there too; the stream-json replay corpus
+> (subagent hooks, ADR-011) there too; so did both claude profiles' conformance suites
+> (`HW_REAL_CLAUDE`) and the load fixtures. The one change 2.1.296 needed is its startup offer to
+> make auto mode the default (the next section). The stream-json replay corpus
 > (`test/corpus/claude-code-stream`) stays recorded at 2.1.281. The recordings trail that pin: the
 > four scripted claude scenarios are still at 2.1.270, the `interrupt-*` recordings at 2.1.280 and the
 > two trust-dialog captures at 2.1.261, so the tool-call surface is verified by replay at 2.1.270 and
@@ -46,20 +51,20 @@ equal to it, and `scripts/sync-versions.sh` (no args: refresh the snapshot from 
 > footers remain anchored at 2.1.217 (re-confirmed by hand on 2.1.281). The five TUI live tests first passed at
 > 2.1.281 once `ComposerText` learned to read the empty composer's `Try "…"` placeholder as empty — a
 > shape 2.1.270 already painted, so nothing was re-baked; 2.1.282 and 2.1.283 passed every live
-> test unchanged, so nothing was re-baked for them either. Recordings are frozen renderings
+> test unchanged, so nothing was re-baked for them either, nor for 2.1.296. Recordings are frozen renderings
 > the adapter must keep handling, so once the pin moves on they trail it by design rather than by
 > neglect — only the live tests can speak for the pin. meta-harness's own pin file is still at
 > `2.1.218` (verified 2026-07-23) and has to follow — until it does,
 > `scripts/sync-versions.sh --check` against a sibling checkout reports drift by design, the snapshot
 > is a parity *target* rather than a mirror of what meta-harness ships today, and the no-args mode
-> would drag this repo's pin *backwards* from 2.1.283 to 2.1.218.
+> would drag this repo's pin *backwards* from 2.1.296 to 2.1.218.
 
 codex moved to `0.160.0` on 2026-10-05 ([ADR-019](decisions/adr-019-pin-codex-0-160.md)): the
 app-server adapter's conformance suite (`TestCodexConforms`, every scenario) and its load fixtures
 pass, and `TestCodexKeeperLive` signed in to a real ChatGPT login with a device code, refreshed it
-and signed out. claude stays at `2.1.283`: 2.1.289 passes the stream-json conformance suite and the
-hook live tests, but takes a prompt the screen driver delivers as a bracketed paste as pasted
-content, not a request, so `TestRunTurn_RealClaudeLargePromptIntact` fails on it.
+and signed out. claude stayed at `2.1.283` then, because `TestRunTurn_RealClaudeLargePromptIntact`
+failed on 2.1.289; the failures were the test's own, and claude moved to `2.1.296` on 2026-10-10
+([ADR-026](decisions/adr-026-pin-claude-2-1-296.md)).
 
 pi moved to `1.0.4` on 2026-10-06, for the Harness Adapter's Pi profile over `pi --mode rpc`:
 `probes/pirpc` passes every test against the 1.0.4 release, on macOS and Linux arm64. hw's older pi
@@ -217,6 +222,14 @@ shift a startup screen without a single corpus test going red.
   arrows first and Enter only once the highlight sits on the target row; in a trusted directory the
   step finds no dialog and does nothing. A dialog with no such option, a highlight that never lands,
   or a dialog that will not clear stops the recording instead of baking the wrong screen.
+- **claude's offer to make auto mode the default** (*"Make auto mode your default permission
+  mode?"*, claude 2.1.296). It paints once, about 100 ms after the composer, when the user settings
+  name a `defaultMode`, and its highlighted *Yes* rewrites that setting to `auto`. The adapter reads
+  it as `auto_mode_nudge` and the unattended policy declines it; configurations hw writes set
+  `hasSeenAutoDefaultNudge`, so it never paints there. A seeded test configuration that leaves the
+  key out shows the first prompt lost to it, which is how it was found: the interrupt and question
+  live tests failed with nothing typed. On a bump, check for a new startup offer the same way: a
+  live test whose prompt never reaches the screen.
 - **claude's AskUserQuestion dialog.** No canonical scenario asks a question, so a bump can restyle
   the dialog with every corpus test green. Detection then goes silent: no `question` request is
   raised, and the turn fails as *"prompt not accepted / no assistant output"* with the question on

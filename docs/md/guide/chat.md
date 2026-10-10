@@ -468,7 +468,7 @@ and only into the pane the answer was planned for; the first waits until the pan
 not land within the render budget fails with `ErrInputUnresolved`; no key is sent twice. A policy
 answers questions the same way, e.g. `"question_review": {Kind: DispositionAnswer, OptionID:
 "proceed"}` submits once a client has answered every question. The dialog is read by
-pattern-matching, verified against Claude Code 2.1.283
+pattern-matching, verified against Claude Code 2.1.283 and 2.1.296
 ([ADR-025](../internal/decisions/adr-025-planned-answers.md)); the stream-json transport does not
 offer the tool at all, so there the model asks in plain text.
 

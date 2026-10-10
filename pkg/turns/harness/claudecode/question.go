@@ -9,8 +9,8 @@ package claudecode
 // never accepted, and the chat layer failed the turn with "prompt not
 // accepted / no assistant output" while the question sat on screen.
 //
-// THIS IS TUI PATTERN-MATCHING, verified live against 2.1.283 (it was first
-// written against 2.1.210 for the screen driver of the time). If a later
+// THIS IS TUI PATTERN-MATCHING, verified live against 2.1.283 and 2.1.296 (it
+// was first written against 2.1.210 for the screen driver of the time). If a later
 // release restyles the dialog — renames the "Enter to select ·" footer, drops
 // the ☐/☒ tab strip, renumbers the rows — detection goes SILENT rather than
 // wrong: no request is raised, and the turn fails as it did before.

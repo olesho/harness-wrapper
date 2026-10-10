@@ -1,8 +1,8 @@
 {
- "binary_version": "2.1.283",
+ "binary_version": "2.1.296",
  "cols": 120,
  "harness": "claude-code",
  "notes": "\"Chat about this\": the digit declines the question, and claude goes on to ask what to clarify. Recorded with `HW_RECORD_QUESTION=1 go test ./internal/chatcore -run RecordQuestion` (internal/chatcore/question_record_test.go), answering through Conversation.Answer: the real claude against a local Messages API that asks the question, in /tmp/hw-rebake/question-chat with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
- "recorded_at": "2026-10-10T06:39:49.412802Z",
+ "recorded_at": "2026-10-10T12:47:33.587435Z",
  "rows": 40
 }
