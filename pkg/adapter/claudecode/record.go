@@ -66,12 +66,15 @@ type recordState struct {
 	// the message's later entries, up to the next user entry, are still the
 	// turn's.
 	msg string
-	// held is set while msg's entries hold only thinking: the turn's end
-	// waits for the message's text, and is the entry heldEntry's, at
-	// heldAt, when an entry of another message shows there is none.
+	// held is set while the turn's end is read but not yet given: the end
+	// at heldEntry, at heldAt, with the reply's text so far. The rest of
+	// msg adds to it, and the next entry says whether the turn ended: the
+	// Stop hooks' feedback carries it on, as claude does when a hook
+	// blocks the stop; their summary, or any other entry, ends it.
 	held      bool
 	heldAt    time.Time
 	heldEntry string
+	heldText  string
 }
 
 type chunkToken struct {
@@ -485,11 +488,16 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			o := stamp(contract.NewObservation(contract.KindTurnEnded, key, contract.OriginRecord, at, data))
 			o.Entry = entry
 			out = append(out, o)
-			st.ended, st.held = true, false
+			st.ended, st.held, st.heldText = true, false, ""
 		}
-		if st.held && e.MessageID != st.msg {
-			// The message that ended the turn held only thinking.
-			end(st.heldEntry, st.heldAt, contract.TurnEndedData{Outcome: contract.TurnCompleted})
+		if st.held && (e.MessageID == "" || e.MessageID != st.msg) {
+			if e.StopHookFeedback {
+				// A Stop hook blocked the stop: the turn goes on.
+				st.held, st.msg, st.heldText = false, "", ""
+			} else {
+				text, _ := adapter.Truncate(st.heldText)
+				end(st.heldEntry, st.heldAt, contract.TurnEndedData{Outcome: contract.TurnCompleted, Text: text})
+			}
 		}
 		if e.Type == transcript.TypeUser && st.ended {
 			// A message's entries are consecutive: one after a user entry
@@ -516,8 +524,8 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			}
 			key := e.UUID + ":" + strconv.Itoa(fe.Block)
 			switch {
-			case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser && e.TaskNotification != "":
-				// What claude told the model, not an input.
+			case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser && (e.TaskNotification != "" || e.StopHookFeedback):
+				// What claude or a Stop hook told the model, not an input.
 			case ev.Type == transcript.EventText && ev.Role == transcript.RoleUser:
 				text, cut := adapter.Truncate(ev.Text)
 				o := stamp(contract.NewObservation(contract.KindUserInput, key, contract.OriginRecord, at, contract.TextData{Text: text}))
@@ -559,28 +567,18 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			if st.ended {
 				break
 			}
-			st.msg = e.MessageID
-			if e.MessageID != "" && thinkingOnly(run.events) {
-				// The message's text, if it has any, is in an entry to come.
-				st.held, st.heldAt, st.heldEntry = true, at, e.UUID
-				break
+			if !st.held {
+				// The message's text may be in an entry to come, after its
+				// thinking, and a Stop hook may yet carry the turn on.
+				st.msg, st.held, st.heldAt, st.heldEntry, st.heldText = e.MessageID, true, at, e.UUID, ""
 			}
-			text, _ := adapter.Truncate(strings.Join(reply, ""))
-			end(e.UUID, at, contract.TurnEndedData{Outcome: contract.TurnCompleted, Text: text})
+			if len(reply) > 0 {
+				st.heldAt, st.heldEntry = at, e.UUID
+				st.heldText += strings.Join(reply, "")
+			}
 		}
 	}
 	return out, st
-}
-
-// thinkingOnly reports whether an entry's events are only the one an entry
-// with no content events gets: an assistant entry of thinking alone.
-func thinkingOnly(events []transcript.FollowedEvent) bool {
-	for _, fe := range events {
-		if fe.Event.Type != claudecode.EventEntry {
-			return false
-		}
-	}
-	return len(events) > 0
 }
 
 func toolKey(toolUseID, fallback string) string {
@@ -674,7 +672,8 @@ func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 
 // Recover reads the transcript for the input the marker names: its prompt
 // entry, then the evidence of its turn's end. Without the entry, or without
-// the evidence, the record cannot say.
+// the evidence, the record cannot say. A reply that ends the turn does,
+// unless a Stop hook's feedback follows it: the turn went on.
 func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovered, error) {
 	unknown := contract.Recovered{Outcome: contract.RecoveredUnknown}
 	f, err := claudecode.FollowEntries(r.session, r.cfg.WorkingDir, r.cfg.Env, transcript.Checkpoint{})
@@ -682,10 +681,13 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 		return unknown, nil
 	}
 	f.MaxBatchBytes = 4 << 20
-	found := false
+	found, completed, msg := false, false, ""
 	for {
 		b, err := f.Poll()
 		if err != nil || b.Checkpoint == b.From {
+			if completed {
+				return contract.Recovered{Outcome: contract.RecoveredCompleted}, nil
+			}
 			return unknown, nil
 		}
 		for _, run := range r.ordered(b.Events) {
@@ -699,6 +701,15 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 				continue
 			}
 			if !found {
+				continue
+			}
+			if completed {
+				if !e.StopHookFeedback && (e.MessageID == "" || e.MessageID != msg) {
+					return contract.Recovered{Outcome: contract.RecoveredCompleted}, nil
+				}
+				if e.StopHookFeedback {
+					completed = false
+				}
 				continue
 			}
 			if e.Type == transcript.TypeUser && n != "" {
@@ -719,7 +730,7 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 			case e.APIError != "":
 				return contract.Recovered{Outcome: contract.RecoveredErrored}, nil
 			case e.StopReason == "end_turn":
-				return contract.Recovered{Outcome: contract.RecoveredCompleted}, nil
+				completed, msg = true, e.MessageID
 			}
 		}
 		if f.Ack(b) != nil {
