@@ -33,7 +33,7 @@ CLI's harness registry in [cli.md](cli.md) (which takes `claude`, not `claude-co
 gateway's adapter lookup in [gateway.md](gateway.md) (which requires `claude-code`).
 
 Pinned & verified upstream versions live in [`versions.json`](../internal/versions-drift.md): codex
-`0.144.5` (verified 2026-07-22), claude-code `2.1.283` (verified 2026-09-26).
+`0.160.0` (verified 2026-10-05), claude-code `2.1.296` (verified 2026-10-10).
 opencode is unpinned pending corpus capture.
 
 pi has no row: it is no harness of this layer. The Harness Adapter's

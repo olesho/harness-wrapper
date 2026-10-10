@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      CLAUDE_VERSION: "2.1.283"
-      CLAUDE_SHA256: "1859583ce32920595c61ef868bee52e1b1594f7486db209935e01f1e5e804ae2"
+      CLAUDE_VERSION: "2.1.296"
+      CLAUDE_SHA256: "24972e3bc859fab2b46ed4c1e51f7d6130f06d3bd550811a114640de3370d0de"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

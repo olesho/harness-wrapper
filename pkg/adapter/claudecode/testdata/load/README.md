@@ -21,3 +21,4 @@ path with `-harness` added. Both are removed once the Session is saved.
 | Version | Recorded | Holds |
 |---|---|---|
 | `2.1.283` | 2026-09-30, macOS arm64 | Two turns, `PING 1` and `TOOL echo saved`, and the agent's memory. The transcript's directory is named for `/private/tmp/hw-saved-session/claude-code/workspace`. |
+| `2.1.296` | 2026-10-10, macOS arm64 | The same two turns and memory; the memory directory also holds its index, `MEMORY.md`. The transcript's directory is named for `/private/tmp/hw-saved-session/claude-code/workspace`. |

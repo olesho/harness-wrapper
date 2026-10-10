@@ -7,8 +7,8 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/turns"
 )
 
-// The question recordings (test/corpus/claude-code/question-*): claude 2.1.283
-// asking through AskUserQuestion, answered through chat.Conversation.Answer
+// The question recordings (test/corpus/claude-code/question-*): claude 2.1.296
+// (first recorded on 2.1.283) asking through AskUserQuestion, answered through chat.Conversation.Answer
 // (internal/chatcore/question_record_test.go).
 var questionCorpus = []struct {
 	scenario string
