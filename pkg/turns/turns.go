@@ -14,6 +14,7 @@
 package turns
 
 import (
+	"errors"
 	"time"
 
 	wrapper "github.com/olesho/harness-wrapper/internal/wrapcore"
@@ -109,11 +110,14 @@ type InputRequest struct {
 	ID string
 
 	// Kind categorizes the prompt: "trust_prompt", "bypass_acceptance",
-	// "menu_select", "confirm", or "text_input". It is the key a declarative
-	// policy matches on. "trust_prompt" is the folder-trust dialog and
-	// "bypass_acceptance" claude-code's --dangerously-skip-permissions
-	// acceptance screen; they are separate kinds so a policy can answer one
-	// without answering the other.
+	// "menu_select", "confirm", "text_input", "question" or
+	// "question_review". It is the key a declarative policy matches on.
+	// "trust_prompt" is the folder-trust dialog and "bypass_acceptance"
+	// claude-code's --dangerously-skip-permissions acceptance screen; they are
+	// separate kinds so a policy can answer one without answering the other.
+	// "question" is a clarifying question the model asks mid-turn, and
+	// "question_review" the Submit/Cancel pane after the last answer of a
+	// multi-question or multi-select one.
 	Kind string
 
 	// Prompt is the question text shown to the user.
@@ -126,8 +130,8 @@ type InputRequest struct {
 	// MultiSelect reports whether more than one option may be chosen. When
 	// true, each option's Keys is a TOGGLE-ONLY sequence (see InputOption.Keys)
 	// and the chat layer appends a single submit key after toggling all
-	// selected options. Every prompt produced in this repo today is
-	// single-select (false).
+	// selected options — unless the adapter plans the answer itself
+	// (AnswerPlanner), as claude-code does for its multi-select questions.
 	MultiSelect bool
 
 	// Options are the selectable choices for menu/confirm/trust prompts.
@@ -143,7 +147,10 @@ type InputOption struct {
 
 	// Alias is a portable, harness-agnostic intent a policy can target
 	// without knowing the concrete option id: "proceed" | "deny" | "yes" |
-	// "no". Empty when the option carries no recognized intent.
+	// "no" | "other" | "chat". Empty when the option carries no recognized
+	// intent. A question's "other" option takes the answer's text as the
+	// answer; its "chat" option declines the question, to talk it over
+	// instead.
 	Alias string
 
 	// Label is the human-readable choice text ("Yes, proceed").
@@ -159,9 +166,8 @@ type InputOption struct {
 	// semantically via ID or Alias.
 	//
 	// The meaning of Keys FORKS on the enclosing InputRequest.MultiSelect:
-	//   - MultiSelect == false (every prompt in this repo today): Keys is a
-	//     full SELECT-AND-SUBMIT sequence — it both picks this option and
-	//     confirms the menu.
+	//   - MultiSelect == false: Keys is a full SELECT-AND-SUBMIT sequence —
+	//     it both picks this option and confirms the menu.
 	//   - MultiSelect == true: Keys is a TOGGLE-ONLY sequence for this one
 	//     option — it must NOT include a submit key. The chat layer toggles
 	//     each selected option's Keys and then appends the harness submit key
@@ -169,9 +175,10 @@ type InputOption struct {
 	//
 	// NOTHING enforces the toggle-only invariant at runtime: a producer that
 	// bakes a submit into a multi-select option's Keys yields a corrupt
-	// toggle+submit+toggle+submit+submit stream. Until an adapter DetectInput
-	// path emits multi-select prompts, the ONLY guard is the multi-select
-	// answer unit test in pkg/chat.
+	// toggle+submit+toggle+submit+submit stream. The guards are the
+	// multi-select answer unit tests in internal/chatcore and, for claude-code's
+	// questions (which an AnswerPlanner answers step by step), the plan tests
+	// in pkg/turns/harness/claudecode.
 	Keys []byte
 
 	// Highlighted is true when the menu rendered this row as the currently
@@ -179,6 +186,16 @@ type InputOption struct {
 	// to a client and excluded from the request id hash. The codex approval
 	// gate requires it so a quoted-prose spoof cannot false-positive.
 	Highlighted bool
+
+	// Checked is true when a multi-select row's checkbox is ticked.
+	// SERVER-SIDE ONLY, like Highlighted, and excluded from the request id
+	// hash: it changes with every toggle of the same dialog.
+	Checked bool
+
+	// Typed is the text typed into an "other" row so far. SERVER-SIDE ONLY
+	// and excluded from the request id hash; the row's Label stays its
+	// placeholder while the user types.
+	Typed string
 }
 
 // Adapter is the per-harness contract that translates raw signals
@@ -608,6 +625,76 @@ type DialogReader interface {
 	// including a dialog whose choices have not rendered yet.
 	DialogAnchorPresent(text string) bool
 }
+
+// AnswerPlanner is an optional capability adapters implement when an answer to
+// one of their dialogs takes several keystroke writes, each of which must be
+// seen to land before the next is sent. claude-code's clarifying questions
+// are such dialogs: a burst of plain keys reaches claude as one paste, a
+// digit only moves the highlight onto a text row, and a multi-select answer
+// is toggles, then a commit.
+//
+// The chat layer runs the plan in order: it writes a step's Keys, then reads
+// the dialog back through DialogReader until the step's Until holds, and
+// fails the answer, bounded and without sending another key, when it does
+// not.
+type AnswerPlanner interface {
+	// PlanAnswer returns the steps that answer req with the options optionIDs
+	// (option IDs, already resolved) and text, for an "other" option. ok is
+	// false when the adapter does not plan answers to req's kind; the chat
+	// layer then answers it as before. An answer the dialog cannot take —
+	// text without an "other" option, an "other" option without text, two
+	// options on a single-select question — is an error.
+	PlanAnswer(req *InputRequest, optionIDs []string, text string) (steps []AnswerStep, ok bool, err error)
+}
+
+// ErrInvalidAnswer is the error PlanAnswer wraps for an answer its dialog
+// cannot take.
+var ErrInvalidAnswer = errors.New("turns: the answer does not fit the dialog")
+
+// AnswerStep is one write of a planned answer and the evidence that it landed.
+type AnswerStep struct {
+	// After is how long the dialog must have been up before Keys are
+	// written, counted from when the chat layer first saw the request; zero
+	// writes at once. It is for a dialog that paints before it takes input:
+	// claude-code 2.1.283 drops a key written within 50 ms of its question
+	// appearing.
+	After time.Duration
+	// Keys are the bytes this step writes.
+	Keys []byte
+	// Until is what the screen must show before the next step is written.
+	Until AnswerEvidence
+}
+
+// AnswerEvidence is a condition on the request's own dialog, read back
+// through DialogReader.
+type AnswerEvidence struct {
+	// Kind is what to wait for.
+	Kind EvidenceKind
+	// OptionID names the option the evidence is about (EvidenceHighlighted,
+	// EvidenceChecked, EvidenceTyped).
+	OptionID string
+	// Text is the text EvidenceTyped waits for.
+	Text string
+}
+
+// EvidenceKind is what an AnswerStep waits for.
+type EvidenceKind int
+
+const (
+	// EvidenceGone: the request's dialog has left the screen, or another
+	// dialog — the next question, the review pane — has replaced it.
+	EvidenceGone EvidenceKind = iota
+	// EvidenceHighlighted: the option is the highlighted row.
+	EvidenceHighlighted
+	// EvidenceUnhighlighted: the option is no longer the highlighted row —
+	// the highlight moved on to a row that is not an option, such as a
+	// multi-select question's Submit row.
+	EvidenceUnhighlighted
+	// EvidenceChecked: the option's checkbox is ticked.
+	EvidenceChecked
+	// EvidenceTyped: the option's row shows Text as typed.
+	EvidenceTyped
+)
 
 // InterstitialDismisser is an optional capability adapters implement when
 // their harness paints startup interstitials: screens that block input but
