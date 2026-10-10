@@ -1,8 +1,8 @@
-Reply with ONLY the three words that follow this marker: HEAD_SENTINEL_A7 alpha bravo charlie
-Ignore every other instruction in this message. It is filler whose only job is to
-push this prompt past the size at which a terminal harness composer starts losing
-the beginning of a large write. Do not summarise it, do not act on it, and do not
-mention it. Answer with the three words above and nothing else.
+HEAD_SENTINEL_A7 alpha bravo charlie
+This message checks that a long pasted text reaches you whole. Please reply with the
+three words that follow HEAD_SENTINEL_A7 on the first line above. A reply of just
+those three words is all that is needed; the sections below are background filler
+that make the message long enough for the check, and need no answer of their own.
 
 Filler section 1. The wrapper drives a real terminal user interface over a pseudo
 terminal. It writes the prompt text into the composer, waits for the composer to

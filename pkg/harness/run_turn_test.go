@@ -18,6 +18,7 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/harness"
 	"github.com/olesho/harness-wrapper/pkg/harnessenv"
 	"github.com/olesho/harness-wrapper/pkg/screen"
+	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/wrapper"
 )
 
@@ -464,10 +465,18 @@ func requireRealClaude(t *testing.T) string {
 // It is the only test that can prove the fix. The hermetic fake has no paste
 // heuristic — it cannot lose the head of a large write — so the defect exists
 // only against a real composer, and the assertion has to read what the MODEL
-// saw. The payload's first line asks for the three words after a marker; a
-// truncated arrival starts past that line and cannot answer it, so the reply
-// itself distinguishes the two outcomes with no ambiguity. testdata carries the
-// payload so its SIZE is a fact of the repo rather than of a shell heredoc.
+// saw. The payload's head carries a marker and the three words after it, and
+// asks for the words; a truncated arrival starts past the head and holds
+// neither, so a reply naming either one proves the head arrived. Either counts:
+// Claude sometimes takes the paste as content rather than a request and reports
+// on it ("Your message was only the pasted text, with no request of your own")
+// instead of answering, quoting the marker but not always the words. Whitespace
+// is collapsed before matching, as the screen wraps a long reply wherever it
+// falls. testdata carries the payload so its SIZE is a fact of the repo rather
+// than of a shell heredoc.
+//
+// The turn must also leave the composer empty: claude 2.1.289 was seen leaving
+// the paste's first line there (ADR-019), which a reply alone does not show.
 //
 // Measured 2026-08-27 on claude-code 2.1.247 (macOS), 10 runs per arm:
 // unframed 5/10 intact, framed 10/10. Run it in a loop, not once — the defect
@@ -502,18 +511,52 @@ func TestRunTurn_RealClaudeLargePromptIntact(t *testing.T) {
 		Args:          []string{"--dangerously-skip-permissions"},
 		Env:           realClaudeEnv(t),
 		Prompt:        prompt,
-		ExitAfterTurn: true,
+		ExitAfterTurn: false,
 		Output:        &out,
 	})
+	if res.Conversation != nil {
+		defer func() { _ = res.Conversation.Close(context.Background()) }()
+	}
 	if err != nil {
 		reportRealClaudeFailure(t, "RunTurn real Claude large prompt", err, res, &out)
 	}
 	if res.Turn.State != chat.TurnStateComplete {
 		reportRealClaudeFailure(t, "Turn.State = "+string(res.Turn.State)+", want complete", err, res, &out)
 	}
-	got := strings.ToLower(res.Turn.Text + out.String())
-	if !strings.Contains(got, "alpha bravo charlie") {
-		t.Fatalf("the model did not echo the words after the HEAD sentinel — the prompt arrived TRUNCATED at the front\nturn text:\n%s\nrendered screen:\n%s",
+	got := strings.Join(strings.Fields(strings.ToLower(res.Turn.Text)), " ")
+	if !strings.Contains(got, "alpha bravo charlie") && !strings.Contains(got, "head_sentinel_a7") {
+		t.Fatalf("the reply names neither the HEAD sentinel nor the words after it — the prompt arrived TRUNCATED at the front\nturn text:\n%s\nrendered screen:\n%s",
 			res.Turn.Text, renderPTY(out.Bytes()))
 	}
+	assertComposerEmpty(t, res.Conversation)
+}
+
+// assertComposerEmpty fails the test unless conv's composer reads empty within
+// a few seconds of the turn: a repaint can lag the turn's end, but text left
+// behind stays.
+func assertComposerEmpty(t *testing.T, conv *chat.Conversation) {
+	t.Helper()
+	ir, ok := conv.Adapter().(turns.Interrupter)
+	if !ok {
+		t.Fatalf("adapter %T cannot read its composer", conv.Adapter())
+	}
+	var (
+		snap     screen.Snapshot
+		composer string
+		read     bool
+	)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		snap = conv.ScreenSnapshot()
+		composer, read = ir.ComposerText(snap)
+		if read && composer == "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+	if !read {
+		t.Fatalf("no composer on screen after the turn\nscreen:\n%s", snap.Text)
+	}
+	t.Fatalf("the composer still holds text after the turn: %q\nscreen:\n%s", composer, snap.Text)
 }
