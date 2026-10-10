@@ -25,6 +25,7 @@ func TestWriteChatError_Codes(t *testing.T) {
 		{chat.ErrUnknownOption, 400, "unknown_option"},
 		{chat.ErrNotMultiSelect, 400, "not_multi_select"},
 		{chat.ErrConflictingAnswer, 400, "conflicting_answer"},
+		{chat.ErrInvalidAnswer, 400, "invalid_answer"},
 		{chat.ErrNoInputPending, 409, "no_input_pending"},
 		{chat.ErrStaleInputRequest, 409, "stale_input_request"},
 		// Not a chat sentinel: wrapper.validateConfig's rejection reaches

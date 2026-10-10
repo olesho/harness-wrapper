@@ -502,6 +502,11 @@ var (
 	// ErrConflictingAnswer is returned by Answer when both OptionID and
 	// OptionIDs are set (the singular and plural selection channels conflict).
 	ErrConflictingAnswer = chatcore.ErrConflictingAnswer
+	// ErrInvalidAnswer is wrapped by Answer's error for an answer the dialog
+	// cannot take, refused before anything is written: on a claude-code
+	// question, text without its "other" option, "other" without text, or
+	// "chat" with another option. It is turns.ErrInvalidAnswer.
+	ErrInvalidAnswer = chatcore.ErrInvalidAnswer
 	// ErrQuitUnsupported is returned by Quit when the harness adapter exposes
 	// no graceful-quit sequence (it does not implement turns.Quitter). The
 	// caller should fall back to Close, which signals the process.

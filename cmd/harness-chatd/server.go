@@ -630,6 +630,10 @@ func writeChatError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "not_multi_select", err.Error())
 	case errors.Is(err, chat.ErrConflictingAnswer):
 		writeError(w, http.StatusBadRequest, "conflicting_answer", err.Error())
+	case errors.Is(err, chat.ErrInvalidAnswer):
+		// The dialog cannot take the answer — a claude-code question's text
+		// without its "other" option, say; nothing was written.
+		writeError(w, http.StatusBadRequest, "invalid_answer", err.Error())
 	case errors.Is(err, chat.ErrExited):
 		// The harness process has ended; the conversation cannot take a turn.
 		writeError(w, http.StatusGone, "exited", err.Error())

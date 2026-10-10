@@ -175,13 +175,15 @@ func TestAnswer(t *testing.T) {
 	}
 }
 
-// multiSelectRequest is a synthetic clarifying-question prompt: MultiSelect
-// with TOGGLE-ONLY option Keys (no submit baked in). No adapter produces this
-// yet, so it is constructed directly to exercise the answer plumbing.
+// multiSelectRequest is a synthetic multi-select menu: MultiSelect with
+// TOGGLE-ONLY option Keys (no submit baked in), constructed directly to
+// exercise the generic answer plumbing. It is not a "question": claude-code
+// plans its own questions (claudecode.PlanAnswer), and this plumbing is what
+// an adapter that does not plan its answers gets.
 func multiSelectRequest() *turns.InputRequest {
 	return &turns.InputRequest{
 		ID:          "q-1",
-		Kind:        "question",
+		Kind:        "menu_select",
 		Prompt:      "Which do you want?",
 		Header:      "Choices",
 		MultiSelect: true,
