@@ -285,13 +285,16 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   (`stop_reason: end_turn`), a synthetic API-error entry or an interrupt entry, each a record-origin
   `turn_ended`. claude writes a message as one entry per content block, each with the message's
   `stop_reason`, and a reply after thinking as a thinking-only entry, then the text up to half a minute
-  later: the turn ends at the text, which is the turn's and the end's, or, when the message has none,
-  at the thinking entry once an entry of another message is in the record. Spool files become
-  `tool_started`, `tool_finished` and the subagents' start and stop; a file is deleted once its chunk
-  is acknowledged, or at once when it reports nothing.
+  later. A reply that ends its turn is held until the next entry says the turn did: the Stop hooks'
+  summary (`stop_hook_summary`, written once they ran; the profile always has one) or any other entry
+  ends it, with the reply's text, at the reply's last entry with text; a Stop hook's feedback (a meta
+  user entry, `Stop hook feedback:`), written when the hook blocked the stop, carries the turn on, and
+  is no input. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop; a
+  file is deleted once its chunk is acknowledged, or at once when it reports nothing.
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
   `unknown`. The evidence comes before the next input's prompt and before a task notification, where
-  a turn of claude's own begins: that turn's end is never the input's.
+  a turn of claude's own begins: that turn's end is never the input's. A reply a Stop hook's feedback
+  follows is no evidence: the turn went on.
 - **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
   traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
   token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.

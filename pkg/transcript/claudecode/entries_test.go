@@ -97,3 +97,37 @@ func TestDecodeEntry(t *testing.T) {
 		t.Errorf("the reply's message id is %q", e.MessageID)
 	}
 }
+
+// A Stop hook that blocks a turn's stop shows in the transcript as a meta user
+// entry of its feedback, then the hooks' summary; a summary follows every
+// reply the hooks ran after (claude 2.1.283).
+func TestDecodeStopHookEntries(t *testing.T) {
+	for _, c := range []struct {
+		name, line         string
+		feedback, hooksRan bool
+		wantEvents         int
+	}{
+		{"feedback", `{"type":"user","isMeta":true,"uuid":"f","message":{"role":"user","content":"Stop hook feedback:\n[/work/stop.sh]: say BANANA\n"}}`, true, false, 1},
+		{"summary", `{"type":"system","subtype":"stop_hook_summary","uuid":"s","hookCount":1,"preventedContinuation":false,"timestamp":"2026-10-09T17:54:45.307Z"}`, false, true, 1},
+		{"a prompt that quotes it", `{"type":"user","uuid":"p","message":{"role":"user","content":"Stop hook feedback: what is it?"}}`, false, false, 1},
+		{"another system entry", `{"type":"system","subtype":"turn_duration","uuid":"d"}`, false, false, 0},
+	} {
+		events, err := DecodeEntry([]byte(c.line))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if len(events) != c.wantEvents {
+			t.Fatalf("%s: %d events, want %d", c.name, len(events), c.wantEvents)
+		}
+		if len(events) == 0 {
+			continue
+		}
+		e := events[0].Meta.(*Entry)
+		if e.StopHookFeedback != c.feedback || e.StopHooksRan != c.hooksRan {
+			t.Errorf("%s: feedback %v, hooks ran %v; want %v, %v", c.name, e.StopHookFeedback, e.StopHooksRan, c.feedback, c.hooksRan)
+		}
+		if c.hooksRan && (events[0].Event.Type != EventEntry || events[0].Event.Timestamp.IsZero()) {
+			t.Errorf("%s: event %q at %v, want %q at the entry's time", c.name, events[0].Event.Type, events[0].Event.Timestamp, EventEntry)
+		}
+	}
+}

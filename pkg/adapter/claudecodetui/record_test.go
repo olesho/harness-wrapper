@@ -181,3 +181,34 @@ func readAll(t *testing.T, r adapter.Reader, max int) []contract.Observation {
 	t.Fatal("the record never ends")
 	return nil
 }
+
+// The TUI record takes a read's entries in the order of their times: the Stop
+// hooks' summary after a reply claude wrote before its prompt still ends the
+// turn, once, read whole or in small reads.
+func TestRecordEndsAfterStopHooks(t *testing.T) {
+	text := func(s string) []map[string]any { return []map[string]any{{"type": "text", "text": s}} }
+	lines := []string{
+		entry("assistant", "6032e365-e6f9-4986-9df2-b2fe0472daef", "9c334cc1-0000-4000-8000-000000000000", "", "2026-10-07T15:54:29.947Z", text("PONG 1"), "end_turn"),
+		entry("user", "535ab12f-992d-4d9b-9f70-90fa7e8ffa28", "", "p-one", "2026-10-07T15:54:29.830Z", "PING 1", ""),
+		`{"type":"system","subtype":"stop_hook_summary","uuid":"7b000000-0000-4000-8000-000000000001","parentUuid":"6032e365-e6f9-4986-9df2-b2fe0472daef","isSidechain":false,"hookCount":1,"preventedContinuation":false,"timestamp":"2026-10-07T15:54:29.990Z","sessionId":"` + recSession + `"}`,
+	}
+	for _, max := range []int{contract.MaxObserveBytes, 256} {
+		l, oc, m := tuiAgent(t, strings.Join(lines, "\n")+"\n", map[string]string{"in-one": "n-one"}, map[string]string{"p-one": "n-one"})
+		saved := promptLagFor
+		promptLagFor = 50 * time.Millisecond
+		r, err := Profile{}.Record(adapter.RecordSource{SessionID: recSession, OpenConfig: oc, Layout: l, Markers: m})
+		promptLagFor = saved
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ends []contract.Observation
+		for _, o := range readAll(t, r, max) {
+			if o.Kind == contract.KindTurnEnded {
+				ends = append(ends, o)
+			}
+		}
+		if len(ends) != 1 || ends[0].InputID != "in-one" {
+			t.Errorf("max %d: turn ends %+v, want in-one's once", max, ends)
+		}
+	}
+}
