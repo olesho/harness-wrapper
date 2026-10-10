@@ -217,6 +217,17 @@ shift a startup screen without a single corpus test going red.
   arrows first and Enter only once the highlight sits on the target row; in a trusted directory the
   step finds no dialog and does nothing. A dialog with no such option, a highlight that never lands,
   or a dialog that will not clear stops the recording instead of baking the wrong screen.
+- **claude's AskUserQuestion dialog.** No canonical scenario asks a question, so a bump can restyle
+  the dialog with every corpus test green. Detection then goes silent: no `question` request is
+  raised, and the turn fails as *"prompt not accepted / no assistant output"* with the question on
+  screen. On every claude bump, run `HW_LIVE_QUESTION=1 go test ./internal/chatcore -run
+  QuestionLive -v` with the pinned claude first on PATH — a local Messages API asks every shape, and
+  each is answered through `Answer`; no account — then re-record the `question-*` corpora with
+  `HW_RECORD_QUESTION=1 … -run RecordQuestion`, and run the real-account
+  `HW_LIVE_ACCOUNT=1 HW_LIVE_TOKEN_FILE=… -run QuestionAccountLive`. Two timings to re-measure with
+  it: how soon a new pane takes a key (2.1.283 drops one written in its first 50 ms;
+  `questionSettle` is 300 ms), and what each key does (`question.go`'s file comment;
+  [ADR-025](decisions/adr-025-planned-answers.md)).
 - To record a scenario the way a fresh checkout starts it, point `screenbench-record --workdir` at a
   freshly `git init`-ed directory claude has never trusted — the Makefile otherwise runs the recorder
   from inside this repo, which claude already trusts:
