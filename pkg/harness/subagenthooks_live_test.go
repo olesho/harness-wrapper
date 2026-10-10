@@ -156,20 +156,21 @@ func runSubagentLive(t *testing.T, bin, tok, model, self, prompt string) (atStop
 	)
 	for _, b := range got.Batches {
 		name := b.Receipt.Name
-		if strings.HasPrefix(name, "pre-task-") {
+		event, _, _ := harness.ParseSpoolFileName(name)
+		if event == "pre-task" {
 			t.Errorf("the retired pre-task hook fired: %s", name)
 		}
 		for _, pe := range b.Events {
 			switch {
-			case strings.HasPrefix(name, "session-start-") || strings.HasPrefix(name, "user-prompt-submit-"):
+			case event == "session-start" || event == "user-prompt-submit":
 				parentSession = pe.HarnessSessionID
-			case strings.HasPrefix(name, harness.HookArgSubagentStart+"-"):
+			case event == harness.HookArgSubagentStart:
 				starts = append(starts, pe)
-			case strings.HasPrefix(name, harness.HookArgSubagentStop+"-") && pe.Event.Type == transcript.EventSubagentStop:
+			case event == harness.HookArgSubagentStop && pe.Event.Type == transcript.EventSubagentStop:
 				stops = append(stops, pe)
-			case strings.HasPrefix(name, harness.HookArgSubagentStop+"-"):
+			case event == harness.HookArgSubagentStop:
 				atStop = append(atStop, pe)
-			case strings.HasPrefix(name, "post-task-"):
+			case event == "post-task":
 				atPostTask = append(atPostTask, pe)
 			}
 		}
