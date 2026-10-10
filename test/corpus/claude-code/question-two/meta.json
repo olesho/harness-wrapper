@@ -1,0 +1,8 @@
+{
+ "binary_version": "2.1.283",
+ "cols": 120,
+ "harness": "claude-code",
+ "notes": "Two questions in one call: each digit answers its question and moves on, then the review pane submits. Recorded with `HW_RECORD_QUESTION=1 go test ./internal/chatcore -run RecordQuestion` (internal/chatcore/question_record_test.go), answering through Conversation.Answer: the real claude against a local Messages API that asks the question, in /tmp/hw-rebake/question-two with a fresh CLAUDE_CONFIG_DIR (onboarding done, the directory trusted, permissions.defaultMode bypassPermissions, accepted) and a placeholder ANTHROPIC_AUTH_TOKEN, so no account or tokens are involved.",
+ "recorded_at": "2026-10-10T06:40:04.773984Z",
+ "rows": 40
+}
