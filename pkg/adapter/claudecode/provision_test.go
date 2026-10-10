@@ -165,7 +165,9 @@ func hooksOf(t *testing.T, settings string) (map[string][]string, map[string]any
 // differences are the reviewed ones: each hook runs the distribution's helper
 // under this profile's owner; agentd's own variables and the yield file are
 // gone; PATH and LANG are the Host's, added at launch; and the model, effort
-// and permission flags hw added at launch are in the arguments. With agentd's
+// and permission flags hw added at launch are in the arguments; .claude.json
+// marks claude's auto-mode nudge seen (testdata's copy has the key added,
+// 2026-10-10). With agentd's
 // spool directory as the scratch root, the spool is where it was.
 func TestProvisionMatchesAgentdProfile(t *testing.T) {
 	g := loadGolden(t)

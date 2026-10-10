@@ -142,6 +142,7 @@ func runQuestionScenario(t *testing.T, bin, version string, sc questionScenario,
 	seed(".claude.json", map[string]any{
 		"hasCompletedOnboarding":        true,
 		"bypassPermissionsModeAccepted": true,
+		"hasSeenAutoDefaultNudge":       true,
 		"projects":                      map[string]any{realWD: map[string]any{"hasTrustDialogAccepted": true}},
 	})
 	seed("settings.json", map[string]any{

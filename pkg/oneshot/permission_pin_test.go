@@ -136,6 +136,28 @@ func TestTurnConfig_BypassAcceptanceAutoAnswered(t *testing.T) {
 	}
 }
 
+// TestTurnConfig_AutoModeNudgeDeclined pins that the unattended policy answers
+// claude's offer to make auto mode the default with "No, keep …": its "Yes"
+// rewrites the user's settings, and AutoAcceptAnswer, the fallback for a kind
+// the policy leaves out, would pick it.
+func TestTurnConfig_AutoModeNudgeDeclined(t *testing.T) {
+	data, err := os.ReadFile("../turns/harness/claudecode/testdata/auto-mode-nudge-2.1.296.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, ok := claudecode.DetectInput(string(data))
+	if !ok || req.Kind != claudecode.KindAutoModeNudge {
+		t.Fatalf("DetectInput = %+v, %v; want a %q request — this pin would be vacuous", req, ok, claudecode.KindAutoModeNudge)
+	}
+	opt := resolveUnderPolicy(turnConfig(pinConfig()).InputPolicy, req)
+	if opt == nil {
+		t.Fatal("the unattended policy does not answer the auto-mode nudge; AutoAcceptAnswer would accept it")
+	}
+	if opt.Label != "No, keep bypass permissions" {
+		t.Errorf("resolved option = %q, want %q", opt.Label, "No, keep bypass permissions")
+	}
+}
+
 // TestTurnConfig_CodexApprovalAutoAnswered pins the RUNTIME-ENFORCEMENT gap on
 // codex's approval axis: turnConfig wires OnInputRequest = AutoAcceptAnswer
 // UNCONDITIONALLY (oneshot.go:172), and AutoAcceptAnswer is a catch-all

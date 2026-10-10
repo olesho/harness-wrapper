@@ -132,12 +132,12 @@ func TestAuthAnchors_HarnessSelection(t *testing.T) {
 }
 
 // TestDialogAnchors covers the other half of the evidence question: a verdict
-// taken over a folder-trust or bypass-acceptance screen is about a DIALOG, not
-// a credential.
+// taken over a folder-trust, bypass-acceptance or auto-mode-nudge screen is
+// about a DIALOG, not a credential.
 func TestDialogAnchors(t *testing.T) {
 	got := DialogAnchors(harnessname.ClaudeCode)
-	if len(got) != 3 {
-		t.Fatalf("got %d dialog anchors, want 3: %v", len(got), got)
+	if len(got) != 4 {
+		t.Fatalf("got %d dialog anchors, want 4: %v", len(got), got)
 	}
 	screen := "Claude Code\n\nDo you trust the files in this folder?\n\n❯ 1. Yes\n"
 	hit := false

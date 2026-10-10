@@ -37,7 +37,7 @@
       "Root": "config",
       "Path": ".claude.json",
       "Mode": "-rw-------",
-      "Content": "{\n  \"bypassPermissionsModeAccepted\": true,\n  \"hasCompletedOnboarding\": true,\n  \"numStartups\": 1,\n  \"projects\": {\n    \"/w/workspace\": {\n      \"hasCompletedProjectOnboarding\": true,\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
+      "Content": "{\n  \"bypassPermissionsModeAccepted\": true,\n  \"hasCompletedOnboarding\": true,\n  \"hasSeenAutoDefaultNudge\": true,\n  \"numStartups\": 1,\n  \"projects\": {\n    \"/w/workspace\": {\n      \"hasCompletedProjectOnboarding\": true,\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n}"
     },
     {
       "Root": "config",

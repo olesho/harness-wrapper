@@ -229,14 +229,17 @@ func turnConfig(cfg Config) harness.TurnConfig {
 // accept claude-code's folder-trust dialog and its bypass-permissions
 // acceptance screen. The two are distinct kinds on purpose — naming both
 // makes accepting the bypass screen a recorded choice rather than a side
-// effect of trusting the folder. Shared by this package and the CLI's
-// unattended `run`, so the two cannot drift apart. Each call returns a fresh
-// policy the caller may modify.
+// effect of trusting the folder. It declines claude's offer to make auto mode
+// the default permission mode: accepting it rewrites the user's settings, and
+// AutoAcceptAnswer, which answers what the policy does not, would accept it.
+// Shared by this package and the CLI's unattended `run`, so the two cannot
+// drift apart. Each call returns a fresh policy the caller may modify.
 func UnattendedInputPolicy() *chat.InputPolicy {
 	return &chat.InputPolicy{
 		ByKind: map[string]chat.Disposition{
 			claudecode.KindTrustPrompt:      {Kind: chat.DispositionAnswer, OptionID: "proceed"},
 			claudecode.KindBypassAcceptance: {Kind: chat.DispositionAnswer, OptionID: "proceed"},
+			claudecode.KindAutoModeNudge:    {Kind: chat.DispositionAnswer, OptionID: "deny"},
 		},
 	}
 }
