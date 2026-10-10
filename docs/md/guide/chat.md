@@ -384,12 +384,18 @@ chat layer owns the keystrokes (see [ADR-002](../internal/decisions/adr-002-inte
 
 ```go
 type InputRequest struct {
-	ID      string        // stable per prompt; correlates the answer
-	Kind    string        // e.g. "trust_prompt", "bypass_acceptance", "update_menu", "model_migration"
-	Prompt  string        // the question text
-	Options []InputOption // menu choices (ID, Alias, Label); nil for free text
+	ID          string        // stable per prompt; correlates the answer
+	Kind        string        // e.g. "trust_prompt", "bypass_acceptance", "update_menu", "model_migration", "question"
+	Prompt      string        // the question text
+	Header      string        // a short label for the prompt, e.g. a question's tab
+	MultiSelect bool          // more than one option may be chosen
+	Options     []InputOption // menu choices (ID, Alias, Label, Description); nil for free text
 }
-type InputAnswer struct { OptionID, Text string }
+type InputAnswer struct {
+	OptionID  string   // an option's ID, Alias or Label
+	OptionIDs []string // a MultiSelect request's options
+	Text      string   // free text: a text prompt's answer, or a question's "other" answer
+}
 
 func (c *Conversation) Answer(ctx context.Context, requestID string, ans InputAnswer) error
 ```
@@ -423,6 +429,39 @@ A detected prompt is resolved in this order:
 need not know the exact wording.
 While a prompt awaits an external answer `Send` returns `ErrInputPending`; while a policy/handler is
 auto-answering, `Send` waits for the prompt to clear.
+
+### Clarifying questions (claude-code)
+
+When the model asks with its AskUserQuestion tool mid-turn, Claude Code's dialog arrives as a
+request of kind **`question`**: `Prompt` is the question, `Header` its tab label, and each option
+carries its `Description`. Two options are Claude Code's own: alias **`other`** ("Type something"),
+answered with text, and alias **`chat`** ("Chat about this"), which declines the question; claude
+then goes on to ask what you want to clarify. A dialog with several questions raises one request per
+question, and a multi-question or multi-select one ends on a **`question_review`** request, the
+Submit/Cancel pane, whose options alias `proceed` and `deny`. The turn stays in flight throughout,
+and completes with claude's reply once the last answer lands.
+
+```go
+conv.Answer(ctx, req.ID, chat.InputAnswer{OptionID: "Blue"})                 // one option, by ID, alias or label
+conv.Answer(ctx, req.ID, chat.InputAnswer{Text: "Green"})                    // text: the "other" option
+conv.Answer(ctx, req.ID, chat.InputAnswer{OptionIDs: []string{"1", "3"}})    // a MultiSelect question
+conv.Answer(ctx, req.ID, chat.InputAnswer{OptionIDs: []string{"1", "other"}, Text: "Green"})
+conv.Answer(ctx, review.ID, chat.InputAnswer{OptionID: "proceed"})           // the review pane: submit
+```
+
+Text goes into a one-line field, so newlines and runs of spaces become single spaces. An answer the
+dialog cannot take — text without the `other` option, `other` without text, `chat` with another
+option — is refused before anything is written, with an error wrapping `turns.ErrInvalidAnswer`.
+
+The chat layer writes an answer a key at a time, each once the screen shows the one before landed,
+and only into the pane the answer was planned for; the first waits until the pane has been up for
+300 ms, since Claude Code 2.1.283 drops a key written as its pane first paints. An answer that does
+not land within the render budget fails with `ErrInputUnresolved`; no key is sent twice. A policy
+answers questions the same way, e.g. `"question_review": {Kind: DispositionAnswer, OptionID:
+"proceed"}` submits once a client has answered every question. The dialog is read by
+pattern-matching, verified against Claude Code 2.1.283
+([ADR-025](../internal/decisions/adr-025-planned-answers.md)); the stream-json transport does not
+offer the tool at all, so there the model asks in plain text.
 
 ## History
 

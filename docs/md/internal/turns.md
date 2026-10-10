@@ -76,6 +76,7 @@ feature-detect with a type assertion):
 | `DialogDetector` | `DialogState(text) turns.DialogState` | Which of `DialogNone`, `DialogPending`, `DialogUnparseable` or `DialogReadable` a screen is in. An unparseable dialog never clears on its own, so `Send` fails with `ErrUnrecognizedDialog` instead of waiting out its deadline. claude-code only. |
 | `DialogAnchorer` | `DialogAnchors() []string` | The literal lines the harness's blocking dialogs paint, behind `chat.DialogAnchors`. claude-code only. |
 | `DialogReader` | `ReadDialog(text) (*InputRequest, bool)`, `DialogAnchorPresent(text) bool` | Read a dialog again from a later screen, so the chat layer confirms an answer landed instead of trusting the write ([ADR-002](decisions/adr-002-interactive-input.md)). claude-code only; other harnesses keep the single write. |
+| `AnswerPlanner` | `PlanAnswer(req, optionIDs, text) ([]AnswerStep, bool, error)` | Answers that take several writes — a key, then the evidence it landed (`EvidenceGone`, `Highlighted`, `Unhighlighted`, `Checked`, `Typed`), and how long the pane must first have been up (`After`) — which the chat layer writes one at a time, only into the planned pane, never re-sending one ([ADR-025](decisions/adr-025-planned-answers.md)). claude-code's `question` and `question_review` only. |
 | `InterstitialDismisser` | `DismissKeys(req, updates) ([]byte, bool)` | Keys that clear a startup interstitial carrying no decision for the caller; `updates` says whether an update prompt counts as one (`Options.AutoSkipCodexUpdateNotice`). codex only. |
 
 `Busy()` is what keeps the chat layer from reporting `complete` mid-turn; only claude-code implements
@@ -88,14 +89,18 @@ which harness implements what.
 
 ```go
 type InputRequest struct {
-	ID      string        // stable across redraws of the same prompt
-	Kind    string        // "trust_prompt" | "bypass_acceptance" | "menu_select" | "confirm" | "text_input"
-	Prompt  string
-	Options []InputOption
+	ID          string // stable across redraws of the same prompt
+	Kind        string // "trust_prompt" | "bypass_acceptance" | "menu_select" | "confirm" | "text_input" | "question" | "question_review"
+	Prompt      string
+	Header      string
+	MultiSelect bool
+	Options     []InputOption
 }
 type InputOption struct {
-	ID, Alias, Label string
-	Keys             []byte // bytes to write to choose it ("1\r"); SERVER-SIDE ONLY
+	ID, Alias, Label, Description string
+	Keys                          []byte // bytes to write to choose it ("1\r"); SERVER-SIDE ONLY
+	Highlighted, Checked          bool   // the row's highlight and checkbox; SERVER-SIDE ONLY
+	Typed                         string // a text field's text; SERVER-SIDE ONLY
 }
 ```
 
@@ -104,6 +109,13 @@ The adapter parses the on-screen dialog into options (with `Keys` and a portable
 `InputResolved`. The chat layer keeps `Keys` private and exposes only the semantic
 [`chat.InputRequest`](../guide/chat.md#interactive-input-blocking-prompts). The design is recorded in
 [ADR-002](decisions/adr-002-interactive-input.md).
+
+`Highlighted`, `Checked` and `Typed` are what the dialog shows now, so none of them is in `ID`: a
+claude-code question keeps its request while its checkboxes are ticked, its text field typed into,
+and its highlight moved, and the chat layer reads them back to confirm each step of a planned answer
+(`AnswerPlanner`; [ADR-025](decisions/adr-025-planned-answers.md)). claude-code's question dialog
+is read in `pkg/turns/harness/claudecode/question.go`, whose file comment records what each key does
+on the pinned release.
 
 ## The Watcher
 
