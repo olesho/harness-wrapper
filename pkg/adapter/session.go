@@ -94,6 +94,10 @@ type turn struct {
 	outcome                 contract.TurnOutcome
 	endCh                   chan struct{}
 	interrupt               *interruptOp
+	// retries is how many retry notices the turn has published: each takes
+	// the next number for its id, since a turn's later model calls retry
+	// from attempt 1 again.
+	retries int
 }
 
 // autoTurn is a turn the harness started with no input.
@@ -307,7 +311,8 @@ func (s *session) report(ev Event) {
 		}
 		s.retry = &contract.RetryInfo{Attempt: ev.Retry.Attempt, Max: ev.Retry.Max}
 		if s.has(contract.CapRetryVisible) {
-			obs = append(obs, s.liveObs(contract.KindRetrying, t.inputID+":"+strconv.Itoa(ev.Retry.Attempt), t, ev.Time, ev.Retry))
+			t.retries++
+			obs = append(obs, s.liveObs(contract.KindRetrying, t.inputID+":"+strconv.Itoa(t.retries), t, ev.Time, ev.Retry))
 		}
 	case Background:
 		if !s.has(contract.CapBackgroundTurns) || s.phase == contract.PhaseExited {

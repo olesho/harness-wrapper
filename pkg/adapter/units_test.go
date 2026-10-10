@@ -404,6 +404,41 @@ func TestBackgroundTurnHoldsSends(t *testing.T) {
 // as it changes — a live background_tasks observation naming no input or
 // turn, every task still running — and listed in State until it ends or the
 // harness exits; without the capability, neither.
+// A turn's later model calls retry from attempt 1 again. Each retry notice
+// has an id of its own, so a second burst's are not taken for the first's,
+// of which a reader keeps one per id.
+func TestRetryNoticesHaveIDsOfTheirOwn(t *testing.T) {
+	d := newFakeProfile().Describe()
+	d.Capabilities = []contract.Capability{contract.CapRetryVisible}
+	s := newSession(&harnessAdapter{p: newFakeProfile(), desc: d}, contract.OpenRequest{})
+	s.phase = contract.PhaseBusy
+	s.current = &turn{inputID: "in-1", turnID: TurnID("in-1"), started: true}
+	for _, attempt := range []int{1, 2, 1} {
+		s.report(Event{Kind: Retrying, Retry: contract.RetryingData{Attempt: attempt, Max: 3}})
+	}
+	ids := map[string]bool{}
+	var attempts []int
+	s.cur.mu.Lock()
+	for _, e := range s.cur.queue {
+		if e.obs.Kind != contract.KindRetrying {
+			continue
+		}
+		if ids[e.obs.ID] {
+			t.Errorf("a retry notice under the id of another: %s", e.obs.ID)
+		}
+		ids[e.obs.ID] = true
+		var r contract.RetryingData
+		if err := e.obs.Decode(&r); err != nil || e.obs.InputID != "in-1" {
+			t.Errorf("retrying %+v (%v)", e.obs, err)
+		}
+		attempts = append(attempts, r.Attempt)
+	}
+	s.cur.mu.Unlock()
+	if len(attempts) != 3 || attempts[0] != 1 || attempts[1] != 2 || attempts[2] != 1 {
+		t.Errorf("retry notices of attempts %v, want 1, 2 and 1 again", attempts)
+	}
+}
+
 func TestBackgroundTasks(t *testing.T) {
 	d := newFakeProfile().Describe()
 	d.Capabilities = []contract.Capability{contract.CapResume, contract.CapBackgroundTurns}
