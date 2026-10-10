@@ -423,7 +423,10 @@ func DetectInput(text string) (*turns.InputRequest, bool) {
 func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 	prompt, idx, kind, ok := liveAnchor(text)
 	if !ok {
-		return nil, DetectNone
+		// The startup dialogs win over a mid-turn question (question.go): they
+		// gate the session before a turn can run, so the two are never up
+		// together, and their cheap substring checks run first.
+		return detectQuestion(text)
 	}
 	// Everything the selector parser looks at must come AFTER the anchor: "❯" is
 	// also the composer prompt glyph, so scanning the whole frame would let
@@ -454,7 +457,7 @@ func DetectInputDetail(text string) (*turns.InputRequest, Detection) {
 // list; anchorSplit stays the single source of truth for what an anchor is.
 func AnchorPresent(text string) bool {
 	_, _, ok := anchorSplit(text)
-	return ok
+	return ok || questionPresent(text)
 }
 
 // parseMenuOptions extracts a dialog's choices, trying the two shapes claude
