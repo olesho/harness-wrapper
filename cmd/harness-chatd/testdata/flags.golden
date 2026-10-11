@@ -1,1 +1,2 @@
+--allow-remote <*flag.boolValue> = "false" : accept a non-loopback --bind and any Host header; v1 has no auth, so only behind something that authenticates
 --bind <*flag.stringValue> = "127.0.0.1:8080" : host:port to listen on

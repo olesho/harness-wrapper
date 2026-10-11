@@ -42,6 +42,7 @@ func TestStreamEvents_SubscribedBeforeHeaders(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequest(http.MethodGet, "/v1/conversations/c1/events", nil).WithContext(ctx)
+	req.Host = "127.0.0.1" // httptest defaults to example.com, which localOnly refuses
 	probe := &flushProbe{ResponseRecorder: httptest.NewRecorder(), fan: fan, cancel: cancel}
 	s.Routes().ServeHTTP(probe, req)
 

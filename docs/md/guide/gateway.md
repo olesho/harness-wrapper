@@ -8,7 +8,19 @@ semantics (control token, turn model, interactive input) are exactly those of `p
 go run ./cmd/harness-chatd --bind 127.0.0.1:8080
 ```
 
-> **Auth: none in v1.** Bind to localhost only. The default bind is `127.0.0.1:8080`.
+> **Auth: none in v1.** Any caller that reaches chatd can run any binary (`binary_path`, `args`,
+> `env`), so chatd serves only this machine, and not its browsers. The default bind is
+> `127.0.0.1:8080`, and chatd refuses:
+>
+> - a `--bind` that is not loopback (`0.0.0.0`, `:8080`, a LAN address);
+> - a request whose `Host` is not `localhost` or a loopback address (`403 host_refused`), which
+>   stops DNS rebinding;
+> - a request carrying `Origin` or a `Sec-Fetch-Site` other than `none` (`403 browser_refused`).
+>   A web page can otherwise POST to `127.0.0.1` without a preflight. curl, Node's `fetch` and
+>   the reference clients send neither header.
+>
+> `--allow-remote` lifts the first two, for chatd in a container or behind a proxy that
+> authenticates. The browser check always applies.
 
 ## Endpoints
 

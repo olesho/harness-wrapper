@@ -89,6 +89,8 @@ const closeTimeout = 10 * time.Second
 type Server struct {
 	mu    sync.RWMutex
 	convs map[string]*convEntry
+	// allowRemote lifts the loopback Host check in Routes (--allow-remote).
+	allowRemote bool
 }
 
 func NewServer() *Server {
@@ -144,7 +146,7 @@ func (s *Server) Routes() http.Handler {
 	for _, r := range s.routes() {
 		mux.HandleFunc(r.method+" "+r.pattern, r.handler)
 	}
-	return mux
+	return localOnly(mux, s.allowRemote)
 }
 
 // Shutdown closes every conversation.
