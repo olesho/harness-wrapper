@@ -117,7 +117,9 @@ func sendOneTurn(t *testing.T, conv *Conversation, text string) {
 	}
 	defer release()
 	if _, err := conv.Send(ctx, text); err != nil {
-		t.Fatalf("Send(%q): %v", text, err)
+		// What Send was waiting on: a screen never ready for input, a busy
+		// harness, a dialog, a harness that never started.
+		t.Fatalf("Send(%q): %v\nstate: %+v\nscreen:\n%s", text, err, conv.State(), conv.screen.Snapshot().Text)
 	}
 }
 
