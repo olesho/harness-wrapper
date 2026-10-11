@@ -314,12 +314,22 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
   summary (`stop_hook_summary`, written once they ran; the profile always has one) or any other entry
   ends it, with the reply's text, at the reply's last entry with text; a Stop hook's feedback (a meta
   user entry, `Stop hook feedback:`), written when the hook blocked the stop, carries the turn on, and
-  is no input. Spool files become `tool_started`, `tool_finished` and the subagents' start and stop; a
-  file is deleted once its chunk is acknowledged, or at once when it reports nothing.
+  is no input. A turn is also over when claude withdrew its prompt: a later prompt entry that follows
+  (`parentUuid`) the entry the turn's prompt followed rewound a turn with no assistant entry, which
+  ends `interrupted`, at that prompt's entry (*claude-code-tui* below). Spool files become
+  `tool_started`, `tool_finished` and the subagents' start and stop; a file is deleted once its chunk
+  is acknowledged, or at once when it reports nothing.
+- **Interrupt before the first token:** claude writes its interrupt entry, after the prompt's entry
+  when it wrote one, and the turn ends `interrupted` in the record. An interrupt that lands before
+  claude wrote the prompt — at once after the turn's start, and now and then 300 ms in with no
+  response yet — leaves only an interrupt entry whose prompt id no prompt entry carries: nothing in
+  the record is the input's, it has no record-origin end, and `Recover` reports it `unknown` (claude
+  2.1.296, `TestClaudePreTokenRecord`).
 - **Recover** finds the prompt entry by the marker's native id, then that evidence: without either,
   `unknown`. The evidence comes before the next input's prompt and before a task notification, where
   a turn of claude's own begins: that turn's end is never the input's. A reply a Stop hook's feedback
-  follows is no evidence: the turn went on.
+  follows is no evidence: the turn went on. A later prompt that withdrew the input's, before any
+  reply, is: `interrupted`.
 - **Behind a broker** claude reaches `api.anthropic.com` alone — the profile turns its nonessential
   traffic off — and presents its token there in `Authorization`. A token's placeholder keeps the
   token's prefix (`sk-ant-oat01-`), so claude takes it for the kind of token it is.
@@ -438,9 +448,22 @@ distribution, pin, `open_config`, record and failure classes (`claudecode.Provis
   by timestamp and holds a reply of no turn back for up to 3 s while its prompt is written.
   File checkpointing (`CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING`) is off, as under stream-json.
   An interrupt after the first token leaves claude's interrupt record, a record-origin
-  `turn_ended` `interrupted`, as under stream-json. One before the first token leaves the prompt
-  entry alone, which claude has withdrawn from the conversation: the record has no end for that
-  turn (the live `turn_ended` is the only one), and `Recover` reports it `unknown`.
+  `turn_ended` `interrupted`, as under stream-json. One before the first token (a request answered
+  with `message_start` alone, or not at all) leaves the prompt's entry, its attachments and nothing
+  else; claude withdraws the prompt from the conversation, and the next prompt's entry follows the
+  entry the withdrawn one did. That next prompt ends the turn in the record: a record-origin
+  `turn_ended` `interrupted`, at the next prompt's entry, and `Recover` reports `interrupted` (claude
+  2.1.296: STALL and HUSH, 300 ms and at once, 12 of 12 across four runs; `TestRecordWithdrawnPrompt`
+  on their fixture, `TestClaudeTUIWithdrawnPrompt` live). Until another prompt is written the record
+  has no end for the turn, and two cases keep it so, `Recover` reporting `unknown`:
+  - the session's first prompt: claude does not withdraw it, and the next prompt follows its entries
+    (3 of 3), as it would a prompt claude took;
+  - the last prompt before the Session closed: the transcript ends at the prompt's entries, as a turn
+    still in flight or a claude that died does. A resumed claude writes nothing until the next
+    prompt, and then a synthetic `No response requested.` reply (`stop_reason: stop_sequence`)
+    before it, which it writes for any prompt it finds unanswered; the next prompt follows that
+    reply. No marker file tells them apart; the live side's knowledge that it interrupted the turn
+    has no place in the record.
 - **Close** presses Ctrl-C until claude quits (the first press may cancel a turn or an armed
   automatic continue), then signals the group.
 

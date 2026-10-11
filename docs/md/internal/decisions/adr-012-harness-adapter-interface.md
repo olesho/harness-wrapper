@@ -121,6 +121,15 @@ behind the same interface, so agentd adds no TUI code of its own (agentd ADR 000
 
 ## History
 
+- 2026-10-11: the shared Claude record ends a turn claude withdrew. claude's TUI writes nothing for
+  a turn interrupted before its first token but the prompt's entry, and the next prompt follows
+  (`parentUuid`) the entry the withdrawn prompt did: that prompt now ends the turn `interrupted` in
+  the record, and `Recover` reports it so, for both Claude profiles (claude 2.1.296, the mock's
+  `STALL` and new `HUSH`, 12 of 12). Still `unknown`, as no transcript entry or marker file tells
+  them from a turn in flight: a session's first prompt, which claude does not withdraw; the last
+  prompt before the Session closed; and, under stream-json, an interrupt that lands before claude
+  wrote the prompt at all, leaving an interrupt entry of no prompt. No contract change.
+
 - 2026-10-09: prompts for both Claude profiles. `claude-code` and `claude-code-tui` declare the
   `gated` posture beside `bypass`, and `prompts`: at `gated` claude runs in its `default` mode and a
   tool that needs permission asks; `bypass` renders as before, byte for byte. Under stream-json the
