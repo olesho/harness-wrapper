@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -575,5 +576,31 @@ func TestParseRateLimit(t *testing.T) {
 	}
 	if got := parseRateLimit(json.RawMessage(`{"status":"rejected","utilization":1.2}`), now); got.Utilization == nil || *got.Utilization != 1.2 {
 		t.Errorf("utilization over 1 = %+v", got)
+	}
+}
+
+// lateReader holds its first read back by delay.
+type lateReader struct {
+	r     io.Reader
+	delay time.Duration
+	once  sync.Once
+}
+
+func (l *lateReader) Read(b []byte) (int, error) {
+	l.once.Do(func() { time.Sleep(l.delay) })
+	return l.r.Read(b)
+}
+
+// The exit reason is claude's last stderr line even when stderr is read after
+// claude has exited and its stdout has ended.
+func TestStream_ExitReasonWaitsForStderr(t *testing.T) {
+	orig := streamStderrReader
+	streamStderrReader = func(r io.Reader) io.Reader { return &lateReader{r: r, delay: 500 * time.Millisecond} }
+	defer func() { streamStderrReader = orig }()
+	r := openStreamRig(t, nil)
+	r.send("EXIT")
+	ev := r.await("exited", func(ev ConversationEvent) bool { return ev.Type == EventExited })
+	if ev.Exit.ExitCode != 3 || !strings.Contains(ev.Exit.Reason, "exiting on request") {
+		t.Fatalf("exit = %+v, want code 3 with the stderr line", ev.Exit)
 	}
 }

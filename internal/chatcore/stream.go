@@ -70,8 +70,10 @@ type streamProc struct {
 	stdin       io.WriteCloser
 	stdinClosed bool
 
-	stdout *os.File
-	stderr *tailBuffer
+	stdout     *os.File
+	stderr     *tailBuffer
+	stderrR    *os.File
+	stderrDone chan struct{} // closed once stderr is read to its end
 
 	lastFrameAt atomic.Int64 // Unix nanos of the last stdout frame
 
@@ -345,27 +347,47 @@ func startStreamProc(bin string, args []string, dir string, env []string) (*stre
 	_ = errW.Close()
 	p := &streamProc{
 		cmd: cmd, stdin: stdin, stdout: outR,
-		stderr:  newTailBuffer(streamStderrTail),
+		stderr: newTailBuffer(streamStderrTail), stderrR: errR, stderrDone: make(chan struct{}),
 		control: map[string]chan streamControlResult{},
 	}
 	go func() {
-		_, _ = io.Copy(p.stderr, errR)
-		_ = errR.Close()
+		defer close(p.stderrDone)
+		_, _ = io.Copy(p.stderr, streamStderrReader(errR))
 	}()
 	return p, nil
 }
+
+// streamStderrReader wraps claude's stderr pipe for the goroutine that reads
+// it. The identity in production; a test substitutes a slow reader to hold the
+// read back past claude's exit.
+var streamStderrReader = func(r io.Reader) io.Reader { return r }
 
 // streamWait turns claude's exit into the Conversation's: the in-flight turn
 // ends, and EventExited is the last event (ADR-008).
 func (c *Conversation) streamWait(readerDone <-chan struct{}) {
 	p := c.stream
 	err := p.cmd.Wait()
+	// Both pipes are read to their end before the exit is reported: the exit
+	// reason is stderr's last line, and its reader may still be behind the
+	// exit. A descendant that inherited a pipe holds it open past the grace.
+	grace := time.NewTimer(streamDrainGrace)
+	defer grace.Stop()
+	expired := false
 	select {
 	case <-readerDone:
-	case <-time.After(streamDrainGrace):
-		_ = p.stdout.Close() // a descendant holds the pipe open
+	case <-grace.C:
+		expired = true
+		_ = p.stdout.Close()
 		<-readerDone
 	}
+	if !expired {
+		select {
+		case <-p.stderrDone:
+		case <-grace.C:
+		}
+	}
+	_ = p.stderrR.Close()
+	<-p.stderrDone
 	info := ExitInfo{Status: wrapper.StatusIdle, EndedAt: time.Now()}
 	if ps := p.cmd.ProcessState; ps != nil {
 		info.ExitCode = ps.ExitCode()
