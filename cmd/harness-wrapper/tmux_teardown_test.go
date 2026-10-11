@@ -59,6 +59,13 @@ func dumpTmuxDiagnostics(t *testing.T, socket, tracePath string) {
 	}
 }
 
+// childWait bounds every wait on a harness-wrapper child's progress: its run
+// reaching a trace event, its exit, its tmux session going away. These only
+// ever end on their own; under a loaded -race run (the pre-push hook runs every
+// package at once) a child running a freshly written fake harness took over
+// 15s to get there, so the bound is generous, and only a failing test pays it.
+const childWait = 60 * time.Second
+
 // waitForLastTraceKind polls tracePath until its LAST event is kind.
 func waitForLastTraceKind(t *testing.T, tracePath, kind string, within time.Duration) bool {
 	t.Helper()
@@ -128,11 +135,11 @@ func TestTmuxChildTeardownTargetsItsOwnServer(t *testing.T) {
 		t.Fatalf("start child session: %v\n%s", err, out)
 	}
 
-	if !waitForLastTraceKind(t, tracePath, "wrapper_cli_exited", 15*time.Second) {
+	if !waitForLastTraceKind(t, tracePath, "wrapper_cli_exited", childWait) {
 		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatal("child never finished its run (no wrapper_cli_exited in the trace)")
 	}
-	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 10*time.Second) {
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, childWait) {
 		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Errorf("session %s outlived its finished child on its own server", tmuxSessionPrefix+sessionName)
 	}

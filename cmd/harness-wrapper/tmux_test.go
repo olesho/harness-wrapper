@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func getenvDefault(key, fallback string) string {
@@ -263,7 +262,7 @@ func TestTmuxTraceEndsWithCLIExitForShortRun(t *testing.T) {
 		t.Fatalf("spawn short run: %v\n%s", err, out)
 	}
 
-	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, childWait) {
 		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatalf("tmux session %q still alive after short run", sessionName)
 	}
@@ -393,7 +392,7 @@ func TestTmuxShortRunSurvivesRemainOnExit(t *testing.T) {
 		t.Fatalf("spawn short run: %v\n%s", err, out)
 	}
 
-	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, 15*time.Second) {
+	if !waitForSessionGone(t, socket, tmuxSessionPrefix+sessionName, childWait) {
 		dumpTmuxDiagnostics(t, socket, tracePath)
 		t.Fatalf("tmux session %q still alive after short run on a remain-on-exit server", sessionName)
 	}

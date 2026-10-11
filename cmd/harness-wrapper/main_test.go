@@ -83,7 +83,7 @@ func TestRunHarnessWrapper_TraceIncludesSignalAndCLIExitOnSIGTERM(t *testing.T) 
 	go func() { done <- cmd.Wait() }()
 	select {
 	case <-done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(childWait):
 		t.Fatal("harness-wrapper did not exit after SIGTERM")
 	}
 
@@ -225,7 +225,7 @@ func readLastTraceKind(t *testing.T, path string) map[string]any {
 
 func waitForTraceKind(t *testing.T, path, kind string) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(childWait)
 	for time.Now().Before(deadline) {
 		if hasTraceKind(readTraceEventsAllowMissing(t, path), kind) {
 			return
