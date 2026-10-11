@@ -13,6 +13,12 @@ import (
 	"github.com/olesho/harness-wrapper/pkg/contract/fakeadapter"
 )
 
+// fakeTimeout is how long the kit waits on the fake adapter for anything: its
+// tests pass and fail alike within it. Under a loaded -race run (the pre-push
+// hook runs every package at once) a healthy step took over 3s, so it is
+// generous; a broken rule that is only caught by a wait running out pays it.
+const fakeTimeout = 10 * time.Second
+
 // fakeFixture is the kit's fixture for the fake adapter, with the rule named
 // by breaks broken ("" for none).
 func fakeFixture(t *testing.T, breaks string) Fixture {
@@ -54,7 +60,7 @@ func fakeFixture(t *testing.T, breaks string) Fixture {
 				t.Errorf("approving the sign-in: %v", err)
 			}
 		},
-		Timeout: 10 * time.Second,
+		Timeout: fakeTimeout,
 		Quiet:   300 * time.Millisecond,
 		MCP:     true,
 		NonPin: func(t T) (string, func()) {
@@ -186,7 +192,7 @@ func TestBrokenAdaptersFail(t *testing.T) {
 				ran = true
 				Run(r, Fixture{
 					Adapter: f.Adapter, HarnessRoot: f.HarnessRoot, Spec: f.Spec, Credential: f.Credential, Kill: f.Kill,
-					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: 3 * time.Second, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
+					HideBinary: f.HideBinary, Heard: f.Heard, Timeout: f.Timeout, Quiet: f.Quiet, Skip: skipAllBut(want.scenario),
 					Approve: f.Approve, MCP: f.MCP, NonPin: f.NonPin,
 				})
 			}
@@ -254,7 +260,6 @@ func TestSavedSessionLoads(t *testing.T) {
 	LoadSaved(Testing(t), f, read)
 
 	forgets := fakeFixture(t, "load-forgets")
-	forgets.Timeout = 3 * time.Second
 	LoadSaved(r, forgets, read)
 	for _, msg := range r.failures {
 		if strings.HasPrefix(msg, "[load.history]") {
