@@ -80,10 +80,17 @@ func TestDecodeEntry(t *testing.T) {
 			continue
 		}
 		g := *got
-		g.UUID, g.MessageID, g.PromptID = "", "", ""
+		g.UUID, g.MessageID, g.PromptID, g.Parent = "", "", "", ""
 		if g != c.want {
 			t.Errorf("entry %s = %+v, want %+v", c.uuid, g, c.want)
 		}
+	}
+	// The parent is parentUuid: none for the session's first entry.
+	if e := byUUID["836c3ebb"]; e == nil || e.Parent != "" {
+		t.Errorf("the first prompt's entry has parent %+v", e)
+	}
+	if e := byUUID["7f5987c5"]; e == nil || e.Parent != "c00cad2b-471e-4618-894a-b2840fde1320" {
+		t.Errorf("the interrupt's entry has parent %+v, want the reply's", e)
 	}
 	if e := byUUID["836c3ebb"]; e == nil || e.PromptID == "" {
 		t.Errorf("the prompt's entry carries no prompt id: %+v", e)

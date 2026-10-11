@@ -43,6 +43,12 @@ type Entry struct {
 	// A prompt typed into claude's TUI is matched to its input by it, since
 	// the entry's uuid is claude's own (claude 2.1.283).
 	PromptID string
+	// Parent is the uuid of the entry this one follows in the conversation
+	// (parentUuid); "" for the first. A prompt whose parent is an earlier
+	// prompt's parent rewound that one: claude's TUI withdraws a prompt
+	// interrupted before its first token, and the next prompt follows the
+	// entry before it (claude 2.1.296).
+	Parent string
 	// StopHookFeedback marks the user entry claude writes when a Stop hook
 	// blocked the stop of a turn (isMeta, "Stop hook feedback:"): the hook's
 	// words to the model, and the turn goes on (claude 2.1.283).
@@ -102,6 +108,7 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 		Type              string          `json:"type"`
 		Subtype           string          `json:"subtype"`
 		UUID              string          `json:"uuid"`
+		ParentUUID        string          `json:"parentUuid"`
 		Timestamp         string          `json:"timestamp"`
 		IsSidechain       bool            `json:"isSidechain"`
 		IsMeta            bool            `json:"isMeta"`
@@ -122,7 +129,7 @@ func DecodeEntry(record []byte) ([]transcript.BlockEvent, error) {
 	if json.Unmarshal(record, &raw) != nil {
 		return events, nil
 	}
-	e := &Entry{Type: raw.Type, UUID: raw.UUID, Sidechain: raw.IsSidechain}
+	e := &Entry{Type: raw.Type, UUID: raw.UUID, Parent: raw.ParentUUID, Sidechain: raw.IsSidechain}
 	if raw.Message != nil && raw.Type == transcript.TypeAssistant {
 		e.MessageID, e.StopReason = raw.Message.ID, raw.Message.StopReason
 	}

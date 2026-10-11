@@ -31,7 +31,8 @@ import (
 // entry's uuid is the input's native id — and how it ended: an assistant
 // message with stop_reason end_turn (at its text, when thinking comes first),
 // a synthetic API-error entry, or an interrupt entry, each a record-origin
-// turn_ended. Hook spool files become tool_started, tool_finished and the
+// turn_ended; or a later prompt that rewound a turn with no reply, which
+// ended it interrupted (withdrawn). Hook spool files become tool_started, tool_finished and the
 // subagents' start and stop.
 type reader struct {
 	session string
@@ -59,6 +60,12 @@ type recordState struct {
 	// (background_turns), when the record is in one.
 	own   string
 	ended bool
+	// prompt and parent are the input's prompt entry and the entry it
+	// follows (Entry.Parent); replied is set once the turn has an assistant
+	// entry. A later prompt that follows parent too rewound a turn with no
+	// reply (withdrawn).
+	prompt, parent string
+	replied        bool
 	// msg is the API message that ended the turn, or is ending it. claude
 	// writes a message as one entry per content block, each with the
 	// message's stop_reason, and a reply after thinking as a thinking-only
@@ -504,10 +511,22 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 			// is another message's, whatever its id.
 			st.msg = ""
 		}
+		if st.input != "" && withdrawn(st.prompt, st.parent, st.replied, e) {
+			// claude withdrew the prompt, interrupted before its first
+			// token, and wrote no end for its turn.
+			at := run.events[0].Event.Timestamp
+			if at.IsZero() {
+				at = time.Now()
+			}
+			end(e.UUID, at, contract.TurnEndedData{Outcome: contract.TurnInterrupted})
+		}
 		if n := r.native(e); e.Type == transcript.TypeUser && n != "" {
 			if mk, ok := r.markers.ByNative(n); ok && mk.SessionID == r.session {
-				st = recordState{input: mk.InputID}
+				st = recordState{input: mk.InputID, prompt: e.UUID, parent: e.Parent}
 			}
+		}
+		if e.Type == transcript.TypeAssistant {
+			st.replied = true
 		}
 		if e.TaskNotification != "" {
 			// claude tells the model background work ended: the turn it
@@ -579,6 +598,19 @@ func (r *reader) items(events []transcript.FollowedEvent, st recordState) ([]con
 		}
 	}
 	return out, st
+}
+
+// withdrawn reports whether e is a prompt that rewound the turn of the
+// prompt entry prompt, which follows parent and has no reply: claude's TUI
+// withdraws a prompt interrupted before its first token, writing no end for
+// its turn, and the next prompt follows the entry the withdrawn one did
+// (claude 2.1.296). That turn ended interrupted. A session's first prompt
+// follows nothing, and the next one follows it even when it was interrupted
+// so: no rewind shows, and the record cannot say.
+func withdrawn(prompt, parent string, replied bool, e *claudecode.Entry) bool {
+	return prompt != "" && parent != "" && !replied &&
+		e.Type == transcript.TypeUser && e.PromptID != "" && e.TaskNotification == "" &&
+		e.UUID != prompt && e.Parent == parent
 }
 
 func toolKey(toolUseID, fallback string) string {
@@ -673,7 +705,9 @@ func spoolItems(sb harnesscore.SpoolBatch) []contract.Observation {
 // Recover reads the transcript for the input the marker names: its prompt
 // entry, then the evidence of its turn's end. Without the entry, or without
 // the evidence, the record cannot say. A reply that ends the turn does,
-// unless a Stop hook's feedback follows it: the turn went on.
+// unless a Stop hook's feedback follows it: the turn went on. So does a
+// later prompt that rewound the turn before any reply (withdrawn): it was
+// interrupted.
 func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovered, error) {
 	unknown := contract.Recovered{Outcome: contract.RecoveredUnknown}
 	f, err := claudecode.FollowEntries(r.session, r.cfg.WorkingDir, r.cfg.Env, transcript.Checkpoint{})
@@ -682,6 +716,8 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 	}
 	f.MaxBatchBytes = 4 << 20
 	found, completed, msg := false, false, ""
+	var prompt, parent string
+	replied := false
 	for {
 		b, err := f.Poll()
 		if err != nil || b.Checkpoint == b.From {
@@ -697,7 +733,7 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 			}
 			n := r.native(e)
 			if e.Type == transcript.TypeUser && n != "" && n == m.Native {
-				found = true
+				found, prompt, parent = true, e.UUID, e.Parent
 				continue
 			}
 			if !found {
@@ -712,6 +748,10 @@ func (r *reader) Recover(_ context.Context, m adapter.Marker) (contract.Recovere
 				}
 				continue
 			}
+			if withdrawn(prompt, parent, replied, e) {
+				return contract.Recovered{Outcome: contract.RecoveredInterrupted}, nil
+			}
+			replied = replied || e.Type == transcript.TypeAssistant
 			if e.Type == transcript.TypeUser && n != "" {
 				if _, ours := r.markers.ByNative(n); ours {
 					// The next input began, and nothing said how this one ended.
