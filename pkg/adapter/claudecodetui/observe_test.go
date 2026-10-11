@@ -88,6 +88,22 @@ func tuiSession(t *testing.T, mock *mockapi.Server) (contract.Session, *pump) {
 // agent's layout.
 func tuiSessionAt(t *testing.T, mock *mockapi.Server, posture string) (contract.Session, *pump, contract.Layout) {
 	t.Helper()
+	r := tuiRunAt(t, mock, posture)
+	return r.s, r.p, r.layout
+}
+
+// tuiRun is a Session tuiRunAt opened, with what opened it.
+type tuiRun struct {
+	s          contract.Session
+	p          *pump
+	layout     contract.Layout
+	openConfig []byte
+	sessionID  string
+}
+
+// tuiRunAt is tuiSessionAt, with the Session's open_config and id.
+func tuiRunAt(t *testing.T, mock *mockapi.Server, posture string) tuiRun {
+	t.Helper()
 	root := distribution(t, realClaude(t))
 	// claude keys its workspace trust by the real path.
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -125,7 +141,8 @@ func tuiSessionAt(t *testing.T, mock *mockapi.Server, posture string) (contract.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Open(context.Background()); err != nil {
+	opened, err := s.Open(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	p := startPump(t, s)
@@ -133,7 +150,7 @@ func tuiSessionAt(t *testing.T, mock *mockapi.Server, posture string) (contract.
 		_, _ = s.Close(context.Background(), contract.ClosePark, 5*time.Second)
 		p.halt()
 	})
-	return s, p, l
+	return tuiRun{s: s, p: p, layout: l, openConfig: res.OpenConfig, sessionID: opened.SessionID}
 }
 
 // Against the pinned claude on a terminal and the mock: a tool call is
