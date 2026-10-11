@@ -49,13 +49,45 @@ func TestPermissionPromptAndDecision(t *testing.T) {
 		want     string
 	}{
 		{OptionYes, true, `{"behavior":"allow","decisionClassification":"user_temporary","updatedInput":{"command":"touch asked","description":"mock"}}`},
-		{OptionAlways, true, `{"behavior":"allow","decisionClassification":"user_permanent","updatedInput":{"command":"touch asked","description":"mock"},"updatedPermissions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"touch asked *"}],"behavior":"allow","destination":"localSettings"}]}`},
+		{OptionAlways, true, `{"behavior":"allow","decisionClassification":"user_permanent","updatedInput":{"command":"touch asked","description":"mock"},"updatedPermissions":[{"behavior":"allow","destination":"session","rules":[{"ruleContent":"touch asked *","toolName":"Bash"}],"type":"addRules"}]}`},
 		{OptionNo, true, `{"behavior":"deny","decisionClassification":"user_reject","message":"` + DeniedMessage + `"}`},
 		{OptionYes, false, `{"behavior":"allow","updatedInput":{"command":"touch asked","description":"mock"}}`},
 		{OptionNo, false, `{"behavior":"deny","message":"` + DeniedMessage + `"}`},
 	} {
 		if got := enc(p.Decision(contract.Choice{OptionID: c.opt}, c.classify)); got != c.want {
 			t.Errorf("%s (classify %v): %s, want %s", c.opt, c.classify, got, c.want)
+		}
+	}
+}
+
+// "always" keeps only the allow rules claude suggests, for the Session: never
+// a rule in the workspace's settings that later Sessions would take, a mode,
+// directories, or a rule that denies or asks. With none of those left, it is
+// not offered.
+func TestAlwaysKeepsAllowRulesForTheSession(t *testing.T) {
+	input := json.RawMessage(`{"command":"touch asked"}`)
+	p := Permission{Tool: "Bash", Input: input, Suggestions: json.RawMessage(`[
+		{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"touch asked *"}],"behavior":"allow","destination":"localSettings"},
+		{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"rm *"}],"behavior":"deny","destination":"userSettings"},
+		{"type":"setMode","mode":"acceptEdits","destination":"session"},
+		{"type":"addDirectories","directories":["/"],"destination":"projectSettings"}]`)}
+	d := p.Decision(contract.Choice{OptionID: OptionAlways}, false)
+	got, _ := json.Marshal(d["updatedPermissions"])
+	if want := `[{"behavior":"allow","destination":"session","rules":[{"ruleContent":"touch asked *","toolName":"Bash"}],"type":"addRules"}]`; string(got) != want {
+		t.Errorf("kept %s, want %s", got, want)
+	}
+	for _, s := range []string{
+		`[{"type":"setMode","mode":"acceptEdits","destination":"session"}]`,
+		`[{"type":"addDirectories","directories":["/"],"destination":"session"}]`,
+		`[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"x"}],"behavior":"ask","destination":"localSettings"}]`,
+		`not json`,
+	} {
+		q := Permission{Tool: "Bash", Input: input, Suggestions: json.RawMessage(s)}
+		if n := len(q.Prompt("p").Options); n != 2 {
+			t.Errorf("suggesting %s: %d options, want yes and no", s, n)
+		}
+		if _, ok := q.Decision(contract.Choice{OptionID: OptionAlways}, false)["updatedPermissions"]; ok {
+			t.Errorf("suggesting %s: always kept permissions", s)
 		}
 	}
 }

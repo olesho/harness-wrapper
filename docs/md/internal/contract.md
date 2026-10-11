@@ -285,9 +285,15 @@ the pinned claude (`bin/claude`) and the profile's hook helper, `cmd/claude-code
 - **Prompts** (`prompts`, at `gated`): each `can_use_tool` control request is a prompt of kind
   `permission`, named by the request's id (a UUID), its text the tool and what it would run or touch
   (`Allow Bash: touch asked?`). Its options are claude's own: `yes` runs the tool once; `always`
-  runs it and keeps the rules claude suggests (`permission_suggestions`: a rule in the workspace's
-  `.claude/settings.local.json`, so later Sessions of the agent take it too, and possibly
-  accept-edits mode for the Session), offered only when claude suggests one; `no` refuses it, and
+  runs it and keeps, **for this Session only**, the allow rules claude suggests
+  (`permission_suggestions`), offered only when claude suggests one. claude suggests keeping a rule
+  in the workspace's `.claude/settings.local.json`, which later Sessions of the agent would take up,
+  and may suggest accept-edits mode or directories: a choice in one Session's prompt widens nothing
+  beyond it, so `always` keeps only `addRules` that allow, each with destination `session`, and
+  drops the rest (decided 2026-10-11; it applies to both Claude profiles). What claude suggests
+  differs by channel: for the mock's Bash command stream-json suggests an allow rule, and the TUI's
+  `PermissionRequest` hook only the workspace's directory and accept-edits mode, so there `always`
+  is not offered. `no` refuses it, and
   the model is told the user denied it and goes on. The answer is the control response (`allow`
   with the input unchanged, or `deny`), written after `prompt_resolved` (`answer`), so the turn
   cannot end first. Prompts asked together are raised one at a time. claude withdrawing a request

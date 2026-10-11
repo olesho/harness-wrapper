@@ -10,8 +10,9 @@ import (
 
 // A permission claude asks for at the gated posture is a prompt of kind
 // "permission" whose options are claude's own three: run the tool once
-// (yes), run it and keep the rule claude suggests so it is not asked again
-// (always, offered only when claude suggests one), or refuse it (no), which
+// (yes), run it and keep, for this Session only, the allow rules claude
+// suggests so it is not asked again (always, offered only when claude
+// suggests one), or refuse it (no), which
 // the model is told and goes on from. Both Claude profiles raise it: the
 // stream-json transport for a can_use_tool control request, the TUI's for
 // its PermissionRequest hook.
@@ -45,13 +46,39 @@ type Permission struct {
 }
 
 // canAlways reports whether the permission offers "always": claude suggests
-// a rule to keep.
+// an allow rule to keep.
 func (p Permission) canAlways() bool {
-	if p.NoAlways {
-		return false
+	return !p.NoAlways && p.sessionRules() != nil
+}
+
+// sessionRules are what "always" keeps of claude's suggestions: their allow
+// rules, scoped to this Session. claude suggests keeping a rule in the
+// workspace's settings (localSettings), which every later Session of the
+// agent would take up, and may suggest a mode (accept-edits) or directories;
+// a choice made in one Session's prompt widens nothing beyond it, so only
+// addRules that allow are kept, and each one's destination is the session.
+// nil when none is left.
+func (p Permission) sessionRules() json.RawMessage {
+	var all []map[string]any
+	if json.Unmarshal(p.Suggestions, &all) != nil {
+		return nil
 	}
-	var s []json.RawMessage
-	return json.Unmarshal(p.Suggestions, &s) == nil && len(s) > 0
+	var keep []map[string]any
+	for _, s := range all {
+		if s["type"] != "addRules" || s["behavior"] != "allow" {
+			continue
+		}
+		s["destination"] = "session"
+		keep = append(keep, s)
+	}
+	if len(keep) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(keep)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // Prompt is the permission as the contract's prompt promptID.
@@ -98,7 +125,8 @@ func clip(s string, n int) string {
 }
 
 // Decision is claude's answer to the permission for choice c: allow, with the
-// input unchanged and, for "always", the rules claude suggested; or deny,
+// input unchanged and, for "always", the allow rules claude suggested,
+// scoped to the Session (sessionRules); or deny,
 // with DeniedMessage. classify adds claude's decisionClassification, which
 // the control protocol takes and a hook's output does not.
 func (p Permission) Decision(c contract.Choice, classify bool) map[string]any {
@@ -110,7 +138,7 @@ func (p Permission) Decision(c contract.Choice, classify bool) map[string]any {
 			d["updatedInput"] = p.Input
 		}
 		if c.OptionID == OptionAlways && p.canAlways() {
-			d["updatedPermissions"] = p.Suggestions
+			d["updatedPermissions"] = p.sessionRules()
 		}
 	default:
 		d["behavior"] = "deny"

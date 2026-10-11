@@ -143,6 +143,36 @@ func TestClaudeTUIPrompts(t *testing.T) {
 	}
 }
 
+// "always" is offered only for an allow rule claude suggests, kept for the
+// Session alone. For the mock's Bash command claude's PermissionRequest hook
+// suggests no rule, only the workspace's directory and accept-edits mode for
+// the Session (where stream-json suggests a rule): "always" would have put
+// every later edit beyond asking, so it is not offered.
+func TestClaudeTUIPromptAlwaysNotOffered(t *testing.T) {
+	mock := mockapi.Start()
+	defer mock.Close()
+	s, p, _ := tuiSessionAt(t, mock, contract.PostureGated)
+	c := promptCheck{t: t, s: s, p: p}
+	ctx := context.Background()
+	defer func() { _, _ = s.Close(ctx, contract.ClosePark, 10*time.Second) }()
+
+	pi := c.raise("in-always")
+	for _, o := range pi.Options {
+		if o.OptionID == claudecode.OptionAlways {
+			t.Errorf("always offered with no allow rule suggested: %+v", pi.Options)
+		}
+	}
+	if err := s.Answer(ctx, pi.PromptID, contract.Choice{OptionID: claudecode.OptionAlways}); err == nil {
+		t.Error("Answer always: accepted, want invalid_choice")
+	}
+	if err := s.Answer(ctx, pi.PromptID, contract.Choice{OptionID: claudecode.OptionYes}); err != nil {
+		t.Fatalf("Answer yes: %v", err)
+	}
+	if d := c.ended("in-always"); d.Outcome != contract.TurnCompleted || !strings.Contains(d.Text, "TOOL DONE: asked") {
+		t.Errorf("yes: turn_ended %+v", d)
+	}
+}
+
 // HW_TUI_PROMPT_RUNS prompts, each answered yes, in one Session: whether
 // claude takes every answer, as the probe's one lost answer (FINDINGS.md,
 // Phase 3: macOS, under load) asks. Run it beside a load to reproduce that

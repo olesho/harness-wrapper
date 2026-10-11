@@ -158,4 +158,21 @@ func TestClaudePrompts(t *testing.T) {
 		}
 	}
 	p.mu.Unlock()
+	keptNowhere(t, ag.layout, "touch asked")
+}
+
+// keptNowhere fails when a settings file claude would keep a rule in — the
+// workspace's, or the agent's config — holds rule: "always" keeps its rules
+// for the Session alone.
+func keptNowhere(t *testing.T, l contract.Layout, rule string) {
+	t.Helper()
+	for _, f := range []string{
+		filepath.Join(l.Workspace, ".claude", "settings.local.json"),
+		filepath.Join(l.Workspace, ".claude", "settings.json"),
+		filepath.Join(l.Config, "settings.json"),
+	} {
+		if b, err := os.ReadFile(f); err == nil && strings.Contains(string(b), rule) {
+			t.Errorf("always kept %q in %s:\n%s", rule, f, b)
+		}
+	}
 }
