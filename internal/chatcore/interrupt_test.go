@@ -275,13 +275,32 @@ func TestInterrupt_WhileTheTokenIsHeld(t *testing.T) {
 // so.
 func TestInterrupt_AtTheTerminal(t *testing.T) {
 	conv := openFake(t, interruptScript(func(b *fakeharness.Builder) *fakeharness.Builder {
-		return b.AwaitSubmit().EchoWorking(20, "Writing").Stopped(80, "cut short")
+		return b.AwaitSubmit().EchoWorking(20, "Writing").AwaitInterrupt().Stopped(30, "cut short")
 	}), interruptDirs(t))
 	sendOneTurn(t, conv, "tell me a story")
-	turn := waitForTerminalTurn(t, conv, 5*time.Second)
+	pressEscOnceWorking(t, conv)
+	turn := waitForTerminalTurn(t, conv, 10*time.Second)
 	if turn.State != TurnStateInterrupted || turn.Text != "cut short" ||
 		turn.Reason != "claude-code: interrupted: the harness stopped the turn (at the terminal)" {
 		t.Fatalf("turn = %+v, want interrupted at the terminal", turn)
+	}
+}
+
+// pressEscOnceWorking presses Esc at the terminal, past Interrupt, once the
+// conversation has seen the harness take the in-flight prompt. A fake that
+// paints its stop on a timer instead can, under load, be read only after the
+// stop, and the turn then never looks accepted.
+func pressEscOnceWorking(t *testing.T, conv *Conversation) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !conv.turnAccepted() {
+		if time.Now().After(deadline) {
+			t.Fatalf("the harness was never seen working:\n%s", conv.screen.Snapshot().Text)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := conv.Wrapper().WriteStdin([]byte(fakeharness.InterruptCSI27u)); err != nil {
+		t.Fatalf("press Esc at the terminal: %v", err)
 	}
 }
 
@@ -295,13 +314,14 @@ func withEarlier(lines ...string) []string {
 // The marker an earlier turn left on screen never ends the next turn.
 func TestInterrupt_StaleMarkerNeverEndsTheNextTurn(t *testing.T) {
 	conv := openFake(t, interruptScript(func(b *fakeharness.Builder) *fakeharness.Builder {
-		return b.AwaitSubmit().EchoWorking(20, "Writing").Stopped(60, "first half").
+		return b.AwaitSubmit().EchoWorking(20, "Writing").AwaitInterrupt().Stopped(30, "first half").
 			AwaitSubmit().
 			Paint(20, withEarlier("❯ "+fakeharness.PromptRef(), spinner, "", "❯ ", busyFooter)...).
 			Paint(60, withEarlier("❯ "+fakeharness.PromptRef(), "⏺ second reply", "", "✻ Baked for 1s", "", "❯ ")...)
 	}), interruptDirs(t))
 	sendOneTurn(t, conv, "first")
-	if turn := waitForTerminalTurn(t, conv, 5*time.Second); turn.State != TurnStateInterrupted {
+	pressEscOnceWorking(t, conv)
+	if turn := waitForTerminalTurn(t, conv, 10*time.Second); turn.State != TurnStateInterrupted {
 		t.Fatalf("first turn = %+v, want interrupted", turn)
 	}
 	sendOneTurn(t, conv, "second")
@@ -314,14 +334,15 @@ func TestInterrupt_StaleMarkerNeverEndsTheNextTurn(t *testing.T) {
 // per turn, not by the marker's presence.
 func TestInterrupt_SecondInterruptIsSeen(t *testing.T) {
 	conv := openFake(t, interruptScript(func(b *fakeharness.Builder) *fakeharness.Builder {
-		return b.AwaitSubmit().EchoWorking(20, "Writing").Stopped(60, "first half").
+		return b.AwaitSubmit().EchoWorking(20, "Writing").AwaitInterrupt().Stopped(30, "first half").
 			AwaitSubmit().
 			Paint(20, withEarlier("❯ "+fakeharness.PromptRef(), spinner, "", "❯ ", busyFooter)...).
 			AwaitInterrupt().
 			Paint(30, withEarlier("❯ "+fakeharness.PromptRef(), "⏺ second half", fakeharness.InterruptMarkerLine(), "", "❯ ")...)
 	}), interruptDirs(t))
 	sendOneTurn(t, conv, "first")
-	if turn := waitForTerminalTurn(t, conv, 5*time.Second); turn.State != TurnStateInterrupted {
+	pressEscOnceWorking(t, conv)
+	if turn := waitForTerminalTurn(t, conv, 10*time.Second); turn.State != TurnStateInterrupted {
 		t.Fatalf("first turn = %+v, want interrupted", turn)
 	}
 	sendOneTurn(t, conv, "second")
