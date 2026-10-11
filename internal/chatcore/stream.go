@@ -107,6 +107,7 @@ type streamInterruptOp struct {
 	once   sync.Once
 	result InterruptResult
 	err    error
+	joined int // callers that joined after the first; guarded by Conversation.mu
 }
 
 func (op *streamInterruptOp) finish(result InterruptResult, err error) {
@@ -953,7 +954,9 @@ func (c *Conversation) streamInterrupt(ctx context.Context) (InterruptResult, er
 	}
 	op := st.interrupt
 	joined := op != nil
-	if !joined {
+	if joined {
+		op.joined++
+	} else {
 		op = &streamInterruptOp{done: make(chan struct{})}
 		st.interrupt = op
 		c.interruptedBy = c.currentTurn.ID

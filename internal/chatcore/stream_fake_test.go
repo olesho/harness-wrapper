@@ -22,6 +22,9 @@ import (
 //	PING <x>     reply "PONG <x>"
 //	SLOW <n>     n text chunks, 100 ms apart; interruptible
 //	DELAY        2 s before the first token; interruptible
+//	HOLD         text chunks, 100 ms apart, until interrupted; the interrupt
+//	             ends the turn only once the file named by streamFakeGateEnv
+//	             exists
 //	TOOL         a tool call, then 2 s "running"; interruptible
 //	ERR529       two api_retry frames, then an error turn tagged server_error
 //	LIMIT        a rejected rate_limit_event, then an error turn tagged
@@ -36,6 +39,10 @@ import (
 //
 // Stdin EOF finishes the turn in flight and exits 0, as claude does.
 const streamFakeEnv = "HW_STREAM_FAKE"
+
+// streamFakeGateEnv names the file a HOLD turn waits for before it answers
+// its interrupt.
+const streamFakeGateEnv = "HW_STREAM_FAKE_GATE"
 
 // fakeResetsAt is the reset time the fake's rate_limit_event reports, in
 // Unix seconds.
@@ -251,6 +258,16 @@ func (f *streamFake) turn(uuid, text string) {
 		}
 		f.send(map[string]any{"type": "result", "subtype": "success", "is_error": false, "terminal_reason": "completed", "result": sb.String()})
 		f.send(map[string]any{"type": "command_lifecycle", "command_uuid": uuid, "state": "completed"})
+	case "HOLD":
+		for i := 0; wait(100 * time.Millisecond); i++ {
+			delta(fmt.Sprintf("chunk%d ", i))
+		}
+		for gate := os.Getenv(streamFakeGateEnv); ; time.Sleep(10 * time.Millisecond) {
+			if _, err := os.Stat(gate); err == nil {
+				break
+			}
+		}
+		aborted("aborted_streaming")
 	case "DELAY":
 		if !wait(2 * time.Second) {
 			aborted("aborted_streaming")

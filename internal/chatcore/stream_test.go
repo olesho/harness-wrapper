@@ -231,8 +231,12 @@ func TestStream_Interrupt(t *testing.T) {
 		}
 	})
 	t.Run("concurrent-callers-join", func(t *testing.T) {
-		r := openStreamRig(t, nil)
-		r.send("SLOW 50")
+		// The fake answers the interrupt only once the gate file exists, and
+		// the gate opens once the other two callers have joined: a caller
+		// scheduled late can no longer find the turn already ended.
+		gate := filepath.Join(t.TempDir(), "gate")
+		r := openStreamRig(t, func(o *Options) { o.Env = append(o.Env, streamFakeGateEnv+"="+gate) })
+		r.send("HOLD")
 		time.Sleep(300 * time.Millisecond)
 		results := make(chan InterruptResult, 3)
 		for i := 0; i < 3; i++ {
@@ -241,12 +245,33 @@ func TestStream_Interrupt(t *testing.T) {
 				results <- res
 			}()
 		}
+		deadline := time.Now().Add(10 * time.Second)
+		for streamInterruptJoins(r.conv) < 2 {
+			if time.Now().After(deadline) {
+				t.Fatalf("callers joined = %d, want 2", streamInterruptJoins(r.conv))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if err := os.WriteFile(gate, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 		for i := 0; i < 3; i++ {
 			if res := <-results; res != InterruptStopped {
 				t.Fatalf("caller %d got %v, want stopped", i, res)
 			}
 		}
 	})
+}
+
+// streamInterruptJoins is how many Interrupt callers joined the in-flight
+// turn's interrupt after the first.
+func streamInterruptJoins(c *Conversation) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if st := c.stream.turn; st != nil && st.interrupt != nil {
+		return st.interrupt.joined
+	}
+	return 0
 }
 
 func TestStream_APIErrors(t *testing.T) {
