@@ -48,8 +48,13 @@ func buildFakeHarness(t *testing.T) string {
 // global), so concurrent watcher goroutines read them race-free. The invariant
 // under test (a flicker must not complete; only a settled prompt may) holds at
 // any scale, as long as fixture frame delays stay below testMarkerGap.
+//
+// testIdleGap is also how long a fake may take to paint its first working frame
+// after a submit before the idle fallback reads the prompt as swallowed. Under
+// a loaded -race run (the pre-push hook runs every package at once) that took
+// over 500ms, so it is generous; tests that wait out the fallback pay it.
 const (
-	testIdleGap   = 500 * time.Millisecond
+	testIdleGap   = 2 * time.Second
 	testMarkerGap = 120 * time.Millisecond
 )
 
