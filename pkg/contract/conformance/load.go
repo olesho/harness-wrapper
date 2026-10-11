@@ -317,13 +317,16 @@ func (c *check) continues(a *agent, saved SavedSession) {
 		c.fail("load.reopen", "Close of the loaded Session = %+v %v, want drained", res, err)
 	}
 	h2.halt()
-	acked := h2.ids()
+	acked := h2.deliveries(isRecord)
 	s3, h3 := open(h2.checkpoint())
 	turn(s3, h3, 23, append(append([]string(nil), saved.Remembers...), "PONG 22")...)
 	for id, o := range h3.ids() {
-		if (seeded[id] || hasID(acked, id)) && o.Origin == contract.OriginRecord {
+		if seeded[id] && o.Origin == contract.OriginRecord {
 			c.fail("load.reopen", "record item %s, acknowledged before, delivered again after the loaded Session reopened", id)
 		}
+	}
+	for _, id := range redelivered(acked, h3.deliveries(isRecord)) {
+		c.fail("load.reopen", "record item %s, acknowledged before, delivered again after the loaded Session reopened", id)
 	}
 }
 
@@ -463,11 +466,6 @@ func LoadSaved(t T, f Fixture, saved SavedSession) {
 		}
 	}()
 	c.continues(c.loadAgent(saved.Saved, true, "load.provision"), saved)
-}
-
-func hasID(m map[string]contract.Observation, id string) bool {
-	_, ok := m[id]
-	return ok
 }
 
 // loadMissing: a loaded Session whose record is not where the harness looks

@@ -263,3 +263,24 @@ func TestSavedSessionLoads(t *testing.T) {
 	}
 	t.Errorf("an adapter that forgets the saved conversation: no [load.history] failure; got %q", r.failures)
 }
+
+// A fact's live and record observations share its id: a record item whose fact
+// went out only live before the Session parked is delivered once, not again.
+func TestRedeliveredCountsRecordItemsOnly(t *testing.T) {
+	obs := func(kind contract.Kind, key string, origin contract.Origin) contract.Observation {
+		return contract.NewObservation(kind, key, origin, time.Now(), struct{}{})
+	}
+	before := []contract.Observation{
+		obs(contract.KindUserInput, "u-1", contract.OriginRecord),
+		obs(contract.KindTurnEnded, "in-1", contract.OriginLive),
+	}
+	after := []contract.Observation{
+		obs(contract.KindTurnEnded, "in-1", contract.OriginRecord),
+		obs(contract.KindUserInput, "u-1", contract.OriginRecord),
+		obs(contract.KindUserInput, "u-1", contract.OriginRecord),
+		obs(contract.KindUserInput, "u-2", contract.OriginRecord),
+	}
+	if got := redelivered(before, after); len(got) != 1 || got[0] != "user_input:u-1" {
+		t.Fatalf("redelivered = %q, want only user_input:u-1", got)
+	}
+}

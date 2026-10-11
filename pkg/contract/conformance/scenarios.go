@@ -757,7 +757,7 @@ func reopen(c *check) {
 		c.fail("reopen.continues", "Close = %+v %v, want drained", res, err)
 	}
 	h.halt()
-	acked := h.ids()
+	acked := h.deliveries(isRecord)
 	s2, err := c.f.Adapter.NewSession(c.openRequest(a, contract.OpenReopen, h.id, h.checkpoint()))
 	if err != nil {
 		c.stop("reopen.continues", "NewSession(reopen): %v", err)
@@ -768,11 +768,32 @@ func reopen(c *check) {
 		c.fail("reopen.continues", "a turn after reopening: %+v", end)
 	}
 	time.Sleep(200 * time.Millisecond)
-	for id, o := range h2.ids() {
-		if _, before := acked[id]; before && o.Origin == contract.OriginRecord {
-			c.fail("reopen.no-redelivery", "record item %s, acknowledged before, delivered again", id)
+	for _, id := range redelivered(acked, h2.deliveries(isRecord)) {
+		c.fail("reopen.no-redelivery", "record item %s, acknowledged before, delivered again", id)
+	}
+}
+
+func isRecord(o contract.Observation) bool { return o.Origin == contract.OriginRecord }
+
+// redelivered is the ids of the record items in after that before already
+// delivered from the record. A fact's live and record observations share its
+// id, so a record item whose fact only went out live before — a turn_ended
+// written to the record after the Session parked — is not a redelivery.
+func redelivered(before, after []contract.Observation) []string {
+	seen := map[string]bool{}
+	for _, o := range before {
+		if isRecord(o) {
+			seen[o.ID] = true
 		}
 	}
+	var out []string
+	for _, o := range after {
+		if isRecord(o) && seen[o.ID] {
+			out = append(out, o.ID)
+			seen[o.ID] = false // once per id
+		}
+	}
+	return out
 }
 
 // rescan: a checkpoint the adapter cannot read makes it read the record from
