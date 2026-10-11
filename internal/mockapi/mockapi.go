@@ -9,6 +9,8 @@
 //	PING <n>        reply "PONG <n>"
 //	SLOW <n>        reply "slow<i> " in <n> chunks, Server.ChunkDelay apart (default 40)
 //	STALL <s>       send message_start, then only pings for <s> seconds (default 60)
+//	HUSH <s>        answer nothing, not even the response's status, for <s> seconds
+//	                (default 60) or until the client goes; then reply "after hush"
 //	TOOL <command>  a tool_use running <command> in a shell, after its result "TOOL DONE:
 //	                <output>": claude's Bash, or pi's bash when the request offers that one
 //	ASK             a tool_use that needs permission unless every tool is allowed: claude's
@@ -185,7 +187,7 @@ const askCommand = "touch asked && echo asked"
 // recognises the line as a scenario but has no case for it, so it answers
 // "ok"; ASK is Messages-only, and the Responses API answers it "ok".
 var keywords = map[string]bool{
-	"PING": true, "SLOW": true, "STALL": true, "TOOL": true, "ASK": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
+	"PING": true, "SLOW": true, "STALL": true, "HUSH": true, "TOOL": true, "ASK": true, "AGENT": true, "BG": true, "ERR": true, "BIG": true, "LIMIT": true,
 	"GOAL": true, "MKGOAL": true, "FAILSLOW": true,
 }
 
@@ -324,6 +326,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		s.reply(w, b, reply{chunks: chunks, delay: s.ChunkDelay})
 	case words[0] == "STALL":
 		s.reply(w, b, reply{text: "after stall", stall: time.Duration(arg(1, 60)) * time.Second})
+	case words[0] == "HUSH":
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(time.Duration(arg(1, 60)) * time.Second):
+		}
+		s.reply(w, b, reply{text: "after hush"})
 	case words[0] == "TOOL":
 		cmd := strings.TrimSpace(strings.TrimPrefix(scenario, "TOOL"))
 		s.reply(w, b, reply{tool: shell(b, cmd, false)})
