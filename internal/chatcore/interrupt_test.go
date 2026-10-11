@@ -213,10 +213,15 @@ func TestInterrupt_WaitsForTheSubmit(t *testing.T) {
 		_, err = conv.Send(ctx, prompt)
 		sent <- err
 	}()
-	for ev := range conv.Events() {
-		if ev.Type == EventTurn && ev.Turn.Role == RoleUser {
-			break // Send has recorded the turn and is typing it
+	// Send has made the turn current and is typing it. Not its user turn's
+	// event: Send emits that before the turn is in flight, and an Interrupt
+	// made then finds no turn.
+	deadline := time.Now().Add(10 * time.Second)
+	for !turnInFlight(conv) {
+		if time.Now().After(deadline) {
+			t.Fatal("Send never put its turn in flight")
 		}
+		time.Sleep(time.Millisecond)
 	}
 	if res, err := interruptWithin(conv, 5*time.Second); err != nil || res != InterruptStopped {
 		t.Fatalf("Interrupt = %q, %v; want stopped", res, err)
@@ -227,6 +232,13 @@ func TestInterrupt_WaitsForTheSubmit(t *testing.T) {
 	if !showsLine(conv, "❯ "+prompt) {
 		t.Fatalf("the prompt did not arrive whole:\n%s", conv.screen.Snapshot().Text)
 	}
+}
+
+// turnInFlight reports whether conv has a turn in flight.
+func turnInFlight(conv *Conversation) bool {
+	conv.mu.Lock()
+	defer conv.mu.Unlock()
+	return conv.currentTurn != nil
 }
 
 // showsLine reports whether a screen row reads exactly line, padding aside.
