@@ -1080,11 +1080,7 @@ func (c *Conversation) handleTurnsEvent(ev turns.Event) {
 			c.relabelTerminal(turn, *ev.Snap)
 		}
 	case turns.Blocked:
-		turn.HTTPCode = ev.HTTPCode
-		turn.RetryAfter = ev.RetryAfter
-		turn.State = TurnStateErrored
-		turn.CompletedAt = ev.At
-		turn.Reason = ev.Reason
+		c.endBlocked(turn, ev)
 	case turns.Errored:
 		turn.State = TurnStateErrored
 		turn.CompletedAt = ev.At

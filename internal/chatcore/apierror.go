@@ -150,6 +150,23 @@ func (c *Conversation) captureTranscriptWatermark() int {
 	}
 }
 
+// endBlocked errors turn on a Blocked the wrapper read off the screen — an
+// "API Error: 529" line, a cost or retry phrase — unless the harness's own tag
+// names the failure, which outranks it as at every other completion site.
+//
+// The wrapper's classifier polls on its own cadence, so whether a rendered API
+// error reaches the turn as this Blocked or as the end-of-turn marker that
+// relabelTerminal confirms is a matter of timing. Without the tag here the
+// same failure ended with a screen reason and no wall code one time in a few.
+func (c *Conversation) endBlocked(turn *Turn, ev turns.Event) {
+	turn.HTTPCode = ev.HTTPCode
+	turn.RetryAfter = ev.RetryAfter
+	turn.State = TurnStateErrored
+	turn.CompletedAt = ev.At
+	turn.Reason = ev.Reason
+	c.apiErrorRelabel(turn)
+}
+
 // apiErrorRelabel converts a turn the HARNESS tagged as failed into the
 // matching terminal failure, and reports whether it did.
 //

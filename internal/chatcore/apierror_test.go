@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/olesho/harness-wrapper/pkg/harnessname"
 	"github.com/olesho/harness-wrapper/pkg/screen"
 	"github.com/olesho/harness-wrapper/pkg/transcript"
 	transcriptcc "github.com/olesho/harness-wrapper/pkg/transcript/claudecode"
+	"github.com/olesho/harness-wrapper/pkg/turns"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/claudecode"
 	"github.com/olesho/harness-wrapper/pkg/turns/harness/opencode"
 )
@@ -551,5 +553,38 @@ func TestParserCompatibility_EmptyTagYieldsNoVerdict(t *testing.T) {
 	}
 	if _, ok, _ := apiErrorVerdictFrom(transcript.TurnsFromEvents(evs), 0); ok {
 		t.Error("an untagged API-error line produced a verdict")
+	}
+}
+
+// TestEndBlocked_TheTagOutranksTheScreen: the wrapper's classifier can read a
+// rendered "API Error: 529" before the end-of-turn marker is confirmed, and
+// its Blocked then ends the turn. The harness's tag still decides the verdict,
+// whichever path ends the turn; the Blocked's HTTP detail is kept.
+func TestEndBlocked_TheTagOutranksTheScreen(t *testing.T) {
+	const errText = "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment."
+	blocked := turns.Event{Kind: turns.Blocked, Reason: "api error 529: Overloaded.", HTTPCode: 529, At: time.Now()}
+
+	c := convWithTranscript(t, "sess-blk", userLine("do the thing"), errorLine("server_error", errText))
+	turn := &Turn{Text: errText}
+	c.endBlocked(turn, blocked)
+	if turn.State != TurnStateErrored || !strings.Contains(turn.Reason, "harness tag: server_error") {
+		t.Fatalf("turn = %+v, want errored with the harness's tag as evidence", turn)
+	}
+	if turn.HTTPCode != 529 || turn.Text != "" {
+		t.Fatalf("turn = %+v, want the Blocked's HTTP code kept and no reply", turn)
+	}
+
+	billing := convWithTranscript(t, "sess-blk-b", userLine("do the thing"), errorLine("billing_error", "Credit balance too low"))
+	turn = &Turn{}
+	billing.endBlocked(turn, blocked)
+	if turn.Code != CodeBillingWall {
+		t.Fatalf("Code = %q, want %q: a wall the screen cannot name", turn.Code, CodeBillingWall)
+	}
+
+	untagged := convWithTranscript(t, "sess-blk-u", userLine("do the thing"))
+	turn = &Turn{}
+	untagged.endBlocked(turn, blocked)
+	if turn.State != TurnStateErrored || turn.Reason != blocked.Reason || turn.HTTPCode != 529 {
+		t.Fatalf("turn = %+v, want the Blocked as it came with no tag to outrank it", turn)
 	}
 }
