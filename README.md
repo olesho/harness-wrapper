@@ -145,7 +145,9 @@ clients can drive multi-turn conversations across a process boundary:
 go run ./cmd/harness-chatd --bind 127.0.0.1:8080
 ```
 
-v1 has no auth — bind to localhost only. See the [HTTP Gateway guide](docs/md/guide/gateway.md)
+v1 has no auth, so chatd serves only this machine: it refuses a non-loopback `--bind`, a `Host`
+that is not loopback, and any request a browser sends (`--allow-remote` lifts the first two). See
+the [HTTP Gateway guide](docs/md/guide/gateway.md)
 for the endpoint reference and ready-to-run Python and TypeScript example clients.
 
 ## Supported harnesses
