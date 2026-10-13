@@ -13,8 +13,9 @@ linters:
       # Layers, lowest first: wrapper -> screen -> turns -> chat (INTENT.md).
       # A layer never imports one above it; it may skip layers below it (turns
       # and chat import wrapcore directly). pkg/screen is stricter than that
-      # order requires: it imports nothing from this module today and the
-      # rules keep it that way, so it stays usable without a PTY supervisor.
+      # order requires: it imports nothing from this module today, and the
+      # rules keep it free of the wrapper, turns and chat layers. Other
+      # packages (transcript, containment, ...) are not blocked for it.
       # Test files are exempt (!$test): tests may reach across layers, so these
       # guarantees cover non-test code only.
       #
