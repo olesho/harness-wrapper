@@ -1,3 +1,70 @@
 version: "2"
 linters:
   default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        # The four core layers are ordered wrapper -> screen -> turns -> chat
+        # (INTENT.md). A lower layer never imports a higher one, and none of
+        # them imports the packages built on top of the core.
+        screen-is-a-leaf:
+          files:
+            - "**/pkg/screen/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/olesho/harness-wrapper/internal/wrapcore
+              desc: screen sits above wrapper and must not import it
+            - pkg: github.com/olesho/harness-wrapper/pkg/wrapper$
+              desc: screen sits above wrapper and must not import it
+            - pkg: github.com/olesho/harness-wrapper/pkg/turns$
+              desc: screen is below turns
+            - pkg: github.com/olesho/harness-wrapper/internal/chatcore
+              desc: screen is below chat
+            - pkg: github.com/olesho/harness-wrapper/pkg/chat$
+              desc: screen is below chat
+        wrapper-layer:
+          files:
+            - "**/internal/wrapcore/**"
+            - "**/pkg/wrapper/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/olesho/harness-wrapper/pkg/screen$
+              desc: wrapper is the lowest layer; screen sits above it
+            - pkg: github.com/olesho/harness-wrapper/pkg/turns$
+              desc: wrapper is below turns
+            - pkg: github.com/olesho/harness-wrapper/internal/chatcore
+              desc: wrapper is below chat
+            - pkg: github.com/olesho/harness-wrapper/pkg/chat$
+              desc: wrapper is below chat
+        turns-layer:
+          files:
+            - "**/pkg/turns/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/olesho/harness-wrapper/internal/chatcore
+              desc: turns is below chat
+            - pkg: github.com/olesho/harness-wrapper/pkg/chat$
+              desc: turns is below chat
+        # Packages that consume the core must not be imported back by it.
+        core-does-not-import-consumers:
+          files:
+            - "**/internal/wrapcore/**"
+            - "**/pkg/wrapper/**"
+            - "**/pkg/turns/**"
+            - "**/internal/chatcore/**"
+            - "**/pkg/chat/**"
+            - "**/pkg/screen/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/olesho/harness-wrapper/pkg/harness$
+              desc: harness runs one job on top of the core
+            - pkg: github.com/olesho/harness-wrapper/internal/harnesscore
+              desc: harness runs one job on top of the core
+            - pkg: github.com/olesho/harness-wrapper/pkg/oneshot
+              desc: oneshot runs one job on top of the core
+            - pkg: github.com/olesho/harness-wrapper/pkg/turnproto
+              desc: turnproto belongs to the one-shot layer
+            - pkg: github.com/olesho/harness-wrapper/internal/env
+              desc: env belongs to the one-shot layer
