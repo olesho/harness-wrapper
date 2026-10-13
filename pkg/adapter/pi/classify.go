@@ -1,6 +1,7 @@
 package pi
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,12 +50,42 @@ func errorClass(text string, status int) contract.ErrorClass {
 	return contract.ErrorAPI
 }
 
-// resetsRE finds when a usage wall resets: OpenAI's resets_at (seconds since
-// the epoch) or resets_in_seconds.
-var (
-	resetsAtRE = regexp.MustCompile(`"resets_at"\s*:\s*([0-9]+)`)
-	resetsInRE = regexp.MustCompile(`"resets_in_seconds"\s*:\s*([0-9]+)`)
-)
+// resetFields are the usage wall's reset times in the provider's JSON body:
+// OpenAI's resets_at (seconds since the epoch) or resets_in_seconds. Either
+// may sit at the top of the body or inside an "error" object.
+type resetFields struct {
+	ResetsAt        *float64 `json:"resets_at"`
+	ResetsInSeconds *float64 `json:"resets_in_seconds"`
+}
+
+type resetBody struct {
+	resetFields
+	Error *resetFields `json:"error"`
+}
+
+// resetsOf decodes the JSON body embedded in an error text. It reports no
+// fields when the text holds no decodable object.
+func resetsOf(text string) resetFields {
+	i := strings.IndexByte(text, '{')
+	if i < 0 {
+		return resetFields{}
+	}
+	var b resetBody
+	// A Decoder reads one value and ignores any text after it.
+	if err := json.NewDecoder(strings.NewReader(text[i:])).Decode(&b); err != nil {
+		return resetFields{}
+	}
+	f := b.resetFields
+	if b.Error != nil {
+		if f.ResetsAt == nil {
+			f.ResetsAt = b.Error.ResetsAt
+		}
+		if f.ResetsInSeconds == nil {
+			f.ResetsInSeconds = b.Error.ResetsInSeconds
+		}
+	}
+	return f
+}
 
 // failure is the contract's account of a failed run, from the error text pi
 // recorded: its class, its HTTP status, and — at a usage wall — when the
@@ -65,18 +96,15 @@ func failure(text string, now time.Time) *contract.TurnError {
 	if e.Class != contract.ErrorUsageLimit {
 		return e
 	}
-	if m := resetsAtRE.FindStringSubmatch(text); m != nil {
-		if s, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			at := time.Unix(s, 0).UTC()
-			e.ResumeAt = &at
-			return e
-		}
+	f := resetsOf(text)
+	if f.ResetsAt != nil && *f.ResetsAt > 0 {
+		at := time.Unix(int64(*f.ResetsAt), 0).UTC()
+		e.ResumeAt = &at
+		return e
 	}
-	if m := resetsInRE.FindStringSubmatch(text); m != nil {
-		if s, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			at := now.Add(time.Duration(s) * time.Second).UTC()
-			e.ResumeAt = &at
-		}
+	if f.ResetsInSeconds != nil && *f.ResetsInSeconds > 0 {
+		at := now.Add(time.Duration(*f.ResetsInSeconds * float64(time.Second))).UTC()
+		e.ResumeAt = &at
 	}
 	return e
 }
