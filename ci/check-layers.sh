@@ -45,6 +45,8 @@ expect() {
 }
 
 expect deny pkg/screen internal/harnesscore
+expect deny internal/wrapcore/detector pkg/screen
+expect deny pkg/turns/generic pkg/chat/memstore
 expect deny pkg/screen pkg/wrapper/trace
 expect deny internal/wrapcore/detector pkg/harness/claude
 expect deny internal/wrapcore/detector pkg/adapter

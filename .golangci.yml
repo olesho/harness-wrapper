@@ -15,6 +15,9 @@ linters:
       # and chat import wrapcore directly). pkg/screen is stricter than that
       # order requires: it imports nothing from this module today and the
       # rules keep it that way, so it stays usable without a PTY supervisor.
+      # Test files are exempt (!$test): tests may reach across layers, so these
+      # guarantees cover non-test code only.
+      #
       # None of the core imports the packages built on top of it (one-shot
       # layer, adapters, contract, env). Add a package to the last rule when
       # it is built on the core.
