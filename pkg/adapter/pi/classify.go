@@ -1,6 +1,7 @@
 package pi
 
 import (
+	"encoding/json"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,12 +50,63 @@ func errorClass(text string, status int) contract.ErrorClass {
 	return contract.ErrorAPI
 }
 
-// resetsRE finds when a usage wall resets: OpenAI's resets_at (seconds since
-// the epoch) or resets_in_seconds.
-var (
-	resetsAtRE = regexp.MustCompile(`"resets_at"\s*:\s*([0-9]+)`)
-	resetsInRE = regexp.MustCompile(`"resets_in_seconds"\s*:\s*([0-9]+)`)
-)
+// resetFields are the usage wall's reset times in the provider's JSON body:
+// OpenAI's resets_at (seconds since the epoch) or resets_in_seconds. Either
+// may sit at the top of the body or inside an "error" object.
+type resetFields struct {
+	ResetsAt        *float64
+	ResetsInSeconds *float64
+}
+
+// maxResetHorizon bounds a reported reset time: a provider value further out
+// than this (a millisecond epoch, say) is not a usable wait.
+const maxResetHorizon = 365 * 24 * time.Hour
+
+// number reads a JSON number, or nil for anything else, so one field of the
+// wrong type costs only itself.
+func number(raw json.RawMessage) *float64 {
+	var n float64
+	if json.Unmarshal(raw, &n) != nil {
+		return nil
+	}
+	return &n
+}
+
+// fill sets the fields of f still unset from the object obj, if it is one.
+func (f *resetFields) fill(obj map[string]json.RawMessage) {
+	if f.ResetsAt == nil {
+		f.ResetsAt = number(obj["resets_at"])
+	}
+	if f.ResetsInSeconds == nil {
+		f.ResetsInSeconds = number(obj["resets_in_seconds"])
+	}
+}
+
+// resetsOf decodes the JSON body embedded in an error text, trying each "{"
+// in turn so a brace in the text before the body does not hide it. It reports
+// no fields when no object in the text names a reset time.
+func resetsOf(text string) resetFields {
+	for i := 0; i < len(text); i++ {
+		if text[i] != '{' {
+			continue
+		}
+		var obj map[string]json.RawMessage
+		// A Decoder reads one value and ignores any text after it.
+		if json.NewDecoder(strings.NewReader(text[i:])).Decode(&obj) != nil {
+			continue
+		}
+		var f resetFields
+		f.fill(obj)
+		var inner map[string]json.RawMessage
+		if json.Unmarshal(obj["error"], &inner) == nil {
+			f.fill(inner)
+		}
+		if f.ResetsAt != nil || f.ResetsInSeconds != nil {
+			return f
+		}
+	}
+	return resetFields{}
+}
 
 // failure is the contract's account of a failed run, from the error text pi
 // recorded: its class, its HTTP status, and — at a usage wall — when the
@@ -65,18 +117,15 @@ func failure(text string, now time.Time) *contract.TurnError {
 	if e.Class != contract.ErrorUsageLimit {
 		return e
 	}
-	if m := resetsAtRE.FindStringSubmatch(text); m != nil {
-		if s, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			at := time.Unix(s, 0).UTC()
-			e.ResumeAt = &at
-			return e
-		}
+	f := resetsOf(text)
+	if at := f.ResetsAt; at != nil && *at > 0 && *at <= float64(now.Add(maxResetHorizon).Unix()) {
+		t := time.Unix(int64(*at), 0).UTC()
+		e.ResumeAt = &t
+		return e
 	}
-	if m := resetsInRE.FindStringSubmatch(text); m != nil {
-		if s, err := strconv.ParseInt(m[1], 10, 64); err == nil {
-			at := now.Add(time.Duration(s) * time.Second).UTC()
-			e.ResumeAt = &at
-		}
+	if in := f.ResetsInSeconds; in != nil && *in > 0 && *in <= maxResetHorizon.Seconds() {
+		t := now.Add(time.Duration(*in * float64(time.Second))).UTC()
+		e.ResumeAt = &t
 	}
 	return e
 }

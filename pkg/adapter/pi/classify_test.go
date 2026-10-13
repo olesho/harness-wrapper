@@ -52,3 +52,38 @@ func TestFailureUsageLimit(t *testing.T) {
 		t.Errorf("no reset: %+v", got)
 	}
 }
+
+// The reset time is read from the decoded JSON body, so a float, a nested
+// error object or trailing text still yields it; a string value or a
+// non-positive one does not.
+func TestFailureUsageLimitDecodesBody(t *testing.T) {
+	now := time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		text string
+		want *time.Time
+	}{
+		{`429 {"type":"usage_limit_reached","resets_at":1.791285234e9}`, ptr(time.Unix(1791285234, 0))},
+		{`429 {"error":{"type":"usage_limit_reached","resets_in_seconds":60.5}}`, ptr(now.Add(60500 * time.Millisecond))},
+		{`429 {"type":"usage_limit_reached","resets_in_seconds":60} (retrying)`, ptr(now.Add(time.Minute))},
+		{`429 {"type":"usage_limit_reached","resets_at":"1791285234"}`, nil},
+		{`429 {"type":"usage_limit_reached","resets_at":0,"resets_in_seconds":-5}`, nil},
+		{`429 usage_limit_reached "resets_at": 1791285234`, nil},
+		// A field of the wrong type costs only itself.
+		{`429 {"type":"usage_limit_reached","error":"quota","resets_in_seconds":60}`, ptr(now.Add(time.Minute))},
+		{`429 {"type":"usage_limit_reached","resets_at":"soon","resets_in_seconds":60}`, ptr(now.Add(time.Minute))},
+		// A brace before the body does not hide it.
+		{`429 {oops} {"type":"usage_limit_reached","resets_in_seconds":60}`, ptr(now.Add(time.Minute))},
+		{`429 {"note":"x"} {"type":"usage_limit_reached","resets_in_seconds":60}`, ptr(now.Add(time.Minute))},
+		// Implausible values (a millisecond epoch, a huge wait) are dropped.
+		{`429 {"type":"usage_limit_reached","resets_at":1791285234000}`, nil},
+		{`429 {"type":"usage_limit_reached","resets_at":1791285234000,"resets_in_seconds":60}`, ptr(now.Add(time.Minute))},
+		{`429 {"type":"usage_limit_reached","resets_in_seconds":1e300}`, nil},
+	} {
+		got := failure(c.text, now)
+		if (got.ResumeAt == nil) != (c.want == nil) || (c.want != nil && !got.ResumeAt.Equal(*c.want)) {
+			t.Errorf("%q: ResumeAt %v, want %v", c.text, got.ResumeAt, c.want)
+		}
+	}
+}
+
+func ptr(t time.Time) *time.Time { return &t }
