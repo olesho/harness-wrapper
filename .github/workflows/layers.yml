@@ -1,0 +1,28 @@
+name: layers
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-layers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Read golangci-lint version
+        id: ver
+        run: echo "version=$(cat ci/golangci-lint.version)" >> "$GITHUB_OUTPUT"
+      # Installs the released binary (cached); the script runs the linter itself.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ steps.ver.outputs.version }}
+          install-mode: binary
+          install-only: true
+      - name: Check core layer imports
+        run: make lint-layers

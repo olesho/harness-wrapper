@@ -1,4 +1,4 @@
-.PHONY: help test build docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance test-clients
+.PHONY: help test build lint-layers docs docs-serve check-versions rebake-corpus rebake-corpus-all schema-canary-codex regen-conformance test-clients
 
 # Six canonical scenarios per harness; the rebake-corpus-all loop
 # iterates these. Deliberately NOT every script under test/scripts/: a
@@ -28,6 +28,7 @@ help:
 	@echo "                               WORKDIR runs the harness in that directory instead"
 	@echo "                                 of the repo; needed for screens that only appear"
 	@echo "                                 in an untrusted dir (claude's folder-trust dialog)"
+	@echo "  make lint-layers           check core layer import rules (needs golangci-lint v2)"
 	@echo "  make rebake-corpus-all     refresh entire corpus across all harnesses"
 	@echo "                             (PAID for codex/claude API tokens)"
 	@echo "  make schema-canary-codex   re-record codex short-reply then re-run the"
@@ -47,6 +48,11 @@ test:
 
 build:
 	go build ./...
+
+# lint-layers: enforce the core layer import rules (.golangci.yml, depguard) and
+# check that they still fire. Needs golangci-lint v2 on PATH.
+lint-layers:
+	ci/check-layers.sh
 
 # test-clients: run the shipped SDK test suites. NOT hermetic — `npm install`
 # needs network (there is no package-lock.json or vendored node_modules under
