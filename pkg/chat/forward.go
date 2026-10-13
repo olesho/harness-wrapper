@@ -125,11 +125,6 @@ type Conversation = chatcore.Conversation
 // It is an alias of chatcore.ReopenOptions.
 type ReopenOptions = chatcore.ReopenOptions
 
-// HistorySource identifies where a History result came from.
-//
-// It is an alias of chatcore.HistorySource.
-type HistorySource = chatcore.HistorySource
-
 // InputUnresolvedError is the concrete error behind ErrInputUnresolved. Like
 // PermissionModeBlockedError it carries the client-facing chat.InputRequest
 // (the value PendingInput returns and Answer accepts) plus the screen as it
@@ -160,6 +155,11 @@ type State = chatcore.State
 //
 // It is an alias of chatcore.DeliveryState.
 type DeliveryState = chatcore.DeliveryState
+
+// HistorySource identifies where a History result came from.
+//
+// It is an alias of chatcore.HistorySource.
+type HistorySource = chatcore.HistorySource
 
 // InputRequest is the client-facing view of a blocking interactive prompt
 // the harness is showing (e.g. Claude Code's folder-trust dialog). It mirrors
