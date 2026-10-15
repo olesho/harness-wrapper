@@ -50,7 +50,17 @@ type LoadSource struct {
 	// resolve a path of a machine that is gone. Layout's roots, in a request
 	// that loads, are resolved paths too: Provision resolves none.
 	Workspace string `json:"workspace"`
+	// WorkDirs are the working directories beneath Workspace that the saved
+	// Sessions worked in, as each OpenRequest.WorkDir named it (capability
+	// session_workdir, 1.9): the history a harness keeps by its working
+	// directory moves from each to the same directory beneath the new
+	// workspace. The workspace itself is never named: its history moves
+	// always.
+	WorkDirs []string `json:"work_dirs,omitempty"`
 }
+
+// MaxLoadWorkDirs bounds LoadSource.WorkDirs.
+const MaxLoadWorkDirs = 1024
 
 // Layout is an agent's roots. They are distinct, absolute and clean, exist
 // before the Host starts, and are writable only by the agent's workload
@@ -193,6 +203,9 @@ func CheckMinor(req ProvisionRequest) error {
 	}
 	if req.Spec.VersionPolicy != "" && minor < VersionPolicySince {
 		return &Error{Code: CodeProtocol, Field: "spec.version_policy", Message: fmt.Sprintf("from %s%d.%d, and the request is %s", versionPrefix, Major, VersionPolicySince, req.Contract)}
+	}
+	if req.Load != nil && len(req.Load.WorkDirs) > 0 && minor < SessionWorkDirSince {
+		return &Error{Code: CodeProtocol, Field: "load.work_dirs", Message: fmt.Sprintf("from %s%d.%d, and the request is %s", versionPrefix, Major, SessionWorkDirSince, req.Contract)}
 	}
 	return nil
 }
@@ -514,7 +527,9 @@ type ProvisionResult struct {
 	// file stays as it was. A harness that finds a Session by the working
 	// directory its record names needs it: pi's session header. Path is
 	// history and no secret path, and no two rules' paths are one another or
-	// nested. RewriteFirstLine applies them.
+	// nested — unless they rewrite the same Field from values of their own
+	// (since 1.9: one per Session's working directory), of which a line's
+	// field holds one. RewriteFirstLine applies them.
 	HistoryRewrites []Rewrite `json:"history_rewrites,omitempty"`
 }
 
@@ -750,7 +765,10 @@ func (r ProvisionResult) Validate() error {
 			return invalid(field, "a field, and a value from that the rewrite changes")
 		}
 		for j, other := range r.HistoryRewrites[:i] {
-			if w.Path.Within(other.Path) || other.Path.Within(w.Path) {
+			// Rules over one place rewrite one field from values of their
+			// own (1.9): a line's field holds one value, so at most one of
+			// them applies to it.
+			if (w.Path.Within(other.Path) || other.Path.Within(w.Path)) && (w.Field != other.Field || w.From == other.From) {
 				return invalid(field+".path", "%s overlaps history_rewrites[%d]'s %s", w.Path, j, other.Path)
 			}
 		}
@@ -791,6 +809,26 @@ func CheckLoad(d Descriptor, l LoadSource) error {
 	}
 	if !filepath.IsAbs(l.Workspace) || filepath.Clean(l.Workspace) != l.Workspace {
 		return &Error{Code: CodeInvalidSpec, Field: "load.workspace", Message: fmt.Sprintf("%q is not a clean absolute path", l.Workspace)}
+	}
+	if len(l.WorkDirs) == 0 {
+		return nil
+	}
+	if !d.Has(CapSessionWorkDir) {
+		return unsupported("load.work_dirs", "Sessions that worked in directories of their own; %s has no %s", d.Harness.Name, CapSessionWorkDir)
+	}
+	if len(l.WorkDirs) > MaxLoadWorkDirs {
+		return &Error{Code: CodeInvalidSpec, Field: "load.work_dirs", Message: fmt.Sprintf("%d, at most %d", len(l.WorkDirs), MaxLoadWorkDirs)}
+	}
+	seen := make(map[string]bool, len(l.WorkDirs))
+	for i, w := range l.WorkDirs {
+		field := "load.work_dirs[" + strconv.Itoa(i) + "]"
+		switch err := CheckRelPath(w); {
+		case err != nil:
+			return &Error{Code: CodeInvalidSpec, Field: field, Message: err.Error()}
+		case seen[w]:
+			return &Error{Code: CodeInvalidSpec, Field: field, Message: fmt.Sprintf("%q twice", w)}
+		}
+		seen[w] = true
 	}
 	return nil
 }

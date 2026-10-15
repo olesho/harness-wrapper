@@ -185,7 +185,8 @@
         "brokered_credentials",
         "login_keeper",
         "background_turns",
-        "concurrent_sessions"
+        "concurrent_sessions",
+        "session_workdir"
       ],
       "type": "string"
     },
@@ -745,6 +746,12 @@
         "layout": {
           "$ref": "#/$defs/Layout"
         },
+        "work_dirs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "workspace": {
           "type": "string"
         }
@@ -921,6 +928,9 @@
           "type": "string"
         },
         "session_id": {
+          "type": "string"
+        },
+        "work_dir": {
           "type": "string"
         }
       },
@@ -1199,6 +1209,9 @@
           "type": "string"
         },
         "session_id": {
+          "type": "string"
+        },
+        "work_dir": {
           "type": "string"
         }
       },
@@ -1734,5 +1747,5 @@
   },
   "$id": "https://github.com/olesho/harness-wrapper/pkg/contract/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Harness Adapter Interface harness-adapter/1.8"
+  "title": "Harness Adapter Interface harness-adapter/1.9"
 }

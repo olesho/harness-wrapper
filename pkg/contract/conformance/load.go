@@ -170,10 +170,10 @@ func (c *check) loadAgent(saved Saved, restore bool, rule string) *agent {
 // seed reads the loaded Session's record to its end with no harness running,
 // as a Supervisor does to find where new history will begin: the items it
 // holds, and the checkpoint after the last.
-func (c *check) seed(a *agent, sessionID, rule string) ([]contract.Observation, *contract.Checkpoint) {
+func (c *check) seed(a *agent, sessionID, workDir, rule string) ([]contract.Observation, *contract.Checkpoint) {
 	ctx, cancel := c.ctx()
 	defer cancel()
-	r, err := c.f.Adapter.OpenRecord(ctx, contract.RecordRequest{SessionID: sessionID, OpenConfig: a.result.OpenConfig, Layout: a.layout})
+	r, err := c.f.Adapter.OpenRecord(ctx, contract.RecordRequest{SessionID: sessionID, OpenConfig: a.result.OpenConfig, Layout: a.layout, WorkDir: workDir})
 	if err != nil {
 		c.stop(rule, "OpenRecord of the loaded Session: %v", err)
 	}
@@ -251,7 +251,7 @@ func (c *check) continues(a *agent, saved SavedSession) {
 	defer cancel()
 	// The seed: the record is where the harness looks, and it is the saved
 	// one. Nothing of it is delivered again once the Session opens.
-	items, cp := c.seed(a, saved.SessionID, "load.record")
+	items, cp := c.seed(a, saved.SessionID, saved.WorkDir, "load.record")
 	said, seeded := "", map[string]bool{}
 	for _, o := range items {
 		seeded[o.ID] = true
@@ -274,7 +274,7 @@ func (c *check) continues(a *agent, saved SavedSession) {
 
 	open := func(cp *contract.Checkpoint) (contract.Session, *host) {
 		req := c.openRequest(a, contract.OpenReopen, saved.SessionID, cp)
-		req.Loaded = true
+		req.Loaded, req.WorkDir = true, saved.WorkDir
 		s, err := c.f.Adapter.NewSession(req)
 		if err != nil {
 			c.stop("load.open", "NewSession of a loaded Session: %v", err)
@@ -328,6 +328,9 @@ func (c *check) continues(a *agent, saved SavedSession) {
 	for _, id := range redelivered(acked, h3.deliveries(isRecord)) {
 		c.fail("load.reopen", "record item %s, acknowledged before, delivered again after the loaded Session reopened", id)
 	}
+	if saved.WorkDir != "" {
+		c.workdirTurn(s3, h3, contract.WorkDirPath(a.layout, saved.WorkDir))
+	}
 }
 
 // SavedSession is a Session saved earlier, kept as files: what a load of it
@@ -342,6 +345,10 @@ type SavedSession struct {
 	// replies, which begin "PONG" — that a model request of the loaded
 	// Session carries.
 	Remembers []string
+	// WorkDir is the directory beneath the workspace the Session worked in
+	// (session_workdir), "" for the workspace: it opens there in the new
+	// environment too, which the load's LoadSource.WorkDirs names.
+	WorkDir string
 }
 
 // savedIndex is a SavedSession's saved.json: everything but the files'
@@ -350,6 +357,7 @@ type savedIndex struct {
 	Source    contract.LoadSource `json:"source"`
 	SessionID string              `json:"session_id"`
 	Remembers []string            `json:"remembers"`
+	WorkDir   string              `json:"work_dir,omitempty"`
 	Files     []savedEntry        `json:"files"`
 }
 
@@ -362,7 +370,7 @@ type savedEntry struct {
 // WriteSavedSession writes s beneath dir: saved.json, and each file under
 // files/<root>/<path>.
 func WriteSavedSession(dir string, s SavedSession) error {
-	idx := savedIndex{Source: s.Source, SessionID: s.SessionID, Remembers: s.Remembers}
+	idx := savedIndex{Source: s.Source, SessionID: s.SessionID, Remembers: s.Remembers, WorkDir: s.WorkDir}
 	for _, f := range s.Files {
 		if err := contract.CheckRelPath(f.At.Path); err != nil {
 			return err
@@ -393,7 +401,7 @@ func ReadSavedSession(dir string) (SavedSession, error) {
 	if err := json.Unmarshal(b, &idx); err != nil {
 		return SavedSession{}, fmt.Errorf("%s: %w", filepath.Join(dir, "saved.json"), err)
 	}
-	s := SavedSession{Saved: Saved{Source: idx.Source}, SessionID: idx.SessionID, Remembers: idx.Remembers}
+	s := SavedSession{Saved: Saved{Source: idx.Source}, SessionID: idx.SessionID, Remembers: idx.Remembers, WorkDir: idx.WorkDir}
 	for _, e := range idx.Files {
 		if err := contract.CheckRelPath(e.Path); err != nil {
 			return SavedSession{}, err

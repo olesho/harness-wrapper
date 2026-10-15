@@ -175,6 +175,12 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	if err != nil {
 		return fail(err)
 	}
+	if s.req.WorkDir != "" {
+		if err := checkWorkDir(s.req.Layout, s.req.WorkDir); err != nil {
+			return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenConfigInvalid, Message: err.Error()})
+		}
+	}
+	workDir := workDirOf(s.req.Layout, s.req.WorkDir)
 	var lk *sessionLock
 	if id := s.req.SessionID; id != "" {
 		// Before the harness starts: a Session another Host holds is
@@ -185,7 +191,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	}
 	t, err := s.a.p.Start(octx, Start{
 		Mode: s.req.Mode, SessionID: s.req.SessionID, OpenConfig: s.req.OpenConfig,
-		Layout: s.req.Layout, Credential: s.req.Credential, Loaded: s.req.Loaded, Report: s.report,
+		Layout: s.req.Layout, Credential: s.req.Credential, Loaded: s.req.Loaded, WorkDir: workDir, Report: s.report,
 	})
 	if err != nil {
 		lk.release()
@@ -224,7 +230,7 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	s.mu.Unlock()
 	r, err := s.a.p.Record(RecordSource{
 		SessionID: t.SessionID(), OpenConfig: s.req.OpenConfig, Layout: s.req.Layout,
-		Checkpoint: s.req.Checkpoint, Markers: m,
+		Checkpoint: s.req.Checkpoint, Markers: m, WorkDir: workDir,
 	})
 	if err != nil {
 		stop()

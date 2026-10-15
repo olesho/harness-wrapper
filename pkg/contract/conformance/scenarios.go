@@ -51,6 +51,8 @@ var scenarios = []scenario{
 	{"concurrent-record", concurrentRecord},
 	{"concurrent-load", concurrentLoad},
 	{"version-policy", versionPolicy},
+	{"workdir", workdir},
+	{"workdir-load", workdirLoad},
 }
 
 // describe: the Descriptor is well formed.
@@ -1249,7 +1251,7 @@ func loadAutonomous(c *check) {
 	h.halt()
 	saved := c.save(src, "load.own-work")
 	dst := c.loadAgent(saved, true, "load.provision")
-	_, cp := c.seed(dst, h.id, "load.record")
+	_, cp := c.seed(dst, h.id, "", "load.record")
 
 	req := c.openRequest(dst, contract.OpenReopen, h.id, cp)
 	req.Loaded = true

@@ -111,7 +111,7 @@ func TestCapabilitySince(t *testing.T) {
 	if s := Capability("telepathy").Since(); s != -1 {
 		t.Errorf("an unknown capability's Since = %d, want -1", s)
 	}
-	for c, want := range map[Capability]int{CapRateLimits: 0, CapAutonomousTurns: 1, CapLoginKeeper: 2, CapBackgroundTurns: 3, CapConcurrentSessions: 6} {
+	for c, want := range map[Capability]int{CapRateLimits: 0, CapAutonomousTurns: 1, CapLoginKeeper: 2, CapBackgroundTurns: 3, CapConcurrentSessions: 6, CapSessionWorkDir: 9} {
 		if s := c.Since(); s != want {
 			t.Errorf("%s.Since() = %d, want %d", c, s, want)
 		}
@@ -134,6 +134,7 @@ func TestCheckCapabilities(t *testing.T) {
 		d("harness-adapter/1.2", CapResume, CapConcurrentSessions),
 		d("harness-adapter/1.0", CapSessionLoad),
 		d("harness-adapter/1.2", CapBackgroundTurns),
+		d("harness-adapter/1.8", CapSessionWorkDir),
 		d("harness-adapter/1", CapResume),
 	} {
 		var e *Error
@@ -247,12 +248,80 @@ func TestHistoryRewritesValidate(t *testing.T) {
 			{Path: sessions, Field: "cwd", From: "/a", To: "/b"},
 			{Path: RootPath{Root: RootConfig, Path: "sessions/x"}, Field: "id", From: "1", To: "2"},
 		},
+		"one value twice": {
+			{Path: sessions, Field: "cwd", From: "/a", To: "/b"},
+			{Path: sessions, Field: "cwd", From: "/a", To: "/c"},
+		},
 	} {
 		r := base
 		r.HistoryRewrites = ws
 		if r.Validate() == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+	// One field from values of its own, over one place (1.9): a Session's
+	// working directory each.
+	ok.HistoryRewrites = []Rewrite{
+		{Path: sessions, Field: "cwd", From: "/a", To: "/b"},
+		{Path: sessions, Field: "cwd", From: "/a/wt/x", To: "/b/wt/x"},
+	}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("one field from two values: %v", err)
+	}
+	line := `{"type":"session","cwd":"/a/wt/x"}`
+	if got, applied := RewriteFirstLine(ok.HistoryRewrites, RootPath{Root: RootConfig, Path: "sessions/s.jsonl"}, []byte(line)); !applied || string(got) != `{"type":"session","cwd":"/b/wt/x"}` {
+		t.Errorf("the second rule: %v %s", applied, got)
+	}
+}
+
+// A Session's own working directory (1.9): named beneath the workspace, and
+// moved by a load only for an adapter that declares session_workdir, from a
+// request written in 1.9 or later.
+func TestSessionWorkDir(t *testing.T) {
+	l := Layout{Home: "/h", Config: "/c", Workspace: "/w", Secrets: "/s", Scratch: "/x"}
+	if got := WorkDirPath(l, ""); got != "/w" {
+		t.Errorf("WorkDirPath(\"\") = %s", got)
+	}
+	if got := WorkDirPath(l, "wt/a"); got != "/w/wt/a" {
+		t.Errorf("WorkDirPath(wt/a) = %s", got)
+	}
+	for _, bad := range []string{"/w/a", "../a", "a/../b", "./a", "a/", `a\b`} {
+		var e *Error
+		if err := CheckWorkDir(bad); !errors.As(err, &e) || e.Code != CodeProtocol || e.Field != "work_dir" {
+			t.Errorf("CheckWorkDir(%q) = %v, want protocol on work_dir", bad, err)
+		}
+	}
+	d := testDescriptor()
+	d.Capabilities = []Capability{CapSessionLoad}
+	d.Load = &LoadSupport{Formats: []int{2}, Sources: []string{"1"}}
+	src := LoadSource{Format: 2, Harness: d.Harness, Layout: l, Workspace: "/w", WorkDirs: []string{"wt/a", "wt/b"}}
+	var e *Error
+	if err := CheckLoad(d, src); !errors.As(err, &e) || e.Code != CodeUnsupported || e.Field != "load.work_dirs" {
+		t.Errorf("work_dirs without the capability: %v, want unsupported on load.work_dirs", err)
+	}
+	d.Capabilities = append(d.Capabilities, CapSessionWorkDir)
+	if err := CheckLoad(d, src); err != nil {
+		t.Errorf("work_dirs: %v", err)
+	}
+	for name, dirs := range map[string][]string{
+		"twice":    {"wt/a", "wt/a"},
+		"absolute": {"/w/wt/a"},
+		"climbs":   {"../a"},
+		"too many": make([]string, MaxLoadWorkDirs+1),
+	} {
+		bad := src
+		bad.WorkDirs = dirs
+		if err := CheckLoad(d, bad); !errors.As(err, &e) || e.Code != CodeInvalidSpec || !strings.HasPrefix(e.Field, "load.work_dirs") {
+			t.Errorf("%s: %v, want invalid_spec on load.work_dirs", name, err)
+		}
+	}
+	req := ProvisionRequest{Contract: "harness-adapter/1.8", Load: &src}
+	if err := CheckMinor(req); !errors.As(err, &e) || e.Code != CodeProtocol || e.Field != "load.work_dirs" {
+		t.Errorf("a 1.8 request with work_dirs: %v, want protocol on load.work_dirs", err)
+	}
+	req.Contract = Version
+	if err := CheckMinor(req); err != nil {
+		t.Errorf("a %s request with work_dirs: %v", Version, err)
 	}
 }
 
@@ -336,6 +405,11 @@ func TestOpenRequestValidate(t *testing.T) {
 		"bad mode":          {OpenRequest{Mode: "resume"}, false},
 		"bad id":            {OpenRequest{Mode: OpenFresh, SessionID: "a b"}, false},
 		"bad checkpoint":    {OpenRequest{Mode: OpenReopen, SessionID: "s1", Checkpoint: &Checkpoint{}}, false},
+		"work dir":          {OpenRequest{Mode: OpenFresh, WorkDir: "wt/a"}, true},
+		"work dir absolute": {OpenRequest{Mode: OpenFresh, WorkDir: "/w/wt/a"}, false},
+		"work dir climbs":   {OpenRequest{Mode: OpenFresh, WorkDir: "wt/../../x"}, false},
+		"work dir dot":      {OpenRequest{Mode: OpenFresh, WorkDir: "."}, false},
+		"work dir unclean":  {OpenRequest{Mode: OpenFresh, WorkDir: "wt//a"}, false},
 	} {
 		if err := tc.req.Validate(); (err == nil) != tc.ok {
 			t.Errorf("%s: %v", name, err)

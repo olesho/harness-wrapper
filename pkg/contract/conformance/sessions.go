@@ -392,7 +392,7 @@ func concurrentLoad(c *check) {
 	dst := c.loadAgent(saved, true, "concurrent.load")
 	cps := make([]*contract.Checkpoint, len(hs))
 	for i, h := range hs {
-		_, cps[i] = c.seed(dst, h.id, "concurrent.load")
+		_, cps[i] = c.seed(dst, h.id, "", "concurrent.load")
 	}
 	ls, lhs := c.openAllWith(len(hs), "concurrent.load", func(i int) contract.OpenRequest {
 		req := c.openRequest(dst, contract.OpenReopen, hs[i].id, cps[i])

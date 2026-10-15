@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -45,6 +46,39 @@ type OpenRequest struct {
 	// record — a thread's name, its goal — came with it, and fails with
 	// state_mismatch when it did not.
 	Loaded bool `json:"loaded,omitempty"`
+	// WorkDir is the directory the Session works in, beneath the workspace:
+	// a clean relative slash path (CheckWorkDir), "" for the workspace
+	// itself (capability session_workdir, 1.9). It must be a directory
+	// reached through no symbolic link when the Session opens. A Session
+	// reopens — loaded or not — naming the directory it was opened in.
+	WorkDir string `json:"work_dir,omitempty"`
+}
+
+// SessionWorkDirSince is the minor that added a Session's own working
+// directory (OpenRequest.WorkDir, RecordRequest.WorkDir, LoadSource.WorkDirs).
+const SessionWorkDirSince = 9
+
+// CheckWorkDir refuses what cannot name a Session's working directory
+// beneath the workspace: anything but a clean relative slash path with no .
+// or .. component. The empty path, the workspace itself, passes.
+func CheckWorkDir(p string) error {
+	if p == "" {
+		return nil
+	}
+	if err := CheckRelPath(p); err != nil {
+		return &Error{Code: CodeProtocol, Field: "work_dir", Message: err.Error()}
+	}
+	return nil
+}
+
+// WorkDirPath is the absolute path of working directory dir — as
+// OpenRequest.WorkDir names it — beneath l's workspace: the workspace itself
+// for "".
+func WorkDirPath(l Layout, dir string) string {
+	if dir == "" {
+		return l.Workspace
+	}
+	return filepath.Join(l.Workspace, filepath.FromSlash(dir))
 }
 
 // CredentialFile is a staged credential: its kind, and the file holding it.
@@ -76,6 +110,9 @@ func (r OpenRequest) Validate() error {
 	}
 	if len(r.OpenConfig) > MaxOpenConfigBytes {
 		return &Error{Code: CodeProtocol, Field: "open_config", Message: "too large"}
+	}
+	if err := CheckWorkDir(r.WorkDir); err != nil {
+		return err
 	}
 	return r.Checkpoint.validate()
 }
@@ -378,6 +415,11 @@ type RecordRequest struct {
 	OpenConfig []byte      `json:"open_config"`
 	Layout     Layout      `json:"layout"`
 	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+	// WorkDir is the directory the Session worked in, as its
+	// OpenRequest.WorkDir named it (capability session_workdir, 1.9): a
+	// harness that keeps its record by its working directory keeps it
+	// there. The directory need not exist any more: a record outlives it.
+	WorkDir string `json:"work_dir,omitempty"`
 }
 
 // RecoveredOutcome is what Recover found.

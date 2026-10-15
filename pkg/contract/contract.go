@@ -30,7 +30,10 @@
 // version a Session runs (OpenResult.HarnessVersion); every 1.7 adapter
 // honours both, behind no capability. Minor 8 lets a load change one value in
 // a saved file's first line (ProvisionResult.HistoryRewrites), where a harness
-// finds a Session by the working directory its record names.
+// finds a Session by the working directory its record names. Minor 9 lets a
+// Session work in a directory of its own beneath the workspace — a git
+// worktree, say (session_workdir: OpenRequest.WorkDir, RecordRequest.WorkDir,
+// and LoadSource.WorkDirs, whose history a load moves with it).
 //
 // Two callers use an Adapter:
 //
@@ -57,7 +60,7 @@ import (
 )
 
 // Version is the contract version this package defines.
-const Version = "harness-adapter/1.8"
+const Version = "harness-adapter/1.9"
 
 // versionPrefix is every version's prefix; the major follows it.
 const versionPrefix = "harness-adapter/"
@@ -65,7 +68,7 @@ const versionPrefix = "harness-adapter/"
 // Major and Minor are Version's parts.
 const (
 	Major = 1
-	Minor = 8
+	Minor = 9
 )
 
 // ParseVersion splits a contract version, harness-adapter/<major>.<minor>,

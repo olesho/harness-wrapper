@@ -9,7 +9,9 @@
 //	PING <n>       reply "PONG <n>"
 //	SLOW <n>       reply "slow" in <n> chunks, one per tick (default 40)
 //	STALL <s>      nothing for <s> seconds (default 60), then "ok"
-//	TOOL <command> a tool call running <command>, then "TOOL DONE"
+//	TOOL <command> a tool call running <command>, then "TOOL DONE"; for
+//	               cat <file>, "TOOL DONE: <its content>", the file read
+//	               beneath the directory the Session works in
 //	ERR <code> <k> the model call fails with <code> <k> times, retried up to
 //	               MaxRetries times: "RECOVERED" once it passes, else the turn
 //	               errors (529: overloaded, 401: auth, 402: billing, else api);
@@ -65,6 +67,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -119,6 +122,7 @@ var Breaks = []string{
 	"auto-no-record-end",
 	"egress-without-capability", "impure-placeholder", "placeholder-ignores-nonce", "placeholder-holds-secret",
 	"placeholder-off-route", "keeper-forgets", "keeper-lends-unbrokerable", "keeper-signout-keeps",
+	"workdir-ignored", "workdir-load-stays",
 	"sessions-without-capability", "open-race", "open-twice", "cross-deliver", "interrupt-siblings",
 	"close-siblings", "crash-siblings", "record-reads-siblings", "load-mixes-sessions",
 	"ack-fails", "capability-past-minor", "bg-tasks-unreported", "bg-not-taken-up", "headers-file-unread",
@@ -204,7 +208,7 @@ func (a *Adapter) capabilities() []contract.Capability {
 	if !a.breaks("sessions-without-capability") {
 		caps = append(caps, contract.CapConcurrentSessions)
 	}
-	return caps
+	return append(caps, contract.CapSessionWorkDir)
 }
 
 // Placeholder renders the fake token's placeholder: "fake-" and 32 hex digits
@@ -306,13 +310,24 @@ func (a *Adapter) Provision(req contract.ProvisionRequest) (contract.ProvisionRe
 		if err := contract.CheckLoad(a.Describe(), l); err != nil {
 			return contract.ProvisionResult{}, err
 		}
-		// The record sits in a directory named for the workspace it was made
-		// in: it moves to the new workspace's.
-		from, to := historyDir+"/"+workspaceKey(l.Workspace), historyDir+"/"+workspaceKey(req.Layout.Workspace)
-		if from != to && !a.breaks("load-keeps-path") {
-			moves = []contract.Relocation{{
-				From: contract.RootPath{Root: contract.RootScratch, Path: from}, To: contract.RootPath{Root: contract.RootScratch, Path: to},
-			}}
+		// The record sits in a directory named for the directory the Session
+		// worked in — the workspace, or one of its own beneath it: it moves to
+		// the new workspace's, or to the same directory beneath it.
+		move := func(fromDir, toDir string) {
+			from, to := historyDir+"/"+workspaceKey(fromDir), historyDir+"/"+workspaceKey(toDir)
+			if from != to {
+				moves = append(moves, contract.Relocation{
+					From: contract.RootPath{Root: contract.RootScratch, Path: from}, To: contract.RootPath{Root: contract.RootScratch, Path: to},
+				})
+			}
+		}
+		if !a.breaks("load-keeps-path") {
+			move(l.Workspace, req.Layout.Workspace)
+		}
+		if !a.breaks("workdir-load-stays") {
+			for _, dir := range l.WorkDirs {
+				move(path.Join(l.Workspace, dir), contract.WorkDirPath(req.Layout, dir))
+			}
 		}
 	}
 	spec, _ := json.MarshalIndent(req.Spec, "", "  ")
@@ -380,7 +395,12 @@ func (a *Adapter) OpenRecord(_ context.Context, req contract.RecordRequest) (con
 	if err := req.Layout.Validate(); err != nil {
 		return nil, &contract.Error{Code: contract.CodeProtocol, Field: "layout", Message: err.Error()}
 	}
-	st := store{dir: sessionDir(req.Layout, req.SessionID), adapter: a}
+	if req.WorkDir != "" {
+		if err := contract.CheckWorkDir(req.WorkDir); err != nil {
+			return nil, err
+		}
+	}
+	st := store{dir: sessionDir(req.Layout, contract.WorkDirPath(req.Layout, req.WorkDir), req.SessionID), adapter: a}
 	if _, err := os.Stat(st.dir); err != nil {
 		return nil, &contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenSessionNotFound, Message: err.Error()}
 	}
@@ -401,9 +421,10 @@ func (a *Adapter) OpenRecord(_ context.Context, req contract.RecordRequest) (con
 
 // ---- the record on disk
 
-// sessionDir is a Session's directory: its record, its markers and its goal.
-func sessionDir(l contract.Layout, sessionID string) string {
-	return filepath.Join(l.Scratch, historyDir, workspaceKey(l.Workspace), sessionID)
+// sessionDir is a Session's directory: its record, its markers and its goal,
+// kept by the directory the Session works in, workDir.
+func sessionDir(l contract.Layout, workDir, sessionID string) string {
+	return filepath.Join(l.Scratch, historyDir, workspaceKey(workDir), sessionID)
 }
 
 // store is a Session's durable files.
