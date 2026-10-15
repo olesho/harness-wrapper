@@ -5,7 +5,7 @@ render its configuration, open and reopen its sessions, send, interrupt, answer,
 acknowledgement, and read its record after a crash ([ADR-012](decisions/adr-012-harness-adapter-interface.md)).
 The specification is
 [Harness Adapter Interface v1](https://coplan.olehluchkiv.com/d/engine-contract-v1-specification); this
-package is its normative form, contract version `harness-adapter/1.8`.
+package is its normative form, contract version `harness-adapter/1.9`.
 
 Minor 1 adds two things, each behind a capability
 ([ADR-013](decisions/adr-013-session-load-and-own-turns.md)): a saved Session **loaded** into a fresh
@@ -72,6 +72,30 @@ the file it was made on.
 The Descriptor's `load` lists the archive formats and the harness versions whose saved Sessions the
 adapter continues. A version is a source only while a Session it saved, kept as a fixture, passes
 the kit's load checks at the adapter's own version; never because it is older.
+
+## A Session's own working directory
+
+Since 1.9 a Session of an adapter with `session_workdir` may work in a directory of its own beneath
+the workspace — a git worktree of each repository, say — rather than in the workspace
+([ADR-027](decisions/adr-027-session-workdir.md)). `OpenRequest.work_dir` names it, a clean relative
+slash path (`contract.CheckWorkDir`); `""` is the workspace.
+
+- The harness runs there: its process, its tools, and what it keeps of the Session by its working
+  directory — claude's transcript, pi's session header. A Session is reopened, and its record read
+  (`RecordRequest.work_dir`), naming the same directory.
+- The kit checks the directory when the Session opens: a directory beneath the workspace, reached
+  through no symbolic link, or `open_failed{config_invalid}` before the harness starts. A record read
+  checks nothing: a record outlives its directory.
+- A load names the directories its Sessions worked in (`LoadSource.work_dirs`); the profile moves what
+  the harness keeps by each to the same directory beneath the new workspace, through
+  `history_relocations` and `history_rewrites`, which since 1.9 may share a path when they rewrite one
+  field from values of their own. The Supervisor carries the directories themselves with the
+  workspace.
+- What `Provision` renders stays the agent's: nothing is written into a Session's directory. Each
+  pinned harness reads the workspace's instructions file from a directory beneath it — codex because
+  its configuration takes the workspace's `AGENTS.md` as a project's root.
+
+The kit's `workdir` and `workdir-load` scenarios hold it.
 
 ## Turns a harness starts itself
 

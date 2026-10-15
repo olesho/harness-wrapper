@@ -36,6 +36,7 @@ judged against; a record is one such judgement, written down. Each record names 
 | [ADR-024](adr-024-history-rewrites.md) | Interface 1.8 adds history_rewrites: a load may replace one value in a saved file's first-line JSON (pi's header cwd), which the Supervisor applies as it restores; the Pi profile loads, and opens a loaded Session strictly | Accepted 2026-10-09 | 2, 3, 6 |
 | [ADR-025](adr-025-planned-answers.md) | claude's AskUserQuestion dialog is read as `question` and `question_review` requests (an `other` text field, a `chat` decline, checked and typed rows kept out of the id), and an adapter may plan an answer (`turns.AnswerPlanner`) the chat layer writes step by step: each after the pane has settled and is still the planned one, each confirmed on screen, none re-sent | Accepted 2026-10-10 | 2, 1 · also 3, 6 |
 | [ADR-026](adr-026-pin-claude-2-1-296.md) | The claude pin moves to 2.1.296; 2.1.283 stays a load source; its one-time offer to make auto mode the default is a dialog of its own (`auto_mode_nudge`), declined unattended, and the configurations hw writes mark it seen | Accepted 2026-10-10 | 1, 6 |
+| [ADR-027](adr-027-session-workdir.md) | Interface 1.9 adds session_workdir: a Session works in a directory of its own beneath the workspace (OpenRequest.work_dir), its harness, hooks, record and load moves there; the kit refuses a directory that is not one before the harness starts, and codex takes the workspace's AGENTS.md as a project's root | Accepted 2026-10-15 | 3, 6, 2 |
 
 ## Intent coverage
 
