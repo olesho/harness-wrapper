@@ -75,9 +75,23 @@ type Start struct {
 	// the harness keeps of the Session outside its record did not come with
 	// it.
 	Loaded bool
+	// WorkDir is the directory the harness works in, absolute: the
+	// Session's own beneath the workspace (OpenRequest.WorkDir, capability
+	// session_workdir), or "" for the open_config's. The kit has checked
+	// that it is a directory reached through no symbolic link.
+	WorkDir string
 	// Report receives the harness's events, in the order it reports them,
 	// from one goroutine at a time. Exited is the last.
 	Report func(Event)
+}
+
+// WorkingDir is the directory a Session's harness works in: its own, dir,
+// when it has one, else configured, the open_config's.
+func WorkingDir(configured, dir string) string {
+	if dir != "" {
+		return dir
+	}
+	return configured
 }
 
 // Transport is a running harness.
@@ -214,6 +228,9 @@ type RecordSource struct {
 	Checkpoint *contract.Checkpoint
 	// Markers maps the harness's native input ids back to input ids.
 	Markers *Markers
+	// WorkDir is the directory the Session worked in, absolute
+	// (RecordRequest.WorkDir), or "" for the open_config's. It may be gone.
+	WorkDir string
 }
 
 // Reader reads one Session's record: the items, in record order, each an
@@ -315,6 +332,9 @@ func (a *harnessAdapter) NewSession(req contract.OpenRequest) (contract.Session,
 	if req.Loaded && !a.desc.Has(contract.CapSessionLoad) {
 		return nil, contract.Errorf(contract.CodeUnsupported, "opening a loaded session needs %s", contract.CapSessionLoad)
 	}
+	if req.WorkDir != "" && !a.desc.Has(contract.CapSessionWorkDir) {
+		return nil, &contract.Error{Code: contract.CodeUnsupported, Field: "work_dir", Message: fmt.Sprintf("a Session's own working directory needs %s", contract.CapSessionWorkDir)}
+	}
 	return newSession(a, req), nil
 }
 
@@ -331,18 +351,54 @@ func (a *harnessAdapter) OpenRecord(_ context.Context, req contract.RecordReques
 	if c := req.Checkpoint; c != nil && len(c.Data) > contract.MaxCheckpointBytes {
 		return nil, &contract.Error{Code: contract.CodeProtocol, Field: "checkpoint.data", Message: "too large"}
 	}
+	if err := contract.CheckWorkDir(req.WorkDir); err != nil {
+		return nil, err
+	}
+	if req.WorkDir != "" && !a.desc.Has(contract.CapSessionWorkDir) {
+		return nil, &contract.Error{Code: contract.CodeUnsupported, Field: "work_dir", Message: fmt.Sprintf("a Session's own working directory needs %s", contract.CapSessionWorkDir)}
+	}
 	m, err := OpenMarkers(req.Layout.Scratch)
 	if err != nil {
 		return nil, &contract.Error{Code: contract.CodeInternal, Message: err.Error()}
 	}
 	r, err := a.p.Record(RecordSource{
 		SessionID: req.SessionID, OpenConfig: req.OpenConfig, Layout: req.Layout,
-		Checkpoint: req.Checkpoint, Markers: m,
+		Checkpoint: req.Checkpoint, Markers: m, WorkDir: workDirOf(req.Layout, req.WorkDir),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return newRecord(r, m, req.SessionID), nil
+}
+
+// workDirOf is the absolute path of a Session's working directory dir beneath
+// l's workspace, "" for none: the open_config's.
+func workDirOf(l contract.Layout, dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return contract.WorkDirPath(l, dir)
+}
+
+// checkWorkDir refuses a Session's working directory dir beneath l's
+// workspace that is not a directory there, or is reached through a symbolic
+// link: the harness would run elsewhere than the directory the Session
+// names, and keep what it keeps by its working directory there.
+func checkWorkDir(l contract.Layout, dir string) error {
+	p := l.Workspace
+	for _, part := range strings.Split(dir, "/") {
+		p = filepath.Join(p, part)
+		fi, err := os.Lstat(p)
+		switch {
+		case err != nil:
+			return fmt.Errorf("work_dir %s: %w", dir, err)
+		case fi.Mode()&os.ModeSymlink != 0:
+			return fmt.Errorf("work_dir %s: %s is a symbolic link", dir, p)
+		case !fi.IsDir():
+			return fmt.Errorf("work_dir %s: %s is not a directory", dir, p)
+		}
+	}
+	return nil
 }
 
 // checkVersion refuses a request written in another major version, or in a

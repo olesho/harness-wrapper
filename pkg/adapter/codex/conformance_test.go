@@ -144,7 +144,12 @@ func TestCodexConforms(t *testing.T) {
 	mock.KeepBodies = true
 	defer mock.Close()
 	root := distribution(t, bin)
-	conformance.Run(conformance.Testing(t), kitFixture(root, mock))
+	f := kitFixture(root, mock)
+	f.Skip = map[string]string{}
+	for _, s := range workDirScenarios {
+		f.Skip[s] = "codex's default model runs no shell against the mock: TestCodexConformsInWorkDirs runs it"
+	}
+	conformance.Run(conformance.Testing(t), f)
 	var persona, workspace bool
 	for _, r := range mock.Requests() {
 		persona = persona || strings.Contains(r.Input, "PERSONA-MARKER")
@@ -153,4 +158,24 @@ func TestCodexConforms(t *testing.T) {
 	if !persona || !workspace {
 		t.Errorf("the model saw the persona: %v, the workspace's AGENTS.md: %v", persona, workspace)
 	}
+}
+
+// workDirScenarios are the kit's scenarios of a Session's own working
+// directory (session_workdir): each shows where codex works by a shell call.
+var workDirScenarios = []string{"workdir", "workdir-load"}
+
+// The Codex profile runs a Session in a directory of its own beneath the
+// workspace, reopens it and loads it there, against the pinned codex and the
+// mock. The scenarios show where codex works by a shell call, which codex's
+// default model does not make: it works by its code mode, whose host the
+// distribution does not hold. gpt-5 calls exec_command.
+func TestCodexConformsInWorkDirs(t *testing.T) {
+	bin := realCodex(t)
+	mock := mockapi.Start()
+	mock.KeepBodies = true
+	defer mock.Close()
+	f := kitFixture(distribution(t, bin), mock)
+	f.Spec.Model = "gpt-5"
+	f.Skip = conformance.Only(workDirScenarios...)
+	conformance.Run(conformance.Testing(t), f)
 }

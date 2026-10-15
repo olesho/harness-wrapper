@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
@@ -72,6 +73,25 @@ const spoolDir = "spool"
 // agent's.
 func sessionSpool(root, id string) string { return filepath.Join(root, spoolDir, id) }
 
+// In is cfg for a Session that works in a directory of its own, dir, an
+// absolute path (capability session_workdir): claude runs there, its hooks
+// resolve the paths they are given from there, and its transcript is kept
+// under that directory's name. "" leaves cfg as it is.
+func (cfg openConfig) In(dir string) openConfig {
+	if dir == "" || dir == cfg.WorkingDir {
+		return cfg
+	}
+	cfg.WorkingDir = dir
+	env := make([]string, 0, len(cfg.Env)+1)
+	for _, kv := range cfg.Env {
+		if !strings.HasPrefix(kv, harnesscore.EnvHookCwd+"=") {
+			env = append(env, kv)
+		}
+	}
+	cfg.Env = append(env, harnesscore.EnvHookCwd+"="+dir)
+	return cfg
+}
+
 func parseOpenConfig(raw []byte) (openConfig, error) {
 	var cfg openConfig
 	if err := json.Unmarshal(raw, &cfg); err != nil {
@@ -104,19 +124,29 @@ const projectsDir = "projects"
 // claude names a working directory's transcripts for its resolved path, so the
 // one directory the source's workspace named moves to the one the new
 // workspace names — a subagent's transcript, beneath it, with it — and nothing
-// inside is rewritten. Memory keeps its place.
+// inside is rewritten; so does the directory of each working directory of a
+// Session's own beneath it (session_workdir), to the one the same directory
+// beneath the new workspace names. Memory keeps its place.
 func relocations(load *contract.LoadSource, l contract.Layout) []contract.Relocation {
 	if load == nil {
 		return nil
 	}
-	from, to := tclaude.EncodedCWD(load.Workspace), tclaude.EncodedCWD(l.Workspace)
-	if from == to {
-		return nil
+	var out []contract.Relocation
+	move := func(fromDir, toDir string) {
+		from, to := tclaude.EncodedCWD(fromDir), tclaude.EncodedCWD(toDir)
+		if from == to {
+			return
+		}
+		out = append(out, contract.Relocation{
+			From: contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, from)},
+			To:   contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, to)},
+		})
 	}
-	return []contract.Relocation{{
-		From: contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, from)},
-		To:   contract.RootPath{Root: contract.RootConfig, Path: path.Join(projectsDir, to)},
-	}}
+	move(load.Workspace, l.Workspace)
+	for _, dir := range load.WorkDirs {
+		move(path.Join(load.Workspace, dir), contract.WorkDirPath(l, dir))
+	}
+	return out
 }
 
 // Provision renders claude's configuration for the spec: settings.json with the

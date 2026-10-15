@@ -191,6 +191,7 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
+	cfg = cfg.In(req.WorkDir)
 	id := req.SessionID
 	if id == "" {
 		id = sessionid.NewUUID()

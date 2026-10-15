@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -169,6 +170,8 @@ var broken = map[string]struct{ rule, scenario string }{
 	"version-flexible-refuses":    {"version.flexible", "version-policy"},
 	"version-unreported":          {"version.reported", "version-policy"},
 	"version-reports-pin":         {"version.running", "version-policy"},
+	"workdir-ignored":             {"workdir.runs-there", "workdir"},
+	"workdir-load-stays":          {"load.record", "workdir-load"},
 }
 
 // Every rule the fake adapter can break is caught: the kit fails that rule
@@ -249,7 +252,7 @@ func TestSavedSessionLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read.SessionID != saved.SessionID || len(read.Files) != len(saved.Files) || len(read.Files) == 0 || read.Source != saved.Source {
+	if read.SessionID != saved.SessionID || len(read.Files) != len(saved.Files) || len(read.Files) == 0 || !reflect.DeepEqual(read.Source, saved.Source) {
 		t.Fatalf("read back %+v with %d files, wrote %+v with %d", read.Source, len(read.Files), saved.Source, len(saved.Files))
 	}
 	for i, file := range read.Files {

@@ -88,7 +88,7 @@ func (d Descriptor) Has(c Capability) bool {
 // or the observations never appear. The set is closed within a minor version;
 // 1.1 added session_load and autonomous_turns, 1.2 brokered_credentials and
 // login_keeper, 1.3 background_turns (its background_tasks observation in
-// 1.4), 1.6 concurrent_sessions.
+// 1.4), 1.6 concurrent_sessions, 1.9 session_workdir.
 type Capability string
 
 // Capabilities.
@@ -161,6 +161,19 @@ const (
 	// need not refuse a Session past it, and what it does there is
 	// unspecified and untested.
 	CapConcurrentSessions Capability = "concurrent_sessions"
+	// CapSessionWorkDir: a Session may work in a directory of its own
+	// beneath the workspace — a git worktree, say — rather than the
+	// workspace itself (1.9). OpenRequest.WorkDir names it, and the
+	// harness runs there: its process, its tools, and what it keeps of the
+	// Session by its working directory — Claude Code's transcript, Pi's
+	// session header — so a Session is reopened, and its record read
+	// (RecordRequest.WorkDir), naming the same directory. A load moves the
+	// history of the directories LoadSource.WorkDirs names with it. The
+	// configuration the agent's Sessions share stays the agent's: what
+	// Provision rendered in the workspace is not copied into a Session's
+	// directory, so a harness that reads its instructions from its working
+	// directory alone reads the workspace's only where it looks above it.
+	CapSessionWorkDir Capability = "session_workdir"
 )
 
 // Values lists the set.
@@ -168,7 +181,7 @@ func (Capability) Values() []string {
 	return []string{
 		"resume", "assign_session_id", "prompts", "streaming_text", "tools_observed", "subagents", "rate_limits", "retry_visible",
 		"session_load", "autonomous_turns", "brokered_credentials", "login_keeper", "background_turns",
-		"concurrent_sessions",
+		"concurrent_sessions", "session_workdir",
 	}
 }
 
@@ -187,6 +200,8 @@ func (c Capability) Since() int {
 		return 3
 	case CapConcurrentSessions:
 		return 6
+	case CapSessionWorkDir:
+		return SessionWorkDirSince
 	}
 	return -1
 }

@@ -1,0 +1,117 @@
+{
+  "harness": "claude-code",
+  "version": "2.1.296",
+  "model": "haiku",
+  "git": "git version 2.50.1 (Apple Git-155)",
+  "side_by_side": true,
+  "steps": [
+    {
+      "name": "root: reads the workspace's instructions",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"MANGO-2A419B\"",
+      "took": "1.4s"
+    },
+    {
+      "name": "wt/a: opens",
+      "ok": true,
+      "detail": "\u003cnil\u003e",
+      "took": "200ms"
+    },
+    {
+      "name": "wt/b: opens",
+      "ok": true,
+      "detail": "\u003cnil\u003e",
+      "took": "200ms"
+    },
+    {
+      "name": "wt/a: reads the workspace's instructions",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"MANGO-2A419B\" (the instructions file is at the workspace's root, two directories above)",
+      "took": "1.1s"
+    },
+    {
+      "name": "wt/a: works there",
+      "ok": true,
+      "detail": "\u003cnil\u003e pwd \"/private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env1/workspace/wt/a\", want /private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env1/workspace/wt/a",
+      "took": "3.5s"
+    },
+    {
+      "name": "wt/b: reads the workspace's instructions",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"MANGO-2A419B\" (the instructions file is at the workspace's root, two directories above)",
+      "took": "1.6s"
+    },
+    {
+      "name": "wt/b: works there",
+      "ok": true,
+      "detail": "\u003cnil\u003e pwd \"/private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env1/workspace/wt/b\", want /private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env1/workspace/wt/b",
+      "took": "6.8s"
+    },
+    {
+      "name": "wt/a: its commit on its branch, alone",
+      "ok": true,
+      "detail": "log \"3c450d5 a: add file\", files \"README.md a.txt\""
+    },
+    {
+      "name": "wt/b: its commit on its branch, alone",
+      "ok": true,
+      "detail": "log \"eaa858f b: add file\", files \"README.md b.txt\""
+    },
+    {
+      "name": "app: the repository's own checkout untouched",
+      "ok": true,
+      "detail": "files \"README.md\""
+    },
+    {
+      "name": "wt/b: its worktree removed once it ended, its branch kept",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"\", branch \"b\""
+    },
+    {
+      "name": "wt/a: goes on beside the removal",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"## a\"",
+      "took": "2.2s"
+    },
+    {
+      "name": "wt/a: reopens",
+      "ok": true,
+      "detail": "\u003cnil\u003e",
+      "took": "300ms"
+    },
+    {
+      "name": "wt/a: remembers after the reopen",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"a.txt\"",
+      "took": "1.2s"
+    },
+    {
+      "name": "load: a copied worktree's links name the source",
+      "ok": true,
+      "detail": "git status before a repair: exit status 128 \"fatal: not a git repository: /private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env1/workspace/app/.git/worktrees/app\""
+    },
+    {
+      "name": "load: git worktree repair links it again",
+      "ok": true,
+      "detail": "repair: \u003cnil\u003e \"repair: gitdir incorrect: /private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env2-elsewhere/workspace/app/.git/worktrees/app/gitdir\"; log \u003cnil\u003e \"3c450d5 a: add file\""
+    },
+    {
+      "name": "load: wt/a's record read where it was moved",
+      "ok": true,
+      "detail": "12 items, \u003cnil\u003e"
+    },
+    {
+      "name": "load: wt/a's Session opens loaded, in the new wt/a",
+      "ok": true,
+      "detail": "\u003cnil\u003e",
+      "took": "700ms"
+    },
+    {
+      "name": "load: remembers, works in the new wt/a, and git works there",
+      "ok": true,
+      "detail": "\u003cnil\u003e \"a.txt /private/var/folders/_p/kgsjzrc91g57sggc0v8gfnch0000gn/T/TestClaudeWorkDirsLive1177221906/002/env2-elsewhere/workspace/wt/a 3c450d5 a: add file\"",
+      "took": "4s"
+    }
+  ],
+  "failed": 0
+}

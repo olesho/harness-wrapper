@@ -83,6 +83,31 @@ func TestProvisionRewritesTheHeader(t *testing.T) {
 	}
 }
 
+// A load that names the working directories its Sessions had of their own
+// (session_workdir) rewrites a header naming one of them to the same
+// directory beneath the new workspace.
+func TestProvisionRewritesWorkDirHeaders(t *testing.T) {
+	a := adapter.New(Profile{})
+	d := a.Describe()
+	l := contract.Layout{Home: "/n/home", Config: "/n/config", Workspace: "/n/work", Secrets: "/n/secrets", Scratch: "/n/scratch"}
+	req := contract.ProvisionRequest{Contract: contract.Version, HarnessRoot: "/h", Layout: l, Spec: contract.AgentSpec{Model: loadModel, PermissionPosture: contract.PostureBypass}}
+	req.Load = &contract.LoadSource{
+		Format: adapter.ArchiveFormat, Harness: d.Harness, Workspace: "/old/work", WorkDirs: []string{"wt/a"},
+		Layout: contract.Layout{Home: "/old/home", Config: "/old/config", Workspace: "/old/work", Secrets: "/old/secrets", Scratch: "/old/scratch"},
+	}
+	res, err := a.Provision(req)
+	if err != nil || len(res.HistoryRewrites) != 2 {
+		t.Fatalf("a load: rewrites %+v, %v", res.HistoryRewrites, err)
+	}
+	at := contract.RootPath{Root: contract.RootConfig, Path: sessionsDir + "/t_s.jsonl"}
+	for from, want := range map[string]string{"/old/work": "/n/work", "/old/work/wt/a": "/n/work/wt/a"} {
+		got, ok := contract.RewriteFirstLine(res.HistoryRewrites, at, []byte(`{"type":"session","cwd":"`+from+`"}`))
+		if !ok || string(got) != `{"type":"session","cwd":"`+want+`"}` {
+			t.Errorf("a header naming %s rewritten %v: %s", from, ok, got)
+		}
+	}
+}
+
 // The pinned pi continues each Session a version the profile names as a
 // source saved: the saved files, as that version wrote them, restored into a
 // fresh environment.

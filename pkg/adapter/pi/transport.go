@@ -197,6 +197,9 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
+	// A Session's own working directory (session_workdir): pi runs there,
+	// and its session's header names it, which pi finds the session by.
+	cfg.WorkingDir = adapter.WorkingDir(cfg.WorkingDir, req.WorkDir)
 	id := req.SessionID
 	if id == "" {
 		id = sessionid.NewUUID()

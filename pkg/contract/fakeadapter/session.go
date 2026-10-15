@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -121,6 +122,15 @@ func newSession(a *Adapter, req contract.OpenRequest, cfg openConfig) *session {
 	}
 }
 
+// workDir is the directory the Session's harness works in: its own beneath
+// the workspace (OpenRequest.WorkDir), or the workspace.
+func (s *session) workDir() string {
+	if s.adapter.breaks("workdir-ignored") {
+		return s.req.Layout.Workspace
+	}
+	return contract.WorkDirPath(s.req.Layout, s.req.WorkDir)
+}
+
 // Heard is the conversation the Session's harness last gave its model: every
 // prompt, reply and tool result, in order, the input it was answering last.
 // It is what a real harness's model API would have been sent.
@@ -217,7 +227,11 @@ func (s *session) Open(ctx context.Context) (contract.OpenResult, error) {
 	if id == "" {
 		id = "fake-" + randomHex(8)
 	}
-	st := store{dir: sessionDir(s.req.Layout, id), adapter: s.adapter}
+	dir := s.workDir()
+	if fi, err := os.Lstat(dir); s.req.WorkDir != "" && (err != nil || !fi.IsDir()) {
+		return fail(&contract.Error{Code: contract.CodeOpenFailed, Reason: contract.OpenConfigInvalid, Message: fmt.Sprintf("work_dir %s is no directory: %v", s.req.WorkDir, err)})
+	}
+	st := store{dir: sessionDir(s.req.Layout, dir, id), adapter: s.adapter}
 	switch s.req.Mode {
 	case contract.OpenFresh:
 		if _, err := os.Stat(st.dir); err == nil {
@@ -566,9 +580,17 @@ func (s *session) run(t *turn) {
 			s.stopped(t, msg, "")
 			return
 		}
-		_, _ = s.record(contract.NewObservation(contract.KindToolResult, id, contract.OriginRecord, time.Now(), contract.ToolResultData{ToolUseID: id, Output: "ran " + arg}), in)
-		s.live(contract.KindToolFinished, id, in, contract.ToolFinishedData{ToolUseID: id, Name: "Bash", Output: "ran " + arg})
-		reply("TOOL DONE")
+		out, done := "ran "+arg, "TOOL DONE"
+		if name, ok := strings.CutPrefix(arg, "cat "); ok {
+			// A file read where the harness works, as a shell's cat reads it.
+			if b, err := os.ReadFile(filepath.Join(s.workDir(), name)); err == nil {
+				out = strings.TrimSpace(string(b))
+				done += ": " + out
+			}
+		}
+		_, _ = s.record(contract.NewObservation(contract.KindToolResult, id, contract.OriginRecord, time.Now(), contract.ToolResultData{ToolUseID: id, Output: out}), in)
+		s.live(contract.KindToolFinished, id, in, contract.ToolFinishedData{ToolUseID: id, Name: "Bash", Output: out})
+		reply(done)
 	case "ERR":
 		f := strings.Fields(arg)
 		code, times := 529, 1

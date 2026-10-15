@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/olesho/harness-wrapper/internal/harnesscore"
 	"github.com/olesho/harness-wrapper/pkg/adapter"
 	"github.com/olesho/harness-wrapper/pkg/contract"
 )
@@ -360,6 +361,59 @@ func TestProvisionRelocatesALoadedSession(t *testing.T) {
 	req.Load = nil
 	if res, err = a.Provision(req); err != nil || len(res.HistoryRelocations) != 0 {
 		t.Errorf("no load: %+v %v, want no relocation", res.HistoryRelocations, err)
+	}
+}
+
+// A load that names the working directories its Sessions had of their own
+// (session_workdir) moves each one's project directory too, to the one the
+// same directory beneath the new workspace names; the workspace's moves as
+// before, and a transcript beneath one directory never lands in another's.
+func TestProvisionRelocatesWorkDirs(t *testing.T) {
+	g := loadGolden(t)
+	req := goldenRequest(t, g)
+	a := adapter.New(Profile{})
+	d := a.Describe()
+	if !d.Has(contract.CapSessionWorkDir) {
+		t.Fatal("the profile declares no session_workdir")
+	}
+	src := req.Layout
+	src.Workspace = "/srv/old/ws"
+	req.Load = &contract.LoadSource{Format: adapter.ArchiveFormat, Harness: d.Harness, Layout: src, Workspace: src.Workspace, WorkDirs: []string{"wt/a", "wt/b_c"}}
+	res, err := a.Provision(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace
+	want := []contract.Relocation{
+		{From: contract.RootPath{Root: contract.RootConfig, Path: "projects/-srv-old-ws"}, To: contract.RootPath{Root: contract.RootConfig, Path: "projects/" + enc(req.Layout.Workspace)}},
+		{From: contract.RootPath{Root: contract.RootConfig, Path: "projects/-srv-old-ws-wt-a"}, To: contract.RootPath{Root: contract.RootConfig, Path: "projects/" + enc(req.Layout.Workspace+"/wt/a")}},
+		{From: contract.RootPath{Root: contract.RootConfig, Path: "projects/-srv-old-ws-wt-b-c"}, To: contract.RootPath{Root: contract.RootConfig, Path: "projects/" + enc(req.Layout.Workspace+"/wt/b_c")}},
+	}
+	if !reflect.DeepEqual(res.HistoryRelocations, want) {
+		t.Errorf("history_relocations = %+v, want %+v", res.HistoryRelocations, want)
+	}
+	if moved := contract.Relocate(res.HistoryRelocations, contract.RootPath{Root: contract.RootConfig, Path: "projects/-srv-old-ws-wt-a/s.jsonl"}); moved.Path != want[1].To.Path+"/s.jsonl" {
+		t.Errorf("a transcript of wt/a moves to %s", moved)
+	}
+	req.Contract = "harness-adapter/1.8"
+	if _, err := a.Provision(req); contract.CodeOf(err) != contract.CodeProtocol {
+		t.Errorf("work_dirs in a 1.8 request: %v, want protocol", err)
+	}
+}
+
+// A Session's own working directory is where claude runs and its hooks
+// resolve from; the agent's open_config is left as it was.
+func TestOpenConfigIn(t *testing.T) {
+	cfg := openConfig{WorkingDir: "/w", Env: []string{"HOME=/h", harnesscore.EnvHookCwd + "=/w", "X=1"}}
+	if got := cfg.In(""); !reflect.DeepEqual(got, cfg) {
+		t.Errorf("In(\"\") = %+v", got)
+	}
+	got := cfg.In("/w/wt/a")
+	if got.WorkingDir != "/w/wt/a" || !reflect.DeepEqual(got.Env, []string{"HOME=/h", "X=1", harnesscore.EnvHookCwd + "=/w/wt/a"}) {
+		t.Errorf("In(/w/wt/a) = %+v", got)
+	}
+	if cfg.WorkingDir != "/w" || cfg.Env[1] != harnesscore.EnvHookCwd+"=/w" {
+		t.Errorf("In changed the agent's open_config: %+v", cfg)
 	}
 }
 
