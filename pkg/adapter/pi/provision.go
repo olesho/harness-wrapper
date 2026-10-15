@@ -174,16 +174,20 @@ func (Profile) Provision(req contract.ProvisionRequest) (contract.ProvisionResul
 
 // rewrites are, for a load, the session header's working directory: pi finds
 // a session by --session-id only among those whose header names its working
-// directory, and starts a new, empty one under the same id otherwise. The
-// session dir is in the config root, so nothing moves.
+// directory, and starts a new, empty one under the same id otherwise — the
+// workspace, or a Session's own directory beneath it (session_workdir), which
+// becomes the same directory beneath the new workspace. The session dir is in
+// the config root, so nothing moves.
 func rewrites(load *contract.LoadSource, l contract.Layout) []contract.Rewrite {
 	if load == nil || load.Workspace == l.Workspace {
 		return nil
 	}
-	return []contract.Rewrite{{
-		Path:  contract.RootPath{Root: contract.RootConfig, Path: sessionsDir},
-		Field: headerCwd, From: load.Workspace, To: l.Workspace,
-	}}
+	sessions := contract.RootPath{Root: contract.RootConfig, Path: sessionsDir}
+	out := []contract.Rewrite{{Path: sessions, Field: headerCwd, From: load.Workspace, To: l.Workspace}}
+	for _, dir := range load.WorkDirs {
+		out = append(out, contract.Rewrite{Path: sessions, Field: headerCwd, From: path.Join(load.Workspace, dir), To: contract.WorkDirPath(l, dir)})
+	}
+	return out
 }
 
 // headerCwd is the session header's field naming its working directory.

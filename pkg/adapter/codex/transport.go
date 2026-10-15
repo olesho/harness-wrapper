@@ -224,6 +224,10 @@ func (Profile) Start(ctx context.Context, req adapter.Start) (adapter.Transport,
 	if err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
+	// A Session's own working directory (session_workdir): the app-server
+	// runs there, and its thread works there — started or resumed, which
+	// takes the thread's cwd anew.
+	cfg.WorkingDir = adapter.WorkingDir(cfg.WorkingDir, req.WorkDir)
 	if req.Mode == contract.OpenFresh && req.SessionID != "" {
 		return nil, openFailed(contract.OpenConfigInvalid, "codex chooses a thread's id itself")
 	}

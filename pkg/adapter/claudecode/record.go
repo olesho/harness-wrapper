@@ -127,6 +127,7 @@ func NewRecord(src adapter.RecordSource, opts RecordOptions) (adapter.Reader, er
 	if err != nil {
 		return nil, openFailed(contract.OpenConfigInvalid, "%v", err)
 	}
+	cfg = cfg.In(src.WorkDir)
 	r := &reader{session: src.SessionID, cfg: cfg, markers: src.Markers, native: opts.Native, lag: opts.PromptLag}
 	if r.native == nil {
 		r.native = func(e *claudecode.Entry) string { return e.UUID }

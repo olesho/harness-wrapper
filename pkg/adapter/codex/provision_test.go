@@ -50,6 +50,7 @@ func TestProvision(t *testing.T) {
 		`[mcp_servers."docs"]`, `url = "https://mcp.example.com"`, `http_headers = { "X-Team" = "t" }`,
 		`env_http_headers = { "Authorization" = "DOCS_TOKEN" }`,
 		`[mcp_servers."kept"]`, `http_headers_helper = "/bin/sh '/w/config/mcp-headers/kept.sh'"`,
+		`project_root_markers = [".git", "AGENTS.md"]`,
 	} {
 		if !strings.Contains(toml, want) {
 			t.Errorf("config.toml has no %s:\n%s", want, toml)
@@ -57,7 +58,7 @@ func TestProvision(t *testing.T) {
 	}
 	// Top-level keys come before every table, so a key added at the top
 	// stays one.
-	if i, j := strings.Index(toml, "cli_auth_credentials_store"), strings.Index(toml, "["); i < 0 || j < i {
+	if i, j := strings.Index(toml, "cli_auth_credentials_store"), strings.Index(toml, "\n["); i < 0 || j < i {
 		t.Errorf("a table before the top-level keys:\n%s", toml)
 	}
 	if a := files["config/AGENTS.md"]; !strings.Contains(a, "You are careful.") || !strings.Contains(a, "/w/config/memory") {

@@ -121,7 +121,7 @@ func TestProvisionLentLogin(t *testing.T) {
 				if !strings.Contains(toml, store) || strings.Count(toml, "cli_auth_credentials_store") != 1 {
 					t.Errorf("%s: config.toml\n%s", kind, toml)
 				}
-				if i, j := strings.Index(toml, "cli_auth_credentials_store"), strings.Index(toml, "["); j < i {
+				if i, j := strings.Index(toml, "cli_auth_credentials_store"), strings.Index(toml, "\n["); j < i {
 					t.Errorf("%s: the store is not a top-level key\n%s", kind, toml)
 				}
 			}

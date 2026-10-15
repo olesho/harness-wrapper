@@ -88,7 +88,7 @@ func (Profile) Describe() contract.Descriptor {
 		Capabilities: []contract.Capability{
 			contract.CapResume, contract.CapRateLimits, contract.CapRetryVisible,
 			contract.CapSessionLoad, contract.CapAutonomousTurns, contract.CapBrokeredCredentials, contract.CapLoginKeeper,
-			contract.CapConcurrentSessions,
+			contract.CapConcurrentSessions, contract.CapSessionWorkDir,
 		},
 		// The versions whose saved threads the pinned codex continues: each
 		// one's kept in testdata/load and loaded by TestCodexLoadsSavedThreads.

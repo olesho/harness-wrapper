@@ -69,6 +69,7 @@ func (Profile) Describe() contract.Descriptor {
 			contract.CapResume, contract.CapAssignSessionID, contract.CapToolsObserved,
 			contract.CapSubagents, contract.CapRateLimits, contract.CapRetryVisible, contract.CapBackgroundTurns,
 			contract.CapSessionLoad, contract.CapBrokeredCredentials, contract.CapConcurrentSessions, contract.CapPrompts,
+			contract.CapSessionWorkDir,
 		},
 		Load: &contract.LoadSupport{Formats: []int{adapter.ArchiveFormat}, Sources: []string{"2.1.283", pin}},
 		Egress: &contract.Egress{

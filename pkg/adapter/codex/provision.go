@@ -161,6 +161,16 @@ func configTOML(spec contract.AgentSpec, l contract.Layout) string {
 	b.WriteString(`approval_policy = "never"
 sandbox_mode = "danger-full-access"
 `)
+	if spec.Instructions.Workspace != "" {
+		// The workspace's AGENTS.md marks the project's root, as a
+		// repository would: a Session working in a directory of its own
+		// beneath the workspace (session_workdir) reads it, from where codex
+		// reads a project's instructions — its root down to the directory it
+		// works in. The workspace is no repository, and codex looks for none
+		// but .git.
+		b.WriteString(`project_root_markers = [".git", "AGENTS.md"]
+`)
+	}
 	if spec.Credential != nil && spec.Credential.Kind == CredentialLogin {
 		b.WriteString(`# A lent ChatGPT login: the Host writes it to auth.json at every launch.
 cli_auth_credentials_store = "file"
